@@ -1,5 +1,6 @@
 import {
   CirclePower,
+  FileSpreadsheet,
   PackageSearch,
   Pencil,
   Plus,
@@ -12,6 +13,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { DialogoProducto } from '@/modulos/productos/componentes/DialogoProducto'
@@ -149,10 +151,18 @@ export function ProductosPage() {
             en esta sesión mientras Supabase continúa pendiente.
           </p>
         </div>
-        <Button size="lg" className="sm:self-end" onClick={abrirRegistro}>
-          <Plus aria-hidden="true" />
-          Registrar producto
-        </Button>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:self-end">
+          <Button asChild size="lg" variant="outline">
+            <Link to="/productos/importar">
+              <FileSpreadsheet aria-hidden="true" />
+              Revisar importación
+            </Link>
+          </Button>
+          <Button size="lg" onClick={abrirRegistro}>
+            <Plus aria-hidden="true" />
+            Registrar producto
+          </Button>
+        </div>
       </header>
 
       <section

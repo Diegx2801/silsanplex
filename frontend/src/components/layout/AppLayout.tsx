@@ -96,7 +96,11 @@ export function AppLayout() {
   const [menuAbierto, setMenuAbierto] = useState(false)
   const { pathname } = useLocation()
   const paginaActual =
-    elementosNavegacion.find((elemento) => elemento.ruta === pathname)?.titulo ??
+    elementosNavegacion.find(
+      (elemento) =>
+        elemento.ruta === pathname ||
+        (elemento.ruta !== '/' && pathname.startsWith(`${elemento.ruta}/`)),
+    )?.titulo ??
     'Página no encontrada'
 
   return (

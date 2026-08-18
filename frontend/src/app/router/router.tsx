@@ -39,6 +39,16 @@ export const router = createBrowserRouter([
           return { Component: ProductosPage }
         },
       },
+      {
+        path: 'productos/importar',
+        lazy: async () => {
+          const { ImportarProductosPage } = await import(
+            '@/app/paginas/ImportarProductosPage'
+          )
+
+          return { Component: ImportarProductosPage }
+        },
+      },
       ...rutasModulos,
       {
         path: '*',
