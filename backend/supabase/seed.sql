@@ -1,0 +1,3 @@
+-- No se cargan cuentas, contraseñas ni datos ficticios persistentes.
+-- La organización SILSAN y los roles base pertenecen a la migración porque
+-- deben existir en todos los entornos. Los datos de prueba viven en tests/.

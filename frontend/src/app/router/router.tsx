@@ -6,10 +6,17 @@ import { ModuloPendientePage } from '@/app/paginas/ModuloPendientePage'
 import { NotFoundPage } from '@/app/paginas/NotFoundPage'
 import { CargandoAplicacion } from '@/components/feedback/CargandoAplicacion'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { LoginPage } from '@/features/auth/LoginPage'
+import { AdminRoute, ProtectedRoute } from '@/features/auth/ProtectedRoute'
+import { SetPasswordPage } from '@/features/auth/SetPasswordPage'
+import { UsersPage } from '@/features/users/UsersPage'
 
 const rutasModulos = elementosNavegacion
   .filter(
-    (elemento) => elemento.ruta !== '/' && elemento.ruta !== '/productos',
+    (elemento) =>
+      elemento.ruta !== '/' &&
+      elemento.ruta !== '/productos' &&
+      elemento.ruta !== '/usuarios',
   )
   .map((elemento) => ({
     path: elemento.ruta,
@@ -23,8 +30,20 @@ const rutasModulos = elementosNavegacion
 
 export const router = createBrowserRouter([
   {
+    path: '/iniciar-sesion',
+    Component: LoginPage,
+  },
+  {
+    path: '/establecer-contrasena',
+    Component: SetPasswordPage,
+  },
+  {
     path: '/',
-    Component: AppLayout,
+    element: (
+      <ProtectedRoute>
+        <AppLayout />
+      </ProtectedRoute>
+    ),
     HydrateFallback: CargandoAplicacion,
     children: [
       {
@@ -48,6 +67,14 @@ export const router = createBrowserRouter([
 
           return { Component: ImportarProductosPage }
         },
+      },
+      {
+        path: 'usuarios',
+        element: (
+          <AdminRoute>
+            <UsersPage />
+          </AdminRoute>
+        ),
       },
       ...rutasModulos,
       {
