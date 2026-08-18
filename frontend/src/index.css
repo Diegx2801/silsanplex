@@ -177,6 +177,22 @@ a {
     color: #4f5c57;
     background: #e5eae7;
   }
+
+  .field-label {
+    @apply mb-2 block text-sm font-medium;
+  }
+
+  .field-control {
+    @apply min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20;
+  }
+
+  .field-help {
+    @apply mt-1.5 text-xs leading-5 text-muted-foreground;
+  }
+
+  .field-error {
+    @apply mt-1.5 text-xs leading-5 text-destructive;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
