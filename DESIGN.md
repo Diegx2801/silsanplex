@@ -93,6 +93,24 @@ components:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.ink}"
     rounded: "0"
+  field-control:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.md}"
+    padding: "0 0.75rem"
+    height: "2.5rem"
+  button-primary:
+    backgroundColor: "{colors.registry-green}"
+    textColor: "{colors.registry-green-foreground}"
+    typography: "{typography.navigation}"
+    rounded: "{rounded.lg}"
+    padding: "0 0.625rem"
+    height: "2.25rem"
+  product-drawer:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "0"
+    width: "min(100%, 48rem)"
   status-ready:
     backgroundColor: "{colors.ready-wash}"
     textColor: "{colors.ready-ink}"
@@ -195,6 +213,10 @@ El contenido se organiza como registros y franjas, no como mosaico indiscriminad
 
 Responsive sigue los breakpoints activos de Tailwind: `sm` a `640px`, `md` a `768px`, `lg` a `1024px` y `xl` a `1280px`. Por debajo de `lg`, el sidebar desaparece y se abre como diálogo lateral modal desde la cabecera. Las grillas de filas colapsan a flujo vertical; la columna secundaria solo se separa a partir de `xl`. El ancho mínimo soportado por la base es `320px`.
 
+El registro de productos concreta esta adaptación con dos representaciones semánticas del mismo conjunto. Desde `md`, una tabla de siete columnas conserva un ancho mínimo de `58rem` y permite desplazamiento horizontal antes que comprimir códigos, precios o acciones. Por debajo de `md`, cada producto se apila como una fila-artículo: código, descripción y estado dominan; laboratorio y precio forman un bloque descriptivo; editar y activar o desactivar pasan a acciones textuales de ancho equivalente. Los filtros se apilan en móvil y, desde `md`, distribuyen búsqueda flexible y estado en una columna estable de `13rem`.
+
+El alta y la edición comparten un panel lateral derecho de ancho completo hasta `48rem`. Su cabecera y pie permanecen estructuralmente separados mientras solo el cuerpo del formulario desplaza; en móvil, las acciones del pie se apilan con la acción primaria antes de Cancelar, y desde `sm` se alinean al borde final. Este patrón evita una ficha multipestaña y mantiene la tarea en una sola secuencia de Identificación, Información comercial y sanitaria, y Control operativo.
+
 **The Desktop-First, Essential-Everywhere Rule.** La densidad y navegación priorizan escritorio, pero ninguna función esencial puede quedar inaccesible o depender de una columna fija en pantallas pequeñas.
 
 **The Record Before Dashboard Rule.** Si no hay datos confiables, mostrar estructura, estado o preparación verificable; nunca rellenar el espacio con métricas ficticias.
@@ -206,6 +228,7 @@ El sistema es plano por defecto. La profundidad se comunica mediante fondos tona
 ### Shadow Vocabulary
 
 - **Capa modal:** `0 25px 50px -12px rgb(0 0 0 / 0.25)`, solo para separar la navegación móvil del contenido bloqueado por el overlay.
+- **Formulario lateral:** sombra estructural amplia sobre un overlay de tinta al 25%, solo mientras el alta o la edición bloquean el registro subyacente.
 - **Acceso de teclado:** `0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)`, solo cuando el enlace “Saltar al contenido principal” se vuelve visible.
 
 ### Named Rules
@@ -215,6 +238,8 @@ El sistema es plano por defecto. La profundidad se comunica mediante fondos tona
 ## Shapes
 
 La geometría principal es recta y registral. Hojas, secciones y filas conservan bordes rectos; los radios medianos se reservan para objetivos interactivos compactos, como enlaces de navegación y botones de icono. Las etiquetas de estado son cápsulas para diferenciarse de las celdas y facilitar el escaneo.
+
+El formulario lateral conserva esquinas rectas y un borde inicial fino, porque es una extensión temporal del registro y no una tarjeta flotante. Sus campos usan bordes finos, radio mediano y una altura mínima de `2.5rem`; el foco y el error refuerzan el contorno en lugar de cambiar la silueta.
 
 Los bordes son finos y estructurales. No introducir contenedores redondeados anidados ni siluetas decorativas que debiliten la lectura de filas, columnas y secuencias.
 
@@ -237,7 +262,12 @@ Los bordes son finos y estructurales. No introducir contenedores redondeados ani
 - **Color:** icono silenciado en reposo y tinta principal sobre lavado suave en hover.
 - **Focus:** anillo visible de dos píxeles; cada control conserva un nombre accesible aunque el icono sea decorativo.
 
-No hay todavía una familia de botones primarios de acción. Debe definirse a partir de flujos reales, no extrapolarse del botón de menú.
+### Buttons
+
+- **Primary:** verde de registro con texto blanco, radio grande y altura de `2.25rem`; se reserva para registrar o confirmar el guardado.
+- **Outline:** fondo de papel y borde estructural; sirve para cancelar y para las acciones explícitas de edición y estado en móvil.
+- **Ghost:** sin relleno en reposo y con lavado mineral en hover; se usa para acciones compactas dentro de la tabla de escritorio.
+- **States:** todos conservan foco visible, respuesta activa de un píxel y atenuación inequívoca cuando están deshabilitados.
 
 ### Cards / Containers
 
@@ -254,6 +284,33 @@ No hay todavía una familia de botones primarios de acción. Debe definirse a pa
 - **Review:** lavado gris mineral y tinta neutra.
 - **Content:** el texto debe nombrar el estado; el color nunca es el único portador de significado.
 
+### Product Registry
+
+- **Desktop table:** desde `md`, muestra Código, Producto, Laboratorio, Presentación, Precio base, Estado y Acciones. Los códigos y precios usan cifras monoespaciadas y tabulares; categoría permanece como segundo nivel del nombre.
+- **Mobile rows:** por debajo de `md`, usa artículos apilados y listas descriptivas, no una tabla visualmente exprimida. Conserva las acciones esenciales como botones con icono y texto.
+- **Search and filter:** la búsqueda recorre código interno, código de barras, descripción y laboratorio; el filtro separa todos, activos e inactivos. El conteo visible siempre expresa resultado filtrado frente al total.
+- **Empty states:** distingue entre catálogo realmente vacío y búsqueda sin coincidencias. Solo el primer caso ofrece registrar desde el propio estado vacío.
+- **Status changes:** activar o desactivar actualiza la etiqueta textual y anuncia el resultado; no elimina el producto ni simula una operación de inventario.
+
+### Inputs / Fields
+
+- **Style:** etiqueta persistente encima, control de `2.5rem`, fondo de papel, borde de entrada y radio mediano. El placeholder aporta formato o ejemplo, nunca sustituye la etiqueta.
+- **Focus:** borde verde y anillo visible translúcido; los campos inválidos usan borde y anillo destructivos.
+- **Help and error:** ayuda y error ocupan la misma zona bajo el control. Cada mensaje se vincula mediante `aria-describedby`, y el control inválido expone `aria-invalid`.
+- **Current required fields:** Código interno y Nombre o descripción. El código admite hasta 30 caracteres; la descripción, entre 2 y 160 después de recortar espacios.
+- **Current optional fields:** Código de barras (50), Categoría o línea (80), Laboratorio o marca (100), Presentación (100), Unidad de medida (40), Registro sanitario (80), Afectación de IGV y Precio de venta base. Los máximos entre paréntesis son caracteres.
+- **Commercial validation:** el precio puede quedar vacío o usar un importe no negativo con hasta dos decimales. La afectación de IGV permanece explícitamente en Por definir, Gravado, Exonerado o Inafecto; no inferir si el precio incluye IGV.
+- **Session uniqueness:** el código interno es único dentro de los productos temporales, sin distinguir mayúsculas y minúsculas; el conflicto se presenta sobre el campo Código interno.
+
+### Product Form
+
+- **Structure:** un único diálogo lateral para registrar y editar, dividido por líneas en Identificación, Información comercial y sanitaria, y Control operativo.
+- **Defaults:** un producto nuevo no precarga datos factuales: los campos textuales, el precio y la afectación de IGV comienzan vacíos. Controlar por lote y Producto activo comienzan seleccionados, mientras Venta con receta comienza desmarcada.
+- **Control options:** las opciones binarias combinan checkbox, etiqueta y explicación completa; no usan switches sin contexto.
+- **Scrolling:** cabecera y pie permanecen visibles como límites del panel; únicamente la secuencia de campos tiene desplazamiento vertical.
+- **Temporary persistence:** altas, ediciones y cambios de estado se escriben en `sessionStorage` bajo una clave versionada. Al cargar, los datos se validan contra el esquema vigente; contenido ausente, inválido o ilegible produce un registro vacío.
+- **Scope:** la persistencia dura solo la sesión del navegador, no sincroniza con Supabase y se identifica como “SESIÓN LOCAL”. No debe presentarse como guardado definitivo ni como dato compartido.
+
 ### Page Header
 
 - **Title:** display sobrio con interletraje cerrado.
@@ -262,9 +319,12 @@ No hay todavía una familia de botones primarios de acción. Debe definirse a pa
 
 ### Motion & Accessibility
 
-- Las transiciones existen para la apertura y cierre del menú móvil y para estados interactivos; no hay movimiento ambiental ni decorativo.
+- Las transiciones existen para la apertura y cierre del menú móvil, la entrada lateral del formulario de producto y los estados interactivos; no hay movimiento ambiental ni decorativo.
 - `prefers-reduced-motion: reduce` lleva transiciones y animaciones a `0.01ms`, elimina scroll suave y limita cada animación a una iteración.
 - El shell incluye enlace de salto, landmarks semánticos, etiquetas accesibles, iconos ocultos al árbol de accesibilidad y foco visible.
+- El formulario lateral atrapa el foco, se cierra con Escape, enfoca primero el Código interno al crear y devuelve el foco al botón exacto que lo abrió. Título, descripción y botón de cierre tienen nombres accesibles.
+- En escritorio, la tabla usa encabezados de columna con alcance explícito y cada acción de icono nombra el producto afectado. En móvil, artículos y listas descriptivas conservan relaciones semánticas sin depender de la geometría tabular.
+- Los resultados de registrar, editar y cambiar estado se anuncian mediante una región de estado cortés sin interrumpir la tarea.
 - Mantener contraste suficiente en todo token nuevo y validar teclado, foco, Escape y restauración del foco al modificar navegación o diálogos.
 
 ## Do's and Don'ts
@@ -275,6 +335,9 @@ No hay todavía una familia de botones primarios de acción. Debe definirse a pa
 - **Do** mantener los tokens de identidad provisional centralizados para reemplazarlos cuando exista marca aprobada.
 - **Do** adaptar densidad y columnas al móvil sin ocultar acciones esenciales.
 - **Do** usar estados textuales junto al color y mantener foco visible en cada control.
+- **Do** conservar la tabla en escritorio y reconstruir sus prioridades como filas apiladas con acciones textuales en móvil.
+- **Do** tratar el formulario lateral como una secuencia única, con etiquetas persistentes, ayuda vinculada y errores junto al campo responsable.
+- **Do** identificar de forma visible cualquier persistencia temporal y validar los datos almacenados antes de mostrarlos.
 - **Do** presentar únicamente datos, estados, rutas y dependencias respaldados por una fuente confiable.
 - **Do** dejar espacio arquitectónico para reordenar navegación y prioridades sin reescribir el shell.
 
@@ -285,6 +348,9 @@ No hay todavía una familia de botones primarios de acción. Debe definirse a pa
 - **Don't** añadir gradientes, sombras decorativas, grandes rellenos de acento ni cuadrículas de tarjetas genéricas.
 - **Don't** usar movimiento ornamental ni ignorar `prefers-reduced-motion`.
 - **Don't** depender solo del color, del hover o de una disposición de escritorio para comunicar o completar una tarea.
+- **Don't** confundir `sessionStorage` con persistencia definitiva, omitir la marca “SESIÓN LOCAL” ni prometer sincronización mientras Supabase siga pendiente.
+- **Don't** convertir el formulario esencial en una ficha multipestaña ni hacer obligatorios los campos opcionales antes de confirmar la regla empresarial.
+- **Don't** inferir si el precio base incluye IGV ni inventar catálogos controlados de clasificación o presentación.
 - **Don't** introducir logotipo, fotografía, ilustración o recursos de marca hasta recibir activos y autorización de Droguería SILSAN S.A.C.
 
 ### Pending Brand Decisions
@@ -294,3 +360,4 @@ No hay todavía una familia de botones primarios de acción. Debe definirse a pa
 - Tipografía corporativa, si difiere de Geist.
 - Iconografía, fotografía, ilustración y tono verbal de marca.
 - Validación empresarial de las prioridades de navegación y de las acciones administrativas frecuentes.
+- Definición de si el precio base incluye IGV, catálogos controlados para clasificación y presentación, y campos opcionales que pasarán a ser obligatorios.

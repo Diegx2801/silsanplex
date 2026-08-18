@@ -151,3 +151,7 @@ vite.config.ts.timestamp-*
 .impeccable/questions/
 .impeccable/config.local.json
 .impeccable/direction-options.json
+
+# Browser verification artifacts
+.playwright-cli/
+output/playwright/

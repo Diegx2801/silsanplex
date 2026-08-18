@@ -4,6 +4,7 @@ import { elementosNavegacion } from '@/app/navegacion'
 import { InicioPage } from '@/app/paginas/InicioPage'
 import { ModuloPendientePage } from '@/app/paginas/ModuloPendientePage'
 import { NotFoundPage } from '@/app/paginas/NotFoundPage'
+import { CargandoAplicacion } from '@/components/feedback/CargandoAplicacion'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { AdminRoute, ProtectedRoute } from '@/features/auth/ProtectedRoute'
@@ -11,7 +12,12 @@ import { SetPasswordPage } from '@/features/auth/SetPasswordPage'
 import { UsersPage } from '@/features/users/UsersPage'
 
 const rutasModulos = elementosNavegacion
-  .filter((elemento) => elemento.ruta !== '/' && elemento.ruta !== '/usuarios')
+  .filter(
+    (elemento) =>
+      elemento.ruta !== '/' &&
+      elemento.ruta !== '/productos' &&
+      elemento.ruta !== '/usuarios',
+  )
   .map((elemento) => ({
     path: elemento.ruta,
     element: (
@@ -38,10 +44,29 @@ export const router = createBrowserRouter([
         <AppLayout />
       </ProtectedRoute>
     ),
+    HydrateFallback: CargandoAplicacion,
     children: [
       {
         index: true,
         Component: InicioPage,
+      },
+      {
+        path: 'productos',
+        lazy: async () => {
+          const { ProductosPage } = await import('@/app/paginas/ProductosPage')
+
+          return { Component: ProductosPage }
+        },
+      },
+      {
+        path: 'productos/importar',
+        lazy: async () => {
+          const { ImportarProductosPage } = await import(
+            '@/app/paginas/ImportarProductosPage'
+          )
+
+          return { Component: ImportarProductosPage }
+        },
       },
       {
         path: 'usuarios',
