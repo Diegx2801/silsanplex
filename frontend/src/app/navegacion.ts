@@ -1,0 +1,100 @@
+import {
+  Boxes,
+  ChartNoAxesCombined,
+  House,
+  PackageSearch,
+  ReceiptText,
+  Settings,
+  ShoppingCart,
+  Truck,
+  Users,
+  type LucideIcon,
+} from 'lucide-react'
+
+export interface ElementoNavegacion {
+  titulo: string
+  ruta: string
+  descripcion: string
+  icono: LucideIcon
+}
+
+interface SeccionNavegacion {
+  titulo: string
+  elementos: ElementoNavegacion[]
+}
+
+export const seccionesNavegacion: SeccionNavegacion[] = [
+  {
+    titulo: 'Principal',
+    elementos: [
+      {
+        titulo: 'Inicio',
+        ruta: '/',
+        descripcion: 'Estado y preparación del sistema',
+        icono: House,
+      },
+    ],
+  },
+  {
+    titulo: 'Operaciones',
+    elementos: [
+      {
+        titulo: 'Productos',
+        ruta: '/productos',
+        descripcion: 'Catálogo y clasificación',
+        icono: PackageSearch,
+      },
+      {
+        titulo: 'Inventario',
+        ruta: '/inventario',
+        descripcion: 'Stock, lotes y movimientos',
+        icono: Boxes,
+      },
+      {
+        titulo: 'Compras',
+        ruta: '/compras',
+        descripcion: 'Proveedores, órdenes y recepciones',
+        icono: ShoppingCart,
+      },
+      {
+        titulo: 'Ventas',
+        ruta: '/ventas',
+        descripcion: 'Clientes, cotizaciones y pedidos',
+        icono: ReceiptText,
+      },
+      {
+        titulo: 'Distribución',
+        ruta: '/distribucion',
+        descripcion: 'Despachos y entregas',
+        icono: Truck,
+      },
+    ],
+  },
+  {
+    titulo: 'Control',
+    elementos: [
+      {
+        titulo: 'Reportes',
+        ruta: '/reportes',
+        descripcion: 'Consultas operativas',
+        icono: ChartNoAxesCombined,
+      },
+      {
+        titulo: 'Usuarios',
+        ruta: '/usuarios',
+        descripcion: 'Accesos, roles y permisos',
+        icono: Users,
+      },
+      {
+        titulo: 'Configuración',
+        ruta: '/configuracion',
+        descripcion: 'Parámetros generales',
+        icono: Settings,
+      },
+    ],
+  },
+]
+
+export const elementosNavegacion = seccionesNavegacion.flatMap(
+  (seccion) => seccion.elementos,
+)

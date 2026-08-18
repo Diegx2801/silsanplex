@@ -23,11 +23,11 @@ silsanplex/
 │   └── supabase/  Estructura reservada; aún sin inicializar
 ├── frontend/      Aplicación web
 ├── CODEX.md       Contexto y reglas de desarrollo
+├── PRODUCT.md     Verdad de producto y restricciones vigentes
+├── DESIGN.md      Sistema visual y decisiones de interfaz
 ├── .gitignore
 └── README.md
 ```
-
-La documentación adicional se incorporará cuando sea necesaria.
 
 ## Frontend
 
