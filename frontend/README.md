@@ -15,7 +15,10 @@ npm run preview
 ## Estado
 
 La plantilla demostrativa de Vite fue retirada. Por el momento, la aplicación
-solo muestra el nombre del sistema. La arquitectura modular y las dependencias
-adicionales se incorporarán de forma incremental.
+incluye la infraestructura base de navegación, caché de servidor, formularios,
+estado global y componentes visuales. Los módulos funcionales se incorporarán
+de forma incremental.
+
+Supabase todavía no forma parte de esta etapa.
 
 Consulta el [contexto de desarrollo](../CODEX.md) antes de realizar cambios.
