@@ -1,0 +1,17 @@
+{
+  "name": "silsanplex-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Supabase local, migraciones y pruebas de SILSANPLEX",
+  "scripts": {
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:lint": "supabase db lint",
+    "test": "supabase test db",
+    "test:db": "supabase test db"
+  },
+  "devDependencies": {
+    "supabase": "^2.115.0"
+  }
+}
