@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { esquemaProducto, productoInicial } from './producto'
+import {
+  esquemaProducto,
+  productoInicial,
+  resumirProductos,
+  type Producto,
+} from './producto'
 
 describe('esquemaProducto', () => {
   it('acepta el registro mínimo y limpia espacios', () => {
@@ -29,5 +34,40 @@ describe('esquemaProducto', () => {
     })
 
     expect(resultado.success).toBe(false)
+  })
+})
+
+describe('resumirProductos', () => {
+  it('cuenta productos activos e inactivos sin alterar la colección', () => {
+    const productos = [
+      {
+        ...productoInicial,
+        id: '1',
+        codigo: 'A',
+        descripcion: 'Activo',
+        activo: true,
+      },
+      {
+        ...productoInicial,
+        id: '2',
+        codigo: 'B',
+        descripcion: 'Inactivo',
+        activo: false,
+      },
+      {
+        ...productoInicial,
+        id: '3',
+        codigo: 'C',
+        descripcion: 'Otro',
+        activo: true,
+      },
+    ] satisfies Producto[]
+
+    expect(resumirProductos(productos)).toEqual({
+      total: 3,
+      activos: 2,
+      inactivos: 1,
+    })
+    expect(productos).toHaveLength(3)
   })
 })

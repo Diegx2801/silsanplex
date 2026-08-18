@@ -1,7 +1,6 @@
 import { createBrowserRouter } from 'react-router'
 
 import { elementosNavegacion } from '@/app/navegacion'
-import { InicioPage } from '@/app/paginas/InicioPage'
 import { ModuloPendientePage } from '@/app/paginas/ModuloPendientePage'
 import { NotFoundPage } from '@/app/paginas/NotFoundPage'
 import { CargandoAplicacion } from '@/components/feedback/CargandoAplicacion'
@@ -29,7 +28,11 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        Component: InicioPage,
+        lazy: async () => {
+          const { InicioPage } = await import('@/app/paginas/InicioPage')
+
+          return { Component: InicioPage }
+        },
       },
       {
         path: 'productos',
