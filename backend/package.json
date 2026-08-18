@@ -4,14 +4,28 @@
   "private": true,
   "description": "Supabase local, migraciones y pruebas de SILSANPLEX",
   "scripts": {
+    "dev:create-admin": "tsx scripts/create-local-admin.ts",
+    "provision:client-admin": "tsx scripts/provision-client-admin.ts",
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "db:lint": "supabase db lint",
-    "test": "supabase test db",
-    "test:db": "supabase test db"
+    "db:migrate": "supabase migration up",
+    "env:frontend": "tsx scripts/configure-local-frontend.ts",
+    "functions:serve": "supabase functions serve",
+    "test": "npm run test:db && npm run test:functions && npm run typecheck:scripts",
+    "test:db": "supabase test db",
+    "test:functions": "deno check --config supabase/functions/admin-users/deno.json supabase/functions/admin-users/index.ts && deno test --config supabase/functions/admin-users/deno.json supabase/functions/admin-users",
+    "typecheck:scripts": "tsc --project tsconfig.scripts.json"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "dotenv": "^17.2.2"
   },
   "devDependencies": {
-    "supabase": "^2.115.0"
+    "@types/node": "^26.2.0",
+    "supabase": "^2.115.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
   }
 }

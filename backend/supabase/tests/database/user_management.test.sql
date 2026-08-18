@@ -1,6 +1,6 @@
 begin;
 
-select plan(39);
+select plan(42);
 
 -- -------------------------------------------------------------------------
 -- Estructura y datos base
@@ -29,6 +29,13 @@ select has_column(
   'profiles',
   'is_active',
   'el perfil conserva el bloqueo global de plataforma'
+);
+
+select has_column(
+  'public',
+  'profiles',
+  'auth_confirmed_at',
+  'el perfil registra la aceptación de la invitación'
 );
 
 select is(
@@ -172,6 +179,30 @@ values
 
 select is(
   (
+    select auth_confirmed_at
+    from public.profiles
+    where id = '22222222-2222-4222-8222-222222222222'
+  ),
+  null::timestamptz,
+  'un usuario sin confirmar conserva la invitación pendiente'
+);
+
+update auth.users
+set email_confirmed_at = now()
+where id = '22222222-2222-4222-8222-222222222222';
+
+select isnt(
+  (
+    select auth_confirmed_at
+    from public.profiles
+    where id = '22222222-2222-4222-8222-222222222222'
+  ),
+  null::timestamptz,
+  'la confirmación de Auth se sincroniza con el perfil'
+);
+
+select is(
+  (
     select count(*)
     from public.profiles
     where id in (
@@ -205,11 +236,17 @@ select is(
 );
 
 insert into public.organizations (id, name, slug)
-values (
-  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  'Organización de prueba',
-  'organizacion-prueba'
-);
+values
+  (
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    'Organización SILSAN de prueba',
+    'organizacion-silsan-test'
+  ),
+  (
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'Organización externa de prueba',
+    'organizacion-prueba'
+  );
 
 insert into public.organization_memberships (
   organization_id,
@@ -218,12 +255,12 @@ insert into public.organization_memberships (
 )
 values
   (
-    (select id from public.organizations where slug = 'drogueria-silsan'),
+    (select id from public.organizations where slug = 'organizacion-silsan-test'),
     '11111111-1111-4111-8111-111111111111',
     '11111111-1111-4111-8111-111111111111'
   ),
   (
-    (select id from public.organizations where slug = 'drogueria-silsan'),
+    (select id from public.organizations where slug = 'organizacion-silsan-test'),
     '22222222-2222-4222-8222-222222222222',
     '11111111-1111-4111-8111-111111111111'
   ),
@@ -241,19 +278,19 @@ insert into public.user_roles (
 )
 values
   (
-    (select id from public.organizations where slug = 'drogueria-silsan'),
+    (select id from public.organizations where slug = 'organizacion-silsan-test'),
     '11111111-1111-4111-8111-111111111111',
     'ADMIN',
     '11111111-1111-4111-8111-111111111111'
   ),
   (
-    (select id from public.organizations where slug = 'drogueria-silsan'),
+    (select id from public.organizations where slug = 'organizacion-silsan-test'),
     '22222222-2222-4222-8222-222222222222',
     'VENTAS',
     '11111111-1111-4111-8111-111111111111'
   ),
   (
-    (select id from public.organizations where slug = 'drogueria-silsan'),
+    (select id from public.organizations where slug = 'organizacion-silsan-test'),
     '22222222-2222-4222-8222-222222222222',
     'ALMACEN',
     '11111111-1111-4111-8111-111111111111'
@@ -283,7 +320,7 @@ insert into public.audit_events (
   entity_id
 )
 values (
-  (select id from public.organizations where slug = 'drogueria-silsan'),
+  (select id from public.organizations where slug = 'organizacion-silsan-test'),
   '11111111-1111-4111-8111-111111111111',
   'USER_CREATED',
   'PROFILE',
@@ -336,7 +373,7 @@ select is(
   (
     select count(*)
     from public.organizations
-    where slug = 'drogueria-silsan'
+    where slug = 'organizacion-silsan-test'
   ),
   1::bigint,
   'un usuario activo accede a SILSAN'
@@ -377,7 +414,7 @@ select is(
   (
     select count(*)
     from public.organizations
-    where slug = 'drogueria-silsan'
+    where slug = 'organizacion-silsan-test'
   ),
   0::bigint,
   'otra organización no puede consultar SILSAN'
@@ -410,7 +447,7 @@ set
   is_active = false,
   deactivated_at = now()
 where organization_id = (
-  select id from public.organizations where slug = 'drogueria-silsan'
+  select id from public.organizations where slug = 'organizacion-silsan-test'
 )
 and user_id = '22222222-2222-4222-8222-222222222222';
 
@@ -423,7 +460,7 @@ select set_config(
 
 select is(
   public.is_organization_member(
-    (select id from public.organizations where slug = 'drogueria-silsan')
+    (select id from public.organizations where slug = 'organizacion-silsan-test')
   ),
   false,
   'desactivar la membresía revoca el acceso a SILSAN'
@@ -446,13 +483,13 @@ set
   is_active = true,
   deactivated_at = null
 where organization_id = (
-  select id from public.organizations where slug = 'drogueria-silsan'
+  select id from public.organizations where slug = 'organizacion-silsan-test'
 )
 and user_id = '22222222-2222-4222-8222-222222222222';
 
 update public.organizations
 set is_active = false
-where slug = 'drogueria-silsan';
+where slug = 'organizacion-silsan-test';
 
 set local role authenticated;
 select set_config(
@@ -463,7 +500,7 @@ select set_config(
 
 select is(
   public.is_organization_admin(
-    (select id from public.organizations where slug = 'drogueria-silsan')
+    (select id from public.organizations where slug = 'organizacion-silsan-test')
   ),
   false,
   'suspender SILSAN revoca las capacidades de su administrador'

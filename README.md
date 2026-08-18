@@ -8,19 +8,17 @@ seguridad y la consistencia de los datos.
 
 ## Estado actual
 
-El proyecto se encuentra en su etapa inicial. Actualmente está preparada la
-base del frontend con React, TypeScript y Vite. La carpeta reservada para
-Supabase todavía no contiene una implementación.
-
-La integración con Supabase y los módulos funcionales se implementarán en
-fases posteriores.
+El proyecto se encuentra en su etapa inicial. Ya incluye la base del frontend
+con React, TypeScript y Vite, además del primer módulo vertical de autenticación
+y control de usuarios sobre Supabase.
 
 ## Estructura
 
 ```text
 silsanplex/
 ├── backend/
-│   └── supabase/  Estructura reservada; aún sin inicializar
+│   ├── scripts/   Aprovisionamiento local y de clientes
+│   └── supabase/  Migraciones, pruebas y Edge Functions
 ├── frontend/      Aplicación web
 ├── CODEX.md       Contexto y reglas de desarrollo
 ├── PRODUCT.md     Verdad de producto y restricciones vigentes
@@ -50,6 +48,12 @@ Verificaciones disponibles:
 npm run lint
 npm run build
 ```
+
+## Backend
+
+Consulta [backend/README.md](./backend/README.md) para iniciar Supabase local,
+crear el administrador de desarrollo, validar el módulo y conocer el flujo
+controlado de alta de nuevos clientes.
 
 ## Flujo de trabajo
 

@@ -1,19 +1,23 @@
-import { Menu, X } from 'lucide-react'
+import { LogOut, Menu, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 
 import { elementosNavegacion, seccionesNavegacion } from '@/app/navegacion'
+import { Button } from '@/components/ui/button'
+import { useAuth } from '@/features/auth/AuthProvider'
 import { cn } from '@/lib/utils'
 
 interface ContenidoNavegacionProps {
   alNavegar?: () => void
   cerrarMenu?: () => void
+  isAdmin: boolean
 }
 
 function ContenidoNavegacion({
   alNavegar,
   cerrarMenu,
+  isAdmin,
 }: ContenidoNavegacionProps) {
   return (
     <>
@@ -45,45 +49,47 @@ function ContenidoNavegacion({
               {seccion.titulo}
             </p>
             <ul className="space-y-1">
-              {seccion.elementos.map((elemento) => {
-                const Icono = elemento.icono
+              {seccion.elementos
+                .filter((elemento) => elemento.ruta !== '/usuarios' || isAdmin)
+                .map((elemento) => {
+                  const Icono = elemento.icono
 
-                return (
-                  <li key={elemento.ruta}>
-                    <NavLink
-                      to={elemento.ruta}
-                      end={elemento.ruta === '/'}
-                      onClick={alNavegar}
-                      className={({ isActive }) =>
-                        cn(
-                          'group flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
-                          isActive &&
-                            'bg-sidebar-accent text-sidebar-accent-foreground',
-                        )
-                      }
-                    >
-                      {({ isActive }) => (
-                        <>
-                          <Icono
-                            aria-hidden="true"
-                            className={cn(
-                              'size-4.5 shrink-0',
-                              isActive && 'text-sidebar-primary',
-                            )}
-                          />
-                          <span>{elemento.titulo}</span>
-                          {isActive ? (
-                            <span
+                  return (
+                    <li key={elemento.ruta}>
+                      <NavLink
+                        to={elemento.ruta}
+                        end={elemento.ruta === '/'}
+                        onClick={alNavegar}
+                        className={({ isActive }) =>
+                          cn(
+                            'group flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
+                            isActive &&
+                              'bg-sidebar-accent text-sidebar-accent-foreground',
+                          )
+                        }
+                      >
+                        {({ isActive }) => (
+                          <>
+                            <Icono
                               aria-hidden="true"
-                              className="ms-auto size-1.5 rounded-full bg-sidebar-primary"
+                              className={cn(
+                                'size-4.5 shrink-0',
+                                isActive && 'text-sidebar-primary',
+                              )}
                             />
-                          ) : null}
-                        </>
-                      )}
-                    </NavLink>
-                  </li>
-                )
-              })}
+                            <span>{elemento.titulo}</span>
+                            {isActive ? (
+                              <span
+                                aria-hidden="true"
+                                className="ms-auto size-1.5 rounded-full bg-sidebar-primary"
+                              />
+                            ) : null}
+                          </>
+                        )}
+                      </NavLink>
+                    </li>
+                  )
+                })}
             </ul>
           </div>
         ))}
@@ -94,6 +100,7 @@ function ContenidoNavegacion({
 
 export function AppLayout() {
   const [menuAbierto, setMenuAbierto] = useState(false)
+  const { user, access, isAdmin, signOut } = useAuth()
   const { pathname } = useLocation()
   const paginaActual =
     elementosNavegacion.find((elemento) => elemento.ruta === pathname)?.titulo ??
@@ -113,7 +120,7 @@ export function AppLayout() {
           aria-label="Navegación principal"
           className="fixed inset-y-0 start-0 z-30 hidden w-72 flex-col border-e bg-sidebar lg:flex"
         >
-          <ContenidoNavegacion />
+          <ContenidoNavegacion isAdmin={isAdmin} />
         </aside>
 
         <DialogPrimitive.Portal>
@@ -127,6 +134,7 @@ export function AppLayout() {
             </DialogPrimitive.Description>
             <aside aria-label="Navegación principal móvil" className="contents">
               <ContenidoNavegacion
+                isAdmin={isAdmin}
                 alNavegar={() => setMenuAbierto(false)}
                 cerrarMenu={() => setMenuAbierto(false)}
               />
@@ -150,9 +158,25 @@ export function AppLayout() {
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{paginaActual}</p>
                 <p className="truncate text-xs text-muted-foreground">
-                  Administración
+                  {access?.organizationName}
                 </p>
               </div>
+
+              <div className="ms-auto hidden min-w-0 text-right sm:block">
+                <p className="truncate text-xs font-medium">{user?.email}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {access?.roles.join(' · ')}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Cerrar sesión"
+                onClick={() => void signOut()}
+              >
+                <LogOut aria-hidden="true" />
+              </Button>
             </div>
           </header>
 
