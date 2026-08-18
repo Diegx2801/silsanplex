@@ -8,8 +8,9 @@ seguridad y la consistencia de los datos.
 
 ## Estado actual
 
-El proyecto se encuentra en su etapa inicial. Actualmente solo está preparada
-la base del frontend con React, TypeScript y Vite.
+El proyecto se encuentra en su etapa inicial. Actualmente está preparada la
+base del frontend con React, TypeScript y Vite. La carpeta reservada para
+Supabase todavía no contiene una implementación.
 
 La integración con Supabase y los módulos funcionales se implementarán en
 fases posteriores.
@@ -18,14 +19,15 @@ fases posteriores.
 
 ```text
 silsanplex/
+├── backend/
+│   └── supabase/  Estructura reservada; aún sin inicializar
 ├── frontend/      Aplicación web
 ├── CODEX.md       Contexto y reglas de desarrollo
 ├── .gitignore
 └── README.md
 ```
 
-Las carpetas de backend y documentación adicional se crearán cuando sean
-necesarias.
+La documentación adicional se incorporará cuando sea necesaria.
 
 ## Frontend
 

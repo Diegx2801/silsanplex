@@ -13,7 +13,7 @@ información tiene prioridad sobre la cantidad de pantallas implementadas.
 
 ## 2. Estado actual
 
-El repositorio está en una etapa inicial. Solo existe la base del frontend con:
+El repositorio está en una etapa inicial. Existe la base del frontend con:
 
 ```text
 React
@@ -24,6 +24,9 @@ Vite
 Supabase se implementará posteriormente. Hasta recibir una indicación expresa,
 no se debe inicializar su CLI, crear migraciones ni programar autenticación,
 RLS, funciones PostgreSQL o Edge Functions.
+
+`backend/supabase/` existe únicamente como carpeta reservada y versionable. No
+representa una instalación ni una conexión con un proyecto de Supabase.
 
 Tampoco se debe comenzar prematuramente con productos, login o dashboard.
 
@@ -105,8 +108,9 @@ silsanplex/
 └── CODEX.md
 ```
 
-`backend/` y `docs/` se crearán cuando exista contenido real. No crear árboles
-de carpetas vacíos ni mezclar código frontend y backend.
+`backend/supabase/` está reservado mediante un archivo marcador. `docs/` se
+creará cuando exista contenido real. No crear otros árboles de carpetas vacíos
+ni mezclar código frontend y backend.
 
 ## 6. Arquitectura del frontend
 
