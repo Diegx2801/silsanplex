@@ -54,9 +54,10 @@ const modulos = [
   {
     nombre: 'Ventas',
     detalle: 'Clientes, cotizaciones, pedidos y despacho',
-    estado: 'Planificado',
-    tono: 'pendiente',
+    estado: 'En progreso',
+    tono: 'revision',
     icono: ReceiptText,
+    ruta: '/ventas',
   },
 ] as const
 
