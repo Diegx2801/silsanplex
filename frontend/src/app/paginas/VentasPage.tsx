@@ -6,6 +6,7 @@ import {
   Plus,
   Search,
   Send,
+  ShoppingCart,
   UsersRound,
 } from 'lucide-react'
 import {
@@ -22,7 +23,9 @@ import { useClientesTemporales } from '@/modulos/clientes/estado/useClientesTemp
 import { useProductosTemporales } from '@/modulos/productos/estado/useProductosTemporales'
 import { DialogoConfirmacionEmision } from '@/modulos/ventas/componentes/DialogoConfirmacionEmision'
 import { DialogoCotizacion } from '@/modulos/ventas/componentes/DialogoCotizacion'
+import { PanelOperacionesVenta } from '@/modulos/ventas/componentes/PanelOperacionesVenta'
 import { useCotizacionesTemporales } from '@/modulos/ventas/estado/useCotizacionesTemporales'
+import { useOperacionesVentaTemporales } from '@/modulos/ventas/estado/useOperacionesVentaTemporales'
 import {
   calcularTotalesCotizacion,
   type Cotizacion,
@@ -93,8 +96,23 @@ export function VentasPage() {
     () => productos.filter((producto) => producto.activo),
     [productos],
   )
-  const { cotizaciones, guardarCotizacion, emitirCotizacion } =
-    useCotizacionesTemporales(clientes, productos)
+  const {
+    cotizaciones,
+    guardarCotizacion,
+    emitirCotizacion,
+    aceptarCotizacion,
+  } = useCotizacionesTemporales(clientes, productos)
+  const {
+    pedidos,
+    ventas,
+    crearPedido,
+    registrarVenta,
+    despacharVenta,
+  } = useOperacionesVentaTemporales({
+    cotizaciones,
+    productos,
+    aceptarCotizacion,
+  })
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
   const [cotizacionSeleccionada, setCotizacionSeleccionada] =
@@ -171,6 +189,11 @@ export function VentasPage() {
     if (!error) setCotizacionPorEmitir(null)
   }
 
+  const confirmarPedido = (cotizacion: Cotizacion) => {
+    const error = crearPedido(cotizacion.id)
+    setMensaje(error ?? `${cotizacion.numero} convertida en pedido correctamente.`)
+  }
+
   const metricas = [
     { etiqueta: 'Borradores', valor: borradores, icono: FilePenLine },
     { etiqueta: 'Cotizaciones emitidas', valor: emitidas, icono: FileCheck2 },
@@ -189,8 +212,8 @@ export function VentasPage() {
             Ventas
           </h1>
           <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
-            Prepara cotizaciones con vigencia, precios e IGV. Emitirlas no mueve
-            inventario ni genera todavía una venta.
+            Convierte propuestas aceptadas en pedidos y ventas trazables. El
+            inventario se descuenta únicamente al confirmar el despacho.
           </p>
         </div>
         <Button
@@ -346,6 +369,10 @@ export function VentasPage() {
                           <Send aria-hidden="true" /> Emitir
                         </Button>
                       </div>
+                    ) : estadoVisible(cotizacion) === 'emitida' ? (
+                      <Button type="button" className="mt-4" onClick={() => confirmarPedido(cotizacion)}>
+                        <ShoppingCart aria-hidden="true" /> Crear pedido
+                      </Button>
                     ) : null}
                   </article>
                 )
@@ -394,8 +421,16 @@ export function VentasPage() {
                                 <Send aria-hidden="true" />
                               </Button>
                             </div>
+                          ) : estadoVisible(cotizacion) === 'emitida' ? (
+                            <div className="flex justify-end">
+                              <Button type="button" variant="outline" size="sm" onClick={() => confirmarPedido(cotizacion)}>
+                                <ShoppingCart aria-hidden="true" /> Crear pedido
+                              </Button>
+                            </div>
                           ) : (
-                            <span className="block text-end text-xs text-muted-foreground">Bloqueada</span>
+                            <span className="block text-end text-xs text-muted-foreground">
+                              {cotizacion.estado === 'aceptada' ? 'Pedido creado' : 'Sin acciones'}
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -407,6 +442,15 @@ export function VentasPage() {
           </>
         )}
       </section>
+
+      <PanelOperacionesVenta
+        pedidos={pedidos}
+        ventas={ventas}
+        productos={productos}
+        alRegistrarVenta={registrarVenta}
+        alDespacharVenta={despacharVenta}
+        alNotificar={setMensaje}
+      />
 
       {dialogoAbierto ? (
         <DialogoCotizacion

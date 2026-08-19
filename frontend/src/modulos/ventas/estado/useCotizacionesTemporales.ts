@@ -93,5 +93,30 @@ export function useCotizacionesTemporales(
     return undefined
   }
 
-  return { cotizaciones, guardarCotizacion, emitirCotizacion }
+  const aceptarCotizacion = (cotizacionId: string) => {
+    const cotizacion = cotizaciones.find((item) => item.id === cotizacionId)
+    if (!cotizacion || cotizacion.estado !== 'emitida') {
+      return 'La cotización ya no está disponible para crear un pedido'
+    }
+
+    persistir(
+      cotizaciones.map((item) =>
+        item.id === cotizacion.id
+          ? {
+              ...item,
+              estado: 'aceptada' as const,
+              fechaCambioEstado: new Date().toISOString(),
+            }
+          : item,
+      ),
+    )
+    return undefined
+  }
+
+  return {
+    cotizaciones,
+    guardarCotizacion,
+    emitirCotizacion,
+    aceptarCotizacion,
+  }
 }
