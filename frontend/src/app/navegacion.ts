@@ -1,6 +1,7 @@
 import {
   Boxes,
   ChartNoAxesCombined,
+  ContactRound,
   House,
   PackageSearch,
   ReceiptText,
@@ -55,6 +56,12 @@ export const seccionesNavegacion: SeccionNavegacion[] = [
         ruta: '/compras',
         descripcion: 'Proveedores, órdenes y recepciones',
         icono: ShoppingCart,
+      },
+      {
+        titulo: 'Clientes',
+        ruta: '/clientes',
+        descripcion: 'Datos fiscales y de contacto',
+        icono: ContactRound,
       },
       {
         titulo: 'Ventas',

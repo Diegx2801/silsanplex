@@ -15,6 +15,10 @@ const rutasModulos = elementosNavegacion
     (elemento) =>
       elemento.ruta !== '/' &&
       elemento.ruta !== '/productos' &&
+      elemento.ruta !== '/inventario' &&
+      elemento.ruta !== '/compras' &&
+      elemento.ruta !== '/clientes' &&
+      elemento.ruta !== '/ventas' &&
       elemento.ruta !== '/usuarios',
   )
   .map((elemento) => ({
@@ -69,6 +73,40 @@ export const router = createBrowserRouter([
           )
 
           return { Component: ImportarProductosPage }
+        },
+      },
+      {
+        path: 'inventario',
+        lazy: async () => {
+          const { InventarioPage } = await import(
+            '@/app/paginas/InventarioPage'
+          )
+
+          return { Component: InventarioPage }
+        },
+      },
+      {
+        path: 'compras',
+        lazy: async () => {
+          const { ComprasPage } = await import('@/app/paginas/ComprasPage')
+
+          return { Component: ComprasPage }
+        },
+      },
+      {
+        path: 'clientes',
+        lazy: async () => {
+          const { ClientesPage } = await import('@/app/paginas/ClientesPage')
+
+          return { Component: ClientesPage }
+        },
+      },
+      {
+        path: 'ventas',
+        lazy: async () => {
+          const { VentasPage } = await import('@/app/paginas/VentasPage')
+
+          return { Component: VentasPage }
         },
       },
       {

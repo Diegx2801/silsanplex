@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   Boxes,
+  ContactRound,
   Database,
   FileSpreadsheet,
   PackagePlus,
@@ -29,23 +30,34 @@ const modulos = [
   {
     nombre: 'Inventario',
     detalle: 'Almacenes, ubicaciones, lotes y movimientos',
-    estado: 'Por definir',
-    tono: 'revision',
+    estado: 'Disponible',
+    tono: 'listo',
     icono: Boxes,
+    ruta: '/inventario',
   },
   {
     nombre: 'Compras',
     detalle: 'Proveedores, órdenes y recepciones',
-    estado: 'Planificado',
-    tono: 'pendiente',
+    estado: 'Disponible',
+    tono: 'listo',
     icono: ShoppingCart,
+    ruta: '/compras',
+  },
+  {
+    nombre: 'Clientes',
+    detalle: 'Datos fiscales y de contacto para operaciones comerciales',
+    estado: 'Disponible',
+    tono: 'listo',
+    icono: ContactRound,
+    ruta: '/clientes',
   },
   {
     nombre: 'Ventas',
     detalle: 'Clientes, cotizaciones, pedidos y despacho',
-    estado: 'Planificado',
-    tono: 'pendiente',
+    estado: 'En progreso',
+    tono: 'revision',
     icono: ReceiptText,
+    ruta: '/ventas',
   },
 ] as const
 
