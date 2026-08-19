@@ -30,7 +30,7 @@ export const seccionesNavegacion: SeccionNavegacion[] = [
       {
         titulo: 'Inicio',
         ruta: '/',
-        descripcion: 'Estado y preparación del sistema',
+        descripcion: 'Resumen y accesos administrativos',
         icono: House,
       },
     ],

@@ -46,6 +46,28 @@ export interface Producto extends DatosProducto {
   id: string
 }
 
+export interface ResumenProductos {
+  total: number
+  activos: number
+  inactivos: number
+}
+
+export function resumirProductos(
+  productos: readonly Producto[],
+): ResumenProductos {
+  let activos = 0
+
+  for (const producto of productos) {
+    if (producto.activo) activos += 1
+  }
+
+  return {
+    total: productos.length,
+    activos,
+    inactivos: productos.length - activos,
+  }
+}
+
 export const productoInicial: DatosProducto = {
   codigo: '',
   descripcion: '',

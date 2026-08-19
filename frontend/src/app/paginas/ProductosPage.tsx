@@ -13,7 +13,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { DialogoProducto } from '@/modulos/productos/componentes/DialogoProducto'
@@ -69,9 +69,12 @@ function ContenidoVacio({ hayProductos, alRegistrar }: ContenidoVacioProps) {
 export function ProductosPage() {
   const { productos, guardarProducto, cambiarEstado } =
     useProductosTemporales()
+  const [parametros, setParametros] = useSearchParams()
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
-  const [formularioAbierto, setFormularioAbierto] = useState(false)
+  const [formularioAbierto, setFormularioAbierto] = useState(
+    () => parametros.get('nuevo') === '1',
+  )
   const [productoSeleccionado, setProductoSeleccionado] =
     useState<Producto | null>(null)
   const [mensaje, setMensaje] = useState('')
@@ -137,6 +140,16 @@ export function ProductosPage() {
         ? 'El producto quedó inactivo temporalmente.'
         : 'El producto quedó activo temporalmente.',
     )
+  }
+
+  const cambiarAperturaFormulario = (abierto: boolean) => {
+    setFormularioAbierto(abierto)
+
+    if (!abierto && parametros.has('nuevo')) {
+      const siguientesParametros = new URLSearchParams(parametros)
+      siguientesParametros.delete('nuevo')
+      setParametros(siguientesParametros, { replace: true })
+    }
   }
 
   return (
@@ -402,7 +415,7 @@ export function ProductosPage() {
           key={productoSeleccionado?.id ?? 'nuevo'}
           abierto={formularioAbierto}
           producto={productoSeleccionado}
-          alCambiarApertura={setFormularioAbierto}
+          alCambiarApertura={cambiarAperturaFormulario}
           alGuardar={guardar}
           alRestaurarFoco={() => ultimoDisparador.current?.focus()}
         />
