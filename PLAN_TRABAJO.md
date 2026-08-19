@@ -18,7 +18,7 @@ Este calendario asume una línea principal de desarrollo. Cada tarea se consider
 - Supabase incorporado con migraciones, funciones y pruebas iniciales.
 - Autenticación y administración multiempresa de usuarios implementadas inicialmente.
 - Catálogo temporal de productos, importación y dashboard administrativo inicial disponibles.
-- Inventario, compras, ventas, caja y reportes todavía no tienen flujo funcional completo.
+- Inventario y compras cuentan con un primer flujo local; ventas, caja y reportes todavía no tienen flujo funcional completo.
 
 ## Semana 1 — Alineación y estabilización (19–21 de agosto)
 
@@ -34,6 +34,7 @@ Este calendario asume una línea principal de desarrollo. Cada tarea se consider
 - [x] Implementar ficha de detalle y confirmación segura de estado del producto.
 - [x] Exportar a Excel el catálogo filtrado con resumen operativo.
 - [x] Construir el MVP local de inventario con movimientos y stock calculado.
+- [x] Implementar proveedores, compras multiproducto y recepción local conectada a inventario.
 - [ ] Crear la matriz de trazabilidad REQ-001 a REQ-088.
 
 ### Jueves 20

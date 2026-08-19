@@ -29,16 +29,18 @@ const modulos = [
   {
     nombre: 'Inventario',
     detalle: 'Almacenes, ubicaciones, lotes y movimientos',
-    estado: 'Por definir',
-    tono: 'revision',
+    estado: 'Disponible',
+    tono: 'listo',
     icono: Boxes,
+    ruta: '/inventario',
   },
   {
     nombre: 'Compras',
     detalle: 'Proveedores, órdenes y recepciones',
-    estado: 'Planificado',
-    tono: 'pendiente',
+    estado: 'Disponible',
+    tono: 'listo',
     icono: ShoppingCart,
+    ruta: '/compras',
   },
   {
     nombre: 'Ventas',

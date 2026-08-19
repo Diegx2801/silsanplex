@@ -16,6 +16,7 @@ const rutasModulos = elementosNavegacion
       elemento.ruta !== '/' &&
       elemento.ruta !== '/productos' &&
       elemento.ruta !== '/inventario' &&
+      elemento.ruta !== '/compras' &&
       elemento.ruta !== '/usuarios',
   )
   .map((elemento) => ({
@@ -80,6 +81,14 @@ export const router = createBrowserRouter([
           )
 
           return { Component: InventarioPage }
+        },
+      },
+      {
+        path: 'compras',
+        lazy: async () => {
+          const { ComprasPage } = await import('@/app/paginas/ComprasPage')
+
+          return { Component: ComprasPage }
         },
       },
       {
