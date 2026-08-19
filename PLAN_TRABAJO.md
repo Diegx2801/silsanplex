@@ -35,6 +35,7 @@ Este calendario asume una línea principal de desarrollo. Cada tarea se consider
 - [x] Exportar a Excel el catálogo filtrado con resumen operativo.
 - [x] Construir el MVP local de inventario con movimientos y stock calculado.
 - [x] Implementar proveedores, compras multiproducto y recepción local conectada a inventario.
+- [x] Implementar el maestro local de clientes para futuras operaciones comerciales.
 - [ ] Crear la matriz de trazabilidad REQ-001 a REQ-088.
 
 ### Jueves 20

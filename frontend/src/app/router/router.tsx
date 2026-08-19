@@ -17,6 +17,7 @@ const rutasModulos = elementosNavegacion
       elemento.ruta !== '/productos' &&
       elemento.ruta !== '/inventario' &&
       elemento.ruta !== '/compras' &&
+      elemento.ruta !== '/clientes' &&
       elemento.ruta !== '/usuarios',
   )
   .map((elemento) => ({
@@ -89,6 +90,14 @@ export const router = createBrowserRouter([
           const { ComprasPage } = await import('@/app/paginas/ComprasPage')
 
           return { Component: ComprasPage }
+        },
+      },
+      {
+        path: 'clientes',
+        lazy: async () => {
+          const { ClientesPage } = await import('@/app/paginas/ClientesPage')
+
+          return { Component: ClientesPage }
         },
       },
       {

@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   Boxes,
+  ContactRound,
   Database,
   FileSpreadsheet,
   PackagePlus,
@@ -41,6 +42,14 @@ const modulos = [
     tono: 'listo',
     icono: ShoppingCart,
     ruta: '/compras',
+  },
+  {
+    nombre: 'Clientes',
+    detalle: 'Datos fiscales y de contacto para operaciones comerciales',
+    estado: 'Disponible',
+    tono: 'listo',
+    icono: ContactRound,
+    ruta: '/clientes',
   },
   {
     nombre: 'Ventas',
