@@ -1,0 +1,291 @@
+import { zodResolver } from '@hookform/resolvers/zod'
+import { ArrowDownToLine, ArrowUpFromLine, X } from 'lucide-react'
+import { Dialog as DialogPrimitive } from 'radix-ui'
+import { useMemo } from 'react'
+import { useForm } from 'react-hook-form'
+
+import { Button } from '@/components/ui/button'
+import {
+  esquemaDatosMovimientoInventario,
+  movimientoEsSalida,
+  tiposMovimientoInventario,
+  type DatosMovimientoInventario,
+} from '@/modulos/inventario/modelo/inventario'
+import type { Producto } from '@/modulos/productos/modelo/producto'
+
+const hoy = () => new Date().toISOString().slice(0, 10)
+
+interface DialogoMovimientoInventarioProps {
+  abierto: boolean
+  productos: readonly Producto[]
+  almacenes: readonly string[]
+  alCambiarApertura: (abierto: boolean) => void
+  alGuardar: (datos: DatosMovimientoInventario) => string | undefined
+  alRestaurarFoco: () => void
+}
+
+export function DialogoMovimientoInventario({
+  abierto,
+  productos,
+  almacenes,
+  alCambiarApertura,
+  alGuardar,
+  alRestaurarFoco,
+}: DialogoMovimientoInventarioProps) {
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm<DatosMovimientoInventario>({
+    resolver: zodResolver(esquemaDatosMovimientoInventario),
+    defaultValues: {
+      productoId: productos[0]?.id ?? '',
+      tipo: 'entrada',
+      cantidad: '',
+      almacen: almacenes[0] ?? 'Almacén principal',
+      lote: '',
+      fechaVencimiento: '',
+      fechaOperacion: hoy(),
+      motivo: '',
+    },
+  })
+  const productoId = watch('productoId')
+  const tipo = watch('tipo')
+  const producto = useMemo(
+    () => productos.find((item) => item.id === productoId),
+    [productoId, productos],
+  )
+  const esSalida = movimientoEsSalida(tipo)
+
+  const guardar = (datos: DatosMovimientoInventario) => {
+    const error = alGuardar(datos)
+    if (error) {
+      setError(error.includes('lote') ? 'lote' : 'cantidad', { message: error })
+      return
+    }
+
+    alCambiarApertura(false)
+  }
+
+  return (
+    <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Content
+          className="fixed start-1/2 top-1/2 z-50 max-h-[92svh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background shadow-xl outline-none"
+          onCloseAutoFocus={(evento) => {
+            evento.preventDefault()
+            alRestaurarFoco()
+          }}
+        >
+          <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7">
+            <div>
+              <DialogPrimitive.Title className="text-xl font-semibold tracking-[-0.025em]">
+                Registrar movimiento
+              </DialogPrimitive.Title>
+              <DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">
+                La existencia se actualizará desde este movimiento y quedará en
+                el historial de la sesión.
+              </DialogPrimitive.Description>
+            </div>
+            <DialogPrimitive.Close asChild>
+              <button
+                type="button"
+                aria-label="Cerrar movimiento"
+                className="grid size-9 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <X aria-hidden="true" className="size-5" />
+              </button>
+            </DialogPrimitive.Close>
+          </header>
+
+          <form
+            id="formulario-movimiento-inventario"
+            className="px-5 py-6 sm:px-7"
+            onSubmit={handleSubmit(guardar)}
+          >
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div>
+                <label htmlFor="tipo-movimiento" className="field-label">
+                  Tipo de movimiento *
+                </label>
+                <select
+                  id="tipo-movimiento"
+                  className="field-control"
+                  {...register('tipo')}
+                >
+                  {tiposMovimientoInventario.map((opcion) => (
+                    <option key={opcion.valor} value={opcion.valor}>
+                      {opcion.etiqueta}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="fecha-operacion" className="field-label">
+                  Fecha de operación *
+                </label>
+                <input
+                  id="fecha-operacion"
+                  type="date"
+                  className="field-control"
+                  aria-invalid={Boolean(errors.fechaOperacion)}
+                  {...register('fechaOperacion')}
+                />
+                {errors.fechaOperacion ? (
+                  <p className="field-error">{errors.fechaOperacion.message}</p>
+                ) : null}
+              </div>
+
+              <div className="sm:col-span-2">
+                <label htmlFor="producto-movimiento" className="field-label">
+                  Producto *
+                </label>
+                <select
+                  id="producto-movimiento"
+                  className="field-control"
+                  aria-invalid={Boolean(errors.productoId)}
+                  {...register('productoId')}
+                >
+                  {productos.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.codigo} · {item.descripcion}
+                    </option>
+                  ))}
+                </select>
+                {errors.productoId ? (
+                  <p className="field-error">{errors.productoId.message}</p>
+                ) : null}
+              </div>
+
+              <div>
+                <label htmlFor="cantidad-movimiento" className="field-label">
+                  Cantidad *
+                </label>
+                <input
+                  id="cantidad-movimiento"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="0"
+                  className="field-control"
+                  aria-invalid={Boolean(errors.cantidad)}
+                  {...register('cantidad')}
+                />
+                {errors.cantidad ? (
+                  <p className="field-error">{errors.cantidad.message}</p>
+                ) : (
+                  <p className="field-help">
+                    {producto?.unidadMedida || 'Unidades'} · máximo 3 decimales
+                  </p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="almacen-movimiento" className="field-label">
+                  Almacén *
+                </label>
+                <input
+                  id="almacen-movimiento"
+                  list="almacenes-conocidos"
+                  autoComplete="off"
+                  className="field-control"
+                  aria-invalid={Boolean(errors.almacen)}
+                  {...register('almacen')}
+                />
+                <datalist id="almacenes-conocidos">
+                  {almacenes.map((almacen) => (
+                    <option key={almacen} value={almacen} />
+                  ))}
+                </datalist>
+                {errors.almacen ? (
+                  <p className="field-error">{errors.almacen.message}</p>
+                ) : null}
+              </div>
+
+              <div>
+                <label htmlFor="lote-movimiento" className="field-label">
+                  Lote {producto?.controlLote ? '*' : ''}
+                </label>
+                <input
+                  id="lote-movimiento"
+                  autoComplete="off"
+                  placeholder={producto?.controlLote ? 'Obligatorio' : 'Opcional'}
+                  className="field-control"
+                  aria-invalid={Boolean(errors.lote)}
+                  {...register('lote')}
+                />
+                {errors.lote ? (
+                  <p className="field-error">{errors.lote.message}</p>
+                ) : null}
+              </div>
+              <div>
+                <label htmlFor="vencimiento-movimiento" className="field-label">
+                  Fecha de vencimiento
+                </label>
+                <input
+                  id="vencimiento-movimiento"
+                  type="date"
+                  className="field-control"
+                  {...register('fechaVencimiento')}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label htmlFor="motivo-movimiento" className="field-label">
+                  Motivo o referencia *
+                </label>
+                <textarea
+                  id="motivo-movimiento"
+                  rows={3}
+                  placeholder="Ej. Recepción de compra, despacho o corrección de conteo"
+                  className="field-control py-2"
+                  aria-invalid={Boolean(errors.motivo)}
+                  {...register('motivo')}
+                />
+                {errors.motivo ? (
+                  <p className="field-error">{errors.motivo.message}</p>
+                ) : null}
+              </div>
+            </div>
+
+            <div
+              className={`mt-6 flex items-start gap-3 border px-4 py-3 text-sm leading-6 ${
+                esSalida
+                  ? 'border-[#d9c7a3] bg-[#fbf6e9] text-[#6b4b12]'
+                  : 'border-border bg-muted/35 text-muted-foreground'
+              }`}
+            >
+              {esSalida ? (
+                <ArrowUpFromLine aria-hidden="true" className="mt-1 size-4 shrink-0" />
+              ) : (
+                <ArrowDownToLine aria-hidden="true" className="mt-1 size-4 shrink-0 text-primary" />
+              )}
+              <p>
+                {esSalida
+                  ? 'La salida se rechazará si supera la existencia disponible en el almacén y lote indicados.'
+                  : 'La entrada incrementará la existencia del producto en el almacén indicado.'}
+              </p>
+            </div>
+          </form>
+
+          <footer className="flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
+            <DialogPrimitive.Close asChild>
+              <Button type="button" variant="outline" size="lg">
+                Cancelar
+              </Button>
+            </DialogPrimitive.Close>
+            <Button
+              type="submit"
+              form="formulario-movimiento-inventario"
+              size="lg"
+              disabled={isSubmitting}
+            >
+              Registrar movimiento
+            </Button>
+          </footer>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  )
+}

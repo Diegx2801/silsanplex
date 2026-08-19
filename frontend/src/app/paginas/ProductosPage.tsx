@@ -1,10 +1,12 @@
 import {
   CirclePower,
+  Download,
+  Eye,
   FileSpreadsheet,
+  LoaderCircle,
   PackageSearch,
   Pencil,
   Plus,
-  Search,
 } from 'lucide-react'
 import {
   type MouseEvent as ReactMouseEvent,
@@ -16,14 +18,23 @@ import {
 import { Link, useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { DetalleProducto } from '@/modulos/productos/componentes/DetalleProducto'
+import { DialogoConfirmacionEstado } from '@/modulos/productos/componentes/DialogoConfirmacionEstado'
 import { DialogoProducto } from '@/modulos/productos/componentes/DialogoProducto'
+import { FiltrosProductos } from '@/modulos/productos/componentes/FiltrosProductos'
+import { PaginacionProductos } from '@/modulos/productos/componentes/PaginacionProductos'
 import { useProductosTemporales } from '@/modulos/productos/estado/useProductosTemporales'
+import {
+  consultarProductos,
+  obtenerOpcionesProducto,
+  paginarProductos,
+  type FiltroEstadoProducto,
+  type OrdenProductos,
+} from '@/modulos/productos/modelo/consultaProductos'
 import type {
   DatosProducto,
   Producto,
 } from '@/modulos/productos/modelo/producto'
-
-type FiltroEstado = 'todos' | 'activos' | 'inactivos'
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', {
   style: 'currency',
@@ -71,41 +82,78 @@ export function ProductosPage() {
     useProductosTemporales()
   const [parametros, setParametros] = useSearchParams()
   const [busqueda, setBusqueda] = useState('')
-  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
+  const [filtroEstado, setFiltroEstado] =
+    useState<FiltroEstadoProducto>('todos')
+  const [filtroCategoria, setFiltroCategoria] = useState('')
+  const [filtroLaboratorio, setFiltroLaboratorio] = useState('')
+  const [orden, setOrden] = useState<OrdenProductos>('codigo-asc')
+  const [pagina, setPagina] = useState(1)
+  const [tamanioPagina, setTamanioPagina] = useState(10)
   const [formularioAbierto, setFormularioAbierto] = useState(
     () => parametros.get('nuevo') === '1',
   )
   const [productoSeleccionado, setProductoSeleccionado] =
     useState<Producto | null>(null)
+  const [productoDetalleId, setProductoDetalleId] = useState<string | null>(null)
+  const [productoCambioEstadoId, setProductoCambioEstadoId] = useState<
+    string | null
+  >(null)
   const [mensaje, setMensaje] = useState('')
-  const ultimoDisparador = useRef<HTMLButtonElement | null>(null)
+  const [exportando, setExportando] = useState(false)
+  const disparadorFormulario = useRef<HTMLButtonElement | null>(null)
+  const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
+  const disparadorEstado = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
 
+  const productoDetalle =
+    productos.find((producto) => producto.id === productoDetalleId) ?? null
+  const productoCambioEstado =
+    productos.find((producto) => producto.id === productoCambioEstadoId) ?? null
+
+  const categorias = useMemo(
+    () => obtenerOpcionesProducto(productos, 'categoria'),
+    [productos],
+  )
+  const laboratorios = useMemo(
+    () => obtenerOpcionesProducto(productos, 'laboratorio'),
+    [productos],
+  )
   const productosFiltrados = useMemo(() => {
-    const termino = busquedaDiferida.trim().toLocaleLowerCase('es-PE')
-
-    return productos.filter((producto) => {
-      const coincideEstado =
-        filtroEstado === 'todos' ||
-        (filtroEstado === 'activos' && producto.activo) ||
-        (filtroEstado === 'inactivos' && !producto.activo)
-      const coincideBusqueda =
-        !termino ||
-        [
-          producto.codigo,
-          producto.codigoBarras,
-          producto.descripcion,
-          producto.laboratorio,
-        ].some((valor) =>
-          valor.toLocaleLowerCase('es-PE').includes(termino),
-        )
-
-      return coincideEstado && coincideBusqueda
+    return consultarProductos(productos, {
+      busqueda: busquedaDiferida,
+      estado: filtroEstado,
+      categoria: filtroCategoria,
+      laboratorio: filtroLaboratorio,
+      orden,
     })
-  }, [busquedaDiferida, filtroEstado, productos])
+  }, [
+    busquedaDiferida,
+    filtroCategoria,
+    filtroEstado,
+    filtroLaboratorio,
+    orden,
+    productos,
+  ])
+  const paginaProductos = useMemo(
+    () => paginarProductos(productosFiltrados, pagina, tamanioPagina),
+    [pagina, productosFiltrados, tamanioPagina],
+  )
+  const cantidadFiltrosActivos =
+    Number(Boolean(busqueda.trim())) +
+    Number(filtroEstado !== 'todos') +
+    Number(Boolean(filtroCategoria)) +
+    Number(Boolean(filtroLaboratorio))
+
+  const limpiarFiltros = () => {
+    setBusqueda('')
+    setFiltroEstado('todos')
+    setFiltroCategoria('')
+    setFiltroLaboratorio('')
+    setPagina(1)
+  }
 
   const abrirRegistro = (evento: ReactMouseEvent<HTMLButtonElement>) => {
-    ultimoDisparador.current = evento.currentTarget
+    disparadorFormulario.current = evento.currentTarget
     setProductoSeleccionado(null)
     setFormularioAbierto(true)
   }
@@ -114,7 +162,7 @@ export function ProductosPage() {
     producto: Producto,
     evento: ReactMouseEvent<HTMLButtonElement>,
   ) => {
-    ultimoDisparador.current = evento.currentTarget
+    disparadorFormulario.current = evento.currentTarget
     setProductoSeleccionado(producto)
     setFormularioAbierto(true)
   }
@@ -133,13 +181,63 @@ export function ProductosPage() {
     return error
   }
 
-  const alternarEstado = (producto: Producto) => {
-    cambiarEstado(producto.id)
+  const abrirDetalle = (
+    producto: Producto,
+    evento: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    disparadorDetalle.current = evento.currentTarget
+    setProductoDetalleId(producto.id)
+  }
+
+  const editarDesdeDetalle = () => {
+    if (!productoDetalle) return
+
+    disparadorFormulario.current = disparadorDetalle.current
+    setProductoSeleccionado(productoDetalle)
+    setProductoDetalleId(null)
+    setFormularioAbierto(true)
+  }
+
+  const solicitarCambioEstado = (
+    producto: Producto,
+    evento: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    disparadorEstado.current = evento.currentTarget
+    setProductoCambioEstadoId(producto.id)
+  }
+
+  const confirmarCambioEstado = () => {
+    if (!productoCambioEstado) return
+
+    cambiarEstado(productoCambioEstado.id)
     setMensaje(
-      producto.activo
+      productoCambioEstado.activo
         ? 'El producto quedó inactivo temporalmente.'
         : 'El producto quedó activo temporalmente.',
     )
+    setProductoCambioEstadoId(null)
+  }
+
+  const exportarCatalogo = async () => {
+    if (!productosFiltrados.length || exportando) return
+
+    setExportando(true)
+
+    try {
+      const { descargarCatalogoProductos } = await import(
+        '@/modulos/productos/servicios/exportadorProductos'
+      )
+      descargarCatalogoProductos(productosFiltrados)
+      setMensaje(
+        `Se exportaron ${productosFiltrados.length} ${
+          productosFiltrados.length === 1 ? 'producto' : 'productos'
+        } a Excel.`,
+      )
+    } catch {
+      setMensaje('No se pudo exportar el catálogo. Inténtalo nuevamente.')
+    } finally {
+      setExportando(false)
+    }
   }
 
   const cambiarAperturaFormulario = (abierto: boolean) => {
@@ -178,47 +276,37 @@ export function ProductosPage() {
         </div>
       </header>
 
-      <section
-        aria-label="Filtros de productos"
-        className="grid gap-4 md:grid-cols-[minmax(16rem,1fr)_13rem]"
-      >
-        <div>
-          <label htmlFor="buscar-productos" className="field-label">
-            Buscar
-          </label>
-          <div className="relative">
-            <Search
-              aria-hidden="true"
-              className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            />
-            <input
-              id="buscar-productos"
-              type="search"
-              value={busqueda}
-              onChange={(evento) => setBusqueda(evento.target.value)}
-              className="field-control ps-9"
-              placeholder="Código interno, barras, producto o laboratorio"
-            />
-          </div>
-        </div>
-        <div>
-          <label htmlFor="filtro-estado" className="field-label">
-            Estado
-          </label>
-          <select
-            id="filtro-estado"
-            value={filtroEstado}
-            onChange={(evento) =>
-              setFiltroEstado(evento.target.value as FiltroEstado)
-            }
-            className="field-control"
-          >
-            <option value="todos">Todos</option>
-            <option value="activos">Activos</option>
-            <option value="inactivos">Inactivos</option>
-          </select>
-        </div>
-      </section>
+      <FiltrosProductos
+        busqueda={busqueda}
+        estado={filtroEstado}
+        categoria={filtroCategoria}
+        laboratorio={filtroLaboratorio}
+        orden={orden}
+        categorias={categorias}
+        laboratorios={laboratorios}
+        cantidadActivos={cantidadFiltrosActivos}
+        alCambiarBusqueda={(valor) => {
+          setBusqueda(valor)
+          setPagina(1)
+        }}
+        alCambiarEstado={(valor) => {
+          setFiltroEstado(valor)
+          setPagina(1)
+        }}
+        alCambiarCategoria={(valor) => {
+          setFiltroCategoria(valor)
+          setPagina(1)
+        }}
+        alCambiarLaboratorio={(valor) => {
+          setFiltroLaboratorio(valor)
+          setPagina(1)
+        }}
+        alCambiarOrden={(valor) => {
+          setOrden(valor)
+          setPagina(1)
+        }}
+        alLimpiar={limpiarFiltros}
+      />
 
       <p role="status" aria-live="polite" className="sr-only">
         {mensaje}
@@ -240,14 +328,30 @@ export function ProductosPage() {
               {productosFiltrados.length} de {productos.length} productos visibles
             </p>
           </div>
-          <span className="font-mono text-xs tabular-nums text-muted-foreground">
-            SESIÓN LOCAL
-          </span>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+              SESIÓN LOCAL
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!productosFiltrados.length || exportando}
+              title={`Exportar ${productosFiltrados.length} productos filtrados`}
+              onClick={exportarCatalogo}
+            >
+              {exportando ? (
+                <LoaderCircle aria-hidden="true" className="animate-spin" />
+              ) : (
+                <Download aria-hidden="true" />
+              )}
+              {exportando ? 'Preparando…' : 'Exportar Excel'}
+            </Button>
+          </div>
         </div>
 
         <div className="divide-y md:hidden">
-          {productosFiltrados.length ? (
-            productosFiltrados.map((producto) => (
+          {paginaProductos.elementos.length ? (
+            paginaProductos.elementos.map((producto) => (
               <article key={producto.id} className="px-5 py-5">
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -278,6 +382,16 @@ export function ProductosPage() {
                 <div className="mt-5 grid grid-cols-2 gap-2 border-t pt-4">
                   <Button
                     type="button"
+                    variant="secondary"
+                    size="lg"
+                    className="col-span-2"
+                    onClick={(evento) => abrirDetalle(producto, evento)}
+                  >
+                    <Eye aria-hidden="true" />
+                    Ver detalle
+                  </Button>
+                  <Button
+                    type="button"
                     variant="outline"
                     size="lg"
                     onClick={(evento) => abrirEdicion(producto, evento)}
@@ -289,7 +403,9 @@ export function ProductosPage() {
                     type="button"
                     variant="outline"
                     size="lg"
-                    onClick={() => alternarEstado(producto)}
+                    onClick={(evento) =>
+                      solicitarCambioEstado(producto, evento)
+                    }
                   >
                     <CirclePower aria-hidden="true" />
                     {producto.activo ? 'Desactivar' : 'Activar'}
@@ -336,8 +452,8 @@ export function ProductosPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {productosFiltrados.length ? (
-                productosFiltrados.map((producto) => (
+              {paginaProductos.elementos.length ? (
+                paginaProductos.elementos.map((producto) => (
                   <tr key={producto.id} className="hover:bg-muted/35">
                     <td className="px-5 py-4 font-mono text-xs font-medium tabular-nums sm:px-6">
                       {producto.codigo}
@@ -371,6 +487,16 @@ export function ProductosPage() {
                           type="button"
                           variant="ghost"
                           size="icon"
+                          aria-label={`Ver detalle de ${producto.descripcion}`}
+                          title="Ver detalle"
+                          onClick={(evento) => abrirDetalle(producto, evento)}
+                        >
+                          <Eye aria-hidden="true" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
                           aria-label={`Editar ${producto.descripcion}`}
                           title="Editar producto"
                           onClick={(evento) => abrirEdicion(producto, evento)}
@@ -387,7 +513,9 @@ export function ProductosPage() {
                               ? 'Desactivar producto'
                               : 'Activar producto'
                           }
-                          onClick={() => alternarEstado(producto)}
+                          onClick={(evento) =>
+                            solicitarCambioEstado(producto, evento)
+                          }
                         >
                           <CirclePower aria-hidden="true" />
                         </Button>
@@ -408,6 +536,21 @@ export function ProductosPage() {
             </tbody>
           </table>
         </div>
+
+        <PaginacionProductos
+          inicio={paginaProductos.inicio}
+          fin={paginaProductos.fin}
+          totalFiltrado={productosFiltrados.length}
+          total={productos.length}
+          pagina={paginaProductos.pagina}
+          totalPaginas={paginaProductos.totalPaginas}
+          tamanioPagina={tamanioPagina}
+          alCambiarPagina={setPagina}
+          alCambiarTamanio={(valor) => {
+            setTamanioPagina(valor)
+            setPagina(1)
+          }}
+        />
       </section>
 
       {formularioAbierto ? (
@@ -417,7 +560,34 @@ export function ProductosPage() {
           producto={productoSeleccionado}
           alCambiarApertura={cambiarAperturaFormulario}
           alGuardar={guardar}
-          alRestaurarFoco={() => ultimoDisparador.current?.focus()}
+          alRestaurarFoco={() => disparadorFormulario.current?.focus()}
+        />
+      ) : null}
+
+      {productoDetalle ? (
+        <DetalleProducto
+          abierto={Boolean(productoDetalleId)}
+          producto={productoDetalle}
+          alCambiarApertura={(abierto) => {
+            if (!abierto) setProductoDetalleId(null)
+          }}
+          alEditar={editarDesdeDetalle}
+          alSolicitarCambioEstado={(evento) =>
+            solicitarCambioEstado(productoDetalle, evento)
+          }
+          alRestaurarFoco={() => disparadorDetalle.current?.focus()}
+        />
+      ) : null}
+
+      {productoCambioEstado ? (
+        <DialogoConfirmacionEstado
+          abierto={Boolean(productoCambioEstadoId)}
+          producto={productoCambioEstado}
+          alCambiarApertura={(abierto) => {
+            if (!abierto) setProductoCambioEstadoId(null)
+          }}
+          alConfirmar={confirmarCambioEstado}
+          alRestaurarFoco={() => disparadorEstado.current?.focus()}
         />
       ) : null}
     </div>
