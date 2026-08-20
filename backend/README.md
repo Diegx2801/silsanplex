@@ -2,6 +2,12 @@
 
 Supabase administra autenticación, datos multiempresa, RLS, funciones y auditoría.
 
+Durante el MVP, cada identidad puede tener una sola membresía activa. Una
+organización representa un cliente de la plataforma; sus administradores no
+pueden crear otras organizaciones. Los permisos efectivos se derivan de los
+roles en PostgreSQL y deben aplicarse también mediante RLS o RPC en cada módulo
+operativo que se incorpore.
+
 ## Desarrollo local
 
 1. Copiar `.env.example` como `.env.local` y definir una contraseña local de al menos 8 caracteres.
@@ -36,3 +42,35 @@ npm test
 ```
 
 Para cambios de autenticación también se debe validar el frontend con lint, pruebas, build y E2E.
+
+## E2E local de autenticación
+
+Las pruebas de Playwright requieren dos identidades confirmadas y separadas:
+un administrador y un miembro con rol `VENTAS`. No utilizan invitaciones ni
+Mailpit; su objetivo es validar sesiones y autorización con datos reproducibles.
+
+1. Añadir en `backend/.env.local` valores exclusivos de desarrollo para:
+   `E2E_ADMIN_EMAIL`, `E2E_ADMIN_PASSWORD`, `E2E_MEMBER_EMAIL` y
+   `E2E_MEMBER_PASSWORD`.
+2. Iniciar Supabase local y aplicar las migraciones.
+3. Desde `frontend/`, ejecutar:
+
+```bash
+npm run test:e2e:local
+```
+
+Ese comando ejecuta primero `backend/npm run e2e:prepare`, crea o actualiza
+ambas identidades en Supabase local, les asigna `ADMIN` y `VENTAS` en la
+organización configurada y genera `frontend/.env.e2e.local`. El archivo contiene
+credenciales locales, está ignorado por Git y no debe compartirse.
+
+El aprovisionamiento tiene una guardia estricta: solo admite
+`http://127.0.0.1:54321`, `localhost` o `::1` con ese puerto. Nunca debe usarse
+contra un proyecto Supabase remoto. Tampoco imprime las contraseñas.
+
+Playwright falla de inmediato cuando faltan credenciales; ya no convierte esa
+configuración incompleta en pruebas omitidas. El resultado esperado del archivo
+`auth.spec.ts` es `5 passed` y `0 skipped`.
+
+En CI no se ejecuta el aprovisionamiento local. Las cuatro variables E2E se
+configuran como secretos del entorno y `npm run test:e2e` consume esos valores.

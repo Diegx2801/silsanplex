@@ -1,48 +1,32 @@
 import { useQueryClient } from '@tanstack/react-query'
-import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import {
-  createContext,
   type PropsWithChildren,
-  useContext,
   useEffect,
   useMemo,
   useState,
 } from 'react'
 
-import { supabase } from '@/lib/supabase'
+import {
+  AuthContext,
+  type AuthContextValue,
+  type UserAccess,
+} from '@/features/auth/AuthContext'
 import { limpiarDatosTemporalesDeSesion } from '@/features/auth/sessionCleanup'
-
-interface UserAccess {
-  organizationId: string
-  organizationName: string
-  roles: string[]
-}
-
-interface AuthContextValue {
-  session: Session | null
-  user: User | null
-  access: UserAccess | null
-  isAdmin: boolean
-  isLoading: boolean
-  sessionError: string | null
-  accessError: string | null
-  reintentarAcceso: () => void
-  signOut: () => Promise<void>
-}
-
-const AuthContext = createContext<AuthContextValue | null>(null)
+import { supabase } from '@/lib/supabase'
 
 async function loadUserAccess(userId: string): Promise<UserAccess | null> {
   const { data: membership, error: membershipError } = await supabase
     .from('organization_memberships')
-    .select('organization_id, is_active')
+    .select('organization_id')
     .eq('user_id', userId)
+    .eq('is_active', true)
     .maybeSingle()
 
   if (membershipError) throw membershipError
-  if (!membership?.is_active) return null
+  if (!membership) return null
 
-  const [organizationResult, rolesResult] = await Promise.all([
+  const [organizationResult, rolesResult, permissionsResult] = await Promise.all([
     supabase
       .from('organizations')
       .select('id, name, is_active')
@@ -53,16 +37,25 @@ async function loadUserAccess(userId: string): Promise<UserAccess | null> {
       .select('role_code')
       .eq('organization_id', membership.organization_id)
       .eq('user_id', userId),
+    supabase.rpc('current_user_permissions'),
   ])
 
   if (organizationResult.error) throw organizationResult.error
   if (rolesResult.error) throw rolesResult.error
+  if (permissionsResult.error) throw permissionsResult.error
   if (!organizationResult.data?.is_active) return null
+
+  const permissions = Array.isArray(permissionsResult.data)
+    ? permissionsResult.data.filter(
+        (permission): permission is string => typeof permission === 'string',
+      )
+    : []
 
   return {
     organizationId: membership.organization_id,
     organizationName: organizationResult.data.name,
     roles: (rolesResult.data ?? []).map((role) => role.role_code),
+    permissions: [...new Set(permissions)],
   }
 }
 
@@ -161,6 +154,30 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [queryClient])
 
   useEffect(() => {
+    if (!session?.user.id) return
+
+    let lastRevalidation = 0
+    const revalidateAccess = () => {
+      const now = Date.now()
+      if (now - lastRevalidation < 500) return
+
+      lastRevalidation = now
+      setAccessAttempt((attempt) => attempt + 1)
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') revalidateAccess()
+    }
+
+    window.addEventListener('focus', revalidateAccess)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', revalidateAccess)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [session?.user.id])
+
+  useEffect(() => {
     let cancelled = false
 
     if (!session?.user.id) {
@@ -174,7 +191,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setAccessError(null)
     void loadUserAccess(session.user.id)
       .then((nextAccess) => {
-        if (!cancelled) setAccess(nextAccess)
+        if (cancelled) return
+
+        if (!nextAccess) {
+          limpiarDatosTemporalesDeSesion(window.sessionStorage)
+          queryClient.clear()
+        }
+        setAccess(nextAccess)
       })
       .catch(() => {
         if (!cancelled) {
@@ -189,7 +212,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return () => {
       cancelled = true
     }
-  }, [accessAttempt, session?.access_token, session?.user.id])
+  }, [accessAttempt, queryClient, session?.access_token, session?.user.id])
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -197,6 +220,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       user: session?.user ?? null,
       access,
       isAdmin: access?.roles.includes('ADMIN') ?? false,
+      hasPermission: (permission) =>
+        access?.permissions.includes(permission) ?? false,
       isLoading: sessionLoading || accessLoading,
       sessionError,
       accessError,
@@ -217,14 +242,4 @@ export function AuthProvider({ children }: PropsWithChildren) {
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext)
-
-  if (!context) {
-    throw new Error('useAuth debe utilizarse dentro de AuthProvider.')
-  }
-
-  return context
 }

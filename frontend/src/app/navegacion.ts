@@ -12,11 +12,14 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
+import { PERMISSIONS, type Permission } from '@/features/auth/permissions'
+
 export interface ElementoNavegacion {
   titulo: string
   ruta: string
   descripcion: string
   icono: LucideIcon
+  permission?: Permission
 }
 
 interface SeccionNavegacion {
@@ -91,6 +94,7 @@ export const seccionesNavegacion: SeccionNavegacion[] = [
         ruta: '/usuarios',
         descripcion: 'Accesos, roles y permisos',
         icono: Users,
+        permission: PERMISSIONS.USERS_MANAGE,
       },
       {
         titulo: 'Configuración',

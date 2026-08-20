@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/features/users/userService', () => mocks)
-vi.mock('@/features/auth/AuthProvider', () => ({
+vi.mock('@/features/auth/useAuth', () => ({
   useAuth: () => ({ user: { id: 'admin-user' } }),
 }))
 

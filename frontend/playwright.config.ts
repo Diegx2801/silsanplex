@@ -1,4 +1,31 @@
 import { defineConfig, devices } from '@playwright/test'
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { loadEnvFile } from 'node:process'
+
+const localE2eEnvironment = resolve(import.meta.dirname, '.env.e2e.local')
+
+if (existsSync(localE2eEnvironment)) {
+  loadEnvFile(localE2eEnvironment)
+}
+
+const requiredE2eVariables = [
+  'E2E_ADMIN_EMAIL',
+  'E2E_ADMIN_PASSWORD',
+  'E2E_MEMBER_EMAIL',
+  'E2E_MEMBER_PASSWORD',
+] as const
+
+const missingE2eVariables = requiredE2eVariables.filter(
+  (name) => !process.env[name]?.trim(),
+)
+
+if (missingE2eVariables.length > 0) {
+  throw new Error(
+    `Faltan variables E2E: ${missingE2eVariables.join(', ')}. ` +
+      'Ejecuta npm run test:e2e:local para preparar usuarios locales o configura las variables en CI.',
+  )
+}
 
 export default defineConfig({
   testDir: './tests/e2e',

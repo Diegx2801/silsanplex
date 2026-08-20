@@ -3,7 +3,7 @@ import { Plus, Search, Users } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { useAuth } from '@/features/auth/AuthProvider'
+import { useAuth } from '@/features/auth/useAuth'
 import { UserForm } from '@/features/users/UserForm'
 import { UsersTable } from '@/features/users/UsersTable'
 import {

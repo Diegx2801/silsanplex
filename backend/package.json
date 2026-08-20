@@ -5,6 +5,7 @@
   "description": "Supabase local, migraciones y pruebas de SILSANPLEX",
   "scripts": {
     "dev:create-admin": "tsx scripts/create-local-admin.ts",
+    "e2e:prepare": "tsx scripts/prepare-local-e2e.ts",
     "provision:client-admin": "tsx scripts/provision-client-admin.ts",
     "db:start": "supabase start",
     "db:stop": "supabase stop",

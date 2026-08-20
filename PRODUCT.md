@@ -55,7 +55,9 @@ Proveedor
 
 - Frontend con React, TypeScript y Vite.
 - Aplicación orientada a módulos funcionales.
-- Supabase será el backend futuro, pero todavía no está inicializado.
+- Supabase respalda autenticación, organizaciones, membresías, roles, permisos
+  y auditoría. Los dominios operativos todavía usan persistencia temporal y se
+  migrarán incrementalmente a PostgreSQL.
 - La primera versión prioriza el núcleo logístico y comercial.
 - Facturación electrónica, SUNAT y contabilidad completa son fases posteriores.
 - El inventario debe distinguir producto, almacén, ubicación y lote.

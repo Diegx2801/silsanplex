@@ -6,7 +6,7 @@ import { Link, useNavigate } from 'react-router'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
-import { useAuth } from '@/features/auth/AuthProvider'
+import { useAuth } from '@/features/auth/useAuth'
 import { supabase } from '@/lib/supabase'
 
 const passwordSchema = z
@@ -39,7 +39,21 @@ export function SetPasswordPage() {
       return
     }
 
-    navigate('/', { replace: true })
+    const { error: signOutError } = await supabase.auth.signOut({
+      scope: 'global',
+    })
+
+    if (signOutError) {
+      setServerError(
+        'La contraseña se actualizó, pero no se pudieron cerrar todas las sesiones. Inténtalo nuevamente.',
+      )
+      return
+    }
+
+    navigate('/iniciar-sesion', {
+      replace: true,
+      state: { passwordUpdated: true },
+    })
   })
 
   return (

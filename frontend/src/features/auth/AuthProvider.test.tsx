@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
       return { data: { subscription: { unsubscribe: mocks.unsubscribe } } }
     }),
     signOut: vi.fn(),
+    rpc: vi.fn(),
     unsubscribe: vi.fn(),
     from: vi.fn(),
     emitSessionEvent(event: string, session: Session | null) {
@@ -34,10 +35,12 @@ vi.mock('@/lib/supabase', () => ({
       signOut: mocks.signOut,
     },
     from: mocks.from,
+    rpc: mocks.rpc,
   },
 }))
 
-import { AuthProvider, useAuth } from '@/features/auth/AuthProvider'
+import { AuthProvider } from '@/features/auth/AuthProvider'
+import { useAuth } from '@/features/auth/useAuth'
 
 const session = {
   access_token: 'access-token',
@@ -49,14 +52,17 @@ const session = {
 } as unknown as Session
 
 function configureActiveAccess() {
+  mocks.rpc.mockResolvedValue({ data: ['USERS_MANAGE'], error: null })
   mocks.from.mockImplementation((table: string) => {
     if (table === 'organization_memberships') {
       return {
         select: () => ({
           eq: () => ({
-            maybeSingle: async () => ({
-              data: { organization_id: 'organization-1', is_active: true },
-              error: null,
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { organization_id: 'organization-1' },
+                error: null,
+              }),
             }),
           }),
         }),
@@ -94,7 +100,14 @@ function configureActiveAccess() {
 }
 
 function Probe() {
-  const { access, isLoading, session, sessionError, signOut } = useAuth()
+  const {
+    access,
+    hasPermission,
+    isLoading,
+    session,
+    sessionError,
+    signOut,
+  } = useAuth()
 
   return (
     <>
@@ -102,6 +115,9 @@ function Probe() {
       <output data-testid="access-state">{access ? 'habilitado' : 'sin acceso'}</output>
       <output data-testid="loading-state">{isLoading ? 'cargando' : 'lista'}</output>
       <output data-testid="session-error">{sessionError ?? 'sin error'}</output>
+      <output data-testid="permission-state">
+        {hasPermission('USERS_MANAGE') ? 'permitido' : 'denegado'}
+      </output>
       <button type="button" onClick={() => void signOut()}>
         Cerrar prueba
       </button>
@@ -134,6 +150,7 @@ describe('AuthProvider', () => {
     mocks.getSession.mockReset()
     mocks.onAuthStateChange.mockClear()
     mocks.signOut.mockReset()
+    mocks.rpc.mockReset()
     mocks.unsubscribe.mockReset()
     mocks.from.mockReset()
     mocks.signOut.mockResolvedValue({ error: null })
@@ -222,6 +239,71 @@ describe('AuthProvider', () => {
         'Contenido protegido',
       )
     })
+  })
+
+  it('carga los permisos efectivos mediante el RPC del backend', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('permission-state')).toHaveTextContent(
+        'permitido',
+      )
+    })
+    expect(mocks.rpc).toHaveBeenCalledWith('current_user_permissions')
+  })
+
+  it('revalida el acceso cuando la ventana recupera el foco', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
+    })
+    const callsBefore = mocks.rpc.mock.calls.length
+
+    window.dispatchEvent(new Event('focus'))
+
+    await waitFor(() => {
+      expect(mocks.rpc.mock.calls.length).toBeGreaterThan(callsBefore)
+    })
+  })
+
+  it('limpia datos temporales si la membresía deja de estar activa', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
+    })
+    window.sessionStorage.setItem('silsanplex.ventas-temporales.v1', '{}')
+    mocks.from.mockImplementation((table: string) => {
+      if (table !== 'organization_memberships') {
+        throw new Error(`Consulta inesperada a ${table}`)
+      }
+
+      return {
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+        }),
+      }
+    })
+
+    window.dispatchEvent(new Event('focus'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('access-state')).toHaveTextContent('sin acceso')
+    })
+    expect(
+      window.sessionStorage.getItem('silsanplex.ventas-temporales.v1'),
+    ).toBeNull()
   })
 
   it('conserva el error de getSession si INITIAL_SESSION llega después con sesión nula', async () => {
