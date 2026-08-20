@@ -1,4 +1,5 @@
-import type { Session, User } from '@supabase/supabase-js'
+import { useQueryClient } from '@tanstack/react-query'
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 import {
   createContext,
   type PropsWithChildren,
@@ -9,6 +10,7 @@ import {
 } from 'react'
 
 import { supabase } from '@/lib/supabase'
+import { limpiarDatosTemporalesDeSesion } from '@/features/auth/sessionCleanup'
 
 interface UserAccess {
   organizationId: string
@@ -22,6 +24,9 @@ interface AuthContextValue {
   access: UserAccess | null
   isAdmin: boolean
   isLoading: boolean
+  sessionError: string | null
+  accessError: string | null
+  reintentarAcceso: () => void
   signOut: () => Promise<void>
 }
 
@@ -62,24 +67,90 @@ async function loadUserAccess(userId: string): Promise<UserAccess | null> {
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
+  const queryClient = useQueryClient()
   const [session, setSession] = useState<Session | null>(null)
   const [access, setAccess] = useState<UserAccess | null>(null)
   const [sessionLoading, setSessionLoading] = useState(true)
   const [accessLoading, setAccessLoading] = useState(false)
+  const [sessionError, setSessionError] = useState<string | null>(null)
+  const [accessError, setAccessError] = useState<string | null>(null)
+  const [accessAttempt, setAccessAttempt] = useState(0)
 
   useEffect(() => {
     let mounted = true
+    let currentUserId: string | null = null
+    let currentAccessToken: string | null = null
+    let sessionInitializationFailed = false
+    let initialAuthEventSession: Session | null | undefined
 
-    void supabase.auth.getSession().then(({ data }) => {
+    const actualizarSesion = (
+      nextSession: Session | null,
+      event?: AuthChangeEvent,
+    ) => {
       if (!mounted) return
-      setSession(data.session)
+
+      if (event === 'INITIAL_SESSION') {
+        initialAuthEventSession = nextSession
+        if (sessionInitializationFailed && !nextSession) return
+      }
+
+      const nextUserId = nextSession?.user.id ?? null
+      const nextAccessToken = nextSession?.access_token ?? null
+      const cambioDeUsuario =
+        currentUserId !== null && currentUserId !== nextUserId
+      const mismaSesion =
+        currentUserId === nextUserId && currentAccessToken === nextAccessToken
+      const debeRecargarAcceso =
+        Boolean(nextSession) &&
+        event !== undefined &&
+        event !== 'INITIAL_SESSION' &&
+        mismaSesion
+
+      currentUserId = nextUserId
+      currentAccessToken = nextAccessToken
+
+      setSession(nextSession)
+      setAccess(null)
+      setAccessError(null)
+      setSessionError(null)
+      setAccessLoading(Boolean(nextSession))
       setSessionLoading(false)
-    })
+
+      if (debeRecargarAcceso) {
+        setAccessAttempt((attempt) => attempt + 1)
+      }
+
+      if (!nextSession || cambioDeUsuario) {
+        limpiarDatosTemporalesDeSesion(window.sessionStorage)
+        queryClient.clear()
+      }
+    }
+
+    void supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (error) throw error
+        actualizarSesion(data.session)
+      })
+      .catch(() => {
+        if (!mounted) return
+        if (initialAuthEventSession) return
+
+        sessionInitializationFailed = true
+
+        setSession(null)
+        setAccess(null)
+        setAccessError(null)
+        setSessionLoading(false)
+        setAccessLoading(false)
+        setSessionError('No se pudo verificar la sesión. Inténtalo nuevamente.')
+        limpiarDatosTemporalesDeSesion(window.sessionStorage)
+        queryClient.clear()
+      })
 
     const { data: subscription } = supabase.auth.onAuthStateChange(
-      (_event, nextSession) => {
-        setSession(nextSession)
-        setSessionLoading(false)
+      (event, nextSession) => {
+        actualizarSesion(nextSession, event)
       },
     )
 
@@ -87,7 +158,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       mounted = false
       subscription.subscription.unsubscribe()
     }
-  }, [])
+  }, [queryClient])
 
   useEffect(() => {
     let cancelled = false
@@ -95,16 +166,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (!session?.user.id) {
       setAccess(null)
       setAccessLoading(false)
+      setAccessError(null)
       return
     }
 
     setAccessLoading(true)
+    setAccessError(null)
     void loadUserAccess(session.user.id)
       .then((nextAccess) => {
         if (!cancelled) setAccess(nextAccess)
       })
       .catch(() => {
-        if (!cancelled) setAccess(null)
+        if (!cancelled) {
+          setAccess(null)
+          setAccessError('No se pudo verificar el acceso de tu cuenta.')
+        }
       })
       .finally(() => {
         if (!cancelled) setAccessLoading(false)
@@ -113,7 +189,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return () => {
       cancelled = true
     }
-  }, [session?.access_token, session?.user.id])
+  }, [accessAttempt, session?.access_token, session?.user.id])
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -122,12 +198,22 @@ export function AuthProvider({ children }: PropsWithChildren) {
       access,
       isAdmin: access?.roles.includes('ADMIN') ?? false,
       isLoading: sessionLoading || accessLoading,
+      sessionError,
+      accessError,
+      reintentarAcceso: () => setAccessAttempt((attempt) => attempt + 1),
       signOut: async () => {
         const { error } = await supabase.auth.signOut()
         if (error) throw error
+
+        limpiarDatosTemporalesDeSesion(window.sessionStorage)
+        queryClient.clear()
+        setSession(null)
+        setAccess(null)
+        setAccessError(null)
+        setAccessLoading(false)
       },
     }),
-    [access, accessLoading, session, sessionLoading],
+    [access, accessError, accessLoading, queryClient, session, sessionError, sessionLoading],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

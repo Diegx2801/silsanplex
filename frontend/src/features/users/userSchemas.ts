@@ -19,5 +19,11 @@ export const userFormSchema = z.object({
     .email('Ingresa un correo válido.')
     .max(254, 'El correo es demasiado largo.'),
   phone: z.string().trim().max(30, 'El teléfono es demasiado largo.'),
-  roleCodes: z.array(z.enum(roleCodes)).min(1, 'Selecciona al menos un rol.'),
+  roleCodes: z
+    .array(z.enum(roleCodes))
+    .min(1, 'Selecciona al menos un rol.')
+    .max(roleOptions.length, 'Selecciona roles válidos.')
+    .refine((roles) => new Set(roles).size === roles.length, {
+      message: 'No repitas roles.',
+    }),
 })

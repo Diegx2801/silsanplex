@@ -22,7 +22,7 @@ const passwordSchema = z
 type PasswordValues = z.infer<typeof passwordSchema>
 
 export function SetPasswordPage() {
-  const { session, isLoading } = useAuth()
+  const { session, isLoading, sessionError } = useAuth()
   const navigate = useNavigate()
   const [serverError, setServerError] = useState<string | null>(null)
   const form = useForm<PasswordValues>({
@@ -55,10 +55,15 @@ export function SetPasswordPage() {
           Crea una contraseña personal para acceder a SILSANPLEX.
         </p>
 
-        {!isLoading && !session ? (
+        {isLoading ? (
+          <p role="status" className="mt-7 text-sm text-muted-foreground">
+            Verificando el enlace de acceso…
+          </p>
+        ) : !session ? (
           <div className="mt-7">
             <p role="alert" className="text-sm text-destructive">
-              El enlace no es válido o ya expiró. Solicita uno nuevo a administración.
+              {sessionError ??
+                'El enlace no es válido o ya expiró. Solicita uno nuevo a administración.'}
             </p>
             <Button asChild variant="outline" className="mt-5">
               <Link to="/iniciar-sesion">Ir al inicio de sesión</Link>

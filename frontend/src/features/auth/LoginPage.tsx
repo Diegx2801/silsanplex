@@ -17,7 +17,7 @@ const loginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>
 
 export function LoginPage() {
-  const { session, isLoading } = useAuth()
+  const { session, isLoading, sessionError } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [serverError, setServerError] = useState<string | null>(null)
@@ -94,9 +94,9 @@ export function LoginPage() {
             ) : null}
           </label>
 
-          {serverError ? (
+          {serverError || sessionError ? (
             <p role="alert" className="text-sm text-destructive">
-              {serverError}
+              {serverError ?? sessionError}
             </p>
           ) : null}
 

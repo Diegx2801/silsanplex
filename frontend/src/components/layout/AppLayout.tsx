@@ -100,6 +100,7 @@ function ContenidoNavegacion({
 
 export function AppLayout() {
   const [menuAbierto, setMenuAbierto] = useState(false)
+  const [signOutError, setSignOutError] = useState<string | null>(null)
   const { user, access, isAdmin, signOut } = useAuth()
   const { pathname } = useLocation()
   const paginaActual =
@@ -109,6 +110,15 @@ export function AppLayout() {
         (elemento.ruta !== '/' && pathname.startsWith(`${elemento.ruta}/`)),
     )?.titulo ??
     'Página no encontrada'
+
+  const cerrarSesion = async () => {
+    setSignOutError(null)
+    try {
+      await signOut()
+    } catch {
+      setSignOutError('No se pudo cerrar la sesión. Inténtalo nuevamente.')
+    }
+  }
 
   return (
     <DialogPrimitive.Root open={menuAbierto} onOpenChange={setMenuAbierto}>
@@ -172,12 +182,17 @@ export function AppLayout() {
                   {access?.roles.join(' · ')}
                 </p>
               </div>
+              {signOutError ? (
+                <p role="alert" className="max-w-52 text-xs text-destructive">
+                  {signOutError}
+                </p>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 aria-label="Cerrar sesión"
-                onClick={() => void signOut()}
+                onClick={() => void cerrarSesion()}
               >
                 <LogOut aria-hidden="true" />
               </Button>

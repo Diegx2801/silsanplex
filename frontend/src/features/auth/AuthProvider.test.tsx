@@ -1,0 +1,257 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { Session } from '@supabase/supabase-js'
+import { MemoryRouter } from 'react-router'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { ProtectedRoute } from '@/features/auth/ProtectedRoute'
+
+type SessionEventCallback = (event: string, session: Session | null) => void
+
+const mocks = vi.hoisted(() => {
+  let sessionEventCallback: SessionEventCallback | null = null
+
+  return {
+    getSession: vi.fn(),
+    onAuthStateChange: vi.fn((callback: SessionEventCallback) => {
+      sessionEventCallback = callback
+      return { data: { subscription: { unsubscribe: mocks.unsubscribe } } }
+    }),
+    signOut: vi.fn(),
+    unsubscribe: vi.fn(),
+    from: vi.fn(),
+    emitSessionEvent(event: string, session: Session | null) {
+      sessionEventCallback?.(event, session)
+    },
+  }
+})
+
+vi.mock('@/lib/supabase', () => ({
+  supabase: {
+    auth: {
+      getSession: mocks.getSession,
+      onAuthStateChange: mocks.onAuthStateChange,
+      signOut: mocks.signOut,
+    },
+    from: mocks.from,
+  },
+}))
+
+import { AuthProvider, useAuth } from '@/features/auth/AuthProvider'
+
+const session = {
+  access_token: 'access-token',
+  refresh_token: 'refresh-token',
+  expires_in: 3600,
+  expires_at: 1_900_000_000,
+  token_type: 'bearer',
+  user: { id: 'user-1', email: 'admin@silsan.local' },
+} as unknown as Session
+
+function configureActiveAccess() {
+  mocks.from.mockImplementation((table: string) => {
+    if (table === 'organization_memberships') {
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: { organization_id: 'organization-1', is_active: true },
+              error: null,
+            }),
+          }),
+        }),
+      }
+    }
+
+    if (table === 'organizations') {
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: {
+                id: 'organization-1',
+                name: 'Droguería SILSAN S.A.C.',
+                is_active: true,
+              },
+              error: null,
+            }),
+          }),
+        }),
+      }
+    }
+
+    return {
+      select: () => ({
+        eq: () => ({
+          eq: async () => ({
+            data: [{ role_code: 'ADMIN' }],
+            error: null,
+          }),
+        }),
+      }),
+    }
+  })
+}
+
+function Probe() {
+  const { access, isLoading, session, sessionError, signOut } = useAuth()
+
+  return (
+    <>
+      <output data-testid="session-state">{session ? 'activa' : 'cerrada'}</output>
+      <output data-testid="access-state">{access ? 'habilitado' : 'sin acceso'}</output>
+      <output data-testid="loading-state">{isLoading ? 'cargando' : 'lista'}</output>
+      <output data-testid="session-error">{sessionError ?? 'sin error'}</output>
+      <button type="button" onClick={() => void signOut()}>
+        Cerrar prueba
+      </button>
+    </>
+  )
+}
+
+function renderProvider() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+
+  return render(
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <Probe />
+          <ProtectedRoute>
+            <p data-testid="protected-content">Contenido protegido</p>
+          </ProtectedRoute>
+        </AuthProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  )
+}
+
+describe('AuthProvider', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear()
+    mocks.getSession.mockReset()
+    mocks.onAuthStateChange.mockClear()
+    mocks.signOut.mockReset()
+    mocks.unsubscribe.mockReset()
+    mocks.from.mockReset()
+    mocks.signOut.mockResolvedValue({ error: null })
+  })
+
+  it('limpia el estado local al cerrar sesión', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    window.sessionStorage.setItem('silsanplex.productos-temporales.v1', '[]')
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar prueba' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('cerrada')
+    })
+    expect(window.sessionStorage.getItem('silsanplex.productos-temporales.v1')).toBeNull()
+    expect(mocks.signOut).toHaveBeenCalledOnce()
+  })
+
+  it('limpia el estado local cuando Supabase informa una sesión expirada', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    window.sessionStorage.setItem('silsanplex.clientes-temporales.v1', '[]')
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+    })
+
+    mocks.emitSessionEvent('SIGNED_OUT', null)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('cerrada')
+    })
+    expect(window.sessionStorage.getItem('silsanplex.clientes-temporales.v1')).toBeNull()
+  })
+
+  it('limpia datos temporales cuando cambia el usuario autenticado', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+    })
+
+    window.sessionStorage.setItem('silsanplex.compras-temporales.v1', '{}')
+    const otherSession = {
+      ...session,
+      user: { id: 'user-2', email: 'otro@silsan.local' },
+    } as Session
+    mocks.emitSessionEvent('SIGNED_IN', otherSession)
+
+    await waitFor(() => {
+      expect(window.sessionStorage.getItem('silsanplex.compras-temporales.v1')).toBeNull()
+    })
+  })
+
+  it('recarga el acceso después de USER_UPDATED con el mismo usuario y token', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('protected-content')).toHaveTextContent(
+        'Contenido protegido',
+      )
+    })
+    const membershipCallsBefore = mocks.from.mock.calls.filter(
+      ([table]) => table === 'organization_memberships',
+    ).length
+
+    mocks.emitSessionEvent('USER_UPDATED', session)
+
+    await waitFor(() => {
+      const membershipCallsAfter = mocks.from.mock.calls.filter(
+        ([table]) => table === 'organization_memberships',
+      ).length
+      expect(membershipCallsAfter).toBeGreaterThan(membershipCallsBefore)
+      expect(screen.getByTestId('protected-content')).toHaveTextContent(
+        'Contenido protegido',
+      )
+    })
+  })
+
+  it('conserva el error de getSession si INITIAL_SESSION llega después con sesión nula', async () => {
+    mocks.getSession.mockRejectedValue(new Error('Storage failure'))
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-error')).toHaveTextContent(
+        'No se pudo verificar la sesión.',
+      )
+    })
+
+    mocks.emitSessionEvent('INITIAL_SESSION', null)
+
+    expect(screen.getByTestId('session-error')).toHaveTextContent(
+      'No se pudo verificar la sesión.',
+    )
+  })
+
+  it('desuscribe los eventos de Supabase al desmontarse', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    const { unmount } = renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+    })
+
+    unmount()
+
+    expect(mocks.unsubscribe).toHaveBeenCalledOnce()
+  })
+})

@@ -35,4 +35,15 @@ describe('userFormSchema', () => {
 
     expect(result.success).toBe(false)
   })
+
+  it('rechaza roles repetidos', () => {
+    const result = userFormSchema.safeParse({
+      fullName: 'Usuario de Ventas',
+      email: 'ventas@silsan.com',
+      phone: '',
+      roleCodes: ['VENTAS', 'VENTAS'],
+    })
+
+    expect(result.success).toBe(false)
+  })
 })
