@@ -65,7 +65,11 @@ export async function guardarCliente(datos: DatosCliente, id?: string) {
   const contacts = datos.contacto || datos.email || datos.telefono ? [{ id: datos.contactoPrincipalId, fullName: datos.contacto, email: datos.email, phone: datos.telefono, isPrimary: true }] : []
   const fuenteFiscal = datos.fuenteDatosFiscales || (datos.estadoSunat || datos.condicionDomicilio ? 'MANUAL' : null)
   const { data, error } = await supabase.rpc('save_customer', { payload: { id, documentType: datos.tipoDocumento.toUpperCase(), documentNumber: datos.numeroDocumento, legalName: datos.nombreRazonSocial, tradeName: datos.nombreComercial, taxpayerStatus: datos.estadoSunat, domicileCondition: datos.condicionDomicilio, taxDataSource: fuenteFiscal, taxCheckedAt: fuenteFiscal === 'APISPERU' ? datos.fechaConsultaSunat : null, isActive: datos.activo, addresses, contacts } })
-  if (error) throw new Error(error.message.includes('CUSTOMER_DOCUMENT_ALREADY_EXISTS') ? 'Ya existe un cliente con este documento.' : error.message)
+  if (error) {
+    if (error.message.includes('CUSTOMER_DOCUMENT_ALREADY_EXISTS')) throw new Error('Ya existe un cliente con este documento.')
+    if (error.message.includes('CUSTOMER_FISCAL_IDENTITY_IMMUTABLE')) throw new Error('El tipo y número de documento no pueden modificarse.')
+    throw new Error(error.message)
+  }
   return data as string
 }
 

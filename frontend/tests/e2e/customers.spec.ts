@@ -47,3 +47,24 @@ test('autocompleta el maestro de clientes mediante la Edge Function RUC', async 
   await expect(page.getByLabel('Ubigeo fiscal')).toHaveValue('150140')
   await expect(page.getByLabel('Condición de domicilio')).toHaveValue('HABIDO')
 })
+
+test('previsualiza e importa clientes desde un archivo de Codeplex', async ({ page }) => {
+  const uniqueDocument = `20${String(Date.now()).slice(-8)}1`
+  const uniqueName = `CLIENTE E2E IMPORTADO ${uniqueDocument}`
+  await signIn(page)
+  await page.goto('/clientes')
+  await page.getByRole('button', { name: 'Importar' }).click()
+  const importDialog = page.getByRole('dialog', { name: 'Importar clientes' })
+
+  await importDialog.locator('input[type="file"]').setInputFiles({
+    name: 'clientes-codeplex.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(`RUC_DNI,RAZON_SOCIAL,NOMBRE_COMERCIAL,TELEFONO,DIRECCION,EMAIL\n${uniqueDocument},${uniqueName},IMPORTADO,999888111,AV. E2E 123,cliente.importado@example.com`),
+  })
+
+  await expect(importDialog.getByText(uniqueName)).toBeVisible()
+  await importDialog.getByRole('button', { name: 'Importar 1 filas' }).click()
+  await expect(importDialog.getByText(/Importación finalizada: 1 creados/)).toBeVisible()
+  await importDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+  await expect(page.getByText(uniqueName)).toBeVisible()
+})
