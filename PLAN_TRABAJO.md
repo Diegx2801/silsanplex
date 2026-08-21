@@ -19,8 +19,8 @@ Este calendario asume una línea principal de desarrollo. Cada tarea se consider
 - Autenticación y administración de usuarios implementadas para una
   organización activa por identidad, con aislamiento multiempresa en base de
   datos y aprovisionamiento de clientes reservado a la plataforma.
-- Catálogo temporal de productos, importación y dashboard administrativo inicial disponibles.
-- Inventario y compras cuentan con un primer flujo local; ventas, caja y reportes todavía no tienen flujo funcional completo.
+- Catálogo persistente de productos, importación de revisión y dashboard administrativo inicial disponibles.
+- Proveedores, compras e inventario ya cuentan con persistencia multiempresa y permisos; ventas, caja y reportes todavía no tienen flujo persistente completo.
 
 ## Semana 1 — Alineación y estabilización (19–21 de agosto)
 
@@ -91,13 +91,13 @@ Este calendario asume una línea principal de desarrollo. Cada tarea se consider
 
 ### Martes 1
 
-- [ ] Crear migraciones, restricciones, índices y políticas RLS del catálogo.
-- [ ] Añadir pruebas de base de datos.
+- [x] Crear migraciones, restricciones, índices y políticas RLS del catálogo.
+- [x] Añadir pruebas de base de datos.
 
 ### Miércoles 2
 
-- [ ] Conectar listado, búsqueda, alta y edición de productos con Supabase.
-- [ ] Incorporar validaciones de negocio y estados de carga/error.
+- [x] Conectar listado, búsqueda, alta y edición de productos con Supabase.
+- [x] Incorporar validaciones de negocio y estados de carga/error.
 
 ### Jueves 3
 
@@ -118,8 +118,8 @@ Este calendario asume una línea principal de desarrollo. Cada tarea se consider
 
 ### Martes 8
 
-- [ ] Implementar migraciones e índices del núcleo de inventario.
-- [ ] Crear función transaccional para registrar movimientos.
+- [x] Implementar migraciones e índices del núcleo de inventario.
+- [x] Crear función transaccional para registrar movimientos.
 
 ### Miércoles 9
 
@@ -128,29 +128,29 @@ Este calendario asume una línea principal de desarrollo. Cada tarea se consider
 
 ### Jueves 10
 
-- [ ] Implementar historial de movimientos y detalle trazable.
-- [ ] Restringir ajustes de stock según permisos.
+- [x] Implementar historial de movimientos y detalle trazable.
+- [x] Restringir ajustes de stock según permisos.
 
 ### Viernes 11
 
-- [ ] Probar concurrencia, integridad y aislamiento de inventario.
+- [x] Probar concurrencia, integridad y aislamiento de inventario.
 - [ ] Validar REQ-014 a REQ-017 y realizar demo semanal.
 
 ## Semana 5 — Proveedores y clientes (14–18 de septiembre)
 
 ### Lunes 14
 
-- [ ] Diseñar maestro compartido de terceros y datos fiscales/contacto.
-- [ ] Definir validaciones de RUC/DNI sin depender todavía de integraciones externas.
+- [x] Diseñar maestro compartido de terceros y datos fiscales/contacto.
+- [x] Definir validaciones de RUC/DNI sin depender todavía de integraciones externas.
 
 ### Martes 15
 
-- [ ] Implementar proveedores: migraciones, RLS, listado y búsqueda.
-- [ ] Implementar alta y edición con auditoría.
+- [x] Implementar proveedores: migraciones, RLS, listado y búsqueda.
+- [x] Implementar alta y edición con auditoría.
 
 ### Miércoles 16
 
-- [ ] Completar pruebas y permisos de proveedores.
+- [x] Completar pruebas y permisos de proveedores.
 - [ ] Validar REQ-018 a REQ-021.
 
 ### Jueves 17
@@ -167,27 +167,27 @@ Este calendario asume una línea principal de desarrollo. Cada tarea se consider
 
 ### Lunes 21
 
-- [ ] Diseñar compra, detalle, estados y relación con proveedor.
-- [ ] Definir reglas de edición/anulación y numeración documental.
+- [x] Diseñar compra, detalle, estados y relación con proveedor.
+- [x] Definir reglas de edición/anulación y numeración documental.
 
 ### Martes 22
 
-- [ ] Implementar migraciones y API transaccional de compras.
-- [ ] Crear registro de compra con múltiples productos.
+- [x] Implementar migraciones y API transaccional de compras.
+- [x] Crear registro de compra con múltiples productos.
 
 ### Miércoles 23
 
-- [ ] Implementar listado, filtros, consulta y edición autorizada de compras.
-- [ ] Validar totales y documentos duplicados.
+- [x] Implementar listado, filtros, consulta y edición autorizada de compras.
+- [x] Validar totales y documentos duplicados.
 
 ### Jueves 24
 
-- [ ] Implementar recepción física total o parcial en almacén.
-- [ ] Generar movimientos de entrada trazables desde la compra.
+- [ ] Ampliar la recepción física total implementada para soportar recepciones parciales.
+- [x] Generar movimientos de entrada trazables desde la compra.
 
 ### Viernes 25
 
-- [ ] Probar compra → recepción → actualización de stock.
+- [x] Probar compra → recepción → actualización de stock.
 - [ ] Validar REQ-022 a REQ-033 y realizar demo semanal.
 
 ## Semana 7 — Cotizaciones y pedidos (28 de septiembre–2 de octubre)

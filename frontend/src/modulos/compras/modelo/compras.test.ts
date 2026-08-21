@@ -30,15 +30,33 @@ const producto = {
 
 const proveedor = {
   id: 'proveedor-1',
+  organizationId: 'organizacion-1',
+  codigo: 'PRV-001',
   tipoDocumento: 'ruc',
   numeroDocumento: '20123456789',
   razonSocial: 'Distribuidora Demo SAC',
+  nombreComercial: '',
   contacto: '',
+  cargoContacto: '',
   email: '',
   telefono: '',
   direccion: '',
+  zonaGeografica: '',
+  tiposProducto: 'Medicamentos',
+  categoria: 'frecuente',
+  frecuenciaEntrega: 'semanal',
+  calificacionDesempeno: 4,
+  condicionCredito: 'credito',
+  diasCredito: 30,
+  moneda: 'PEN',
+  banco: '',
+  cuentaBancaria: '',
+  cuentaDetraccion: '',
+  estadoSunat: 'habido',
+  observaciones: '',
   activo: true,
   fechaRegistro: '2026-08-19T16:00:00.000Z',
+  fechaActualizacion: '2026-08-19T16:00:00.000Z',
 } satisfies Proveedor
 
 const compraBase = {
@@ -65,11 +83,27 @@ const compraBase = {
 describe('proveedores', () => {
   it('valida la longitud fiscal de RUC y DNI', () => {
     const base = {
+      codigo: '',
       razonSocial: 'Proveedor Demo',
+      nombreComercial: '',
       contacto: '',
+      cargoContacto: '',
       email: '',
       telefono: '',
       direccion: '',
+      zonaGeografica: '',
+      tiposProducto: '',
+      categoria: 'por-clasificar',
+      frecuenciaEntrega: 'segun-demanda',
+      calificacionDesempeno: '',
+      condicionCredito: 'contado',
+      diasCredito: '0',
+      moneda: 'PEN',
+      banco: '',
+      cuentaBancaria: '',
+      cuentaDetraccion: '',
+      estadoSunat: 'no-verificado',
+      observaciones: '',
       activo: true,
     }
 

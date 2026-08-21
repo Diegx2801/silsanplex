@@ -94,8 +94,8 @@ select is(
     from public.role_permissions
     where role_code <> 'ADMIN'
   ),
-  0::bigint,
-  'no se inventan permisos para los demás roles'
+  25::bigint,
+  'los roles operativos reciben capacidades explícitas por módulo'
 );
 
 select is(
@@ -293,7 +293,7 @@ select set_config(
 
 select is(
   public.current_user_permissions(),
-  array['USERS_MANAGE']::text[],
+  array['INVENTORY_MANAGE', 'INVENTORY_VIEW', 'PRODUCTS_MANAGE', 'PRODUCTS_VIEW', 'PURCHASES_MANAGE', 'PURCHASES_RECEIVE', 'PURCHASES_VIEW', 'SUPPLIERS_MANAGE', 'SUPPLIERS_VIEW', 'USERS_MANAGE']::text[],
   'ADMIN obtiene sus permisos en la única organización activa'
 );
 
@@ -308,8 +308,8 @@ select set_config(
 
 select is(
   public.current_user_permissions(),
-  '{}'::text[],
-  'un rol sin asignaciones obtiene un arreglo vacío'
+  array['INVENTORY_VIEW', 'PRODUCTS_VIEW']::text[],
+  'VENTAS obtiene únicamente capacidades de consulta operativa'
 );
 
 reset role;
@@ -406,7 +406,7 @@ select set_config(
 
 select is(
   public.current_user_permissions(),
-  '{}'::text[],
+  array['INVENTORY_MANAGE', 'INVENTORY_VIEW', 'PRODUCTS_MANAGE', 'PRODUCTS_VIEW', 'PURCHASES_MANAGE', 'PURCHASES_RECEIVE', 'PURCHASES_VIEW', 'SUPPLIERS_MANAGE', 'SUPPLIERS_VIEW']::text[],
   'un permiso inactivo no se concede'
 );
 

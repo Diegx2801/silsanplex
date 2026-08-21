@@ -1,5 +1,6 @@
 import { PackageCheck } from 'lucide-react'
 import { AlertDialog as AlertDialogPrimitive } from 'radix-ui'
+import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -16,7 +17,7 @@ interface DialogoConfirmacionRecepcionProps {
   abierto: boolean
   compra: Compra
   alCambiarApertura: (abierto: boolean) => void
-  alConfirmar: () => void
+  alConfirmar: () => Promise<string | undefined>
   alRestaurarFoco: () => void
 }
 
@@ -27,10 +28,24 @@ export function DialogoConfirmacionRecepcion({
   alConfirmar,
   alRestaurarFoco,
 }: DialogoConfirmacionRecepcionProps) {
+  const [procesando, setProcesando] = useState(false)
+  const [error, setError] = useState('')
   const totales = calcularTotalesCompra(
     compra.lineas,
     compra.preciosIncluyenIgv,
   )
+
+  const confirmar = async () => {
+    setProcesando(true)
+    setError('')
+    const resultado = await alConfirmar()
+    setProcesando(false)
+    if (resultado) {
+      setError(resultado)
+      return
+    }
+    alCambiarApertura(false)
+  }
 
   return (
     <AlertDialogPrimitive.Root
@@ -85,17 +100,21 @@ export function DialogoConfirmacionRecepcion({
             </div>
           </dl>
 
+          {error ? (
+            <p role="alert" className="mt-4 border-s-4 border-destructive bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <AlertDialogPrimitive.Cancel asChild>
-              <Button type="button" variant="outline" size="lg">
+              <Button type="button" variant="outline" size="lg" disabled={procesando}>
                 Revisar compra
               </Button>
             </AlertDialogPrimitive.Cancel>
-            <AlertDialogPrimitive.Action asChild>
-              <Button type="button" size="lg" onClick={alConfirmar}>
-                Recibir mercadería
-              </Button>
-            </AlertDialogPrimitive.Action>
+            <Button type="button" size="lg" disabled={procesando} onClick={() => void confirmar()}>
+              {procesando ? 'Recibiendo…' : 'Recibir mercadería'}
+            </Button>
           </div>
         </AlertDialogPrimitive.Content>
       </AlertDialogPrimitive.Portal>

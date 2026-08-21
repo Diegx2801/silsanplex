@@ -20,6 +20,7 @@ const rutasModulos = elementosNavegacion
       elemento.ruta !== '/' &&
       elemento.ruta !== '/productos' &&
       elemento.ruta !== '/inventario' &&
+      elemento.ruta !== '/proveedores' &&
       elemento.ruta !== '/compras' &&
       elemento.ruta !== '/clientes' &&
       elemento.ruta !== '/ventas' &&
@@ -66,7 +67,13 @@ export const router = createBrowserRouter([
         lazy: async () => {
           const { ProductosPage } = await import('@/app/paginas/ProductosPage')
 
-          return { Component: ProductosPage }
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.PRODUCTS_VIEW}>
+                <ProductosPage />
+              </PermissionRoute>
+            ),
+          }
         },
       },
       {
@@ -76,7 +83,13 @@ export const router = createBrowserRouter([
             '@/app/paginas/ImportarProductosPage'
           )
 
-          return { Component: ImportarProductosPage }
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.PRODUCTS_VIEW}>
+                <ImportarProductosPage />
+              </PermissionRoute>
+            ),
+          }
         },
       },
       {
@@ -86,7 +99,29 @@ export const router = createBrowserRouter([
             '@/app/paginas/InventarioPage'
           )
 
-          return { Component: InventarioPage }
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.INVENTORY_VIEW}>
+                <InventarioPage />
+              </PermissionRoute>
+            ),
+          }
+        },
+      },
+      {
+        path: 'proveedores',
+        lazy: async () => {
+          const { ProveedoresPage } = await import(
+            '@/app/paginas/ProveedoresPage'
+          )
+
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.SUPPLIERS_VIEW}>
+                <ProveedoresPage />
+              </PermissionRoute>
+            ),
+          }
         },
       },
       {
@@ -94,7 +129,13 @@ export const router = createBrowserRouter([
         lazy: async () => {
           const { ComprasPage } = await import('@/app/paginas/ComprasPage')
 
-          return { Component: ComprasPage }
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.PURCHASES_VIEW}>
+                <ComprasPage />
+              </PermissionRoute>
+            ),
+          }
         },
       },
       {

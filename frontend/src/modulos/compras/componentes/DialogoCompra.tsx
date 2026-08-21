@@ -26,7 +26,7 @@ interface DialogoCompraProps {
   proveedores: readonly Proveedor[]
   productos: readonly Producto[]
   alCambiarApertura: (abierto: boolean) => void
-  alGuardar: (datos: DatosCompra, compraId?: string) => string | undefined
+  alGuardar: (datos: DatosCompra, compraId?: string) => Promise<string | undefined>
   alRestaurarFoco: () => void
 }
 
@@ -83,8 +83,8 @@ export function DialogoCompra({
     preciosIncluyenIgv,
   )
 
-  const guardar = (datos: DatosCompra) => {
-    const error = alGuardar(datos, compra?.id)
+  const guardar = async (datos: DatosCompra) => {
+    const error = await alGuardar(datos, compra?.id)
     if (error) {
       setError('root', { message: error })
       return

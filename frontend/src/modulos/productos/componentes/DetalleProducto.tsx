@@ -58,8 +58,8 @@ interface DetalleProductoProps {
   abierto: boolean
   producto: Producto
   alCambiarApertura: (abierto: boolean) => void
-  alEditar: () => void
-  alSolicitarCambioEstado: (
+  alEditar?: () => void
+  alSolicitarCambioEstado?: (
     evento: ReactMouseEvent<HTMLButtonElement>,
   ) => void
   alRestaurarFoco: () => void
@@ -229,7 +229,7 @@ export function DetalleProducto({
             </section>
           </div>
 
-          <footer className="grid grid-cols-2 gap-2 border-t bg-background px-5 py-4 sm:flex sm:justify-end sm:px-7">
+          {alEditar && alSolicitarCambioEstado ? <footer className="grid grid-cols-2 gap-2 border-t bg-background px-5 py-4 sm:flex sm:justify-end sm:px-7">
             <Button type="button" variant="outline" size="lg" onClick={alEditar}>
               <Pencil aria-hidden="true" />
               Editar
@@ -243,7 +243,7 @@ export function DetalleProducto({
               <CirclePower aria-hidden="true" />
               {producto.activo ? 'Desactivar' : 'Activar'}
             </Button>
-          </footer>
+          </footer> : null}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

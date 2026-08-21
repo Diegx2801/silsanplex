@@ -19,8 +19,10 @@ import {
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { PERMISSIONS } from '@/features/auth/permissions'
+import { useAuth } from '@/features/auth/useAuth'
 import { DialogoMovimientoInventario } from '@/modulos/inventario/componentes/DialogoMovimientoInventario'
-import { useInventarioTemporal } from '@/modulos/inventario/estado/useInventarioTemporal'
+import { useInventario } from '@/modulos/inventario/estado/useInventario'
 import {
   calcularExistencias,
   movimientoEsSalida,
@@ -30,7 +32,7 @@ import {
   type ExistenciaProducto,
   type MovimientoInventario,
 } from '@/modulos/inventario/modelo/inventario'
-import { useProductosTemporales } from '@/modulos/productos/estado/useProductosTemporales'
+import { useProductos } from '@/modulos/productos/estado/useProductos'
 
 type FiltroStock = 'todos' | 'con-stock' | 'sin-stock'
 
@@ -108,13 +110,14 @@ function MovimientoFila({ movimiento }: { movimiento: MovimientoInventario }) {
 }
 
 export function InventarioPage() {
-  const { productos } = useProductosTemporales()
+  const { hasPermission } = useAuth()
+  const puedeGestionar = hasPermission(PERMISSIONS.INVENTORY_MANAGE)
+  const { productos } = useProductos()
   const productosActivos = useMemo(
     () => productos.filter((producto) => producto.activo),
     [productos],
   )
-  const { movimientos, registrarMovimiento } =
-    useInventarioTemporal(productosActivos)
+  const { movimientos, registrarMovimiento } = useInventario()
   const [busqueda, setBusqueda] = useState('')
   const [filtroStock, setFiltroStock] = useState<FiltroStock>('todos')
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
@@ -179,8 +182,8 @@ export function InventarioPage() {
     setDialogoAbierto(true)
   }
 
-  const guardarMovimiento = (datos: DatosMovimientoInventario) => {
-    const error = registrarMovimiento(datos)
+  const guardarMovimiento = async (datos: DatosMovimientoInventario) => {
+    const error = await registrarMovimiento(datos)
     if (!error) {
       setMensaje('Movimiento registrado y existencia actualizada.')
     }
@@ -221,11 +224,11 @@ export function InventarioPage() {
             Inventario
           </h1>
           <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
-            Consulta existencias y registra entradas, salidas o ajustes. La
-            información permanece aislada en esta sesión local.
+            Consulta existencias y registra entradas, salidas o ajustes con
+            trazabilidad persistente por usuario y fecha.
           </p>
         </div>
-        <Button
+        {puedeGestionar ? <Button
           type="button"
           size="lg"
           disabled={!productosActivos.length}
@@ -233,7 +236,7 @@ export function InventarioPage() {
         >
           <Plus aria-hidden="true" />
           Registrar movimiento
-        </Button>
+        </Button> : null}
       </header>
 
       <section aria-label="Resumen de inventario" className="ledger-sheet">
@@ -418,7 +421,7 @@ export function InventarioPage() {
               Historial de movimientos
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Registro cronológico de esta sesión
+              Registro cronológico persistente
             </p>
           </div>
           <span className="font-mono text-xs tabular-nums text-muted-foreground">
@@ -438,7 +441,7 @@ export function InventarioPage() {
         )}
       </section>
 
-      {dialogoAbierto ? (
+      {dialogoAbierto && puedeGestionar ? (
         <DialogoMovimientoInventario
           abierto={dialogoAbierto}
           productos={productosActivos}

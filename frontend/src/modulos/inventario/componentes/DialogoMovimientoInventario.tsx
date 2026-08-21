@@ -20,7 +20,7 @@ interface DialogoMovimientoInventarioProps {
   productos: readonly Producto[]
   almacenes: readonly string[]
   alCambiarApertura: (abierto: boolean) => void
-  alGuardar: (datos: DatosMovimientoInventario) => string | undefined
+  alGuardar: (datos: DatosMovimientoInventario) => Promise<string | undefined>
   alRestaurarFoco: () => void
 }
 
@@ -59,8 +59,8 @@ export function DialogoMovimientoInventario({
   )
   const esSalida = movimientoEsSalida(tipo)
 
-  const guardar = (datos: DatosMovimientoInventario) => {
-    const error = alGuardar(datos)
+  const guardar = async (datos: DatosMovimientoInventario) => {
+    const error = await alGuardar(datos)
     if (error) {
       setError(error.includes('lote') ? 'lote' : 'cantidad', { message: error })
       return
