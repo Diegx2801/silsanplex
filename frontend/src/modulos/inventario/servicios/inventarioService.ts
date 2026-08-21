@@ -10,6 +10,10 @@ interface MovimientoFila {
   movement_type: MovimientoInventario['tipo']
   quantity: number
   warehouse: string
+  warehouse_id: string
+  location_id: string
+  stock_status: MovimientoInventario['estadoStock']
+  unit_cost: number
   lot: string | null
   expiration_date: string | null
   operation_date: string
@@ -18,7 +22,7 @@ interface MovimientoFila {
 }
 
 const columnasMovimiento =
-  'id,product_id,product_code,product_description,unit_of_measure,movement_type,quantity,warehouse,lot,expiration_date,operation_date,created_at,reason' as const
+  'id,product_id,product_code,product_description,unit_of_measure,movement_type,quantity,warehouse,warehouse_id,location_id,stock_status,unit_cost,lot,expiration_date,operation_date,created_at,reason' as const
 
 function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
   return {
@@ -30,6 +34,10 @@ function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
     tipo: fila.movement_type,
     cantidad: Number(fila.quantity),
     almacen: fila.warehouse,
+    almacenId: fila.warehouse_id,
+    ubicacionId: fila.location_id,
+    estadoStock: fila.stock_status,
+    costoUnitario: Number(fila.unit_cost),
     lote: fila.lot ?? '',
     fechaVencimiento: fila.expiration_date ?? '',
     fechaOperacion: fila.operation_date,
@@ -64,6 +72,10 @@ export async function registrarMovimientoInventario(organizationId: string, dato
       movement_type: datos.tipo,
       quantity: datos.cantidad,
       warehouse: datos.almacen,
+      warehouse_id: datos.almacenId,
+      location_id: datos.ubicacionId,
+      stock_status: datos.estadoStock ?? 'available',
+      unit_cost: datos.costoUnitario ?? '0',
       lot: datos.lote,
       expiration_date: datos.fechaVencimiento,
       operation_date: datos.fechaOperacion,

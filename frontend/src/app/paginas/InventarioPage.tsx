@@ -22,6 +22,8 @@ import { Button } from '@/components/ui/button'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
 import { DialogoMovimientoInventario } from '@/modulos/inventario/componentes/DialogoMovimientoInventario'
+import { PanelGestionAlmacenes } from '@/modulos/inventario/componentes/PanelGestionAlmacenes'
+import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import { useInventario } from '@/modulos/inventario/estado/useInventario'
 import {
   calcularExistencias,
@@ -118,6 +120,7 @@ export function InventarioPage() {
     [productos],
   )
   const { movimientos, registrarMovimiento } = useInventario()
+  const gestionAlmacenes = useAlmacenes()
   const [busqueda, setBusqueda] = useState('')
   const [filtroStock, setFiltroStock] = useState<FiltroStock>('todos')
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
@@ -133,17 +136,6 @@ export function InventarioPage() {
     () => resumirInventario(existencias, movimientos),
     [existencias, movimientos],
   )
-  const almacenes = useMemo(() => {
-    const conocidos = new Map<string, string>()
-    conocidos.set('almacén principal', 'Almacén principal')
-    for (const movimiento of movimientos) {
-      conocidos.set(
-        movimiento.almacen.toLocaleLowerCase('es-PE'),
-        movimiento.almacen,
-      )
-    }
-    return [...conocidos.values()]
-  }, [movimientos])
   const existenciasFiltradas = useMemo(() => {
     const termino = busquedaDiferida
       .trim()
@@ -231,7 +223,7 @@ export function InventarioPage() {
         {puedeGestionar ? <Button
           type="button"
           size="lg"
-          disabled={!productosActivos.length}
+          disabled={!productosActivos.length || !gestionAlmacenes.almacenes.length}
           onClick={abrirMovimiento}
         >
           <Plus aria-hidden="true" />
@@ -441,11 +433,28 @@ export function InventarioPage() {
         )}
       </section>
 
+      <PanelGestionAlmacenes
+        almacenes={gestionAlmacenes.almacenes}
+        ubicaciones={gestionAlmacenes.ubicaciones}
+        saldos={gestionAlmacenes.saldos}
+        alertas={gestionAlmacenes.alertas}
+        kardex={gestionAlmacenes.kardex}
+        transferencias={gestionAlmacenes.transferencias}
+        productos={productos}
+        puedeGestionar={puedeGestionar}
+        crearAlmacen={gestionAlmacenes.crearAlmacen}
+        crearUbicacion={gestionAlmacenes.crearUbicacion}
+        transferir={gestionAlmacenes.transferir}
+        reclasificar={gestionAlmacenes.reclasificar}
+        configurar={gestionAlmacenes.configurar}
+      />
+
       {dialogoAbierto && puedeGestionar ? (
         <DialogoMovimientoInventario
           abierto={dialogoAbierto}
           productos={productosActivos}
-          almacenes={almacenes}
+          almacenes={gestionAlmacenes.almacenes.filter((almacen) => almacen.activo)}
+          ubicaciones={gestionAlmacenes.ubicaciones}
           alCambiarApertura={setDialogoAbierto}
           alGuardar={guardarMovimiento}
           alRestaurarFoco={() => disparador.current?.focus()}

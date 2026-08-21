@@ -25,6 +25,10 @@ export const esquemaDatosMovimientoInventario = z.object({
     .min(2, 'Ingresa el almacén')
     .max(80, 'Máximo 80 caracteres'),
   lote: z.string().trim().max(60, 'Máximo 60 caracteres'),
+  almacenId: z.string().uuid().optional(),
+  ubicacionId: z.string().uuid().optional(),
+  estadoStock: z.enum(['available', 'quarantine', 'damaged']).optional(),
+  costoUnitario: z.string().optional(),
   fechaVencimiento: z.string(),
   fechaOperacion: z.string().min(1, 'Selecciona la fecha de operación'),
   motivo: z
@@ -49,6 +53,11 @@ export const esquemaMovimientoInventario = z.object({
   cantidad: z.number().positive(),
   almacen: z.string().min(1),
   lote: z.string(),
+  almacenId: z.string().optional(),
+  ubicacionId: z.string().optional(),
+  ubicacion: z.string().optional(),
+  estadoStock: z.enum(['available', 'quarantine', 'damaged']).optional(),
+  costoUnitario: z.number().nonnegative().optional(),
   fechaVencimiento: z.string(),
   fechaOperacion: z.string().min(1),
   fechaRegistro: z.string().datetime(),
