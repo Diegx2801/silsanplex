@@ -1,6 +1,6 @@
 begin;
 
-select plan(14);
+select plan(18);
 
 select has_function('public', 'import_customers', array['jsonb'], 'existe importacion controlada');
 select is(has_function_privilege('authenticated', 'public.import_customers(jsonb)', 'EXECUTE'), true, 'authenticated puede importar con permiso');
@@ -73,7 +73,54 @@ select throws_ok(
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'c2222222-2222-4222-8222-222222222222', true);
 
-select is((select count(*) from public.audit_events where entity_type = 'customer' and action like 'CUSTOMER_IMPORT%'), 2::bigint, 'audita creacion y actualizacion importadas');
+select is(
+  (
+    select count(*)
+    from public.audit_events
+    where actor_user_id = 'c2222222-2222-4222-8222-222222222222'
+      and entity_type = 'customer'
+      and action in ('CUSTOMER_IMPORTED', 'CUSTOMER_IMPORT_UPDATED')
+  ),
+  2::bigint,
+  'audita creacion y actualizacion importadas'
+);
+
+create temporary table legacy_import_result as
+select public.import_customers('{
+  "mode":"SKIP",
+  "rows":[{
+    "rowNumber":33,
+    "documentType":"DNI",
+    "documentNumber":"73198724",
+    "legalName":"PEREZ ECHEVERRIA ALEJANDRA VANESSA",
+    "tradeName":"10",
+    "contactName":".",
+    "email":"10",
+    "phone":"-",
+    "fiscalAddress":".",
+    "ubigeoCode":"10",
+    "taxpayerStatus":"10",
+    "domicileCondition":"10",
+    "isActive":true
+  }]
+}'::jsonb) as value;
+
+select is((select (value->>'created')::integer from legacy_import_result), 1, 'acepta marcadores vacios heredados');
+select is(
+  (select count(*) from public.customer_addresses address join public.customers customer on customer.id = address.customer_id where customer.document_number = '73198724'),
+  0::bigint,
+  'no crea una direccion con marcadores vacios'
+);
+select is(
+  (select count(*) from public.customer_contacts contact join public.customers customer on customer.id = contact.customer_id where customer.document_number = '73198724'),
+  0::bigint,
+  'no crea un contacto con marcadores vacios'
+);
+select is(
+  (select trade_name from public.customers where document_number = '73198724'),
+  null::text,
+  'persiste los datos comerciales opcionales como NULL'
+);
 
 select throws_ok(
   $$ select public.import_customers('{"mode":"SKIP","rows":[]}'::jsonb) $$,

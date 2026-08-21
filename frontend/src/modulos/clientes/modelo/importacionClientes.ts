@@ -19,6 +19,7 @@ export interface FilaClienteImportada {
   isActive: boolean
   status: EstadoFilaImportacion
   errors: string[]
+  warnings: string[]
   exists: boolean
 }
 
@@ -27,6 +28,7 @@ export interface AnalisisImportacionClientes {
   rows: FilaClienteImportada[]
   validCount: number
   invalidCount: number
+  warningCount: number
 }
 
 export interface ResultadoFilaImportacionCliente {
@@ -67,6 +69,13 @@ function valor(row: Record<string, unknown>, aliases: readonly string[]) {
   return ''
 }
 
+const marcadoresVaciosCodeplex = new Set(['-', '.', '10'])
+
+function valorOpcionalCodeplex(row: Record<string, unknown>, aliases: readonly string[]) {
+  const value = valor(row, aliases)
+  return marcadoresVaciosCodeplex.has(value) ? '' : value
+}
+
 function inferirTipoDocumento(typeValue: string, documentNumber: string) {
   const normalized = normalizarEncabezadoCliente(typeValue)
   if (normalized.includes('RUC') || normalized.includes('REGISTRO_UNICO')) return 'RUC' as const
@@ -99,15 +108,16 @@ export function analizarRegistrosClientes(
       documentNumber = documentNumber.padStart(8, '0')
     }
     const legalName = valor(record, ['RAZON_SOCIAL', 'RAZ_SOCIAL', 'CLIENTE', 'NOMBRE_RAZON_SOCIAL'])
-    const tradeName = valor(record, ['NOMBRE_COMERCIAL', 'NOMBRE_COM', 'NOMBRE_CORTO'])
-    const contactName = valor(record, ['CONTACTO', 'RESPONSABLE', 'PERSONA_CONTACTO'])
-    const email = valor(record, ['EMAIL', 'CORREO'])
-    const phone = valor(record, ['TELEFONO', 'CELULAR'])
-    const fiscalAddress = valor(record, ['DIRECCION', 'DIRECCION_FISCAL', 'DOMICILIO_FISCAL'])
-    const ubigeoCode = valor(record, ['UBIGEO', 'UBIGEO_FISCAL', 'CODIGO_UBIGEO'])
-    const taxpayerStatus = valor(record, ['ESTADO_SUNAT', 'EST_SUNAT', 'ESTADO_CONTRIBUYENTE'])
-    const domicileCondition = valor(record, ['CONDICION_DOMICILIO', 'CONDICION'])
+    const tradeName = valorOpcionalCodeplex(record, ['NOMBRE_COMERCIAL', 'NOMBRE_COM', 'NOMBRE_CORTO'])
+    const contactName = valorOpcionalCodeplex(record, ['CONTACTO', 'RESPONSABLE', 'PERSONA_CONTACTO'])
+    const email = valorOpcionalCodeplex(record, ['EMAIL', 'CORREO'])
+    const phone = valorOpcionalCodeplex(record, ['TELEFONO', 'CELULAR'])
+    const fiscalAddress = valorOpcionalCodeplex(record, ['DIRECCION', 'DIRECCION_FISCAL', 'DOMICILIO_FISCAL'])
+    const ubigeoCode = valorOpcionalCodeplex(record, ['UBIGEO', 'UBIGEO_FISCAL', 'CODIGO_UBIGEO'])
+    const taxpayerStatus = valorOpcionalCodeplex(record, ['ESTADO_SUNAT', 'EST_SUNAT', 'ESTADO_CONTRIBUYENTE'])
+    const domicileCondition = valorOpcionalCodeplex(record, ['CONDICION_DOMICILIO', 'CONDICION'])
     const errors: string[] = []
+    const warnings: string[] = []
     const key = `${documentType}:${documentNumber}`
 
     if (!documentNumber) errors.push('Falta el documento.')
@@ -125,6 +135,7 @@ export function analizarRegistrosClientes(
     if (taxpayerStatus.length > 40 || domicileCondition.length > 40) errors.push('Los datos SUNAT superan 40 caracteres.')
     if (seen.has(key)) errors.push('Documento repetido dentro del archivo.')
     if (documentNumber) seen.add(key)
+    if (!fiscalAddress) warnings.push('Se importará sin dirección fiscal.')
 
     return {
       rowNumber: index + 2,
@@ -142,6 +153,7 @@ export function analizarRegistrosClientes(
       isActive: interpretarActivo(valor(record, ['ACTIVO', 'ESTADO'])),
       status: errors.length ? 'INVALID' : 'VALID',
       errors,
+      warnings,
       exists: false,
     }
   })
@@ -151,5 +163,6 @@ export function analizarRegistrosClientes(
     rows,
     validCount: rows.filter((row) => row.status === 'VALID').length,
     invalidCount: rows.filter((row) => row.status === 'INVALID').length,
+    warningCount: rows.filter((row) => row.status === 'VALID' && row.warnings.length > 0).length,
   }
 }

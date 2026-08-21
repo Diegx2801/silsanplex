@@ -23,6 +23,32 @@ describe('importacionClientes', () => {
       legalName: 'SUNAT',
       fiscalAddress: 'AV. GARCILASO 1472',
       ubigeoCode: '150101',
+      warnings: [],
+    })
+  })
+
+  it('normaliza marcadores vacíos de Codeplex sin rechazar la fila', () => {
+    const result = analizarRegistrosClientes([{
+      RUC_DNI: '73198724',
+      TIPO_DOCUMENTO_IDENTIDAD: 'DOCUMENTO NACIONAL DE IDENTIDAD',
+      RAZON_SOCIAL: 'PEREZ ECHEVERRIA ALEJANDRA VANESSA',
+      NOMBRE_COMERCIAL: '10',
+      TELEFONO: '10',
+      'DIRECCIÓN': '-',
+      EMAIL: '10',
+      UBIGEO: '.',
+    }])
+
+    expect(result.validCount).toBe(1)
+    expect(result.invalidCount).toBe(0)
+    expect(result.warningCount).toBe(1)
+    expect(result.rows[0]).toMatchObject({
+      tradeName: '',
+      phone: '',
+      fiscalAddress: '',
+      email: '',
+      ubigeoCode: '',
+      warnings: ['Se importará sin dirección fiscal.'],
     })
   })
 
@@ -43,4 +69,3 @@ describe('importacionClientes', () => {
     ]))
   })
 })
-

@@ -69,13 +69,13 @@ export async function descargarIncidenciasImportacion(
   const XLSX = await import('xlsx')
   const serverRows = new Map(result?.rows.map((row) => [row.rowNumber, row]))
   const incidents = rows
-    .filter((row) => row.status === 'INVALID' || ['SKIPPED', 'FAILED'].includes(serverRows.get(row.rowNumber)?.status ?? ''))
+    .filter((row) => row.status === 'INVALID' || row.warnings.length > 0 || ['SKIPPED', 'FAILED'].includes(serverRows.get(row.rowNumber)?.status ?? ''))
     .map((row) => ({
       FILA: row.rowNumber,
       TIPO_DOCUMENTO: row.documentType,
       NUMERO_DOCUMENTO: row.documentNumber,
       RAZON_SOCIAL: row.legalName,
-      INCIDENCIA: row.errors.join(' ') || serverRows.get(row.rowNumber)?.message || '',
+      INCIDENCIA: row.errors.join(' ') || row.warnings.join(' ') || serverRows.get(row.rowNumber)?.message || '',
     }))
   if (!incidents.length) throw new Error('No hay incidencias para descargar.')
   const workbook = XLSX.utils.book_new()

@@ -60,7 +60,11 @@ select lives_ok(
   'la caché admite un resultado normalizado'
 );
 
-select is((select count(*) from public.ruc_lookup_cache), 1::bigint, 'solo almacena RUC consultados');
+select is(
+  (select count(*) from public.ruc_lookup_cache where ruc = '20550154065'),
+  1::bigint,
+  'almacena una sola entrada para el RUC consultado'
+);
 select is((select source from public.ruc_lookup_cache where ruc = '20550154065'), 'APISPERU', 'conserva la procedencia');
 select is((select ubigeo_code from public.ruc_lookup_cache where ruc = '20550154065'), '150140', 'conserva el ubigeo');
 

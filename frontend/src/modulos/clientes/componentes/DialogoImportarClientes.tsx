@@ -65,7 +65,7 @@ export function DialogoImportarClientes({
 
   const existingCount = analysis?.rows.filter((row) => row.status === 'VALID' && row.exists).length ?? 0
   const hasIncidents = Boolean(
-    analysis && (analysis.invalidCount > 0 || result?.skipped || result?.failed),
+    analysis && (analysis.invalidCount > 0 || analysis.warningCount > 0 || result?.skipped || result?.failed),
   )
 
   return <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
@@ -116,9 +116,10 @@ export function DialogoImportarClientes({
           {loading && !analysis ? <p role="status" className="py-8 text-center text-sm text-muted-foreground">Analizando archivo…</p> : null}
           {error ? <p role="alert" className="border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p> : null}
           {analysis ? <>
-            <div className="grid gap-3 sm:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-5">
               <Resumen label="Filas" value={analysis.rows.length} />
               <Resumen label="Válidas" value={analysis.validCount} />
+              <Resumen label="Advertencias" value={analysis.warningCount} />
               <Resumen label="Con errores" value={analysis.invalidCount} />
               <Resumen label="Ya existentes" value={existingCount} />
             </div>
@@ -131,7 +132,10 @@ export function DialogoImportarClientes({
                   <td className="px-4 py-3">{row.legalName || 'Sin razón social'}</td>
                   <td className="px-4 py-3">{row.status === 'INVALID'
                     ? <span className="text-destructive">{row.errors.join(' ')}</span>
-                    : row.exists ? (mode === 'UPDATE' ? 'Actualizar existente' : 'Omitir existente') : 'Crear cliente'}</td>
+                    : <div>
+                      <span>{row.exists ? (mode === 'UPDATE' ? 'Actualizar existente' : 'Omitir existente') : 'Crear cliente'}</span>
+                      {row.warnings.length > 0 ? <span className="mt-1 block text-amber-700">{row.warnings.join(' ')}</span> : null}
+                    </div>}</td>
                 </tr>)}</tbody>
               </table>
             </div>
