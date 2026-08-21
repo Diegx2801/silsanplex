@@ -4,6 +4,11 @@ import { resolve } from 'node:path'
 import { loadEnvFile } from 'node:process'
 
 const localE2eEnvironment = resolve(import.meta.dirname, '.env.e2e.local')
+const localFrontendEnvironment = resolve(import.meta.dirname, '.env.local')
+
+if (existsSync(localFrontendEnvironment)) {
+  loadEnvFile(localFrontendEnvironment)
+}
 
 if (existsSync(localE2eEnvironment)) {
   loadEnvFile(localE2eEnvironment)
@@ -16,6 +21,8 @@ const requiredE2eVariables = [
   'E2E_MEMBER_PASSWORD',
   'E2E_RECOVERY_EMAIL',
   'E2E_RECOVERY_PASSWORD',
+  'VITE_SUPABASE_URL',
+  'VITE_SUPABASE_PUBLISHABLE_KEY',
 ] as const
 
 const missingE2eVariables = requiredE2eVariables.filter(

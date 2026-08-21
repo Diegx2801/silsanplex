@@ -19,7 +19,7 @@ import {
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
-import { useClientesTemporales } from '@/modulos/clientes/estado/useClientesTemporales'
+import { useClientes } from '@/modulos/clientes/estado/useClientes'
 import { useProductosTemporales } from '@/modulos/productos/estado/useProductosTemporales'
 import { DialogoConfirmacionEmision } from '@/modulos/ventas/componentes/DialogoConfirmacionEmision'
 import { DialogoCotizacion } from '@/modulos/ventas/componentes/DialogoCotizacion'
@@ -86,7 +86,7 @@ function EstadoCotizacionEtiqueta({ cotizacion }: { cotizacion: Cotizacion }) {
 }
 
 export function VentasPage() {
-  const { clientes } = useClientesTemporales()
+  const { clientes } = useClientes()
   const { productos } = useProductosTemporales()
   const clientesActivos = useMemo(
     () => clientes.filter((cliente) => cliente.activo),

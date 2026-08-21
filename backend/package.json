@@ -13,10 +13,10 @@
     "db:lint": "supabase db lint",
     "db:migrate": "supabase migration up",
     "env:frontend": "tsx scripts/configure-local-frontend.ts",
-    "functions:serve": "supabase functions serve",
+    "functions:serve": "supabase functions serve --env-file supabase/functions/.env.local",
     "test": "npm run test:db && npm run test:functions && npm run typecheck:scripts",
     "test:db": "supabase test db",
-    "test:functions": "deno check --config supabase/functions/admin-users/deno.json supabase/functions/admin-users/index.ts && deno test --config supabase/functions/admin-users/deno.json supabase/functions/admin-users",
+    "test:functions": "deno check --config supabase/functions/admin-users/deno.json supabase/functions/admin-users/index.ts && deno test --config supabase/functions/admin-users/deno.json supabase/functions/admin-users && deno check --config supabase/functions/ruc-lookup/deno.json supabase/functions/ruc-lookup/index.ts && deno test --config supabase/functions/ruc-lookup/deno.json supabase/functions/ruc-lookup",
     "typecheck:scripts": "tsc --project tsconfig.scripts.json"
   },
   "dependencies": {

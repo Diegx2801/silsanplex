@@ -93,9 +93,10 @@ select is(
     select count(*)
     from public.role_permissions
     where role_code <> 'ADMIN'
+      and permission_code = 'USERS_MANAGE'
   ),
   0::bigint,
-  'no se inventan permisos para los demás roles'
+  'USERS_MANAGE sigue reservado exclusivamente a ADMIN'
 );
 
 select is(
@@ -293,7 +294,12 @@ select set_config(
 
 select is(
   public.current_user_permissions(),
-  array['USERS_MANAGE']::text[],
+  array[
+    'CUSTOMERS_EXPORT',
+    'CUSTOMERS_MANAGE',
+    'CUSTOMERS_VIEW',
+    'USERS_MANAGE'
+  ]::text[],
   'ADMIN obtiene sus permisos en la única organización activa'
 );
 
@@ -308,8 +314,12 @@ select set_config(
 
 select is(
   public.current_user_permissions(),
-  '{}'::text[],
-  'un rol sin asignaciones obtiene un arreglo vacío'
+  array[
+    'CUSTOMERS_EXPORT',
+    'CUSTOMERS_MANAGE',
+    'CUSTOMERS_VIEW'
+  ]::text[],
+  'VENTAS obtiene únicamente sus permisos comerciales'
 );
 
 reset role;
@@ -406,8 +416,12 @@ select set_config(
 
 select is(
   public.current_user_permissions(),
-  '{}'::text[],
-  'un permiso inactivo no se concede'
+  array[
+    'CUSTOMERS_EXPORT',
+    'CUSTOMERS_MANAGE',
+    'CUSTOMERS_VIEW'
+  ]::text[],
+  'desactivar USERS_MANAGE no elimina otros permisos activos'
 );
 
 reset role;

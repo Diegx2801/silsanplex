@@ -101,8 +101,12 @@ export const router = createBrowserRouter([
         path: 'clientes',
         lazy: async () => {
           const { ClientesPage } = await import('@/app/paginas/ClientesPage')
-
-          return { Component: ClientesPage }
+          const ClientesProtegidos = () => (
+            <PermissionRoute permission={PERMISSIONS.CUSTOMERS_VIEW}>
+              <ClientesPage />
+            </PermissionRoute>
+          )
+          return { Component: ClientesProtegidos }
         },
       },
       {
