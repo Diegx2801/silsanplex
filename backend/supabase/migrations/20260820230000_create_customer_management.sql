@@ -152,7 +152,7 @@ for each row execute function public.set_updated_at();
 
 create or replace function public.has_organization_permission(
   requested_organization_id uuid,
-  requested_permission text
+  requested_permission_code text
 )
 returns boolean
 language sql
@@ -178,7 +178,7 @@ as $$
       and membership.is_active
       and profile.is_active
       and organization.is_active
-      and permission.code = requested_permission
+      and permission.code = requested_permission_code
   );
 $$;
 

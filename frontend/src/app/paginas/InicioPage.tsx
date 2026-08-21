@@ -13,7 +13,7 @@ import {
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
-import { useProductosTemporales } from '@/modulos/productos/estado/useProductosTemporales'
+import { useProductos } from '@/modulos/productos/estado/useProductos'
 import { resumirProductos } from '@/modulos/productos/modelo/producto'
 
 const formatoEntero = new Intl.NumberFormat('es-PE')
@@ -75,7 +75,7 @@ const dependencias = [
 ] as const
 
 export function InicioPage() {
-  const { productos } = useProductosTemporales()
+  const { productos } = useProductos()
   const resumen = resumirProductos(productos)
   const hayProductos = resumen.total > 0
 
@@ -87,16 +87,15 @@ export function InicioPage() {
             Centro de operaciones
           </h1>
           <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
-            Resumen administrativo basado únicamente en la información
-            disponible durante esta sesión. Los indicadores operativos se
-            incorporarán cuando exista una fuente empresarial confiable.
+            Resumen administrativo del catálogo y de los módulos operativos
+            persistentes de la organización.
           </p>
         </div>
         <span
           className="status-label self-start sm:self-end"
           data-tone="revision"
         >
-          Sesión local
+          Datos persistentes
         </span>
       </header>
 
@@ -105,10 +104,10 @@ export function InicioPage() {
           <div className="flex flex-wrap items-end justify-between gap-3 border-b px-5 py-4 sm:px-6">
             <div>
               <h2 id="catalogo-title" className="text-lg font-semibold">
-                Catálogo en esta sesión
+                Catálogo central
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Datos temporales del navegador actual
+                Productos persistidos para toda la organización
               </p>
             </div>
             <span className="font-mono text-xs tabular-nums text-muted-foreground">
@@ -139,8 +138,8 @@ export function InicioPage() {
           <div className="border-t px-5 py-4 sm:px-6">
             <p className="text-sm leading-6 text-muted-foreground">
               {hayProductos
-                ? 'El conteo refleja los productos guardados temporalmente en esta sesión.'
-                : 'Aún no hay productos en esta sesión. Puedes registrar uno o revisar los archivos exportados.'}
+                ? 'El conteo refleja el catálogo persistente disponible para compras, inventario y ventas.'
+                : 'Aún no hay productos registrados. Puedes crear el primero o revisar los archivos exportados.'}
             </p>
           </div>
 

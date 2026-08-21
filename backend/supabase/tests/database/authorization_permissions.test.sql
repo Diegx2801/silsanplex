@@ -298,6 +298,15 @@ select is(
     'CUSTOMERS_EXPORT',
     'CUSTOMERS_MANAGE',
     'CUSTOMERS_VIEW',
+    'INVENTORY_MANAGE',
+    'INVENTORY_VIEW',
+    'PRODUCTS_MANAGE',
+    'PRODUCTS_VIEW',
+    'PURCHASES_MANAGE',
+    'PURCHASES_RECEIVE',
+    'PURCHASES_VIEW',
+    'SUPPLIERS_MANAGE',
+    'SUPPLIERS_VIEW',
     'USERS_MANAGE'
   ]::text[],
   'ADMIN obtiene sus permisos en la única organización activa'
@@ -317,9 +326,11 @@ select is(
   array[
     'CUSTOMERS_EXPORT',
     'CUSTOMERS_MANAGE',
-    'CUSTOMERS_VIEW'
+    'CUSTOMERS_VIEW',
+    'INVENTORY_VIEW',
+    'PRODUCTS_VIEW'
   ]::text[],
-  'VENTAS obtiene únicamente sus permisos comerciales'
+  'VENTAS obtiene sus permisos comerciales y de consulta operativa'
 );
 
 reset role;
@@ -419,7 +430,16 @@ select is(
   array[
     'CUSTOMERS_EXPORT',
     'CUSTOMERS_MANAGE',
-    'CUSTOMERS_VIEW'
+    'CUSTOMERS_VIEW',
+    'INVENTORY_MANAGE',
+    'INVENTORY_VIEW',
+    'PRODUCTS_MANAGE',
+    'PRODUCTS_VIEW',
+    'PURCHASES_MANAGE',
+    'PURCHASES_RECEIVE',
+    'PURCHASES_VIEW',
+    'SUPPLIERS_MANAGE',
+    'SUPPLIERS_VIEW'
   ]::text[],
   'desactivar USERS_MANAGE no elimina otros permisos activos'
 );

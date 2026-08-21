@@ -1,9 +1,12 @@
+import { useQuery } from '@tanstack/react-query'
 import {
+  Ban,
   Building2,
   PackageCheck,
   Pencil,
   Plus,
   Search,
+  Send,
   ShoppingCart,
   Truck,
 } from 'lucide-react'
@@ -17,21 +20,23 @@ import {
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { PERMISSIONS } from '@/features/auth/permissions'
+import { useAuth } from '@/features/auth/useAuth'
 import { DialogoCompra } from '@/modulos/compras/componentes/DialogoCompra'
+import { DialogoConfirmacionAnulacion } from '@/modulos/compras/componentes/DialogoConfirmacionAnulacion'
 import { DialogoConfirmacionRecepcion } from '@/modulos/compras/componentes/DialogoConfirmacionRecepcion'
-import { DialogoProveedor } from '@/modulos/compras/componentes/DialogoProveedor'
-import { useComprasTemporales } from '@/modulos/compras/estado/useComprasTemporales'
+import { useCompras } from '@/modulos/compras/estado/useCompras'
 import {
   calcularTotalesCompra,
   type Compra,
   type DatosCompra,
-  type DatosProveedor,
   type EstadoCompra,
-  type Proveedor,
 } from '@/modulos/compras/modelo/compras'
-import { useProductosTemporales } from '@/modulos/productos/estado/useProductosTemporales'
+import { useProductos } from '@/modulos/productos/estado/useProductos'
+import { listarProveedores } from '@/modulos/proveedores/servicios/proveedorService'
 
 type FiltroEstado = 'todos' | EstadoCompra
+const proveedoresVacios = [] as const
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', {
   style: 'currency',
@@ -57,6 +62,7 @@ function etiquetaDocumento(compra: Compra) {
 function EstadoCompraEtiqueta({ estado }: { estado: EstadoCompra }) {
   const etiquetas: Record<EstadoCompra, string> = {
     borrador: 'Pendiente',
+    emitida: 'Emitida',
     recibida: 'Recibida',
     anulada: 'Anulada',
   }
@@ -72,36 +78,42 @@ function EstadoCompraEtiqueta({ estado }: { estado: EstadoCompra }) {
 }
 
 export function ComprasPage() {
-  const { productos } = useProductosTemporales()
+  const { access, hasPermission } = useAuth()
+  const organizationId = access?.organizationId ?? ''
+  const puedeConsultarProveedores = hasPermission(PERMISSIONS.SUPPLIERS_VIEW)
+  const puedeGestionar = hasPermission(PERMISSIONS.PURCHASES_MANAGE)
+  const puedeRecibir = hasPermission(PERMISSIONS.PURCHASES_RECEIVE)
+  const proveedoresQuery = useQuery({
+    queryKey: ['suppliers', organizationId],
+    queryFn: () => listarProveedores(organizationId),
+    enabled: Boolean(organizationId && puedeConsultarProveedores),
+  })
+  const proveedores = proveedoresQuery.data ?? proveedoresVacios
+  const { productos } = useProductos()
   const productosActivos = useMemo(
     () => productos.filter((producto) => producto.activo),
     [productos],
   )
-  const {
+  const { compras, guardarCompra, emitirCompra, recibirCompra, anularCompra } = useCompras(
+    productos,
     proveedores,
-    compras,
-    guardarProveedor,
-    guardarCompra,
-    recibirCompra,
-  } = useComprasTemporales(productos)
+  )
   const proveedoresActivos = useMemo(
     () => proveedores.filter((proveedor) => proveedor.activo),
     [proveedores],
   )
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
-  const [proveedorSeleccionado, setProveedorSeleccionado] =
-    useState<Proveedor | null>(null)
   const [compraSeleccionada, setCompraSeleccionada] = useState<Compra | null>(
     null,
   )
   const [compraPorRecibir, setCompraPorRecibir] = useState<Compra | null>(null)
-  const [dialogoProveedorAbierto, setDialogoProveedorAbierto] = useState(false)
+  const [compraPorAnular, setCompraPorAnular] = useState<Compra | null>(null)
   const [dialogoCompraAbierto, setDialogoCompraAbierto] = useState(false)
   const [mensaje, setMensaje] = useState('')
-  const disparadorProveedor = useRef<HTMLButtonElement | null>(null)
   const disparadorCompra = useRef<HTMLButtonElement | null>(null)
   const disparadorRecepcion = useRef<HTMLButtonElement | null>(null)
+  const disparadorAnulacion = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
 
   const comprasFiltradas = useMemo(() => {
@@ -133,15 +145,6 @@ export function ComprasPage() {
     [compras],
   )
 
-  const abrirProveedor = (
-    evento: ReactMouseEvent<HTMLButtonElement>,
-    proveedor: Proveedor | null = null,
-  ) => {
-    disparadorProveedor.current = evento.currentTarget
-    setProveedorSeleccionado(proveedor)
-    setDialogoProveedorAbierto(true)
-  }
-
   const abrirCompra = (
     evento: ReactMouseEvent<HTMLButtonElement>,
     compra: Compra | null = null,
@@ -159,35 +162,42 @@ export function ComprasPage() {
     setCompraPorRecibir(compra)
   }
 
-  const confirmarRecepcion = () => {
-    if (!compraPorRecibir) return
-    const error = recibirCompra(compraPorRecibir.id)
+  const confirmarRecepcion = async () => {
+    if (!compraPorRecibir) return undefined
+    const error = await recibirCompra(compraPorRecibir.id)
     setMensaje(
       error ??
         `Compra ${compraPorRecibir.serie}-${compraPorRecibir.numero} recibida e inventario actualizado.`,
     )
-    if (!error) setCompraPorRecibir(null)
-  }
-
-  const guardarNuevoProveedor = (
-    datos: DatosProveedor,
-    proveedorId?: string,
-  ) => {
-    const error = guardarProveedor(datos, proveedorId)
-    if (!error) {
-      setMensaje(
-        proveedorId ? 'Proveedor actualizado.' : 'Proveedor registrado.',
-      )
-    }
     return error
   }
 
-  const guardarNuevaCompra = (datos: DatosCompra, compraId?: string) => {
-    const error = guardarCompra(datos, compraId)
+  const solicitarAnulacion = (
+    evento: ReactMouseEvent<HTMLButtonElement>,
+    compra: Compra,
+  ) => {
+    disparadorAnulacion.current = evento.currentTarget
+    setCompraPorAnular(compra)
+  }
+
+  const confirmarAnulacion = async () => {
+    if (!compraPorAnular) return undefined
+    const error = await anularCompra(compraPorAnular.id)
+    setMensaje(error ?? `Orden ${compraPorAnular.serie}-${compraPorAnular.numero} anulada.`)
+    return error
+  }
+
+  const guardarNuevaCompra = async (datos: DatosCompra, compraId?: string) => {
+    const error = await guardarCompra(datos, compraId)
     if (!error) {
       setMensaje(compraId ? 'Compra actualizada.' : 'Compra guardada como borrador.')
     }
     return error
+  }
+
+  const emitirOrden = async (compra: Compra) => {
+    const error = await emitirCompra(compra.id)
+    setMensaje(error ?? `Orden ${compra.serie}-${compra.numero} emitida y pendiente de recepción.`)
   }
 
   const metricas = [
@@ -198,7 +208,7 @@ export function ComprasPage() {
     },
     {
       etiqueta: 'Pendientes de recibir',
-      valor: compras.filter((compra) => compra.estado === 'borrador').length,
+      valor: compras.filter((compra) => compra.estado === 'emitida').length,
       icono: Truck,
     },
     {
@@ -224,29 +234,32 @@ export function ComprasPage() {
             Compras
           </h1>
           <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
-            Registra proveedores y documentos multiproducto. El stock solo se
-            incrementa al confirmar la recepción de mercadería.
+            Registra documentos multiproducto con proveedores autorizados. El
+            stock solo se incrementa al confirmar la recepción de mercadería.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Button
+          {puedeConsultarProveedores ? (
+            <Button asChild variant="outline" size="lg">
+              <Link to="/proveedores">
+                <Building2 aria-hidden="true" />
+                Abrir proveedores
+              </Link>
+            </Button>
+          ) : null}
+          {puedeGestionar ? <Button
             type="button"
-            variant="outline"
             size="lg"
-            onClick={(evento) => abrirProveedor(evento)}
-          >
-            <Building2 aria-hidden="true" />
-            Nuevo proveedor
-          </Button>
-          <Button
-            type="button"
-            size="lg"
-            disabled={!proveedoresActivos.length || !productosActivos.length}
+            disabled={
+              proveedoresQuery.isLoading ||
+              !proveedoresActivos.length ||
+              !productosActivos.length
+            }
             onClick={(evento) => abrirCompra(evento)}
           >
             <Plus aria-hidden="true" />
             Registrar compra
-          </Button>
+          </Button> : null}
         </div>
       </header>
 
@@ -278,11 +291,22 @@ export function ComprasPage() {
         {mensaje}
       </p>
 
+      {proveedoresQuery.isError ? (
+        <aside role="alert" className="border-s-4 border-destructive bg-destructive/5 px-5 py-4 text-sm text-destructive">
+          No se pudo cargar el maestro de proveedores. Abre el módulo de Proveedores y vuelve a intentarlo.
+        </aside>
+      ) : null}
+
       {(!proveedoresActivos.length || !productosActivos.length) && (
         <aside className="border-s-4 border-primary bg-accent/60 px-5 py-4 text-sm leading-6">
           {!proveedoresActivos.length
-            ? 'Registra al menos un proveedor activo para crear una compra.'
+            ? 'Necesitas al menos un proveedor activo del maestro persistente para crear una compra.'
             : null}{' '}
+          {!proveedoresActivos.length && puedeConsultarProveedores ? (
+            <Link className="font-medium text-primary underline" to="/proveedores">
+              Abrir proveedores
+            </Link>
+          ) : null}{!proveedoresActivos.length ? ' ' : null}
           {!productosActivos.length ? (
             <>
               Necesitas al menos un producto activo.{' '}
@@ -338,6 +362,7 @@ export function ComprasPage() {
             >
               <option value="todos">Todos</option>
               <option value="borrador">Pendientes</option>
+              <option value="emitida">Emitidas</option>
               <option value="recibida">Recibidas</option>
               <option value="anulada">Anuladas</option>
             </select>
@@ -393,7 +418,7 @@ export function ComprasPage() {
                         </dd>
                       </div>
                     </dl>
-                    {compra.estado === 'borrador' ? (
+                    {compra.estado === 'borrador' && puedeGestionar ? (
                       <div className="mt-4 flex gap-2">
                         <Button
                           type="button"
@@ -404,11 +429,33 @@ export function ComprasPage() {
                         </Button>
                         <Button
                           type="button"
-                          onClick={(evento) => solicitarRecepcion(evento, compra)}
+                          onClick={() => void emitirOrden(compra)}
                         >
-                          <PackageCheck aria-hidden="true" /> Recibir
+                          <Send aria-hidden="true" /> Emitir
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={(evento) => solicitarAnulacion(evento, compra)}
+                        >
+                          <Ban aria-hidden="true" /> Anular
                         </Button>
                       </div>
+                    ) : compra.estado === 'emitida' && puedeRecibir ? (
+                      <div className="mt-4 flex gap-2">
+                        <Button type="button" onClick={(evento) => solicitarRecepcion(evento, compra)}>
+                          <PackageCheck aria-hidden="true" /> Recibir
+                        </Button>
+                        {puedeGestionar ? (
+                          <Button type="button" variant="ghost" onClick={(evento) => solicitarAnulacion(evento, compra)}>
+                            <Ban aria-hidden="true" /> Anular
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : compra.estado === 'emitida' && puedeGestionar ? (
+                      <Button type="button" variant="ghost" className="mt-4" onClick={(evento) => solicitarAnulacion(evento, compra)}>
+                        <Ban aria-hidden="true" /> Anular
+                      </Button>
                     ) : null}
                   </article>
                 )
@@ -457,7 +504,7 @@ export function ComprasPage() {
                           <EstadoCompraEtiqueta estado={compra.estado} />
                         </td>
                         <td className="px-6 py-4">
-                          {compra.estado === 'borrador' ? (
+                          {compra.estado === 'borrador' && puedeGestionar ? (
                             <div className="flex justify-end gap-1">
                               <Button
                                 type="button"
@@ -473,13 +520,59 @@ export function ComprasPage() {
                                 type="button"
                                 variant="ghost"
                                 size="icon"
+                                title="Emitir orden"
+                                aria-label={`Emitir ${etiquetaDocumento(compra)}`}
+                                onClick={() => void emitirOrden(compra)}
+                              >
+                                <Send aria-hidden="true" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                title="Anular orden"
+                                aria-label={`Anular ${etiquetaDocumento(compra)}`}
+                                onClick={(evento) => solicitarAnulacion(evento, compra)}
+                              >
+                                <Ban aria-hidden="true" />
+                              </Button>
+                            </div>
+                          ) : compra.estado === 'emitida' && puedeRecibir ? (
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
                                 title="Recibir mercadería"
                                 aria-label={`Recibir ${etiquetaDocumento(compra)}`}
-                                onClick={(evento) =>
-                                  solicitarRecepcion(evento, compra)
-                                }
+                                onClick={(evento) => solicitarRecepcion(evento, compra)}
                               >
                                 <PackageCheck aria-hidden="true" />
+                              </Button>
+                              {puedeGestionar ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Anular orden"
+                                  aria-label={`Anular ${etiquetaDocumento(compra)}`}
+                                  onClick={(evento) => solicitarAnulacion(evento, compra)}
+                                >
+                                  <Ban aria-hidden="true" />
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : compra.estado === 'emitida' && puedeGestionar ? (
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                title="Anular orden"
+                                aria-label={`Anular ${etiquetaDocumento(compra)}`}
+                                onClick={(evento) => solicitarAnulacion(evento, compra)}
+                              >
+                                <Ban aria-hidden="true" />
                               </Button>
                             </div>
                           ) : (
@@ -498,73 +591,7 @@ export function ComprasPage() {
         )}
       </section>
 
-      <section aria-labelledby="proveedores-title" className="ledger-sheet">
-        <div className="flex items-end justify-between gap-4 border-b px-5 py-4 sm:px-6">
-          <div>
-            <h2 id="proveedores-title" className="text-lg font-semibold">
-              Proveedores
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Maestro local disponible para nuevas compras
-            </p>
-          </div>
-          <span className="font-mono text-xs text-muted-foreground">
-            {proveedores.length} REG.
-          </span>
-        </div>
-        {proveedores.length ? (
-          <div className="divide-y">
-            {proveedores.map((proveedor) => (
-              <article
-                key={proveedor.id}
-                className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"
-              >
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-medium">{proveedor.razonSocial}</h3>
-                    <span
-                      className="status-label"
-                      data-tone={proveedor.activo ? 'listo' : 'revision'}
-                    >
-                      {proveedor.activo ? 'Activo' : 'Inactivo'}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {proveedor.tipoDocumento.toUpperCase()} {proveedor.numeroDocumento}
-                    {proveedor.contacto ? ` · ${proveedor.contacto}` : ''}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Editar proveedor ${proveedor.razonSocial}`}
-                  onClick={(evento) => abrirProveedor(evento, proveedor)}
-                >
-                  <Pencil aria-hidden="true" />
-                </Button>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="px-5 py-10 text-center text-sm text-muted-foreground sm:px-6">
-            Los proveedores que registres aparecerán aquí.
-          </div>
-        )}
-      </section>
-
-      {dialogoProveedorAbierto ? (
-        <DialogoProveedor
-          key={proveedorSeleccionado?.id ?? 'nuevo'}
-          abierto={dialogoProveedorAbierto}
-          proveedor={proveedorSeleccionado}
-          alCambiarApertura={setDialogoProveedorAbierto}
-          alGuardar={guardarNuevoProveedor}
-          alRestaurarFoco={() => disparadorProveedor.current?.focus()}
-        />
-      ) : null}
-
-      {dialogoCompraAbierto ? (
+      {dialogoCompraAbierto && puedeGestionar ? (
         <DialogoCompra
           key={compraSeleccionada?.id ?? 'nueva'}
           abierto={dialogoCompraAbierto}
@@ -577,7 +604,7 @@ export function ComprasPage() {
         />
       ) : null}
 
-      {compraPorRecibir ? (
+      {compraPorRecibir && puedeRecibir ? (
         <DialogoConfirmacionRecepcion
           abierto={Boolean(compraPorRecibir)}
           compra={compraPorRecibir}
@@ -586,6 +613,18 @@ export function ComprasPage() {
           }}
           alConfirmar={confirmarRecepcion}
           alRestaurarFoco={() => disparadorRecepcion.current?.focus()}
+        />
+      ) : null}
+
+      {compraPorAnular && puedeGestionar ? (
+        <DialogoConfirmacionAnulacion
+          abierto={Boolean(compraPorAnular)}
+          compra={compraPorAnular}
+          alCambiarApertura={(abierto) => {
+            if (!abierto) setCompraPorAnular(null)
+          }}
+          alConfirmar={confirmarAnulacion}
+          alRestaurarFoco={() => disparadorAnulacion.current?.focus()}
         />
       ) : null}
     </div>

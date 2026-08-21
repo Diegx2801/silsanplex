@@ -19,8 +19,12 @@ import {
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { PERMISSIONS } from '@/features/auth/permissions'
+import { useAuth } from '@/features/auth/useAuth'
 import { DialogoMovimientoInventario } from '@/modulos/inventario/componentes/DialogoMovimientoInventario'
-import { useInventarioTemporal } from '@/modulos/inventario/estado/useInventarioTemporal'
+import { PanelGestionAlmacenes } from '@/modulos/inventario/componentes/PanelGestionAlmacenes'
+import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
+import { useInventario } from '@/modulos/inventario/estado/useInventario'
 import {
   calcularExistencias,
   movimientoEsSalida,
@@ -30,7 +34,7 @@ import {
   type ExistenciaProducto,
   type MovimientoInventario,
 } from '@/modulos/inventario/modelo/inventario'
-import { useProductosTemporales } from '@/modulos/productos/estado/useProductosTemporales'
+import { useProductos } from '@/modulos/productos/estado/useProductos'
 
 type FiltroStock = 'todos' | 'con-stock' | 'sin-stock'
 
@@ -108,13 +112,15 @@ function MovimientoFila({ movimiento }: { movimiento: MovimientoInventario }) {
 }
 
 export function InventarioPage() {
-  const { productos } = useProductosTemporales()
+  const { hasPermission } = useAuth()
+  const puedeGestionar = hasPermission(PERMISSIONS.INVENTORY_MANAGE)
+  const { productos } = useProductos()
   const productosActivos = useMemo(
     () => productos.filter((producto) => producto.activo),
     [productos],
   )
-  const { movimientos, registrarMovimiento } =
-    useInventarioTemporal(productosActivos)
+  const { movimientos, registrarMovimiento } = useInventario()
+  const gestionAlmacenes = useAlmacenes()
   const [busqueda, setBusqueda] = useState('')
   const [filtroStock, setFiltroStock] = useState<FiltroStock>('todos')
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
@@ -130,17 +136,6 @@ export function InventarioPage() {
     () => resumirInventario(existencias, movimientos),
     [existencias, movimientos],
   )
-  const almacenes = useMemo(() => {
-    const conocidos = new Map<string, string>()
-    conocidos.set('almacén principal', 'Almacén principal')
-    for (const movimiento of movimientos) {
-      conocidos.set(
-        movimiento.almacen.toLocaleLowerCase('es-PE'),
-        movimiento.almacen,
-      )
-    }
-    return [...conocidos.values()]
-  }, [movimientos])
   const existenciasFiltradas = useMemo(() => {
     const termino = busquedaDiferida
       .trim()
@@ -179,8 +174,8 @@ export function InventarioPage() {
     setDialogoAbierto(true)
   }
 
-  const guardarMovimiento = (datos: DatosMovimientoInventario) => {
-    const error = registrarMovimiento(datos)
+  const guardarMovimiento = async (datos: DatosMovimientoInventario) => {
+    const error = await registrarMovimiento(datos)
     if (!error) {
       setMensaje('Movimiento registrado y existencia actualizada.')
     }
@@ -221,19 +216,19 @@ export function InventarioPage() {
             Inventario
           </h1>
           <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
-            Consulta existencias y registra entradas, salidas o ajustes. La
-            información permanece aislada en esta sesión local.
+            Consulta existencias y registra entradas, salidas o ajustes con
+            trazabilidad persistente por usuario y fecha.
           </p>
         </div>
-        <Button
+        {puedeGestionar ? <Button
           type="button"
           size="lg"
-          disabled={!productosActivos.length}
+          disabled={!productosActivos.length || !gestionAlmacenes.almacenes.length}
           onClick={abrirMovimiento}
         >
           <Plus aria-hidden="true" />
           Registrar movimiento
-        </Button>
+        </Button> : null}
       </header>
 
       <section aria-label="Resumen de inventario" className="ledger-sheet">
@@ -418,7 +413,7 @@ export function InventarioPage() {
               Historial de movimientos
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Registro cronológico de esta sesión
+              Registro cronológico persistente
             </p>
           </div>
           <span className="font-mono text-xs tabular-nums text-muted-foreground">
@@ -438,11 +433,28 @@ export function InventarioPage() {
         )}
       </section>
 
-      {dialogoAbierto ? (
+      <PanelGestionAlmacenes
+        almacenes={gestionAlmacenes.almacenes}
+        ubicaciones={gestionAlmacenes.ubicaciones}
+        saldos={gestionAlmacenes.saldos}
+        alertas={gestionAlmacenes.alertas}
+        kardex={gestionAlmacenes.kardex}
+        transferencias={gestionAlmacenes.transferencias}
+        productos={productos}
+        puedeGestionar={puedeGestionar}
+        crearAlmacen={gestionAlmacenes.crearAlmacen}
+        crearUbicacion={gestionAlmacenes.crearUbicacion}
+        transferir={gestionAlmacenes.transferir}
+        reclasificar={gestionAlmacenes.reclasificar}
+        configurar={gestionAlmacenes.configurar}
+      />
+
+      {dialogoAbierto && puedeGestionar ? (
         <DialogoMovimientoInventario
           abierto={dialogoAbierto}
           productos={productosActivos}
-          almacenes={almacenes}
+          almacenes={gestionAlmacenes.almacenes.filter((almacen) => almacen.activo)}
+          ubicaciones={gestionAlmacenes.ubicaciones}
           alCambiarApertura={setDialogoAbierto}
           alGuardar={guardarMovimiento}
           alRestaurarFoco={() => disparador.current?.focus()}

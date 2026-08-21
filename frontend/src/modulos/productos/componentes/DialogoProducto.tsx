@@ -94,7 +94,7 @@ interface DialogoProductoProps {
   abierto: boolean
   producto: Producto | null
   alCambiarApertura: (abierto: boolean) => void
-  alGuardar: (datos: DatosProducto, productoId?: string) => string | undefined
+  alGuardar: (datos: DatosProducto, productoId?: string) => Promise<string | undefined>
   alRestaurarFoco: () => void
 }
 
@@ -115,8 +115,8 @@ export function DialogoProducto({
     defaultValues: producto ?? { ...productoInicial },
   })
 
-  const guardar = (datos: DatosProducto) => {
-    const error = alGuardar(datos, producto?.id)
+  const guardar = async (datos: DatosProducto) => {
+    const error = await alGuardar(datos, producto?.id)
 
     if (error) {
       setError('codigo', { message: error })

@@ -1,62 +1,16 @@
 import { z } from 'zod'
 
 import type { Producto } from '@/modulos/productos/modelo/producto'
+import type { Proveedor } from '@/modulos/proveedores/modelo/proveedor'
+
+export {
+  esquemaDatosProveedor,
+  type DatosProveedor,
+  type Proveedor,
+} from '@/modulos/proveedores/modelo/proveedor'
 
 const textoOpcional = (maximo: number) =>
   z.string().trim().max(maximo, `Máximo ${maximo} caracteres`)
-
-export const esquemaDatosProveedor = z
-  .object({
-    tipoDocumento: z.enum(['ruc', 'dni', 'otro']),
-    numeroDocumento: z
-      .string()
-      .trim()
-      .min(1, 'Ingresa el número de documento')
-      .max(20, 'Máximo 20 caracteres'),
-    razonSocial: z
-      .string()
-      .trim()
-      .min(2, 'Ingresa la razón social o nombre')
-      .max(160, 'Máximo 160 caracteres'),
-    contacto: textoOpcional(120),
-    email: z
-      .string()
-      .trim()
-      .refine(
-        (valor) => valor === '' || z.string().email().safeParse(valor).success,
-        'Ingresa un correo válido',
-      ),
-    telefono: textoOpcional(30),
-    direccion: textoOpcional(200),
-    activo: z.boolean(),
-  })
-  .superRefine((datos, contexto) => {
-    if (datos.tipoDocumento === 'ruc' && !/^\d{11}$/.test(datos.numeroDocumento)) {
-      contexto.addIssue({
-        code: 'custom',
-        path: ['numeroDocumento'],
-        message: 'El RUC debe contener 11 dígitos',
-      })
-    }
-    if (datos.tipoDocumento === 'dni' && !/^\d{8}$/.test(datos.numeroDocumento)) {
-      contexto.addIssue({
-        code: 'custom',
-        path: ['numeroDocumento'],
-        message: 'El DNI debe contener 8 dígitos',
-      })
-    }
-  })
-
-export type DatosProveedor = z.infer<typeof esquemaDatosProveedor>
-
-export const esquemaProveedor = esquemaDatosProveedor.and(
-  z.object({
-    id: z.string().min(1),
-    fechaRegistro: z.string().datetime(),
-  }),
-)
-
-export type Proveedor = z.infer<typeof esquemaProveedor>
 
 const importePositivo = z
   .string()
@@ -117,7 +71,7 @@ export const esquemaLineaCompra = z.object({
 })
 
 export type LineaCompra = z.infer<typeof esquemaLineaCompra>
-export type EstadoCompra = 'borrador' | 'recibida' | 'anulada'
+export type EstadoCompra = 'borrador' | 'emitida' | 'recibida' | 'anulada'
 
 export const esquemaCompra = z.object({
   id: z.string().min(1),
@@ -133,8 +87,9 @@ export const esquemaCompra = z.object({
   preciosIncluyenIgv: z.boolean(),
   observacion: z.string(),
   lineas: z.array(esquemaLineaCompra).min(1),
-  estado: z.enum(['borrador', 'recibida', 'anulada']),
+  estado: z.enum(['borrador', 'emitida', 'recibida', 'anulada']),
   fechaRegistro: z.string().datetime(),
+  fechaEmisionOrden: z.string().datetime().nullable(),
   fechaRecepcion: z.string().datetime().nullable(),
 })
 
@@ -235,6 +190,7 @@ export function crearCompra(
     }),
     estado: 'borrador',
     fechaRegistro: ahora.toISOString(),
+    fechaEmisionOrden: null,
     fechaRecepcion: null,
   }
 }
