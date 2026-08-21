@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
+import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
 import {
   esquemaDatosMovimientoInventario,
   movimientoEsSalida,
@@ -18,7 +19,8 @@ const hoy = () => new Date().toISOString().slice(0, 10)
 interface DialogoMovimientoInventarioProps {
   abierto: boolean
   productos: readonly Producto[]
-  almacenes: readonly string[]
+  almacenes: readonly Almacen[]
+  ubicaciones: readonly UbicacionAlmacen[]
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (datos: DatosMovimientoInventario) => Promise<string | undefined>
   alRestaurarFoco: () => void
@@ -28,6 +30,7 @@ export function DialogoMovimientoInventario({
   abierto,
   productos,
   almacenes,
+  ubicaciones,
   alCambiarApertura,
   alGuardar,
   alRestaurarFoco,
@@ -36,6 +39,7 @@ export function DialogoMovimientoInventario({
     register,
     handleSubmit,
     watch,
+    setValue,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<DatosMovimientoInventario>({
@@ -44,7 +48,11 @@ export function DialogoMovimientoInventario({
       productoId: productos[0]?.id ?? '',
       tipo: 'entrada',
       cantidad: '',
-      almacen: almacenes[0] ?? 'Almacén principal',
+      almacen: almacenes[0]?.nombre ?? 'Almacen principal',
+      almacenId: almacenes[0]?.id,
+      ubicacionId: ubicaciones.find((item) => item.almacenId === almacenes[0]?.id)?.id,
+      estadoStock: 'available',
+      costoUnitario: '0',
       lote: '',
       fechaVencimiento: '',
       fechaOperacion: hoy(),
@@ -53,6 +61,7 @@ export function DialogoMovimientoInventario({
   })
   const productoId = watch('productoId')
   const tipo = watch('tipo')
+  const almacenId = watch('almacenId')
   const producto = useMemo(
     () => productos.find((item) => item.id === productoId),
     [productoId, productos],
@@ -185,23 +194,49 @@ export function DialogoMovimientoInventario({
                 <label htmlFor="almacen-movimiento" className="field-label">
                   Almacén *
                 </label>
-                <input
+                <input type="hidden" {...register('almacen')} />
+                <select
                   id="almacen-movimiento"
-                  list="almacenes-conocidos"
-                  autoComplete="off"
                   className="field-control"
-                  aria-invalid={Boolean(errors.almacen)}
-                  {...register('almacen')}
-                />
-                <datalist id="almacenes-conocidos">
+                  {...register('almacenId', {
+                    onChange: (evento) => {
+                      const seleccionado = almacenes.find((item) => item.id === evento.target.value)
+                      setValue('almacen', seleccionado?.nombre ?? '')
+                      setValue('ubicacionId', ubicaciones.find((item) => item.almacenId === evento.target.value && item.activa)?.id)
+                    },
+                  })}
+                >
                   {almacenes.map((almacen) => (
-                    <option key={almacen} value={almacen} />
+                    <option key={almacen.id} value={almacen.id}>{almacen.codigo} · {almacen.nombre}</option>
                   ))}
-                </datalist>
+                </select>
                 {errors.almacen ? (
                   <p className="field-error">{errors.almacen.message}</p>
                 ) : null}
               </div>
+
+              <div>
+                <label htmlFor="ubicacion-movimiento" className="field-label">Ubicación física *</label>
+                <select id="ubicacion-movimiento" className="field-control" {...register('ubicacionId')}>
+                  {ubicaciones.filter((item) => item.almacenId === almacenId && item.activa).map((ubicacion) => (
+                    <option key={ubicacion.id} value={ubicacion.id}>{ubicacion.codigo} · {ubicacion.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="estado-movimiento" className="field-label">Condición del stock *</label>
+                <select id="estado-movimiento" className="field-control" {...register('estadoStock')}>
+                  <option value="available">Disponible</option>
+                  <option value="quarantine">Cuarentena</option>
+                  <option value="damaged">Dañado / inmovilizado</option>
+                </select>
+              </div>
+
+              {!esSalida ? <div>
+                <label htmlFor="costo-movimiento" className="field-label">Costo unitario</label>
+                <input id="costo-movimiento" type="number" min="0" step="0.0001" className="field-control" {...register('costoUnitario')} />
+              </div> : null}
 
               <div>
                 <label htmlFor="lote-movimiento" className="field-label">
