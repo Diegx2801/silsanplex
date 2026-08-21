@@ -50,8 +50,9 @@ un administrador y un miembro con rol `VENTAS`. No utilizan invitaciones ni
 Mailpit; su objetivo es validar sesiones y autorización con datos reproducibles.
 
 1. Añadir en `backend/.env.local` valores exclusivos de desarrollo para:
-   `E2E_ADMIN_EMAIL`, `E2E_ADMIN_PASSWORD`, `E2E_MEMBER_EMAIL` y
-   `E2E_MEMBER_PASSWORD`.
+   `E2E_ADMIN_EMAIL`, `E2E_ADMIN_PASSWORD`, `E2E_MEMBER_EMAIL`,
+   `E2E_MEMBER_PASSWORD`, `E2E_RECOVERY_EMAIL` y
+   `E2E_RECOVERY_PASSWORD`.
 2. Iniciar Supabase local y aplicar las migraciones.
 3. Desde `frontend/`, ejecutar:
 

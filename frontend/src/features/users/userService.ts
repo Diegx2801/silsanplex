@@ -1,13 +1,9 @@
-import { supabase } from '@/lib/supabase'
+import { invokeEdgeFunction } from '@/lib/edgeFunctions'
 import type {
   ManagedUser,
   RoleCode,
   UserInput,
 } from '@/features/users/userTypes'
-
-interface FunctionErrorBody {
-  error?: { message?: string }
-}
 
 interface RawManagedUser {
   user_id: string
@@ -23,23 +19,7 @@ interface RawManagedUser {
 }
 
 async function invokeAdminUsers<T>(body: object): Promise<T> {
-  const { data, error } = await supabase.functions.invoke('admin-users', { body })
-
-  if (error) {
-    let message = 'No se pudo completar la operación.'
-    const context = 'context' in error ? error.context : null
-
-    if (context instanceof Response) {
-      const responseBody = (await context.clone().json().catch(() => null)) as
-        | FunctionErrorBody
-        | null
-      message = responseBody?.error?.message ?? message
-    }
-
-    throw new Error(message)
-  }
-
-  return (data as { data: T }).data
+  return invokeEdgeFunction<T>('admin-users', body)
 }
 
 export async function listUsers(): Promise<ManagedUser[]> {

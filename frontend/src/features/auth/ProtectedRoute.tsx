@@ -92,6 +92,7 @@ export function ProtectedRoute({ children }: PropsWithChildren) {
   const { session, access, accessError, isLoading, sessionError } = useAuth()
 
   if (isLoading) return <LoadingScreen />
+  if (!session) return <Navigate to="/iniciar-sesion" replace />
   if (sessionError) {
     return (
       <main className="grid min-h-svh place-items-center bg-background p-6">
@@ -112,7 +113,6 @@ export function ProtectedRoute({ children }: PropsWithChildren) {
       </main>
     )
   }
-  if (!session) return <Navigate to="/iniciar-sesion" replace />
   if (accessError) return <AccessErrorScreen />
   if (!access) return <AccessDeniedScreen />
 

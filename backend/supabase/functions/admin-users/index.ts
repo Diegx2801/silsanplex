@@ -29,6 +29,8 @@ const databaseErrorMessages: Record<string, string> = {
   SELF_DEACTIVATION_FORBIDDEN: 'No puedes desactivar tu propia cuenta.',
   LAST_ADMIN_DEACTIVATION_FORBIDDEN: 'No se puede desactivar al último administrador activo.',
   INVALID_FULL_NAME: 'El nombre ingresado no es válido.',
+  INVITATION_RESEND_RATE_LIMITED:
+    'Espera un minuto antes de reenviar otra invitación.',
 }
 
 class RequestError extends Error {
@@ -47,10 +49,16 @@ function applicationUrl() {
 
 function databaseRequestError(message?: string) {
   const code = message ?? 'DATABASE_OPERATION_FAILED'
+  const status =
+    code === 'ADMIN_ACCESS_REQUIRED'
+      ? 403
+      : code === 'INVITATION_RESEND_RATE_LIMITED'
+        ? 429
+        : 409
   return new RequestError(
     code,
     databaseErrorMessages[code] ?? 'No se pudo completar la operación solicitada.',
-    code === 'ADMIN_ACCESS_REQUIRED' ? 403 : 409,
+    status,
   )
 }
 

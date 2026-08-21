@@ -1,6 +1,6 @@
 begin;
 
-select plan(21);
+select plan(23);
 
 select has_function(
   'public',
@@ -241,6 +241,35 @@ select is(
   ),
   false,
   'la desactivación es reversible y no elimina la membresía'
+);
+
+update public.organization_memberships
+set is_active = true, deactivated_at = null
+where organization_id = (
+    select id from public.organizations where slug = 'operaciones-test'
+  )
+  and user_id = '42222222-2222-4222-8222-222222222222';
+
+select lives_ok(
+  $$
+    select public.admin_record_invitation_resent(
+      '41111111-1111-4111-8111-111111111111',
+      '42222222-2222-4222-8222-222222222222'
+    )
+  $$,
+  'el primer reenvío de invitación queda autorizado y auditado'
+);
+
+select throws_ok(
+  $$
+    select public.admin_record_invitation_resent(
+      '41111111-1111-4111-8111-111111111111',
+      '42222222-2222-4222-8222-222222222222'
+    )
+  $$,
+  'P0001',
+  'INVITATION_RESEND_RATE_LIMITED',
+  'se limita el reenvío repetido de una invitación'
 );
 
 select ok(

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ManagedUser } from '@/features/users/userTypes'
@@ -33,6 +33,14 @@ const usuario: ManagedUser = {
   updatedAt: '2026-08-20T12:00:00.000Z',
 }
 
+const usuarioInactivo: ManagedUser = {
+  ...usuario,
+  id: 'inactive-user',
+  email: 'inactivo@silsan.local',
+  fullName: 'Usuario Inactivo',
+  isActive: false,
+}
+
 function renderUsersPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -61,7 +69,22 @@ describe('UsersPage', () => {
     resolveUsers([usuario])
 
     await waitFor(() => {
-      expect(screen.getByText('Usuario de Ventas')).toBeInTheDocument()
+      expect(screen.getAllByText('Usuario de Ventas')).toHaveLength(2)
     })
+  })
+
+  it('muestra activos por defecto y permite consultar inactivos', async () => {
+    mocks.listUsers.mockResolvedValue([usuario, usuarioInactivo])
+    renderUsersPage()
+
+    expect(await screen.findAllByText('Usuario de Ventas')).toHaveLength(2)
+    expect(screen.queryAllByText('Usuario Inactivo')).toHaveLength(0)
+
+    fireEvent.change(screen.getByLabelText('Filtrar por estado'), {
+      target: { value: 'inactive' },
+    })
+
+    expect(await screen.findAllByText('Usuario Inactivo')).toHaveLength(2)
+    expect(screen.queryAllByText('Usuario de Ventas')).toHaveLength(0)
   })
 })

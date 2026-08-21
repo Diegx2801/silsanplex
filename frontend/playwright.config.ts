@@ -14,6 +14,8 @@ const requiredE2eVariables = [
   'E2E_ADMIN_PASSWORD',
   'E2E_MEMBER_EMAIL',
   'E2E_MEMBER_PASSWORD',
+  'E2E_RECOVERY_EMAIL',
+  'E2E_RECOVERY_PASSWORD',
 ] as const
 
 const missingE2eVariables = requiredE2eVariables.filter(

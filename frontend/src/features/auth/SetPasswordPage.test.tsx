@@ -11,7 +11,6 @@ vi.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {
       updateUser: mocks.updateUser,
-      signOut: mocks.signOut,
     },
   },
 }))
@@ -21,6 +20,7 @@ vi.mock('@/features/auth/useAuth', () => ({
     session: { user: { id: 'invited-user' } },
     isLoading: false,
     sessionError: null,
+    signOut: mocks.signOut,
   }),
 }))
 
@@ -69,7 +69,7 @@ describe('SetPasswordPage', () => {
 
   it('actualiza la contraseña, cierra todas las sesiones y vuelve al login', async () => {
     mocks.updateUser.mockResolvedValue({ error: null })
-    mocks.signOut.mockResolvedValue({ error: null })
+    mocks.signOut.mockResolvedValue(undefined)
     renderPage()
 
     completeForm()
@@ -78,23 +78,44 @@ describe('SetPasswordPage', () => {
       expect(mocks.updateUser).toHaveBeenCalledWith({
         password: 'segura-1234',
       })
-      expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'global' })
+      expect(mocks.signOut).toHaveBeenCalledOnce()
     })
     expect(await screen.findByText('Ingreso confirmado')).toBeInTheDocument()
   })
 
-  it('no confirma el flujo si no puede cerrar todas las sesiones', async () => {
+  it('limpia la sesión local aunque falle la revocación remota', async () => {
     mocks.updateUser.mockResolvedValue({ error: null })
-    mocks.signOut.mockResolvedValue({ error: new Error('Network error') })
+    mocks.signOut.mockRejectedValue(new Error('Network error'))
     renderPage()
 
     completeForm()
 
+    expect(await screen.findByText('Ingreso confirmado')).toBeInTheDocument()
+  })
+
+  it('explica cuando el enlace expiró o ya fue utilizado', () => {
+    render(
+      <MemoryRouter
+        initialEntries={[
+          '/establecer-contrasena?error=access_denied&error_code=otp_expired',
+        ]}
+      >
+        <Routes>
+          <Route
+            path="/establecer-contrasena"
+            element={<SetPasswordPage />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+
     expect(
-      await screen.findByText(
-        'La contraseña se actualizó, pero no se pudieron cerrar todas las sesiones. Inténtalo nuevamente.',
+      screen.getByText(
+        'El enlace expiró o ya fue utilizado. Solicita uno nuevo a administración.',
       ),
     ).toBeInTheDocument()
-    expect(screen.queryByText('Ingreso confirmado')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Guardar contraseña' }),
+    ).not.toBeInTheDocument()
   })
 })

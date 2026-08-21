@@ -29,7 +29,7 @@ function assertStrictlyLocalSupabase(url: string) {
 }
 
 function loadIdentity(
-  prefix: 'E2E_ADMIN' | 'E2E_MEMBER',
+  prefix: 'E2E_ADMIN' | 'E2E_MEMBER' | 'E2E_RECOVERY',
   fullName: string,
   roleCodes: string[],
 ): E2eIdentity {
@@ -125,7 +125,11 @@ async function assignFixtureMembership(
   if (rolesError) throw rolesError
 }
 
-function writePlaywrightEnvironment(admin: E2eIdentity, member: E2eIdentity) {
+function writePlaywrightEnvironment(
+  admin: E2eIdentity,
+  member: E2eIdentity,
+  recovery: E2eIdentity,
+) {
   const target = resolve(process.cwd(), '..', 'frontend', '.env.e2e.local')
   const contents = [
     '# Generado por backend/npm run e2e:prepare. No versionar.',
@@ -133,6 +137,8 @@ function writePlaywrightEnvironment(admin: E2eIdentity, member: E2eIdentity) {
     `E2E_ADMIN_PASSWORD=${JSON.stringify(admin.password)}`,
     `E2E_MEMBER_EMAIL=${JSON.stringify(member.email)}`,
     `E2E_MEMBER_PASSWORD=${JSON.stringify(member.password)}`,
+    `E2E_RECOVERY_EMAIL=${JSON.stringify(recovery.email)}`,
+    `E2E_RECOVERY_PASSWORD=${JSON.stringify(recovery.password)}`,
     '',
   ].join('\n')
 
@@ -145,8 +151,19 @@ async function prepareLocalE2e() {
 
   const adminIdentity = loadIdentity('E2E_ADMIN', 'Administrador E2E', ['ADMIN'])
   const memberIdentity = loadIdentity('E2E_MEMBER', 'Miembro de Ventas E2E', ['VENTAS'])
-  if (adminIdentity.email === memberIdentity.email) {
-    throw new Error('E2E_ADMIN_EMAIL y E2E_MEMBER_EMAIL deben ser diferentes.')
+  const recoveryIdentity = loadIdentity(
+    'E2E_RECOVERY',
+    'Usuario de Recuperación E2E',
+    ['VENTAS'],
+  )
+  if (
+    new Set([
+      adminIdentity.email,
+      memberIdentity.email,
+      recoveryIdentity.email,
+    ]).size !== 3
+  ) {
+    throw new Error('Las identidades E2E deben utilizar correos diferentes.')
   }
 
   const organizationSlug = process.env.INITIAL_ORGANIZATION_SLUG?.trim() || 'drogueria-silsan'
@@ -167,6 +184,7 @@ async function prepareLocalE2e() {
 
   const adminUser = await upsertAuthIdentity(supabase, adminIdentity)
   const memberUser = await upsertAuthIdentity(supabase, memberIdentity)
+  const recoveryUser = await upsertAuthIdentity(supabase, recoveryIdentity)
 
   await assignFixtureMembership(
     supabase,
@@ -180,7 +198,13 @@ async function prepareLocalE2e() {
     memberUser,
     memberIdentity.roleCodes,
   )
-  writePlaywrightEnvironment(adminIdentity, memberIdentity)
+  await assignFixtureMembership(
+    supabase,
+    organization.id,
+    recoveryUser,
+    recoveryIdentity.roleCodes,
+  )
+  writePlaywrightEnvironment(adminIdentity, memberIdentity, recoveryIdentity)
 
   console.info('Usuarios E2E locales preparados y frontend/.env.e2e.local actualizado.')
   console.info('No se enviaron correos ni se mostraron contraseñas.')

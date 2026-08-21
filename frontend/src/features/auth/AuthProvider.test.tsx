@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ProtectedRoute } from '@/features/auth/ProtectedRoute'
+import { notifySessionInvalidated } from '@/features/auth/sessionEvents'
 
 type SessionEventCallback = (event: string, session: Session | null) => void
 
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => {
       return { data: { subscription: { unsubscribe: mocks.unsubscribe } } }
     }),
     signOut: vi.fn(),
+    refreshSession: vi.fn(),
     rpc: vi.fn(),
     unsubscribe: vi.fn(),
     from: vi.fn(),
@@ -33,6 +35,7 @@ vi.mock('@/lib/supabase', () => ({
       getSession: mocks.getSession,
       onAuthStateChange: mocks.onAuthStateChange,
       signOut: mocks.signOut,
+      refreshSession: mocks.refreshSession,
     },
     from: mocks.from,
     rpc: mocks.rpc,
@@ -150,10 +153,15 @@ describe('AuthProvider', () => {
     mocks.getSession.mockReset()
     mocks.onAuthStateChange.mockClear()
     mocks.signOut.mockReset()
+    mocks.refreshSession.mockReset()
     mocks.rpc.mockReset()
     mocks.unsubscribe.mockReset()
     mocks.from.mockReset()
     mocks.signOut.mockResolvedValue({ error: null })
+    mocks.refreshSession.mockResolvedValue({
+      data: { session },
+      error: null,
+    })
   })
 
   it('limpia el estado local al cerrar sesión', async () => {
@@ -266,6 +274,9 @@ describe('AuthProvider', () => {
 
     window.dispatchEvent(new Event('focus'))
 
+    expect(screen.getByTestId('loading-state')).toHaveTextContent('lista')
+    expect(screen.getByTestId('protected-content')).toBeInTheDocument()
+
     await waitFor(() => {
       expect(mocks.rpc.mock.calls.length).toBeGreaterThan(callsBefore)
     })
@@ -304,6 +315,51 @@ describe('AuthProvider', () => {
     expect(
       window.sessionStorage.getItem('silsanplex.ventas-temporales.v1'),
     ).toBeNull()
+  })
+
+  it('termina la sesión cuando una API informa que el JWT expiró', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+    })
+
+    notifySessionInvalidated()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('cerrada')
+      expect(screen.getByTestId('session-error')).toHaveTextContent(
+        'Tu sesión expiró.',
+      )
+    })
+    expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'local' })
+  })
+
+  it('detecta un refresh token revocado al recuperar el foco', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+    })
+    mocks.refreshSession.mockResolvedValue({
+      data: { session: null },
+      error: {
+        name: 'AuthApiError',
+        status: 400,
+        message: 'Invalid Refresh Token: Refresh Token Not Found',
+      },
+    })
+
+    window.dispatchEvent(new Event('focus'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('cerrada')
+    })
+    expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'local' })
   })
 
   it('conserva el error de getSession si INITIAL_SESSION llega después con sesión nula', async () => {
