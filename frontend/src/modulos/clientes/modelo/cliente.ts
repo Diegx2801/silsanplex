@@ -10,6 +10,17 @@ export const tiposDocumentoCliente = [
   { valor: 'otro', etiqueta: 'Otro' },
 ] as const
 
+export const condicionesDomicilio = ['HABIDO', 'NO HABIDO', 'NO HALLADO', 'PENDIENTE'] as const
+
+export const esquemaDireccionEntrega = z.object({
+  id: z.string().uuid().optional(),
+  etiqueta: textoOpcional(80),
+  direccion: z.string().trim().min(3, 'Ingresa la dirección').max(240),
+  ubigeo: z.string().trim().regex(/^$|^\d{6}$/, 'El ubigeo debe tener 6 dígitos'),
+  referencia: textoOpcional(200),
+  principal: z.boolean(),
+})
+
 export const esquemaDatosCliente = z
   .object({
     tipoDocumento: z.enum(['ruc', 'dni', 'ce', 'otro']),
@@ -33,7 +44,15 @@ export const esquemaDatosCliente = z
         'Ingresa un correo válido',
       ),
     telefono: textoOpcional(30),
-    direccion: textoOpcional(200),
+    direccion: textoOpcional(240),
+    ubigeo: z.string().trim().regex(/^$|^\d{6}$/, 'El ubigeo debe tener 6 dígitos'),
+    estadoSunat: textoOpcional(40),
+    condicionDomicilio: z.enum(condicionesDomicilio).or(z.literal('')),
+    direccionFiscalId: z.string().uuid().optional(),
+    contactoPrincipalId: z.string().uuid().optional(),
+    fuenteDatosFiscales: textoOpcional(40).optional(),
+    fechaConsultaSunat: z.string().datetime().nullable().optional(),
+    direccionesEntrega: z.array(esquemaDireccionEntrega).max(20),
     activo: z.boolean(),
   })
   .superRefine((datos, contexto) => {
@@ -51,6 +70,9 @@ export const esquemaDatosCliente = z
         message: 'El DNI debe contener 8 dígitos',
       })
     }
+    if (datos.direccionesEntrega.filter((direccion) => direccion.principal).length > 1) {
+      contexto.addIssue({ code: 'custom', path: ['direccionesEntrega'], message: 'Solo puede existir una dirección de entrega principal' })
+    }
   })
 
 export type DatosCliente = z.infer<typeof esquemaDatosCliente>
@@ -59,6 +81,9 @@ export const esquemaCliente = esquemaDatosCliente.and(
   z.object({
     id: z.string().min(1),
     fechaRegistro: z.string().datetime(),
+    fechaActualizacion: z.string().datetime(),
+    organizacionId: z.string().uuid(),
+    fechaConsultaSunat: z.string().datetime().nullable(),
   }),
 )
 

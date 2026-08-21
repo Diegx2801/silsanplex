@@ -12,7 +12,8 @@ import {
 } from './cotizacion'
 
 const cliente = {
-  id: 'cliente-1',
+  id: 'a78b7ca1-b83d-4f6e-ac72-f8cd18fe1f01',
+  organizacionId: 'a78b7ca1-b83d-4f6e-ac72-f8cd18fe1f02',
   tipoDocumento: 'ruc',
   numeroDocumento: '20548796321',
   nombreRazonSocial: 'Boticas El Sol SAC',
@@ -21,8 +22,14 @@ const cliente = {
   email: '',
   telefono: '',
   direccion: '',
+  ubigeo: '',
+  estadoSunat: '',
+  condicionDomicilio: '',
+  direccionesEntrega: [],
   activo: true,
   fechaRegistro: '2026-08-19T18:00:00.000Z',
+  fechaActualizacion: '2026-08-19T18:00:00.000Z',
+  fechaConsultaSunat: null,
 } satisfies Cliente
 
 const producto = {

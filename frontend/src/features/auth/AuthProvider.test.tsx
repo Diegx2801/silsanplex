@@ -19,7 +19,6 @@ const mocks = vi.hoisted(() => {
       return { data: { subscription: { unsubscribe: mocks.unsubscribe } } }
     }),
     signOut: vi.fn(),
-    refreshSession: vi.fn(),
     rpc: vi.fn(),
     unsubscribe: vi.fn(),
     from: vi.fn(),
@@ -35,7 +34,6 @@ vi.mock('@/lib/supabase', () => ({
       getSession: mocks.getSession,
       onAuthStateChange: mocks.onAuthStateChange,
       signOut: mocks.signOut,
-      refreshSession: mocks.refreshSession,
     },
     from: mocks.from,
     rpc: mocks.rpc,
@@ -55,7 +53,13 @@ const session = {
 } as unknown as Session
 
 function configureActiveAccess() {
-  mocks.rpc.mockResolvedValue({ data: ['USERS_MANAGE'], error: null })
+  mocks.rpc.mockImplementation(async (functionName: string) => {
+    if (functionName === 'current_auth_session_is_active') {
+      return { data: true, error: null }
+    }
+
+    return { data: ['USERS_MANAGE'], error: null }
+  })
   mocks.from.mockImplementation((table: string) => {
     if (table === 'organization_memberships') {
       return {
@@ -153,15 +157,10 @@ describe('AuthProvider', () => {
     mocks.getSession.mockReset()
     mocks.onAuthStateChange.mockClear()
     mocks.signOut.mockReset()
-    mocks.refreshSession.mockReset()
     mocks.rpc.mockReset()
     mocks.unsubscribe.mockReset()
     mocks.from.mockReset()
     mocks.signOut.mockResolvedValue({ error: null })
-    mocks.refreshSession.mockResolvedValue({
-      data: { session },
-      error: null,
-    })
   })
 
   it('limpia el estado local al cerrar sesión', async () => {
@@ -279,6 +278,9 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(mocks.rpc.mock.calls.length).toBeGreaterThan(callsBefore)
+      expect(mocks.rpc).toHaveBeenCalledWith(
+        'current_auth_session_is_active',
+      )
     })
   })
 
@@ -337,7 +339,7 @@ describe('AuthProvider', () => {
     expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'local' })
   })
 
-  it('detecta un refresh token revocado al recuperar el foco', async () => {
+  it('detecta una sesión revocada al recuperar el foco', async () => {
     configureActiveAccess()
     mocks.getSession.mockResolvedValue({ data: { session }, error: null })
     renderProvider()
@@ -345,13 +347,12 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
     })
-    mocks.refreshSession.mockResolvedValue({
-      data: { session: null },
-      error: {
-        name: 'AuthApiError',
-        status: 400,
-        message: 'Invalid Refresh Token: Refresh Token Not Found',
-      },
+    mocks.rpc.mockImplementation(async (functionName: string) => {
+      if (functionName === 'current_auth_session_is_active') {
+        return { data: false, error: null }
+      }
+
+      return { data: ['USERS_MANAGE'], error: null }
     })
 
     window.dispatchEvent(new Event('focus'))
@@ -360,6 +361,36 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('session-state')).toHaveTextContent('cerrada')
     })
     expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'local' })
+  })
+
+  it('conserva la sesión ante un fallo transitorio de revalidación', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+    })
+    mocks.rpc.mockImplementation(async (functionName: string) => {
+      if (functionName === 'current_auth_session_is_active') {
+        return {
+          data: null,
+          error: { status: 503, message: 'Service unavailable' },
+        }
+      }
+
+      return { data: ['USERS_MANAGE'], error: null }
+    })
+
+    window.dispatchEvent(new Event('focus'))
+
+    await waitFor(() => {
+      expect(consoleError).toHaveBeenCalled()
+    })
+    expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+    expect(mocks.signOut).not.toHaveBeenCalled()
+    consoleError.mockRestore()
   })
 
   it('conserva el error de getSession si INITIAL_SESSION llega después con sesión nula', async () => {

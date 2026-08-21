@@ -1,321 +1,61 @@
-import {
-  Building2,
-  ContactRound,
-  Mail,
-  Pencil,
-  Plus,
-  Search,
-  UserCheck,
-  UserRoundX,
-} from 'lucide-react'
-import {
-  type MouseEvent as ReactMouseEvent,
-  useDeferredValue,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
-
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Download, Pencil, Plus, Search, Upload } from 'lucide-react'
+import { type MouseEvent, useDeferredValue, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { useAuth } from '@/features/auth/useAuth'
+import { PERMISSIONS } from '@/features/auth/permissions'
 import { DialogoCliente } from '@/modulos/clientes/componentes/DialogoCliente'
-import { useClientesTemporales } from '@/modulos/clientes/estado/useClientesTemporales'
-import {
-  clienteCoincideBusqueda,
-  type Cliente,
-  type DatosCliente,
-} from '@/modulos/clientes/modelo/cliente'
+import { DialogoEstadoCliente } from '@/modulos/clientes/componentes/DialogoEstadoCliente'
+import { DialogoImportarClientes } from '@/modulos/clientes/componentes/DialogoImportarClientes'
+import type { Cliente, DatosCliente } from '@/modulos/clientes/modelo/cliente'
+import type { ResultadoImportacionClientes } from '@/modulos/clientes/modelo/importacionClientes'
+import { cambiarEstadoCliente, guardarCliente, listarClientes, listarTodosLosClientes, type EstadoFiltroCliente } from '@/modulos/clientes/servicios/customerService'
+import { exportarClientes } from '@/modulos/clientes/servicios/exportarClientes'
+import { consultarRuc } from '@/modulos/clientes/servicios/rucLookupService'
 
-type FiltroCliente = 'todos' | 'activos' | 'inactivos'
-
-function etiquetaDocumento(cliente: Cliente) {
-  return `${cliente.tipoDocumento.toUpperCase()} ${cliente.numeroDocumento}`
-}
-
+const POR_PAGINA = 25
 export function ClientesPage() {
-  const { clientes, guardarCliente } = useClientesTemporales()
-  const [busqueda, setBusqueda] = useState('')
-  const [filtro, setFiltro] = useState<FiltroCliente>('todos')
-  const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(
-    null,
-  )
-  const [dialogoAbierto, setDialogoAbierto] = useState(false)
-  const [mensaje, setMensaje] = useState('')
-  const disparador = useRef<HTMLButtonElement | null>(null)
-  const busquedaDiferida = useDeferredValue(busqueda)
-
-  const clientesFiltrados = useMemo(
-    () =>
-      clientes
-        .filter((cliente) => {
-          const coincideEstado =
-            filtro === 'todos' ||
-            (filtro === 'activos' && cliente.activo) ||
-            (filtro === 'inactivos' && !cliente.activo)
-          return (
-            coincideEstado && clienteCoincideBusqueda(cliente, busquedaDiferida)
-          )
-        })
-        .toSorted((a, b) =>
-          a.nombreRazonSocial.localeCompare(b.nombreRazonSocial, 'es-PE'),
-        ),
-    [busquedaDiferida, clientes, filtro],
-  )
-  const activos = clientes.filter((cliente) => cliente.activo).length
-  const conContacto = clientes.filter(
-    (cliente) => cliente.email || cliente.telefono,
-  ).length
-
-  const abrirFormulario = (
-    evento: ReactMouseEvent<HTMLButtonElement>,
-    cliente: Cliente | null = null,
-  ) => {
-    disparador.current = evento.currentTarget
-    setClienteSeleccionado(cliente)
-    setDialogoAbierto(true)
-  }
-
-  const guardar = (datos: DatosCliente, clienteId?: string) => {
-    const error = guardarCliente(datos, clienteId)
-    if (!error) {
-      setMensaje(clienteId ? 'Cliente actualizado.' : 'Cliente registrado.')
+  const { hasPermission } = useAuth(); const queryClient = useQueryClient()
+  const puedeGestionar = hasPermission(PERMISSIONS.CUSTOMERS_MANAGE); const puedeExportar = hasPermission(PERMISSIONS.CUSTOMERS_EXPORT)
+  const [busqueda, setBusqueda] = useState(''); const busquedaDiferida = useDeferredValue(busqueda)
+  const [estado, setEstado] = useState<EstadoFiltroCliente>('activos'); const [pagina, setPagina] = useState(1)
+  const [seleccionado, setSeleccionado] = useState<Cliente | null>(null); const [abierto, setAbierto] = useState(false)
+  const [clienteEstado, setClienteEstado] = useState<Cliente | null>(null); const [importacionAbierta, setImportacionAbierta] = useState(false)
+  const [mensaje, setMensaje] = useState(''); const disparador = useRef<HTMLButtonElement | null>(null)
+  const disparadorImportacion = useRef<HTMLButtonElement | null>(null)
+  const filtros = { busqueda: busquedaDiferida, estado, pagina, porPagina: POR_PAGINA }
+  const consulta = useQuery({ queryKey: ['customers', 'list', filtros], queryFn: () => listarClientes(filtros) })
+  const actualizar = () => queryClient.invalidateQueries({ queryKey: ['customers'] })
+  const guardarMutacion = useMutation({ mutationFn: ({ datos, id }: { datos: DatosCliente; id?: string }) => guardarCliente(datos, id), onSuccess: actualizar })
+  const estadoMutacion = useMutation({ mutationFn: ({ id, activo }: { id: string; activo: boolean }) => cambiarEstadoCliente(id, activo), onSuccess: actualizar })
+  const abrir = (evento: MouseEvent<HTMLButtonElement>, cliente: Cliente | null = null) => { disparador.current = evento.currentTarget; setSeleccionado(cliente); setAbierto(true) }
+  const guardar = async (datos: DatosCliente, id?: string) => { await guardarMutacion.mutateAsync({ datos, id }); setMensaje(id ? 'Cliente actualizado.' : 'Cliente registrado.') }
+  const confirmarEstado = async () => {
+    if (!clienteEstado) return
+    try {
+      await estadoMutacion.mutateAsync({ id: clienteEstado.id, activo: !clienteEstado.activo })
+      setMensaje(clienteEstado.activo ? 'Cliente desactivado. Su historial se conserva.' : 'Cliente activado.')
+      setClienteEstado(null)
+    } catch {
+      setMensaje('No se pudo cambiar el estado del cliente.')
     }
-    return error
   }
+  const completarImportacion = (resultado: ResultadoImportacionClientes) => {
+    void actualizar()
+    setMensaje(`Importación finalizada: ${resultado.created} creados, ${resultado.updated} actualizados, ${resultado.skipped} omitidos y ${resultado.failed} fallidos.`)
+  }
+  const clientes = consulta.data?.clientes ?? []; const total = consulta.data?.total ?? 0; const paginas = Math.max(1, Math.ceil(total / POR_PAGINA))
+  const descargar = async () => { try { const todos = await listarTodosLosClientes({ busqueda: busquedaDiferida, estado }); await exportarClientes(todos); setMensaje('Archivo de clientes generado.') } catch { setMensaje('No se pudo exportar el directorio.') } }
 
-  const metricas = [
-    { etiqueta: 'Clientes registrados', valor: clientes.length, icono: ContactRound },
-    { etiqueta: 'Disponibles para venta', valor: activos, icono: UserCheck },
-    {
-      etiqueta: 'Clientes inactivos',
-      valor: clientes.length - activos,
-      icono: UserRoundX,
-    },
-    { etiqueta: 'Con datos de contacto', valor: conContacto, icono: Mail },
-  ]
-
-  return (
-    <div className="space-y-8">
-      <header className="flex flex-col gap-5 border-b pb-7 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">
-            Base comercial
-          </span>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">
-            Clientes
-          </h1>
-          <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
-            Mantén los datos fiscales y de contacto que usarán las próximas
-            cotizaciones, pedidos y ventas.
-          </p>
-        </div>
-        <Button type="button" size="lg" onClick={(evento) => abrirFormulario(evento)}>
-          <Plus aria-hidden="true" />
-          Registrar cliente
-        </Button>
-      </header>
-
-      <section aria-label="Resumen de clientes" className="ledger-sheet">
-        <div className="grid sm:grid-cols-2 xl:grid-cols-4">
-          {metricas.map((metrica) => {
-            const Icono = metrica.icono
-            return (
-              <article
-                key={metrica.etiqueta}
-                className="border-b px-5 py-5 last:border-b-0 sm:border-e sm:[&:nth-child(2)]:border-e-0 xl:border-b-0 xl:[&:nth-child(2)]:border-e xl:last:border-e-0"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
-                    {metrica.etiqueta}
-                  </p>
-                  <Icono aria-hidden="true" className="size-4 text-primary" />
-                </div>
-                <p className="mt-3 font-mono text-2xl font-semibold tabular-nums">
-                  {metrica.valor}
-                </p>
-              </article>
-            )
-          })}
-        </div>
-      </section>
-
-      <p role="status" aria-live="polite" className="sr-only">
-        {mensaje}
-      </p>
-
-      <section aria-labelledby="clientes-title" className="ledger-sheet">
-        <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(14rem,1fr)_17rem_12rem] lg:items-end">
-          <div>
-            <h2 id="clientes-title" className="text-lg font-semibold">
-              Directorio de clientes
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {clientesFiltrados.length} de {clientes.length} registros
-            </p>
-          </div>
-          <div>
-            <label htmlFor="buscar-cliente" className="field-label">
-              Buscar
-            </label>
-            <div className="relative">
-              <Search
-                aria-hidden="true"
-                className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              />
-              <input
-                id="buscar-cliente"
-                type="search"
-                value={busqueda}
-                onChange={(evento) => setBusqueda(evento.target.value)}
-                className="field-control ps-9"
-                placeholder="Documento, nombre o contacto"
-              />
-            </div>
-          </div>
-          <div>
-            <label htmlFor="estado-cliente" className="field-label">
-              Estado
-            </label>
-            <select
-              id="estado-cliente"
-              value={filtro}
-              onChange={(evento) => setFiltro(evento.target.value as FiltroCliente)}
-              className="field-control"
-            >
-              <option value="todos">Todos</option>
-              <option value="activos">Activos</option>
-              <option value="inactivos">Inactivos</option>
-            </select>
-          </div>
-        </div>
-
-        {!clientesFiltrados.length ? (
-          <div className="px-5 py-14 text-center sm:px-6">
-            <Building2 aria-hidden="true" className="mx-auto size-8 text-primary" />
-            <h3 className="mt-4 font-semibold">
-              {clientes.length ? 'No hay coincidencias' : 'Aún no hay clientes'}
-            </h3>
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-              {clientes.length
-                ? 'Prueba con otro término o cambia el estado.'
-                : 'Registra el primer cliente para preparar el flujo comercial.'}
-            </p>
-            {!clientes.length ? (
-              <Button type="button" className="mt-5" onClick={(evento) => abrirFormulario(evento)}>
-                <Plus aria-hidden="true" /> Registrar cliente
-              </Button>
-            ) : null}
-          </div>
-        ) : (
-          <>
-            <div className="divide-y md:hidden">
-              {clientesFiltrados.map((cliente) => (
-                <article key={cliente.id} className="px-5 py-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-mono text-xs text-primary">
-                        {etiquetaDocumento(cliente)}
-                      </p>
-                      <h3 className="mt-1 font-semibold">{cliente.nombreRazonSocial}</h3>
-                      {cliente.nombreComercial ? (
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {cliente.nombreComercial}
-                        </p>
-                      ) : null}
-                    </div>
-                    <span
-                      className="status-label"
-                      data-tone={cliente.activo ? 'listo' : 'revision'}
-                    >
-                      {cliente.activo ? 'Activo' : 'Inactivo'}
-                    </span>
-                  </div>
-                  <p className="mt-4 border-t pt-4 text-sm text-muted-foreground">
-                    {cliente.contacto || 'Sin persona de contacto'}
-                    {cliente.telefono ? ` · ${cliente.telefono}` : ''}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="mt-4"
-                    onClick={(evento) => abrirFormulario(evento, cliente)}
-                  >
-                    <Pencil aria-hidden="true" /> Editar cliente
-                  </Button>
-                </article>
-              ))}
-            </div>
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[58rem] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
-                    <th className="px-6 py-3 font-medium">Documento</th>
-                    <th className="px-4 py-3 font-medium">Cliente</th>
-                    <th className="px-4 py-3 font-medium">Contacto</th>
-                    <th className="px-4 py-3 font-medium">Dirección</th>
-                    <th className="px-4 py-3 font-medium">Estado</th>
-                    <th className="px-6 py-3 text-end font-medium">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {clientesFiltrados.map((cliente) => (
-                    <tr key={cliente.id} className="hover:bg-muted/35">
-                      <td className="px-6 py-4 font-mono text-xs">
-                        {etiquetaDocumento(cliente)}
-                      </td>
-                      <td className="px-4 py-4">
-                        <p className="font-medium">{cliente.nombreRazonSocial}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {cliente.nombreComercial || 'Sin nombre comercial'}
-                        </p>
-                      </td>
-                      <td className="px-4 py-4 text-muted-foreground">
-                        <p>{cliente.contacto || 'Sin contacto'}</p>
-                        <p className="mt-1 text-xs">
-                          {cliente.email || cliente.telefono || 'Sin datos adicionales'}
-                        </p>
-                      </td>
-                      <td className="max-w-64 px-4 py-4 text-muted-foreground">
-                        <p className="truncate">{cliente.direccion || 'Sin registrar'}</p>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span
-                          className="status-label"
-                          data-tone={cliente.activo ? 'listo' : 'revision'}
-                        >
-                          {cliente.activo ? 'Activo' : 'Inactivo'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-end">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          title="Editar cliente"
-                          aria-label={`Editar ${cliente.nombreRazonSocial}`}
-                          onClick={(evento) => abrirFormulario(evento, cliente)}
-                        >
-                          <Pencil aria-hidden="true" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </section>
-
-      {dialogoAbierto ? (
-        <DialogoCliente
-          key={clienteSeleccionado?.id ?? 'nuevo'}
-          abierto={dialogoAbierto}
-          cliente={clienteSeleccionado}
-          alCambiarApertura={setDialogoAbierto}
-          alGuardar={guardar}
-          alRestaurarFoco={() => disparador.current?.focus()}
-        />
-      ) : null}
-    </div>
-  )
+  return <div className="space-y-8">
+    <header className="flex flex-col gap-5 border-b pb-7 sm:flex-row sm:items-end sm:justify-between"><div><span className="font-mono text-xs tracking-[.08em] text-primary uppercase">Base comercial</span><h1 className="mt-2 text-3xl font-semibold">Clientes</h1><p className="mt-3 text-muted-foreground">Maestro fiscal y de contacto para cotizaciones, pedidos y ventas.</p></div><div className="flex flex-wrap gap-2">{puedeExportar ? <Button variant="outline" onClick={() => void descargar()} disabled={!total}><Download /> Exportar</Button> : null}{puedeGestionar ? <Button ref={disparadorImportacion} variant="outline" onClick={() => setImportacionAbierta(true)}><Upload /> Importar</Button> : null}{puedeGestionar ? <Button onClick={(e) => abrir(e)}><Plus /> Registrar cliente</Button> : null}</div></header>
+    <p role="status" aria-live="polite" className={mensaje ? 'border border-primary/30 bg-primary/5 px-4 py-3 text-sm' : 'sr-only'}>{mensaje}</p>
+    <section className="ledger-sheet" aria-labelledby="clientes-title"><div className="grid gap-4 border-b px-5 py-5 lg:grid-cols-[1fr_18rem_12rem] lg:items-end"><div><h2 id="clientes-title" className="text-lg font-semibold">Directorio</h2><p className="text-sm text-muted-foreground">{total} registros</p></div><label><span className="field-label">Buscar</span><span className="relative block"><Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2" /><input type="search" className="field-control ps-9" value={busqueda} onChange={(e) => { setBusqueda(e.target.value); setPagina(1) }} placeholder="Documento o razón social" /></span></label><label><span className="field-label">Estado</span><select className="field-control" value={estado} onChange={(e) => { setEstado(e.target.value as EstadoFiltroCliente); setPagina(1) }}><option value="activos">Activos</option><option value="inactivos">Inactivos</option><option value="todos">Todos</option></select></label></div>
+      {consulta.isLoading ? <p className="py-14 text-center text-sm text-muted-foreground">Cargando clientes…</p> : consulta.isError ? <div className="py-14 text-center"><p className="text-sm text-destructive">No se pudo cargar el directorio.</p><Button className="mt-3" variant="outline" onClick={() => void consulta.refetch()}>Reintentar</Button></div> : clientes.length === 0 ? <p className="py-14 text-center text-sm text-muted-foreground">No hay clientes para los filtros seleccionados.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[68rem] text-left text-sm"><thead className="border-b bg-muted/45"><tr><th className="px-5 py-3">Documento</th><th className="px-4 py-3">Cliente</th><th className="px-4 py-3">Contacto</th><th className="px-4 py-3">Dirección fiscal</th><th className="px-4 py-3">SUNAT</th><th className="px-4 py-3">Estado</th><th className="px-5 py-3 text-end">Acciones</th></tr></thead><tbody className="divide-y">{clientes.map((cliente) => <tr key={cliente.id}><td className="px-5 py-4 font-mono text-xs">{cliente.tipoDocumento.toUpperCase()} {cliente.numeroDocumento}</td><td className="px-4 py-4"><strong>{cliente.nombreRazonSocial}</strong><p className="text-xs text-muted-foreground">{cliente.nombreComercial || 'Sin nombre comercial'}</p></td><td className="px-4 py-4">{cliente.contacto || cliente.email || cliente.telefono || 'Sin registrar'}</td><td className="max-w-64 px-4 py-4"><p className="truncate">{cliente.direccion || 'Sin registrar'}</p></td><td className="px-4 py-4"><span>{cliente.estadoSunat || 'Sin verificar'}</span><p className="text-xs text-muted-foreground">{cliente.fuenteDatosFiscales || 'Manual'}</p></td><td className="px-4 py-4"><span className="status-label" data-tone={cliente.activo ? 'listo' : 'revision'}>{cliente.activo ? 'Activo' : 'Inactivo'}</span></td><td className="px-5 py-4 text-end">{puedeGestionar ? <><Button variant="ghost" size="icon" aria-label={`Editar ${cliente.nombreRazonSocial}`} onClick={(e) => abrir(e, cliente)}><Pencil /></Button><Button variant="ghost" onClick={() => setClienteEstado(cliente)}>{cliente.activo ? 'Desactivar' : 'Activar'}</Button></> : null}</td></tr>)}</tbody></table></div>}
+      <footer className="flex items-center justify-between border-t px-5 py-4 text-sm"><span>Página {pagina} de {paginas}</span><div className="flex gap-2"><Button variant="outline" disabled={pagina === 1} onClick={() => setPagina((p) => p - 1)}>Anterior</Button><Button variant="outline" disabled={pagina >= paginas} onClick={() => setPagina((p) => p + 1)}>Siguiente</Button></div></footer>
+    </section>
+    {abierto ? <DialogoCliente key={seleccionado?.id ?? 'nuevo'} abierto={abierto} cliente={seleccionado} alCambiarApertura={setAbierto} alGuardar={guardar} alConsultarRuc={consultarRuc} alRestaurarFoco={() => disparador.current?.focus()} /> : null}
+    {importacionAbierta ? <DialogoImportarClientes abierto={importacionAbierta} alCambiarApertura={setImportacionAbierta} alCompletar={completarImportacion} alRestaurarFoco={() => disparadorImportacion.current?.focus()} /> : null}
+    {clienteEstado ? <DialogoEstadoCliente cliente={clienteEstado} procesando={estadoMutacion.isPending} alConfirmar={confirmarEstado} alCancelar={() => setClienteEstado(null)} /> : null}
+  </div>
 }

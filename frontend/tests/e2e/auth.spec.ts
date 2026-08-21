@@ -12,6 +12,10 @@ const memberEmail = requiredE2eEnvironment('E2E_MEMBER_EMAIL')
 const memberPassword = requiredE2eEnvironment('E2E_MEMBER_PASSWORD')
 const recoveryEmail = requiredE2eEnvironment('E2E_RECOVERY_EMAIL')
 const recoveryPassword = requiredE2eEnvironment('E2E_RECOVERY_PASSWORD')
+const supabaseUrl = requiredE2eEnvironment('VITE_SUPABASE_URL')
+const supabasePublishableKey = requiredE2eEnvironment(
+  'VITE_SUPABASE_PUBLISHABLE_KEY',
+)
 
 async function signIn(page: import('@playwright/test').Page, email: string, password: string) {
   await page.goto('/iniciar-sesion')
@@ -128,21 +132,38 @@ test.describe('sesión sin administración', () => {
     await expect(page.getByRole('link', { name: 'Usuarios' })).toHaveCount(0)
   })
 
-  test('detecta un refresh token revocado al recuperar el foco', async ({
+  test('detecta una sesión revocada al recuperar el foco', async ({
     page,
     context,
+    request,
   }) => {
     await signIn(page, memberEmail, memberPassword)
-    await page.route('**/auth/v1/token?grant_type=refresh_token', async (route) => {
-      await route.fulfill({
-        status: 400,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          error_code: 'refresh_token_not_found',
-          msg: 'Invalid Refresh Token: Refresh Token Not Found',
-        }),
-      })
+    const accessToken = await page.evaluate(() => {
+      const sessionKey = Object.keys(window.localStorage).find(
+        (key) => key.startsWith('sb-') && key.endsWith('-auth-token'),
+      )
+      if (!sessionKey) throw new Error('No se encontró la sesión de Supabase.')
+
+      const storedSession = JSON.parse(
+        window.localStorage.getItem(sessionKey) ?? 'null',
+      ) as { access_token?: unknown } | null
+      if (typeof storedSession?.access_token !== 'string') {
+        throw new Error('La sesión almacenada no contiene un access token.')
+      }
+
+      return storedSession.access_token
     })
+
+    const revocationResponse = await request.post(
+      `${supabaseUrl}/auth/v1/logout?scope=local`,
+      {
+        headers: {
+          apikey: supabasePublishableKey,
+          authorization: `Bearer ${accessToken}`,
+        },
+      },
+    )
+    expect(revocationResponse.ok()).toBe(true)
 
     const otherPage = await context.newPage()
     await otherPage.goto('about:blank')

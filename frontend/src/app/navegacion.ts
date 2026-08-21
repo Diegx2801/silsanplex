@@ -76,6 +76,7 @@ export const seccionesNavegacion: SeccionNavegacion[] = [
         ruta: '/clientes',
         descripcion: 'Datos fiscales y de contacto',
         icono: ContactRound,
+        permission: PERMISSIONS.CUSTOMERS_VIEW,
       },
       {
         titulo: 'Ventas',

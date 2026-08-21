@@ -21,7 +21,7 @@ import {
 } from '@/features/auth/sessionEvents'
 import { supabase } from '@/lib/supabase'
 
-function isInvalidRefreshSession(error: unknown) {
+function isInvalidAuthSession(error: unknown) {
   if (!error || typeof error !== 'object') return false
 
   const candidate = error as { message?: unknown; name?: unknown; status?: unknown }
@@ -30,8 +30,9 @@ function isInvalidRefreshSession(error: unknown) {
 
   return (
     name === 'AuthSessionMissingError' ||
-    ((candidate.status === 400 || candidate.status === 401) &&
-      /refresh token|session|jwt/i.test(message))
+    (candidate.status === 401 ||
+      ((candidate.status === 400 || candidate.status === 403) &&
+        /refresh token|session|jwt/i.test(message)))
   )
 }
 
@@ -208,24 +209,31 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (revalidationInFlight) return
 
       revalidationInFlight = true
-      void supabase.auth
-        .refreshSession()
-        .then(({ data, error }) => {
+      void (async () => {
+        try {
+          const { data, error } = await supabase.rpc(
+            'current_auth_session_is_active',
+          )
           if (error) throw error
-          if (!data.session) {
+          if (data !== true) {
             notifySessionInvalidated()
             return
           }
 
           setAccessAttempt((attempt) => attempt + 1)
-        })
-        .catch((error: unknown) => {
-          if (!isInvalidRefreshSession(error)) return
-          notifySessionInvalidated()
-        })
-        .finally(() => {
+        } catch (error: unknown) {
+          if (isInvalidAuthSession(error)) {
+            notifySessionInvalidated()
+            return
+          }
+
+          if (import.meta.env.DEV) {
+            console.error('No se pudo revalidar la sesión activa.', error)
+          }
+        } finally {
           revalidationInFlight = false
-        })
+        }
+      })()
     }
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') revalidateAccess()

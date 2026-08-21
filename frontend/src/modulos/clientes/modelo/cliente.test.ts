@@ -7,7 +7,8 @@ import {
 } from './cliente'
 
 const cliente = {
-  id: 'cliente-1',
+  id: 'a78b7ca1-b83d-4f6e-ac72-f8cd18fe1f01',
+  organizacionId: 'a78b7ca1-b83d-4f6e-ac72-f8cd18fe1f02',
   tipoDocumento: 'ruc',
   numeroDocumento: '20123456789',
   nombreRazonSocial: 'Boticas El Sol SAC',
@@ -16,8 +17,14 @@ const cliente = {
   email: 'compras@elsol.pe',
   telefono: '999888777',
   direccion: 'Lima',
+  ubigeo: '150101',
+  estadoSunat: 'ACTIVO',
+  condicionDomicilio: 'HABIDO',
+  direccionesEntrega: [],
   activo: true,
   fechaRegistro: '2026-08-19T18:00:00.000Z',
+  fechaActualizacion: '2026-08-19T18:00:00.000Z',
+  fechaConsultaSunat: null,
 } satisfies Cliente
 
 describe('esquemaDatosCliente', () => {
@@ -44,6 +51,26 @@ describe('esquemaDatosCliente', () => {
         numeroDocumento: '2012',
       }).success,
     ).toBe(false)
+  })
+
+  it('rechaza más de una dirección de entrega principal', () => {
+    const direccion = {
+      etiqueta: '',
+      direccion: 'Av. Prueba 123',
+      ubigeo: '150101',
+      referencia: '',
+      principal: true,
+    }
+    expect(
+      esquemaDatosCliente.safeParse({
+        ...cliente,
+        direccionesEntrega: [direccion, { ...direccion, direccion: 'Jr. Dos 456' }],
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rechaza ubigeos que no contienen seis dígitos', () => {
+    expect(esquemaDatosCliente.safeParse({ ...cliente, ubigeo: '1501' }).success).toBe(false)
   })
 })
 

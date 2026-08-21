@@ -93,9 +93,10 @@ select is(
     select count(*)
     from public.role_permissions
     where role_code <> 'ADMIN'
+      and permission_code = 'USERS_MANAGE'
   ),
-  25::bigint,
-  'los roles operativos reciben capacidades explícitas por módulo'
+  0::bigint,
+  'USERS_MANAGE sigue reservado exclusivamente a ADMIN'
 );
 
 select is(
@@ -293,7 +294,21 @@ select set_config(
 
 select is(
   public.current_user_permissions(),
-  array['INVENTORY_MANAGE', 'INVENTORY_VIEW', 'PRODUCTS_MANAGE', 'PRODUCTS_VIEW', 'PURCHASES_MANAGE', 'PURCHASES_RECEIVE', 'PURCHASES_VIEW', 'SUPPLIERS_MANAGE', 'SUPPLIERS_VIEW', 'USERS_MANAGE']::text[],
+  array[
+    'CUSTOMERS_EXPORT',
+    'CUSTOMERS_MANAGE',
+    'CUSTOMERS_VIEW',
+    'INVENTORY_MANAGE',
+    'INVENTORY_VIEW',
+    'PRODUCTS_MANAGE',
+    'PRODUCTS_VIEW',
+    'PURCHASES_MANAGE',
+    'PURCHASES_RECEIVE',
+    'PURCHASES_VIEW',
+    'SUPPLIERS_MANAGE',
+    'SUPPLIERS_VIEW',
+    'USERS_MANAGE'
+  ]::text[],
   'ADMIN obtiene sus permisos en la única organización activa'
 );
 
@@ -308,8 +323,14 @@ select set_config(
 
 select is(
   public.current_user_permissions(),
-  array['INVENTORY_VIEW', 'PRODUCTS_VIEW']::text[],
-  'VENTAS obtiene únicamente capacidades de consulta operativa'
+  array[
+    'CUSTOMERS_EXPORT',
+    'CUSTOMERS_MANAGE',
+    'CUSTOMERS_VIEW',
+    'INVENTORY_VIEW',
+    'PRODUCTS_VIEW'
+  ]::text[],
+  'VENTAS obtiene sus permisos comerciales y de consulta operativa'
 );
 
 reset role;
@@ -406,8 +427,21 @@ select set_config(
 
 select is(
   public.current_user_permissions(),
-  array['INVENTORY_MANAGE', 'INVENTORY_VIEW', 'PRODUCTS_MANAGE', 'PRODUCTS_VIEW', 'PURCHASES_MANAGE', 'PURCHASES_RECEIVE', 'PURCHASES_VIEW', 'SUPPLIERS_MANAGE', 'SUPPLIERS_VIEW']::text[],
-  'un permiso inactivo no se concede'
+  array[
+    'CUSTOMERS_EXPORT',
+    'CUSTOMERS_MANAGE',
+    'CUSTOMERS_VIEW',
+    'INVENTORY_MANAGE',
+    'INVENTORY_VIEW',
+    'PRODUCTS_MANAGE',
+    'PRODUCTS_VIEW',
+    'PURCHASES_MANAGE',
+    'PURCHASES_RECEIVE',
+    'PURCHASES_VIEW',
+    'SUPPLIERS_MANAGE',
+    'SUPPLIERS_VIEW'
+  ]::text[],
+  'desactivar USERS_MANAGE no elimina otros permisos activos'
 );
 
 reset role;
