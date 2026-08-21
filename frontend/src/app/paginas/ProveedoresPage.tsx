@@ -1,0 +1,476 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  Building2,
+  CircleDollarSign,
+  PackageCheck,
+  Pencil,
+  Plus,
+  Search,
+  Star,
+} from 'lucide-react'
+import {
+  type MouseEvent as ReactMouseEvent,
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+
+import { Button } from '@/components/ui/button'
+import { PERMISSIONS } from '@/features/auth/permissions'
+import { useAuth } from '@/features/auth/useAuth'
+import { DialogoProveedor } from '@/modulos/proveedores/componentes/DialogoProveedor'
+import {
+  categoriasProveedor,
+  frecuenciasEntregaProveedor,
+  tiposDocumentoProveedor,
+  type CategoriaProveedor,
+  type DatosProveedor,
+  type Proveedor,
+} from '@/modulos/proveedores/modelo/proveedor'
+import {
+  guardarProveedor,
+  listarProveedores,
+} from '@/modulos/proveedores/servicios/proveedorService'
+
+type FiltroEstado = 'todos' | 'activos' | 'inactivos'
+type FiltroCategoria = 'todas' | CategoriaProveedor
+const proveedoresVacios: Proveedor[] = []
+
+const etiquetasCategoria = new Map(
+  categoriasProveedor.map((categoria) => [categoria.valor, categoria.etiqueta]),
+)
+const etiquetasFrecuencia = new Map(
+  frecuenciasEntregaProveedor.map((frecuencia) => [
+    frecuencia.valor,
+    frecuencia.etiqueta,
+  ]),
+)
+const etiquetasDocumento = new Map(
+  tiposDocumentoProveedor.map((tipo) => [tipo.valor, tipo.etiqueta]),
+)
+
+function normalizar(valor: string) {
+  return valor
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('es-PE')
+}
+
+function etiquetaCondicion(proveedor: Proveedor) {
+  return proveedor.condicionCredito === 'contado'
+    ? 'Contado'
+    : `${proveedor.diasCredito} días`
+}
+
+function Calificacion({ valor }: { valor: number | null }) {
+  if (valor === null) {
+    return <span className="text-xs text-muted-foreground">Sin evaluar</span>
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 font-mono text-xs">
+      <Star aria-hidden="true" className="size-3.5 fill-primary text-primary" />
+      {valor}/5
+    </span>
+  )
+}
+
+export function ProveedoresPage() {
+  const { access, user, hasPermission } = useAuth()
+  const queryClient = useQueryClient()
+  const organizationId = access?.organizationId ?? ''
+  const puedeAdministrar = hasPermission(PERMISSIONS.SUPPLIERS_MANAGE)
+  const queryKey = ['suppliers', organizationId] as const
+  const [busqueda, setBusqueda] = useState('')
+  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('activos')
+  const [filtroCategoria, setFiltroCategoria] =
+    useState<FiltroCategoria>('todas')
+  const [dialogoAbierto, setDialogoAbierto] = useState(false)
+  const [proveedorSeleccionado, setProveedorSeleccionado] =
+    useState<Proveedor | null>(null)
+  const [mensaje, setMensaje] = useState<string | null>(null)
+  const disparador = useRef<HTMLButtonElement | null>(null)
+  const busquedaDiferida = useDeferredValue(busqueda)
+
+  const proveedoresQuery = useQuery({
+    queryKey,
+    queryFn: () => listarProveedores(organizationId),
+    enabled: Boolean(organizationId),
+  })
+
+  const guardarMutation = useMutation({
+    mutationFn: ({
+      datos,
+      proveedorId,
+    }: {
+      datos: DatosProveedor
+      proveedorId?: string
+    }) => {
+      if (!user) throw new Error('La sesión ya no está disponible.')
+      return guardarProveedor(organizationId, user.id, datos, proveedorId)
+    },
+    onSuccess: async (_proveedor, variables) => {
+      await queryClient.invalidateQueries({ queryKey })
+      setMensaje(
+        variables.proveedorId
+          ? 'Proveedor actualizado correctamente.'
+          : 'Proveedor registrado correctamente.',
+      )
+    },
+  })
+
+  const proveedores = proveedoresQuery.data ?? proveedoresVacios
+  const proveedoresFiltrados = useMemo(() => {
+    const termino = normalizar(busquedaDiferida.trim())
+
+    return proveedores.filter((proveedor) => {
+      const coincideEstado =
+        filtroEstado === 'todos' ||
+        (filtroEstado === 'activos' ? proveedor.activo : !proveedor.activo)
+      const coincideCategoria =
+        filtroCategoria === 'todas' || proveedor.categoria === filtroCategoria
+      const texto = normalizar(
+        [
+          proveedor.codigo,
+          proveedor.numeroDocumento,
+          proveedor.razonSocial,
+          proveedor.nombreComercial,
+          proveedor.contacto,
+          proveedor.tiposProducto,
+          proveedor.zonaGeografica,
+        ].join(' '),
+      )
+
+      return (
+        coincideEstado &&
+        coincideCategoria &&
+        (!termino || texto.includes(termino))
+      )
+    })
+  }, [busquedaDiferida, filtroCategoria, filtroEstado, proveedores])
+
+  const activos = proveedores.filter((proveedor) => proveedor.activo)
+  const evaluados = proveedores.filter(
+    (proveedor) => proveedor.calificacionDesempeno !== null,
+  )
+  const promedioDesempeno = evaluados.length
+    ? (
+        evaluados.reduce(
+          (total, proveedor) => total + (proveedor.calificacionDesempeno ?? 0),
+          0,
+        ) / evaluados.length
+      ).toFixed(1)
+    : '—'
+
+  const metricas = [
+    {
+      etiqueta: 'Proveedores activos',
+      valor: activos.length,
+      detalle: `${proveedores.length} registrados`,
+      icono: Building2,
+    },
+    {
+      etiqueta: 'Relación frecuente',
+      valor: activos.filter((proveedor) =>
+        ['frecuente', 'estrategico'].includes(proveedor.categoria),
+      ).length,
+      detalle: 'Frecuentes y estratégicos',
+      icono: PackageCheck,
+    },
+    {
+      etiqueta: 'Compra a crédito',
+      valor: activos.filter(
+        (proveedor) => proveedor.condicionCredito === 'credito',
+      ).length,
+      detalle: 'Con plazo comercial',
+      icono: CircleDollarSign,
+    },
+    {
+      etiqueta: 'Desempeño medio',
+      valor: promedioDesempeno,
+      detalle: evaluados.length ? `${evaluados.length} evaluados` : 'Sin evaluaciones',
+      icono: Star,
+    },
+  ]
+
+  function abrirFormulario(
+    evento: ReactMouseEvent<HTMLButtonElement>,
+    proveedor: Proveedor | null = null,
+  ) {
+    disparador.current = evento.currentTarget
+    setProveedorSeleccionado(proveedor)
+    setMensaje(null)
+    guardarMutation.reset()
+    setDialogoAbierto(true)
+  }
+
+  async function guardar(datos: DatosProveedor, proveedorId?: string) {
+    await guardarMutation.mutateAsync({ datos, proveedorId })
+  }
+
+  return (
+    <div className="space-y-8">
+      <header className="flex flex-col gap-5 border-b pb-7 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">
+            Abastecimiento · Maestro comercial
+          </span>
+          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">
+            Proveedores
+          </h1>
+          <p className="mt-3 max-w-[70ch] text-base leading-7 text-muted-foreground">
+            Centraliza identidad fiscal, contactos, condiciones de pago y desempeño antes de comprar.
+          </p>
+        </div>
+        {puedeAdministrar ? (
+          <Button type="button" size="lg" onClick={(evento) => abrirFormulario(evento)}>
+            <Plus aria-hidden="true" /> Registrar proveedor
+          </Button>
+        ) : null}
+      </header>
+
+      {mensaje ? (
+        <p role="status" className="border border-primary/30 bg-accent px-4 py-3 text-sm">
+          {mensaje}
+        </p>
+      ) : null}
+
+      <section aria-label="Relación comercial de proveedores" className="ledger-sheet">
+        <div className="grid sm:grid-cols-2 xl:grid-cols-4">
+          {metricas.map((metrica) => {
+            const Icono = metrica.icono
+            return (
+              <article
+                key={metrica.etiqueta}
+                className="border-b px-5 py-5 last:border-b-0 sm:border-e sm:[&:nth-child(2)]:border-e-0 xl:border-b-0 xl:[&:nth-child(2)]:border-e xl:last:border-e-0"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
+                    {metrica.etiqueta}
+                  </p>
+                  <Icono aria-hidden="true" className="size-4 text-primary" />
+                </div>
+                <p className="mt-3 font-mono text-2xl font-semibold tabular-nums">
+                  {metrica.valor}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{metrica.detalle}</p>
+              </article>
+            )
+          })}
+        </div>
+      </section>
+
+      <section aria-labelledby="proveedores-title" className="ledger-sheet">
+        <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(12rem,1fr)_minmax(16rem,28rem)_11rem_12rem] lg:items-end">
+          <div>
+            <h2 id="proveedores-title" className="text-lg font-semibold">
+              Directorio de proveedores
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {proveedoresFiltrados.length} de {proveedores.length} registros
+            </p>
+          </div>
+          <div>
+            <label htmlFor="buscar-proveedor" className="field-label">
+              Buscar
+            </label>
+            <div className="relative">
+              <Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                id="buscar-proveedor"
+                type="search"
+                value={busqueda}
+                onChange={(evento) => setBusqueda(evento.target.value)}
+                className="field-control ps-9"
+                placeholder="RUC, razón social, producto o zona"
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="categoria-proveedor-filtro" className="field-label">
+              Categoría
+            </label>
+            <select
+              id="categoria-proveedor-filtro"
+              value={filtroCategoria}
+              onChange={(evento) =>
+                setFiltroCategoria(evento.target.value as FiltroCategoria)
+              }
+              className="field-control"
+            >
+              <option value="todas">Todas</option>
+              {categoriasProveedor.map((categoria) => (
+                <option key={categoria.valor} value={categoria.valor}>
+                  {categoria.etiqueta}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="estado-proveedor-filtro" className="field-label">
+              Estado
+            </label>
+            <select
+              id="estado-proveedor-filtro"
+              value={filtroEstado}
+              onChange={(evento) => setFiltroEstado(evento.target.value as FiltroEstado)}
+              className="field-control"
+            >
+              <option value="activos">Activos</option>
+              <option value="inactivos">Inactivos</option>
+              <option value="todos">Todos</option>
+            </select>
+          </div>
+        </div>
+
+        {proveedoresQuery.isLoading ? (
+          <p role="status" className="border-t px-6 py-14 text-center text-sm text-muted-foreground">
+            Cargando proveedores…
+          </p>
+        ) : proveedoresQuery.isError ? (
+          <div className="border-t px-6 py-14 text-center">
+            <p role="alert" className="text-sm text-destructive">
+              {proveedoresQuery.error.message}
+            </p>
+            <Button variant="outline" className="mt-4" onClick={() => void proveedoresQuery.refetch()}>
+              Reintentar
+            </Button>
+          </div>
+        ) : !proveedoresFiltrados.length ? (
+          <div className="px-5 py-14 text-center sm:px-6">
+            <Building2 aria-hidden="true" className="mx-auto size-8 text-primary" />
+            <h3 className="mt-4 font-semibold">
+              {proveedores.length ? 'No hay coincidencias' : 'Aún no hay proveedores'}
+            </h3>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+              {proveedores.length
+                ? 'Prueba con otro término, categoría o estado.'
+                : 'Registra el primer proveedor para habilitar el abastecimiento.'}
+            </p>
+            {!proveedores.length && puedeAdministrar ? (
+              <Button type="button" className="mt-5" onClick={(evento) => abrirFormulario(evento)}>
+                <Plus aria-hidden="true" /> Registrar proveedor
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <>
+            <div className="divide-y md:hidden">
+              {proveedoresFiltrados.map((proveedor) => (
+                <article key={proveedor.id} className="px-5 py-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-xs text-primary">
+                        {etiquetasDocumento.get(proveedor.tipoDocumento)} {proveedor.numeroDocumento}
+                      </p>
+                      <h3 className="mt-1 font-semibold">{proveedor.razonSocial}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {etiquetasCategoria.get(proveedor.categoria)} · {etiquetasFrecuencia.get(proveedor.frecuenciaEntrega)}
+                      </p>
+                    </div>
+                    <span className="status-label" data-tone={proveedor.activo ? 'listo' : 'revision'}>
+                      {proveedor.activo ? 'Activo' : 'Inactivo'}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 border-t pt-4 text-sm">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Condición</p>
+                      <p className="mt-1">{etiquetaCondicion(proveedor)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Desempeño</p>
+                      <p className="mt-1"><Calificacion valor={proveedor.calificacionDesempeno} /></p>
+                    </div>
+                  </div>
+                  {puedeAdministrar ? (
+                    <Button type="button" variant="outline" className="mt-4" onClick={(evento) => abrirFormulario(evento, proveedor)}>
+                      <Pencil aria-hidden="true" /> Editar proveedor
+                    </Button>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[72rem] border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
+                    <th className="px-6 py-3 font-medium">Documento</th>
+                    <th className="px-4 py-3 font-medium">Proveedor</th>
+                    <th className="px-4 py-3 font-medium">Relación comercial</th>
+                    <th className="px-4 py-3 font-medium">Contacto</th>
+                    <th className="px-4 py-3 font-medium">Condición</th>
+                    <th className="px-4 py-3 font-medium">Estado</th>
+                    <th className="px-6 py-3 text-end font-medium">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {proveedoresFiltrados.map((proveedor) => (
+                    <tr key={proveedor.id} className="hover:bg-muted/35">
+                      <td className="px-6 py-4 font-mono text-xs">
+                        <p>{etiquetasDocumento.get(proveedor.tipoDocumento)} {proveedor.numeroDocumento}</p>
+                        <p className="mt-1 text-muted-foreground">{proveedor.codigo || 'Sin código'}</p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <p className="font-medium">{proveedor.razonSocial}</p>
+                        <p className="mt-1 max-w-64 truncate text-xs text-muted-foreground">
+                          {proveedor.tiposProducto || proveedor.nombreComercial || 'Sin productos clasificados'}
+                        </p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <p>{etiquetasCategoria.get(proveedor.categoria)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {etiquetasFrecuencia.get(proveedor.frecuenciaEntrega)}
+                        </p>
+                      </td>
+                      <td className="px-4 py-4 text-muted-foreground">
+                        <p>{proveedor.contacto || 'Sin contacto'}</p>
+                        <p className="mt-1 text-xs">{proveedor.email || proveedor.telefono || 'Sin datos adicionales'}</p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <p>{etiquetaCondicion(proveedor)} · {proveedor.moneda}</p>
+                        <p className="mt-1"><Calificacion valor={proveedor.calificacionDesempeno} /></p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="status-label" data-tone={proveedor.activo ? 'listo' : 'revision'}>
+                          {proveedor.activo ? 'Activo' : 'Inactivo'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-end">
+                        {puedeAdministrar ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            title="Editar proveedor"
+                            aria-label={`Editar ${proveedor.razonSocial}`}
+                            onClick={(evento) => abrirFormulario(evento, proveedor)}
+                          >
+                            <Pencil aria-hidden="true" />
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Solo lectura</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
+
+      {dialogoAbierto ? (
+        <DialogoProveedor
+          key={proveedorSeleccionado?.id ?? 'nuevo'}
+          abierto={dialogoAbierto}
+          proveedor={proveedorSeleccionado}
+          alCambiarApertura={setDialogoAbierto}
+          alGuardar={guardar}
+          alRestaurarFoco={() => disparador.current?.focus()}
+        />
+      ) : null}
+    </div>
+  )
+}

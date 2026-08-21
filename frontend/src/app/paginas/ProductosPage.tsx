@@ -18,12 +18,14 @@ import {
 import { Link, useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { PERMISSIONS } from '@/features/auth/permissions'
+import { useAuth } from '@/features/auth/useAuth'
 import { DetalleProducto } from '@/modulos/productos/componentes/DetalleProducto'
 import { DialogoConfirmacionEstado } from '@/modulos/productos/componentes/DialogoConfirmacionEstado'
 import { DialogoProducto } from '@/modulos/productos/componentes/DialogoProducto'
 import { FiltrosProductos } from '@/modulos/productos/componentes/FiltrosProductos'
 import { PaginacionProductos } from '@/modulos/productos/componentes/PaginacionProductos'
-import { useProductosTemporales } from '@/modulos/productos/estado/useProductosTemporales'
+import { useProductos } from '@/modulos/productos/estado/useProductos'
 import {
   consultarProductos,
   obtenerOpcionesProducto,
@@ -47,10 +49,11 @@ function mostrarPrecio(precio: string) {
 
 interface ContenidoVacioProps {
   hayProductos: boolean
+  puedeGestionar: boolean
   alRegistrar: (evento: ReactMouseEvent<HTMLButtonElement>) => void
 }
 
-function ContenidoVacio({ hayProductos, alRegistrar }: ContenidoVacioProps) {
+function ContenidoVacio({ hayProductos, puedeGestionar, alRegistrar }: ContenidoVacioProps) {
   return (
     <div className="px-5 py-14 text-center sm:px-6">
       <PackageSearch
@@ -65,9 +68,9 @@ function ContenidoVacio({ hayProductos, alRegistrar }: ContenidoVacioProps) {
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
         {hayProductos
           ? 'Prueba con otro término o cambia el filtro de estado.'
-          : 'Registra el primer producto con los datos esenciales. Podrás editarlo durante esta sesión.'}
+          : 'Registra el primer producto con los datos esenciales. Quedará disponible para toda la organización.'}
       </p>
-      {!hayProductos ? (
+      {!hayProductos && puedeGestionar ? (
         <Button type="button" className="mt-5" onClick={alRegistrar}>
           <Plus aria-hidden="true" />
           Registrar producto
@@ -78,8 +81,9 @@ function ContenidoVacio({ hayProductos, alRegistrar }: ContenidoVacioProps) {
 }
 
 export function ProductosPage() {
-  const { productos, guardarProducto, cambiarEstado } =
-    useProductosTemporales()
+  const { hasPermission } = useAuth()
+  const puedeGestionar = hasPermission(PERMISSIONS.PRODUCTS_MANAGE)
+  const { productos, guardarProducto, cambiarEstado } = useProductos()
   const [parametros, setParametros] = useSearchParams()
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] =
@@ -167,14 +171,14 @@ export function ProductosPage() {
     setFormularioAbierto(true)
   }
 
-  const guardar = (datos: DatosProducto, productoId?: string) => {
-    const error = guardarProducto(datos, productoId)
+  const guardar = async (datos: DatosProducto, productoId?: string) => {
+    const error = await guardarProducto(datos, productoId)
 
     if (!error) {
       setMensaje(
         productoId
-          ? 'Los cambios se guardaron temporalmente.'
-          : 'El producto se registró temporalmente.',
+          ? 'Los cambios se guardaron correctamente.'
+          : 'El producto se registró correctamente.',
       )
     }
 
@@ -206,14 +210,18 @@ export function ProductosPage() {
     setProductoCambioEstadoId(producto.id)
   }
 
-  const confirmarCambioEstado = () => {
+  const confirmarCambioEstado = async () => {
     if (!productoCambioEstado) return
 
-    cambiarEstado(productoCambioEstado.id)
+    const error = await cambiarEstado(productoCambioEstado)
+    if (error) {
+      setMensaje(error)
+      return
+    }
     setMensaje(
       productoCambioEstado.activo
-        ? 'El producto quedó inactivo temporalmente.'
-        : 'El producto quedó activo temporalmente.',
+        ? 'El producto quedó inactivo.'
+        : 'El producto quedó activo.',
     )
     setProductoCambioEstadoId(null)
   }
@@ -258,8 +266,7 @@ export function ProductosPage() {
             Productos
           </h1>
           <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
-            Registro esencial del catálogo. Los datos se mantienen únicamente
-            en esta sesión mientras Supabase continúa pendiente.
+            Registro persistente del catálogo para compras, inventario y ventas.
           </p>
         </div>
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:self-end">
@@ -269,10 +276,12 @@ export function ProductosPage() {
               Revisar importación
             </Link>
           </Button>
-          <Button size="lg" onClick={abrirRegistro}>
-            <Plus aria-hidden="true" />
-            Registrar producto
-          </Button>
+          {puedeGestionar ? (
+            <Button size="lg" onClick={abrirRegistro}>
+              <Plus aria-hidden="true" />
+              Registrar producto
+            </Button>
+          ) : null}
         </div>
       </header>
 
@@ -330,7 +339,7 @@ export function ProductosPage() {
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">
             <span className="font-mono text-xs tabular-nums text-muted-foreground">
-              SESIÓN LOCAL
+              CATÁLOGO CENTRAL
             </span>
             <Button
               type="button"
@@ -380,7 +389,7 @@ export function ProductosPage() {
                   </div>
                 </dl>
                 <div className="mt-5 grid grid-cols-2 gap-2 border-t pt-4">
-                  <Button
+                  {puedeGestionar ? <Button
                     type="button"
                     variant="secondary"
                     size="lg"
@@ -389,8 +398,8 @@ export function ProductosPage() {
                   >
                     <Eye aria-hidden="true" />
                     Ver detalle
-                  </Button>
-                  <Button
+                  </Button> : null}
+                  {puedeGestionar ? <Button
                     type="button"
                     variant="outline"
                     size="lg"
@@ -398,7 +407,7 @@ export function ProductosPage() {
                   >
                     <Pencil aria-hidden="true" />
                     Editar
-                  </Button>
+                  </Button> : null}
                   <Button
                     type="button"
                     variant="outline"
@@ -416,6 +425,7 @@ export function ProductosPage() {
           ) : (
             <ContenidoVacio
               hayProductos={Boolean(productos.length)}
+              puedeGestionar={puedeGestionar}
               alRegistrar={abrirRegistro}
             />
           )}
@@ -483,7 +493,7 @@ export function ProductosPage() {
                     </td>
                     <td className="px-5 py-4 sm:px-6">
                       <div className="flex justify-end gap-1">
-                        <Button
+                        {puedeGestionar ? <Button
                           type="button"
                           variant="ghost"
                           size="icon"
@@ -492,8 +502,8 @@ export function ProductosPage() {
                           onClick={(evento) => abrirDetalle(producto, evento)}
                         >
                           <Eye aria-hidden="true" />
-                        </Button>
-                        <Button
+                        </Button> : null}
+                        {puedeGestionar ? <Button
                           type="button"
                           variant="ghost"
                           size="icon"
@@ -502,7 +512,7 @@ export function ProductosPage() {
                           onClick={(evento) => abrirEdicion(producto, evento)}
                         >
                           <Pencil aria-hidden="true" />
-                        </Button>
+                        </Button> : null}
                         <Button
                           type="button"
                           variant="ghost"
@@ -528,6 +538,7 @@ export function ProductosPage() {
                   <td colSpan={7}>
                     <ContenidoVacio
                       hayProductos={Boolean(productos.length)}
+                      puedeGestionar={puedeGestionar}
                       alRegistrar={abrirRegistro}
                     />
                   </td>
@@ -553,7 +564,7 @@ export function ProductosPage() {
         />
       </section>
 
-      {formularioAbierto ? (
+      {formularioAbierto && puedeGestionar ? (
         <DialogoProducto
           key={productoSeleccionado?.id ?? 'nuevo'}
           abierto={formularioAbierto}
@@ -571,15 +582,15 @@ export function ProductosPage() {
           alCambiarApertura={(abierto) => {
             if (!abierto) setProductoDetalleId(null)
           }}
-          alEditar={editarDesdeDetalle}
-          alSolicitarCambioEstado={(evento) =>
+          alEditar={puedeGestionar ? editarDesdeDetalle : undefined}
+          alSolicitarCambioEstado={puedeGestionar ? (evento) =>
             solicitarCambioEstado(productoDetalle, evento)
-          }
+          : undefined}
           alRestaurarFoco={() => disparadorDetalle.current?.focus()}
         />
       ) : null}
 
-      {productoCambioEstado ? (
+      {productoCambioEstado && puedeGestionar ? (
         <DialogoConfirmacionEstado
           abierto={Boolean(productoCambioEstadoId)}
           producto={productoCambioEstado}
