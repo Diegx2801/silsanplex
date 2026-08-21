@@ -1,48 +1,52 @@
 import { useQueryClient } from '@tanstack/react-query'
-import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import {
-  createContext,
   type PropsWithChildren,
-  useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 
-import { supabase } from '@/lib/supabase'
+import {
+  AuthContext,
+  type AuthContextValue,
+  type UserAccess,
+} from '@/features/auth/AuthContext'
 import { limpiarDatosTemporalesDeSesion } from '@/features/auth/sessionCleanup'
+import {
+  isSessionInvalidationEvent,
+  notifySessionInvalidated,
+  SESSION_INVALIDATED_EVENT,
+} from '@/features/auth/sessionEvents'
+import { supabase } from '@/lib/supabase'
 
-interface UserAccess {
-  organizationId: string
-  organizationName: string
-  roles: string[]
+function isInvalidRefreshSession(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+
+  const candidate = error as { message?: unknown; name?: unknown; status?: unknown }
+  const message = typeof candidate.message === 'string' ? candidate.message : ''
+  const name = typeof candidate.name === 'string' ? candidate.name : ''
+
+  return (
+    name === 'AuthSessionMissingError' ||
+    ((candidate.status === 400 || candidate.status === 401) &&
+      /refresh token|session|jwt/i.test(message))
+  )
 }
-
-interface AuthContextValue {
-  session: Session | null
-  user: User | null
-  access: UserAccess | null
-  isAdmin: boolean
-  isLoading: boolean
-  sessionError: string | null
-  accessError: string | null
-  reintentarAcceso: () => void
-  signOut: () => Promise<void>
-}
-
-const AuthContext = createContext<AuthContextValue | null>(null)
 
 async function loadUserAccess(userId: string): Promise<UserAccess | null> {
   const { data: membership, error: membershipError } = await supabase
     .from('organization_memberships')
-    .select('organization_id, is_active')
+    .select('organization_id')
     .eq('user_id', userId)
+    .eq('is_active', true)
     .maybeSingle()
 
   if (membershipError) throw membershipError
-  if (!membership?.is_active) return null
+  if (!membership) return null
 
-  const [organizationResult, rolesResult] = await Promise.all([
+  const [organizationResult, rolesResult, permissionsResult] = await Promise.all([
     supabase
       .from('organizations')
       .select('id, name, is_active')
@@ -53,16 +57,25 @@ async function loadUserAccess(userId: string): Promise<UserAccess | null> {
       .select('role_code')
       .eq('organization_id', membership.organization_id)
       .eq('user_id', userId),
+    supabase.rpc('current_user_permissions'),
   ])
 
   if (organizationResult.error) throw organizationResult.error
   if (rolesResult.error) throw rolesResult.error
+  if (permissionsResult.error) throw permissionsResult.error
   if (!organizationResult.data?.is_active) return null
+
+  const permissions = Array.isArray(permissionsResult.data)
+    ? permissionsResult.data.filter(
+        (permission): permission is string => typeof permission === 'string',
+      )
+    : []
 
   return {
     organizationId: membership.organization_id,
     organizationName: organizationResult.data.name,
     roles: (rolesResult.data ?? []).map((role) => role.role_code),
+    permissions: [...new Set(permissions)],
   }
 }
 
@@ -75,6 +88,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [sessionError, setSessionError] = useState<string | null>(null)
   const [accessError, setAccessError] = useState<string | null>(null)
   const [accessAttempt, setAccessAttempt] = useState(0)
+  const forcedSessionMessage = useRef<string | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -96,6 +110,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
       const nextUserId = nextSession?.user.id ?? null
       const nextAccessToken = nextSession?.access_token ?? null
+      const debeReiniciarAcceso = !nextSession || currentUserId !== nextUserId
       const cambioDeUsuario =
         currentUserId !== null && currentUserId !== nextUserId
       const mismaSesion =
@@ -109,11 +124,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
       currentUserId = nextUserId
       currentAccessToken = nextAccessToken
 
+      if (nextSession) forcedSessionMessage.current = null
+
       setSession(nextSession)
-      setAccess(null)
+      if (debeReiniciarAcceso) setAccess(null)
       setAccessError(null)
-      setSessionError(null)
-      setAccessLoading(Boolean(nextSession))
+      setSessionError(nextSession ? null : forcedSessionMessage.current)
+      if (debeReiniciarAcceso) setAccessLoading(Boolean(nextSession))
       setSessionLoading(false)
 
       if (debeRecargarAcceso) {
@@ -161,6 +178,69 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [queryClient])
 
   useEffect(() => {
+    const handleInvalidSession = (event: Event) => {
+      if (!isSessionInvalidationEvent(event)) return
+
+      forcedSessionMessage.current = event.detail.message
+      setSession(null)
+      setAccess(null)
+      setAccessError(null)
+      setAccessLoading(false)
+      setSessionLoading(false)
+      setSessionError(event.detail.message)
+      limpiarDatosTemporalesDeSesion(window.sessionStorage)
+      queryClient.clear()
+
+      void supabase.auth.signOut({ scope: 'local' })
+    }
+
+    window.addEventListener(SESSION_INVALIDATED_EVENT, handleInvalidSession)
+    return () => {
+      window.removeEventListener(SESSION_INVALIDATED_EVENT, handleInvalidSession)
+    }
+  }, [queryClient])
+
+  useEffect(() => {
+    if (!session?.user.id) return
+
+    let revalidationInFlight = false
+    const revalidateAccess = () => {
+      if (revalidationInFlight) return
+
+      revalidationInFlight = true
+      void supabase.auth
+        .refreshSession()
+        .then(({ data, error }) => {
+          if (error) throw error
+          if (!data.session) {
+            notifySessionInvalidated()
+            return
+          }
+
+          setAccessAttempt((attempt) => attempt + 1)
+        })
+        .catch((error: unknown) => {
+          if (!isInvalidRefreshSession(error)) return
+          notifySessionInvalidated()
+        })
+        .finally(() => {
+          revalidationInFlight = false
+        })
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') revalidateAccess()
+    }
+
+    window.addEventListener('focus', revalidateAccess)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', revalidateAccess)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [session?.user.id])
+
+  useEffect(() => {
     let cancelled = false
 
     if (!session?.user.id) {
@@ -174,7 +254,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setAccessError(null)
     void loadUserAccess(session.user.id)
       .then((nextAccess) => {
-        if (!cancelled) setAccess(nextAccess)
+        if (cancelled) return
+
+        if (!nextAccess) {
+          limpiarDatosTemporalesDeSesion(window.sessionStorage)
+          queryClient.clear()
+        }
+        setAccess(nextAccess)
       })
       .catch(() => {
         if (!cancelled) {
@@ -189,7 +275,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return () => {
       cancelled = true
     }
-  }, [accessAttempt, session?.access_token, session?.user.id])
+  }, [accessAttempt, queryClient, session?.access_token, session?.user.id])
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -197,34 +283,30 @@ export function AuthProvider({ children }: PropsWithChildren) {
       user: session?.user ?? null,
       access,
       isAdmin: access?.roles.includes('ADMIN') ?? false,
-      isLoading: sessionLoading || accessLoading,
+      hasPermission: (permission) =>
+        access?.permissions.includes(permission) ?? false,
+      // Una revalidación en segundo plano no debe desmontar la interfaz ni
+      // perder formularios abiertos. Solo bloqueamos la carga inicial.
+      isLoading: sessionLoading || (accessLoading && !access),
       sessionError,
       accessError,
       reintentarAcceso: () => setAccessAttempt((attempt) => attempt + 1),
       signOut: async () => {
-        const { error } = await supabase.auth.signOut()
-        if (error) throw error
-
+        forcedSessionMessage.current = null
+        const remoteSignOut = supabase.auth.signOut({ scope: 'global' })
         limpiarDatosTemporalesDeSesion(window.sessionStorage)
         queryClient.clear()
         setSession(null)
         setAccess(null)
         setAccessError(null)
         setAccessLoading(false)
+        setSessionError(null)
+        const { error } = await remoteSignOut
+        if (error) throw error
       },
     }),
     [access, accessError, accessLoading, queryClient, session, sessionError, sessionLoading],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext)
-
-  if (!context) {
-    throw new Error('useAuth debe utilizarse dentro de AuthProvider.')
-  }
-
-  return context
 }

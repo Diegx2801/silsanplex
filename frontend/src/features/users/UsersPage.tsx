@@ -3,7 +3,7 @@ import { Plus, Search, Users } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { useAuth } from '@/features/auth/AuthProvider'
+import { useAuth } from '@/features/auth/useAuth'
 import { UserForm } from '@/features/users/UserForm'
 import { UsersTable } from '@/features/users/UsersTable'
 import {
@@ -17,11 +17,13 @@ import {
 import type { ManagedUser, UserInput } from '@/features/users/userTypes'
 
 const usersQueryKey = ['admin-users'] as const
+type UserStatusFilter = 'active' | 'inactive' | 'all'
 
 export function UsersPage() {
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<UserStatusFilter>('active')
   const [formOpen, setFormOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState<ManagedUser | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -45,15 +47,20 @@ export function UsersPage() {
 
   const filteredUsers = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('es')
-    if (!normalizedSearch) return usersQuery.data ?? []
+    return (usersQuery.data ?? []).filter((user) => {
+      const matchesStatus =
+        statusFilter === 'all' ||
+        (statusFilter === 'active' ? user.isActive : !user.isActive)
+      const matchesSearch =
+        !normalizedSearch ||
+        [user.fullName, user.email, user.phone ?? '', ...user.roleCodes]
+          .join(' ')
+          .toLocaleLowerCase('es')
+          .includes(normalizedSearch)
 
-    return (usersQuery.data ?? []).filter((user) =>
-      [user.fullName, user.email, user.phone ?? '', ...user.roleCodes]
-        .join(' ')
-        .toLocaleLowerCase('es')
-        .includes(normalizedSearch),
-    )
-  }, [search, usersQuery.data])
+      return matchesStatus && matchesSearch
+    })
+  }, [search, statusFilter, usersQuery.data])
 
   async function executeUserAction(
     user: ManagedUser,
@@ -165,20 +172,37 @@ export function UsersPage() {
             </div>
           </div>
 
-          <label className="relative block w-full sm:max-w-sm">
-            <span className="sr-only">Buscar usuarios</span>
-            <Search
-              aria-hidden="true"
-              className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            />
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar por nombre, correo o rol"
-              className="h-10 w-full rounded-md border bg-background ps-9 pe-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
-          </label>
+          <div className="flex w-full flex-col gap-2 sm:max-w-xl sm:flex-row">
+            <label className="relative block min-w-0 flex-1">
+              <span className="sr-only">Buscar usuarios</span>
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar por nombre, correo o rol"
+                className="h-10 w-full rounded-md border bg-background ps-9 pe-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm sm:block">
+              <span className="shrink-0 sm:sr-only">Estado</span>
+              <select
+                value={statusFilter}
+                onChange={(event) =>
+                  setStatusFilter(event.target.value as UserStatusFilter)
+                }
+                aria-label="Filtrar por estado"
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring sm:w-36"
+              >
+                <option value="active">Activos</option>
+                <option value="inactive">Inactivos</option>
+                <option value="all">Todos</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         {usersQuery.isLoading ? (
@@ -201,6 +225,7 @@ export function UsersPage() {
         ) : (
           <UsersTable
             users={filteredUsers}
+            hasActiveFilters={Boolean(search.trim()) || statusFilter !== 'all'}
             busyUserId={busyUserId}
             currentUserId={currentUser?.id ?? null}
             onEdit={openEditForm}

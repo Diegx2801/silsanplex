@@ -6,7 +6,11 @@ import { NotFoundPage } from '@/app/paginas/NotFoundPage'
 import { CargandoAplicacion } from '@/components/feedback/CargandoAplicacion'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { LoginPage } from '@/features/auth/LoginPage'
-import { AdminRoute, ProtectedRoute } from '@/features/auth/ProtectedRoute'
+import { PERMISSIONS } from '@/features/auth/permissions'
+import {
+  PermissionRoute,
+  ProtectedRoute,
+} from '@/features/auth/ProtectedRoute'
 import { SetPasswordPage } from '@/features/auth/SetPasswordPage'
 import { UsersPage } from '@/features/users/UsersPage'
 
@@ -112,9 +116,9 @@ export const router = createBrowserRouter([
       {
         path: 'usuarios',
         element: (
-          <AdminRoute>
+          <PermissionRoute permission={PERMISSIONS.USERS_MANAGE}>
             <UsersPage />
-          </AdminRoute>
+          </PermissionRoute>
         ),
       },
       ...rutasModulos,

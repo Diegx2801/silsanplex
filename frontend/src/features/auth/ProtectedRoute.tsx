@@ -2,7 +2,8 @@ import { useState, type PropsWithChildren } from 'react'
 import { Navigate } from 'react-router'
 
 import { Button } from '@/components/ui/button'
-import { useAuth } from '@/features/auth/AuthProvider'
+import type { Permission } from '@/features/auth/permissions'
+import { useAuth } from '@/features/auth/useAuth'
 
 function LoadingScreen() {
   return (
@@ -91,6 +92,7 @@ export function ProtectedRoute({ children }: PropsWithChildren) {
   const { session, access, accessError, isLoading, sessionError } = useAuth()
 
   if (isLoading) return <LoadingScreen />
+  if (!session) return <Navigate to="/iniciar-sesion" replace />
   if (sessionError) {
     return (
       <main className="grid min-h-svh place-items-center bg-background p-6">
@@ -111,16 +113,22 @@ export function ProtectedRoute({ children }: PropsWithChildren) {
       </main>
     )
   }
-  if (!session) return <Navigate to="/iniciar-sesion" replace />
   if (accessError) return <AccessErrorScreen />
   if (!access) return <AccessDeniedScreen />
 
   return children
 }
 
-export function AdminRoute({ children }: PropsWithChildren) {
-  const { isAdmin } = useAuth()
+interface PermissionRouteProps extends PropsWithChildren {
+  permission: Permission
+}
 
-  if (!isAdmin) return <Navigate to="/" replace />
+export function PermissionRoute({
+  children,
+  permission,
+}: PermissionRouteProps) {
+  const { hasPermission } = useAuth()
+
+  if (!hasPermission(permission)) return <Navigate to="/" replace />
   return children
 }

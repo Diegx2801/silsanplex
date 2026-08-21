@@ -6,7 +6,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
-import { useAuth } from '@/features/auth/AuthProvider'
+import { useAuth } from '@/features/auth/useAuth'
 import { supabase } from '@/lib/supabase'
 
 const loginSchema = z.object({
@@ -21,6 +21,11 @@ export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const [serverError, setServerError] = useState<string | null>(null)
+  const passwordUpdated =
+    typeof location.state === 'object' &&
+    location.state !== null &&
+    'passwordUpdated' in location.state &&
+    location.state.passwordUpdated === true
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: '', password: '' },
@@ -60,6 +65,15 @@ export function LoginPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           Accede con el correo asignado por administración.
         </p>
+
+        {passwordUpdated ? (
+          <p
+            role="status"
+            className="mt-5 border-s-4 border-primary bg-accent/60 px-4 py-3 text-sm"
+          >
+            Contraseña actualizada. Inicia sesión nuevamente.
+          </p>
+        ) : null}
 
         <form className="mt-7 space-y-5" onSubmit={submit} noValidate>
           <label className="block text-sm font-medium">

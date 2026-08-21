@@ -5,19 +5,22 @@ import { NavLink, Outlet, useLocation } from 'react-router'
 
 import { elementosNavegacion, seccionesNavegacion } from '@/app/navegacion'
 import { Button } from '@/components/ui/button'
-import { useAuth } from '@/features/auth/AuthProvider'
+import type { Permission } from '@/features/auth/permissions'
+import { useAuth } from '@/features/auth/useAuth'
 import { cn } from '@/lib/utils'
 
 interface ContenidoNavegacionProps {
   alNavegar?: () => void
   cerrarMenu?: () => void
-  isAdmin: boolean
+  organizationName: string
+  hasPermission: (permission: Permission) => boolean
 }
 
 function ContenidoNavegacion({
   alNavegar,
   cerrarMenu,
-  isAdmin,
+  organizationName,
+  hasPermission,
 }: ContenidoNavegacionProps) {
   return (
     <>
@@ -27,7 +30,7 @@ function ContenidoNavegacion({
             SILSANPLEX
           </span>
           <span className="mt-0.5 block text-xs text-muted-foreground">
-            Droguería SILSAN S.A.C.
+            {organizationName}
           </span>
         </NavLink>
         {cerrarMenu ? (
@@ -50,7 +53,10 @@ function ContenidoNavegacion({
             </p>
             <ul className="space-y-1">
               {seccion.elementos
-                .filter((elemento) => elemento.ruta !== '/usuarios' || isAdmin)
+                .filter(
+                  (elemento) =>
+                    !elemento.permission || hasPermission(elemento.permission),
+                )
                 .map((elemento) => {
                   const Icono = elemento.icono
 
@@ -101,7 +107,7 @@ function ContenidoNavegacion({
 export function AppLayout() {
   const [menuAbierto, setMenuAbierto] = useState(false)
   const [signOutError, setSignOutError] = useState<string | null>(null)
-  const { user, access, isAdmin, signOut } = useAuth()
+  const { user, access, hasPermission, signOut } = useAuth()
   const { pathname } = useLocation()
   const paginaActual =
     elementosNavegacion.find(
@@ -134,7 +140,10 @@ export function AppLayout() {
           aria-label="Navegación principal"
           className="fixed inset-y-0 start-0 z-30 hidden w-72 flex-col border-e bg-sidebar lg:flex"
         >
-          <ContenidoNavegacion isAdmin={isAdmin} />
+          <ContenidoNavegacion
+            organizationName={access?.organizationName ?? 'Organización'}
+            hasPermission={hasPermission}
+          />
         </aside>
 
         <DialogPrimitive.Portal>
@@ -148,7 +157,8 @@ export function AppLayout() {
             </DialogPrimitive.Description>
             <aside aria-label="Navegación principal móvil" className="contents">
               <ContenidoNavegacion
-                isAdmin={isAdmin}
+                organizationName={access?.organizationName ?? 'Organización'}
+                hasPermission={hasPermission}
                 alNavegar={() => setMenuAbierto(false)}
                 cerrarMenu={() => setMenuAbierto(false)}
               />

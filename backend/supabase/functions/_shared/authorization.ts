@@ -13,6 +13,31 @@ export interface AuthorizedClients {
 export class AuthorizationError extends Error {}
 export class ConfigurationError extends Error {}
 
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+export function extractSessionId(accessToken: string) {
+  try {
+    const encodedPayload = accessToken.split('.')[1]
+    if (!encodedPayload) return null
+
+    const normalizedPayload = encodedPayload
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .padEnd(Math.ceil(encodedPayload.length / 4) * 4, '=')
+    const payload = JSON.parse(atob(normalizedPayload)) as {
+      session_id?: unknown
+    }
+
+    return typeof payload.session_id === 'string' &&
+        uuidPattern.test(payload.session_id)
+      ? payload.session_id
+      : null
+  } catch {
+    return null
+  }
+}
+
 function requiredEnvironmentValue(...names: string[]) {
   for (const name of names) {
     const value = Deno.env.get(name)
@@ -51,6 +76,22 @@ export async function authorizeRequest(request: Request): Promise<AuthorizedClie
 
   if (error || !data.user) {
     throw new AuthorizationError('La sesión es inválida o expiró.')
+  }
+
+  const sessionId = extractSessionId(accessToken)
+  if (!sessionId) {
+    throw new AuthorizationError('La sesión no contiene un identificador válido.')
+  }
+
+  const { data: activeSession, error: sessionError } = await adminClient.rpc(
+    'is_auth_session_active',
+    {
+      requested_session_id: sessionId,
+      requested_user_id: data.user.id,
+    },
+  )
+  if (sessionError || activeSession !== true) {
+    throw new AuthorizationError('La sesión fue revocada o expiró.')
   }
 
   return {

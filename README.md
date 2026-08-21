@@ -45,9 +45,15 @@ npm run dev
 Verificaciones disponibles:
 
 ```bash
+npm run test
 npm run lint
 npm run build
+npm run test:e2e:local
 ```
+
+El último comando requiere Supabase local y las identidades E2E configuradas en
+`backend/.env.local`. Aprovisiona los fixtures y ejecuta las cinco pruebas de
+autenticación sin casos omitidos. No usa credenciales de producción ni Mailpit.
 
 ## Backend
 

@@ -45,7 +45,7 @@ export function loadSupabaseEnvironment(): SupabaseEnvironment {
 
   const url = configuredUrl || values.API_URL
   const secretKey =
-    configuredSecret || values.SECRET_KEY || values.SERVICE_ROLE_KEY
+    configuredSecret || values.SERVICE_ROLE_KEY || values.SECRET_KEY
 
   if (!url || !secretKey) {
     throw new Error(

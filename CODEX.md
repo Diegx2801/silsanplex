@@ -67,10 +67,10 @@ Zod
 Zustand
 Tailwind CSS
 shadcn/ui
-Supabase JS (cuando se implemente Supabase)
+Supabase JS
 ```
 
-### Backend futuro
+### Backend
 
 ```text
 Supabase
@@ -108,9 +108,10 @@ silsanplex/
 └── CODEX.md
 ```
 
-`backend/supabase/` está reservado mediante un archivo marcador. `docs/` se
-creará cuando exista contenido real. No crear otros árboles de carpetas vacíos
-ni mezclar código frontend y backend.
+`backend/supabase/` contiene migraciones, pruebas de base de datos y Edge
+Functions. `backend/scripts/` contiene únicamente operaciones internas y
+herramientas reproducibles de desarrollo; nunca deben exponerse al navegador.
+No crear otros árboles de carpetas vacíos ni mezclar código frontend y backend.
 
 ## 6. Arquitectura del frontend
 
@@ -280,8 +281,9 @@ transportista, fechas, dirección, estado, observaciones y usuario responsable.
 
 ## 9. Usuarios, permisos y seguridad futura
 
-La autenticación se implementará con Supabase Auth y los datos adicionales del
-usuario vivirán en `profiles`.
+La autenticación utiliza Supabase Auth y los datos adicionales del usuario
+viven en `profiles`. Cada identidad tiene como máximo una membresía activa en
+el MVP; las membresías inactivas se conservan como historial.
 
 Roles iniciales previstos:
 
@@ -295,9 +297,10 @@ VENTAS
 CONTABILIDAD
 ```
 
-Los permisos serán granulares. Ocultar botones en React no constituye
-autorización: la protección real deberá existir en RLS y en las funciones que
-ejecuten operaciones sensibles.
+Los permisos son capacidades extensibles asociadas a roles. Ocultar botones en
+React no constituye autorización: la protección real debe existir en RLS y en
+las funciones que ejecuten operaciones sensibles. Solo se agregará una
+capacidad cuando exista una regla funcional confirmada.
 
 Nunca exponer claves privadas o `service_role` en el frontend. Los archivos de
 entorno locales deben permanecer ignorados por Git.

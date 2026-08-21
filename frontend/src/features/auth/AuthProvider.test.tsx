@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ProtectedRoute } from '@/features/auth/ProtectedRoute'
+import { notifySessionInvalidated } from '@/features/auth/sessionEvents'
 
 type SessionEventCallback = (event: string, session: Session | null) => void
 
@@ -18,6 +19,8 @@ const mocks = vi.hoisted(() => {
       return { data: { subscription: { unsubscribe: mocks.unsubscribe } } }
     }),
     signOut: vi.fn(),
+    refreshSession: vi.fn(),
+    rpc: vi.fn(),
     unsubscribe: vi.fn(),
     from: vi.fn(),
     emitSessionEvent(event: string, session: Session | null) {
@@ -32,12 +35,15 @@ vi.mock('@/lib/supabase', () => ({
       getSession: mocks.getSession,
       onAuthStateChange: mocks.onAuthStateChange,
       signOut: mocks.signOut,
+      refreshSession: mocks.refreshSession,
     },
     from: mocks.from,
+    rpc: mocks.rpc,
   },
 }))
 
-import { AuthProvider, useAuth } from '@/features/auth/AuthProvider'
+import { AuthProvider } from '@/features/auth/AuthProvider'
+import { useAuth } from '@/features/auth/useAuth'
 
 const session = {
   access_token: 'access-token',
@@ -49,14 +55,17 @@ const session = {
 } as unknown as Session
 
 function configureActiveAccess() {
+  mocks.rpc.mockResolvedValue({ data: ['USERS_MANAGE'], error: null })
   mocks.from.mockImplementation((table: string) => {
     if (table === 'organization_memberships') {
       return {
         select: () => ({
           eq: () => ({
-            maybeSingle: async () => ({
-              data: { organization_id: 'organization-1', is_active: true },
-              error: null,
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { organization_id: 'organization-1' },
+                error: null,
+              }),
             }),
           }),
         }),
@@ -94,7 +103,14 @@ function configureActiveAccess() {
 }
 
 function Probe() {
-  const { access, isLoading, session, sessionError, signOut } = useAuth()
+  const {
+    access,
+    hasPermission,
+    isLoading,
+    session,
+    sessionError,
+    signOut,
+  } = useAuth()
 
   return (
     <>
@@ -102,6 +118,9 @@ function Probe() {
       <output data-testid="access-state">{access ? 'habilitado' : 'sin acceso'}</output>
       <output data-testid="loading-state">{isLoading ? 'cargando' : 'lista'}</output>
       <output data-testid="session-error">{sessionError ?? 'sin error'}</output>
+      <output data-testid="permission-state">
+        {hasPermission('USERS_MANAGE') ? 'permitido' : 'denegado'}
+      </output>
       <button type="button" onClick={() => void signOut()}>
         Cerrar prueba
       </button>
@@ -134,9 +153,15 @@ describe('AuthProvider', () => {
     mocks.getSession.mockReset()
     mocks.onAuthStateChange.mockClear()
     mocks.signOut.mockReset()
+    mocks.refreshSession.mockReset()
+    mocks.rpc.mockReset()
     mocks.unsubscribe.mockReset()
     mocks.from.mockReset()
     mocks.signOut.mockResolvedValue({ error: null })
+    mocks.refreshSession.mockResolvedValue({
+      data: { session },
+      error: null,
+    })
   })
 
   it('limpia el estado local al cerrar sesión', async () => {
@@ -222,6 +247,119 @@ describe('AuthProvider', () => {
         'Contenido protegido',
       )
     })
+  })
+
+  it('carga los permisos efectivos mediante el RPC del backend', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('permission-state')).toHaveTextContent(
+        'permitido',
+      )
+    })
+    expect(mocks.rpc).toHaveBeenCalledWith('current_user_permissions')
+  })
+
+  it('revalida el acceso cuando la ventana recupera el foco', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
+    })
+    const callsBefore = mocks.rpc.mock.calls.length
+
+    window.dispatchEvent(new Event('focus'))
+
+    expect(screen.getByTestId('loading-state')).toHaveTextContent('lista')
+    expect(screen.getByTestId('protected-content')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(mocks.rpc.mock.calls.length).toBeGreaterThan(callsBefore)
+    })
+  })
+
+  it('limpia datos temporales si la membresía deja de estar activa', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
+    })
+    window.sessionStorage.setItem('silsanplex.ventas-temporales.v1', '{}')
+    mocks.from.mockImplementation((table: string) => {
+      if (table !== 'organization_memberships') {
+        throw new Error(`Consulta inesperada a ${table}`)
+      }
+
+      return {
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: null, error: null }),
+            }),
+          }),
+        }),
+      }
+    })
+
+    window.dispatchEvent(new Event('focus'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('access-state')).toHaveTextContent('sin acceso')
+    })
+    expect(
+      window.sessionStorage.getItem('silsanplex.ventas-temporales.v1'),
+    ).toBeNull()
+  })
+
+  it('termina la sesión cuando una API informa que el JWT expiró', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+    })
+
+    notifySessionInvalidated()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('cerrada')
+      expect(screen.getByTestId('session-error')).toHaveTextContent(
+        'Tu sesión expiró.',
+      )
+    })
+    expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'local' })
+  })
+
+  it('detecta un refresh token revocado al recuperar el foco', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+    })
+    mocks.refreshSession.mockResolvedValue({
+      data: { session: null },
+      error: {
+        name: 'AuthApiError',
+        status: 400,
+        message: 'Invalid Refresh Token: Refresh Token Not Found',
+      },
+    })
+
+    window.dispatchEvent(new Event('focus'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-state')).toHaveTextContent('cerrada')
+    })
+    expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'local' })
   })
 
   it('conserva el error de getSession si INITIAL_SESSION llega después con sesión nula', async () => {

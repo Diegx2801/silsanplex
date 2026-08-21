@@ -14,7 +14,7 @@ vi.mock('@/lib/supabase', () => ({
   },
 }))
 
-vi.mock('@/features/auth/AuthProvider', () => ({
+vi.mock('@/features/auth/useAuth', () => ({
   useAuth: () => ({
     session: null,
     isLoading: false,
@@ -75,6 +75,27 @@ describe('LoginPage', () => {
 
     expect(
       await screen.findByText('El correo o la contraseña no son correctos.'),
+    ).toBeInTheDocument()
+  })
+
+  it('confirma que la contraseña fue actualizada al volver del flujo de invitación', () => {
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: '/iniciar-sesion',
+            state: { passwordUpdated: true },
+          },
+        ]}
+      >
+        <Routes>
+          <Route path="*" element={<LoginPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    expect(
+      screen.getByText('Contraseña actualizada. Inicia sesión nuevamente.'),
     ).toBeInTheDocument()
   })
 })

@@ -16,7 +16,9 @@ Este calendario asume una línea principal de desarrollo. Cada tarea se consider
 
 - Base React + TypeScript + Vite disponible.
 - Supabase incorporado con migraciones, funciones y pruebas iniciales.
-- Autenticación y administración multiempresa de usuarios implementadas inicialmente.
+- Autenticación y administración de usuarios implementadas para una
+  organización activa por identidad, con aislamiento multiempresa en base de
+  datos y aprovisionamiento de clientes reservado a la plataforma.
 - Catálogo temporal de productos, importación y dashboard administrativo inicial disponibles.
 - Inventario y compras cuentan con un primer flujo local; ventas, caja y reportes todavía no tienen flujo funcional completo.
 

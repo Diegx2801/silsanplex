@@ -31,12 +31,16 @@ describe('UsersTable', () => {
       />,
     )
 
-    expect(screen.getByText('Inactivo')).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'Restablecer contraseña de Usuario Inactivo' }),
-    ).toBeDisabled()
-    expect(
-      screen.getByRole('button', { name: 'Reactivar a Usuario Inactivo' }),
-    ).toBeEnabled()
+    expect(screen.getAllByText('Inactivo')).toHaveLength(2)
+    for (const button of screen.getAllByRole('button', {
+      name: 'Restablecer contraseña de Usuario Inactivo',
+    })) {
+      expect(button).toBeDisabled()
+    }
+    for (const button of screen.getAllByRole('button', {
+      name: 'Reactivar a Usuario Inactivo',
+    })) {
+      expect(button).toBeEnabled()
+    }
   })
 })

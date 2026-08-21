@@ -10,6 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:prepare": "npm --prefix ../backend run e2e:prepare",
+    "test:e2e:local": "npm run test:e2e:prepare && playwright test",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -2,11 +2,11 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { KeyRound } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { Link, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
-import { useAuth } from '@/features/auth/AuthProvider'
+import { useAuth } from '@/features/auth/useAuth'
 import { supabase } from '@/lib/supabase'
 
 const passwordSchema = z
@@ -21,10 +21,28 @@ const passwordSchema = z
 
 type PasswordValues = z.infer<typeof passwordSchema>
 
+function recoveryLinkError(search: string, hash: string) {
+  const searchParameters = new URLSearchParams(search)
+  const hashParameters = new URLSearchParams(hash.replace(/^#/, ''))
+  const code =
+    searchParameters.get('error_code') ?? hashParameters.get('error_code')
+
+  if (code === 'otp_expired') {
+    return 'El enlace expiró o ya fue utilizado. Solicita uno nuevo a administración.'
+  }
+  if (searchParameters.has('error') || hashParameters.has('error')) {
+    return 'El enlace de recuperación no es válido. Solicita uno nuevo a administración.'
+  }
+
+  return null
+}
+
 export function SetPasswordPage() {
-  const { session, isLoading, sessionError } = useAuth()
+  const { session, isLoading, sessionError, signOut } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [serverError, setServerError] = useState<string | null>(null)
+  const linkError = recoveryLinkError(location.search, location.hash)
   const form = useForm<PasswordValues>({
     resolver: zodResolver(passwordSchema),
     defaultValues: { password: '', confirmation: '' },
@@ -39,7 +57,14 @@ export function SetPasswordPage() {
       return
     }
 
-    navigate('/', { replace: true })
+    // La contraseña ya se actualizó. El cierre local es obligatorio incluso
+    // si la revocación remota devuelve un error transitorio.
+    void signOut().catch(() => undefined)
+
+    navigate('/iniciar-sesion', {
+      replace: true,
+      state: { passwordUpdated: true },
+    })
   })
 
   return (
@@ -55,7 +80,16 @@ export function SetPasswordPage() {
           Crea una contraseña personal para acceder a SILSANPLEX.
         </p>
 
-        {isLoading ? (
+        {linkError ? (
+          <div className="mt-7">
+            <p role="alert" className="text-sm text-destructive">
+              {linkError}
+            </p>
+            <Button asChild variant="outline" className="mt-5">
+              <Link to="/iniciar-sesion">Ir al inicio de sesión</Link>
+            </Button>
+          </div>
+        ) : isLoading ? (
           <p role="status" className="mt-7 text-sm text-muted-foreground">
             Verificando el enlace de acceso…
           </p>
