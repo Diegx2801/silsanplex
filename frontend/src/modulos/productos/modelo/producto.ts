@@ -3,6 +3,14 @@ import { z } from 'zod'
 const textoOpcional = (maximo: number) =>
   z.string().trim().max(maximo, `Máximo ${maximo} caracteres`)
 
+const importeOpcional = z
+  .string()
+  .trim()
+  .refine(
+    (valor) => valor === '' || /^\d+(\.\d{1,2})?$/.test(valor),
+    'Usa un importe válido con hasta 2 decimales',
+  )
+
 export const afectacionesIgv = [
   { valor: '', etiqueta: 'Por definir' },
   { valor: 'gravado', etiqueta: 'Gravado' },
@@ -23,17 +31,13 @@ export const esquemaProducto = z.object({
     .max(160, 'Máximo 160 caracteres'),
   codigoBarras: textoOpcional(50),
   categoria: textoOpcional(80),
+  sublinea: textoOpcional(80),
   laboratorio: textoOpcional(100),
   presentacion: textoOpcional(100),
   unidadMedida: textoOpcional(40),
   afectacionIgv: z.enum(['', 'gravado', 'exonerado', 'inafecto']),
-  precioVenta: z
-    .string()
-    .trim()
-    .refine(
-      (valor) => valor === '' || /^\d+(\.\d{1,2})?$/.test(valor),
-      'Usa un importe válido con hasta 2 decimales',
-    ),
+  costo: importeOpcional,
+  precioVenta: importeOpcional,
   registroSanitario: textoOpcional(80),
   controlLote: z.boolean(),
   ventaReceta: z.boolean(),
@@ -42,8 +46,10 @@ export const esquemaProducto = z.object({
 
 export type DatosProducto = z.infer<typeof esquemaProducto>
 
-export interface Producto extends DatosProducto {
+export interface Producto extends Omit<DatosProducto, 'sublinea' | 'costo'> {
   id: string
+  sublinea?: string
+  costo?: string
 }
 
 export interface ResumenProductos {
@@ -73,10 +79,12 @@ export const productoInicial: DatosProducto = {
   descripcion: '',
   codigoBarras: '',
   categoria: '',
+  sublinea: '',
   laboratorio: '',
   presentacion: '',
   unidadMedida: '',
   afectacionIgv: '',
+  costo: '',
   precioVenta: '',
   registroSanitario: '',
   controlLote: true,

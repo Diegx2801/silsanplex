@@ -110,7 +110,10 @@ export function consultarProductos(
           producto.codigo,
           producto.codigoBarras,
           producto.descripcion,
+          producto.categoria,
+          producto.sublinea ?? '',
           producto.laboratorio,
+          producto.unidadMedida,
         ].some((valor) => normalizar(valor).includes(termino))
 
       return (
