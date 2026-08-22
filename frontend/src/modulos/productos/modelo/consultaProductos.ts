@@ -16,6 +16,21 @@ export interface ConsultaProductos {
   orden: OrdenProductos
 }
 
+export interface ConsultaProductosPaginada extends ConsultaProductos {
+  pagina: number
+  tamanioPagina: number
+}
+
+export interface ResultadoProductosPaginados {
+  elementos: Producto[]
+  totalFiltrado: number
+}
+
+export interface OpcionesProductos {
+  categorias: string[]
+  laboratorios: string[]
+}
+
 export interface PaginaProductos {
   elementos: Producto[]
   inicio: number

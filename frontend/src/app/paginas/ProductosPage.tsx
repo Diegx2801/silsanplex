@@ -11,7 +11,7 @@ import {
 import {
   type MouseEvent as ReactMouseEvent,
   useDeferredValue,
-  useMemo,
+  useEffect,
   useRef,
   useState,
 } from 'react'
@@ -26,12 +26,9 @@ import { DialogoProducto } from '@/modulos/productos/componentes/DialogoProducto
 import { FiltrosProductos } from '@/modulos/productos/componentes/FiltrosProductos'
 import { PaginacionProductos } from '@/modulos/productos/componentes/PaginacionProductos'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
-import {
-  consultarProductos,
-  obtenerOpcionesProducto,
-  paginarProductos,
-  type FiltroEstadoProducto,
-  type OrdenProductos,
+import type {
+  FiltroEstadoProducto,
+  OrdenProductos,
 } from '@/modulos/productos/modelo/consultaProductos'
 import type {
   DatosProducto,
@@ -85,15 +82,6 @@ export function ProductosPage() {
   const puedeGestionar = hasPermission(PERMISSIONS.PRODUCTS_MANAGE)
   const [busqueda, setBusqueda] = useState('')
   const busquedaDiferida = useDeferredValue(busqueda)
-  const {
-    productos,
-    guardarProducto,
-    cambiarEstado,
-    cargando,
-    error,
-    reintentar,
-    cambiandoEstado,
-  } = useProductos(busquedaDiferida)
   const [parametros, setParametros] = useSearchParams()
   const [filtroEstado, setFiltroEstado] =
     useState<FiltroEstadoProducto>('todos')
@@ -116,6 +104,27 @@ export function ProductosPage() {
   const disparadorFormulario = useRef<HTMLButtonElement | null>(null)
   const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
   const disparadorEstado = useRef<HTMLButtonElement | null>(null)
+  const consulta = {
+    busqueda: busquedaDiferida,
+    estado: filtroEstado,
+    categoria: filtroCategoria,
+    laboratorio: filtroLaboratorio,
+    orden,
+  }
+  const {
+    productos,
+    guardarProducto,
+    cambiarEstado,
+    cargando,
+    error,
+    reintentar,
+    cambiandoEstado,
+    totalFiltrado,
+    totalProductos,
+    categorias,
+    laboratorios,
+    exportarProductos,
+  } = useProductos('', { consulta, pagina, tamanioPagina })
   const mensajeErrorProductos =
     error instanceof Error
       ? error.message
@@ -126,34 +135,24 @@ export function ProductosPage() {
   const productoCambioEstado =
     productos.find((producto) => producto.id === productoCambioEstadoId) ?? null
 
-  const categorias = useMemo(
-    () => obtenerOpcionesProducto(productos, 'categoria'),
-    [productos],
-  )
-  const laboratorios = useMemo(
-    () => obtenerOpcionesProducto(productos, 'laboratorio'),
-    [productos],
-  )
-  const productosFiltrados = useMemo(() => {
-    return consultarProductos(productos, {
-      busqueda: busquedaDiferida,
-      estado: filtroEstado,
-      categoria: filtroCategoria,
-      laboratorio: filtroLaboratorio,
-      orden,
-    })
-  }, [
-    busquedaDiferida,
-    filtroCategoria,
-    filtroEstado,
-    filtroLaboratorio,
-    orden,
-    productos,
-  ])
-  const paginaProductos = useMemo(
-    () => paginarProductos(productosFiltrados, pagina, tamanioPagina),
-    [pagina, productosFiltrados, tamanioPagina],
-  )
+  const totalPaginas = Math.max(1, Math.ceil(totalFiltrado / tamanioPagina))
+  const paginaActual = cargando
+    ? Math.max(1, pagina)
+    : Math.min(totalPaginas, Math.max(1, pagina))
+  const paginaProductos = {
+    elementos: productos,
+    inicio: productos.length ? (paginaActual - 1) * tamanioPagina + 1 : 0,
+    fin: productos.length
+      ? (paginaActual - 1) * tamanioPagina + productos.length
+      : 0,
+    pagina: paginaActual,
+    totalPaginas,
+  }
+
+  useEffect(() => {
+    if (!cargando && pagina !== paginaActual) setPagina(paginaActual)
+  }, [cargando, pagina, paginaActual])
+
   const cantidadFiltrosActivos =
     Number(Boolean(busqueda.trim())) +
     Number(filtroEstado !== 'todos') +
@@ -239,18 +238,24 @@ export function ProductosPage() {
   }
 
   const exportarCatalogo = async () => {
-    if (!productosFiltrados.length || exportando) return
+    if (!totalFiltrado || exportando) return
 
     setExportando(true)
 
     try {
+      const productosParaExportar = await exportarProductos(consulta)
+      if (!productosParaExportar.length) {
+        setMensaje('No se encontraron productos para exportar.')
+        return
+      }
+
       const { descargarCatalogoProductos } = await import(
         '@/modulos/productos/servicios/exportadorProductos'
       )
-      descargarCatalogoProductos(productosFiltrados)
+      descargarCatalogoProductos(productosParaExportar)
       setMensaje(
-        `Se exportaron ${productosFiltrados.length} ${
-          productosFiltrados.length === 1 ? 'producto' : 'productos'
+        `Se exportaron ${productosParaExportar.length} ${
+          productosParaExportar.length === 1 ? 'producto' : 'productos'
         } a Excel.`,
       )
     } catch {
@@ -346,7 +351,7 @@ export function ProductosPage() {
               Registro de productos
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {productosFiltrados.length} de {productos.length} productos visibles
+              {productos.length} de {totalFiltrado} productos visibles
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">
@@ -356,8 +361,8 @@ export function ProductosPage() {
             <Button
               type="button"
               variant="outline"
-              disabled={!productosFiltrados.length || exportando}
-              title={`Exportar ${productosFiltrados.length} productos filtrados`}
+              disabled={!totalFiltrado || exportando}
+              title={`Exportar ${totalFiltrado} productos filtrados`}
               onClick={exportarCatalogo}
             >
               {exportando ? (
@@ -466,7 +471,7 @@ export function ProductosPage() {
             ))
           ) : (
             <ContenidoVacio
-              hayProductos={Boolean(productos.length)}
+              hayProductos={Boolean(totalProductos)}
               puedeGestionar={puedeGestionar}
               alRegistrar={abrirRegistro}
             />
@@ -581,10 +586,10 @@ export function ProductosPage() {
               ) : (
                 <tr>
                   <td colSpan={7}>
-                    <ContenidoVacio
-                      hayProductos={Boolean(productos.length)}
-                      puedeGestionar={puedeGestionar}
-                      alRegistrar={abrirRegistro}
+                      <ContenidoVacio
+                        hayProductos={Boolean(totalProductos)}
+                        puedeGestionar={puedeGestionar}
+                        alRegistrar={abrirRegistro}
                     />
                   </td>
                 </tr>
@@ -596,8 +601,8 @@ export function ProductosPage() {
         <PaginacionProductos
           inicio={paginaProductos.inicio}
           fin={paginaProductos.fin}
-          totalFiltrado={productosFiltrados.length}
-          total={productos.length}
+          totalFiltrado={totalFiltrado}
+          total={totalProductos}
           pagina={paginaProductos.pagina}
           totalPaginas={paginaProductos.totalPaginas}
           tamanioPagina={tamanioPagina}
