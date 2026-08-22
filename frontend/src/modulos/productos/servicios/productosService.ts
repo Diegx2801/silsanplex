@@ -27,6 +27,8 @@ const columnasProducto =
 
 const textoONulo = (valor: string) => valor.trim() || null
 
+type ContextoError = 'consultar' | 'crear' | 'editar' | 'cambiarEstado'
+
 function mapearProducto(fila: ProductoFila): Producto {
   return {
     id: fila.id,
@@ -48,11 +50,21 @@ function mapearProducto(fila: ProductoFila): Producto {
   }
 }
 
-function mensajeError(error: PostgrestError) {
+function mensajeError(error: PostgrestError, contexto: ContextoError) {
   if (error.code === '23505') return 'Ya existe un producto con este código o código de barras'
-  if (error.code === '42501') return 'No tienes permiso para administrar productos'
+  if (error.code === '42501') {
+    return contexto === 'consultar'
+      ? 'No tienes permiso para consultar productos'
+      : 'No tienes permiso para administrar productos'
+  }
   if (error.code === '23514') return 'Los datos del producto no cumplen las reglas del catálogo'
-  return 'No se pudo guardar el producto'
+
+  return {
+    consultar: 'No se pudo cargar el catálogo de productos',
+    crear: 'No se pudo registrar el producto',
+    editar: 'No se pudo actualizar el producto',
+    cambiarEstado: 'No se pudo cambiar el estado del producto',
+  }[contexto]
 }
 
 function normalizarTerminoBusqueda(valor: string) {
@@ -97,7 +109,7 @@ export async function listarProductos(organizationId: string): Promise<Producto[
     .order('code', { ascending: true })
     .order('id', { ascending: true })
 
-  if (error) throw new Error(mensajeError(error))
+  if (error) throw new Error(mensajeError(error, 'consultar'))
   return ((data ?? []) as ProductoFila[]).map(mapearProducto)
 }
 
@@ -129,7 +141,7 @@ export async function buscarProductos(
     .order('code', { ascending: true })
     .order('id', { ascending: true })
 
-  if (error) throw new Error(mensajeError(error))
+  if (error) throw new Error(mensajeError(error, 'consultar'))
   return ((data ?? []) as ProductoFila[]).map(mapearProducto)
 }
 
@@ -144,7 +156,7 @@ export async function crearProducto(
       ...construirFilaProducto(organizationId, userId, datos),
       created_by: userId,
     })
-  if (error) throw new Error(mensajeError(error))
+  if (error) throw new Error(mensajeError(error, 'crear'))
 }
 
 export async function editarProducto(
@@ -158,7 +170,7 @@ export async function editarProducto(
     .update(construirFilaProducto(organizationId, userId, datos))
     .eq('id', productoId)
     .eq('organization_id', organizationId)
-  if (error) throw new Error(mensajeError(error))
+  if (error) throw new Error(mensajeError(error, 'editar'))
 }
 
 export async function cambiarEstadoProducto(
@@ -171,5 +183,5 @@ export async function cambiarEstadoProducto(
     .update({ is_active: !producto.activo, updated_by: userId })
     .eq('id', producto.id)
     .eq('organization_id', organizationId)
-  if (error) throw new Error(mensajeError(error))
+  if (error) throw new Error(mensajeError(error, 'cambiarEstado'))
 }
