@@ -90,6 +90,14 @@ describe('productosService', () => {
     })
   })
 
+  it('usa un mensaje específico cuando falla la consulta', async () => {
+    respuesta = { data: null, error: { code: 'XX000' } }
+
+    await expect(listarProductos('org-1')).rejects.toThrow(
+      'No se pudo cargar el catálogo de productos',
+    )
+  })
+
   it('busca en los campos del catálogo sin perder el filtro de organización', async () => {
     respuesta = { data: [productoFila], error: null }
 
@@ -100,6 +108,14 @@ describe('productosService', () => {
       expect.stringContaining('description.ilike.%producto%'),
     )
     expect(productos).toHaveLength(1)
+  })
+
+  it('usa un mensaje específico cuando falla la búsqueda', async () => {
+    respuesta = { data: null, error: { code: 'XX000' } }
+
+    await expect(buscarProductos('org-1', 'producto')).rejects.toThrow(
+      'No se pudo cargar el catálogo de productos',
+    )
   })
 
   it('crea un producto normalizando el código y enviando el actor', async () => {
@@ -124,6 +140,18 @@ describe('productosService', () => {
     })
   })
 
+  it('usa un mensaje específico cuando falla el registro', async () => {
+    respuesta = { data: null, error: { code: 'XX000' } }
+
+    await expect(
+      crearProducto('org-1', 'user-1', {
+        ...productoInicial,
+        codigo: 'MED-001',
+        descripcion: 'Producto de prueba',
+      }),
+    ).rejects.toThrow('No se pudo registrar el producto')
+  })
+
   it('edita un producto dentro de la organización indicada', async () => {
     const datos = {
       ...productoInicial,
@@ -144,6 +172,18 @@ describe('productosService', () => {
     expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
   })
 
+  it('usa un mensaje específico cuando falla la edición', async () => {
+    respuesta = { data: null, error: { code: 'XX000' } }
+
+    await expect(
+      editarProducto('org-1', 'user-1', 'producto-1', {
+        ...productoInicial,
+        codigo: 'MED-001',
+        descripcion: 'Producto actualizado',
+      }),
+    ).rejects.toThrow('No se pudo actualizar el producto')
+  })
+
   it('cambia el estado usando el id y la organización', async () => {
     await cambiarEstadoProducto('org-1', 'user-1', {
       ...productoInicial,
@@ -155,6 +195,17 @@ describe('productosService', () => {
       updated_by: 'user-1',
     })
     expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
+  })
+
+  it('usa un mensaje específico cuando falla el cambio de estado', async () => {
+    respuesta = { data: null, error: { code: 'XX000' } }
+
+    await expect(
+      cambiarEstadoProducto('org-1', 'user-1', {
+        ...productoInicial,
+        id: 'producto-1',
+      }),
+    ).rejects.toThrow('No se pudo cambiar el estado del producto')
   })
 
   it('traduce el duplicado de código o barras a un error de dominio', async () => {
