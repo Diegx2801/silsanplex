@@ -84,7 +84,7 @@ export function FiltrosProductos({
               value={busqueda}
               onChange={(evento) => alCambiarBusqueda(evento.target.value)}
               className="field-control ps-9"
-              placeholder="Código, barras, producto o laboratorio"
+              placeholder="Código, barras, producto o marca"
             />
           </div>
         </div>
@@ -109,7 +109,7 @@ export function FiltrosProductos({
 
         <div>
           <label htmlFor="filtro-categoria" className="field-label">
-            Categoría
+            Línea
           </label>
           <select
             id="filtro-categoria"
@@ -128,7 +128,7 @@ export function FiltrosProductos({
 
         <div>
           <label htmlFor="filtro-laboratorio" className="field-label">
-            Laboratorio
+            Marca
           </label>
           <select
             id="filtro-laboratorio"

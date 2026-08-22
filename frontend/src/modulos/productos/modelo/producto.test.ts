@@ -35,6 +35,18 @@ describe('esquemaProducto', () => {
 
     expect(resultado.success).toBe(false)
   })
+
+  it('rechaza importes negativos', () => {
+    const resultado = esquemaProducto.safeParse({
+      ...productoInicial,
+      codigo: 'PROD-001',
+      descripcion: 'Producto de prueba',
+      costo: '-1',
+      precioVenta: '-2',
+    })
+
+    expect(resultado.success).toBe(false)
+  })
 })
 
 describe('resumirProductos', () => {

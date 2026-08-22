@@ -112,7 +112,13 @@ export function DialogoProducto({
     formState: { errors, isSubmitting },
   } = useForm<DatosProducto>({
     resolver: zodResolver(esquemaProducto),
-    defaultValues: producto ?? { ...productoInicial },
+    defaultValues: producto
+      ? {
+          ...producto,
+          sublinea: producto.sublinea ?? '',
+          costo: producto.costo ?? '',
+        }
+      : { ...productoInicial },
   })
 
   const guardar = async (datos: DatosProducto) => {
@@ -199,14 +205,21 @@ export function DialogoProducto({
                   />
                 </div>
                 <CampoTexto
-                  etiqueta="Categoría o línea"
+                  etiqueta="Línea"
                   autoComplete="off"
                   placeholder="Opcional"
                   error={errors.categoria?.message}
                   {...register('categoria')}
                 />
                 <CampoTexto
-                  etiqueta="Laboratorio o marca"
+                  etiqueta="Sublínea"
+                  autoComplete="off"
+                  placeholder="Opcional"
+                  error={errors.sublinea?.message}
+                  {...register('sublinea')}
+                />
+                <CampoTexto
+                  etiqueta="Marca"
                   autoComplete="organization"
                   placeholder="Opcional"
                   error={errors.laboratorio?.message}
@@ -240,6 +253,15 @@ export function DialogoProducto({
                 </p>
               </div>
               <div className="grid gap-5 sm:grid-cols-2">
+                <CampoTexto
+                  etiqueta="Costo base (S/)"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="0.00"
+                  ayuda="Déjalo vacío si todavía no está confirmado."
+                  error={errors.costo?.message}
+                  {...register('costo')}
+                />
                 <div>
                   <label htmlFor="afectacion-igv" className="field-label">
                     Afectación de IGV

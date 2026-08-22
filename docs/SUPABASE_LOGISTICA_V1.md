@@ -2,15 +2,22 @@
 
 ## Alcance
 
-Esta versión prepara la infraestructura PostgreSQL de SILSANPLEX sin modificar
-React y sin migrar todavía los módulos de Productos o Inventario. El código
-existente puede continuar usando `sessionStorage` mientras se implementan los
-adaptadores de persistencia del siguiente commit.
+Esta versión preparó la infraestructura PostgreSQL de SILSANPLEX sin modificar
+React ni migrar entonces los módulos operativos. El módulo Productos se conectó
+posteriormente a `public.products` mediante el Commit 2; Inventario, Compras y
+Ventas no forman parte de esa migración.
 
 Las migraciones nuevas son:
 
 - `backend/supabase/migrations/20260821190000_create_logistics_foundation.sql`
 - `backend/supabase/migrations/20260821191000_secure_logistics_foundation.sql`
+- `backend/supabase/migrations/20260821230000_extend_products_catalog.sql`
+
+El contrato activo del frontend para el catálogo es `public.products`, creado
+por la migración persistente existente. Las tablas `public.productos` y sus
+maestros normalizados permanecen preparadas para una futura unificación; no se
+conectan automáticamente para evitar duplicar o cambiar el contrato que ya usan
+Compras e Inventario.
 
 ## Tablas creadas
 
@@ -171,13 +178,21 @@ La prueba añadida en
 
 ## Futuras migraciones
 
-### Commit 2: persistencia de Productos
+### Commit 2: persistencia de Productos (completado)
 
-- Adaptar el modelo React al esquema persistente.
-- Definir permisos por operación de catálogo.
-- Implementar consultas, alta, edición y baja lógica vía Supabase.
-- Resolver importación masiva y errores parciales.
-- Añadir pruebas RLS y de duplicados.
+- `frontend/src/modulos/productos/servicios/productosService.ts` consulta y
+  modifica `public.products` con `organization_id` explícito.
+- El formulario conserva validación Zod y persiste costo, precio, línea, marca,
+  sublínea y unidad como datos textuales del contrato actual.
+- La migración `20260821230000_extend_products_catalog.sql` añade `cost` y
+  `subline` con restricciones de base de datos.
+- Se añadieron pruebas unitarias del servicio y pruebas SQL de RLS, CRUD y
+  duplicados.
+
+La normalización de esos campos contra `public.marcas`, `public.lineas`,
+`public.sublineas` y `public.unidades_medida` queda pendiente de una decisión
+de unificación de contratos. No se modifica todavía Inventario, Compras ni
+Ventas.
 
 ### Commit 3: núcleo transaccional de Inventario
 

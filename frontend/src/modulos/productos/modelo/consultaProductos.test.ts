@@ -16,6 +16,7 @@ const productos = [
     codigoBarras: '7750000010',
     descripcion: 'Alcohol medicinal',
     categoria: 'Antisépticos',
+    sublinea: 'Antisépticos adultos',
     laboratorio: 'Laboratorio Norte',
     precioVenta: '8.50',
     activo: true,
@@ -69,6 +70,15 @@ describe('consultarProductos', () => {
     })
 
     expect(resultado).toHaveLength(2)
+  })
+
+  it('busca también por línea, sublínea y unidad', () => {
+    expect(
+      consultarProductos(productos, {
+        ...consultaBase,
+        busqueda: 'adultos',
+      }).map((producto) => producto.id),
+    ).toEqual(['1'])
   })
 
   it('ordena códigos numéricamente y mantiene precios vacíos al final', () => {

@@ -12,10 +12,12 @@ const producto = {
   descripcion: 'Paracetamol 500 mg',
   codigoBarras: '7751234567890',
   categoria: 'Analgésicos',
+  sublinea: 'Analgésicos adultos',
   laboratorio: 'Laboratorio Central',
   presentacion: 'Caja x 20 tabletas',
   unidadMedida: 'Caja',
   afectacionIgv: 'gravado',
+  costo: '5.50',
   precioVenta: '12.50',
   registroSanitario: 'RS-12345',
   controlLote: true,
@@ -43,6 +45,8 @@ describe('DetalleProducto', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('7751234567890')).toBeInTheDocument()
     expect(screen.getByText('Laboratorio Central')).toBeInTheDocument()
+    expect(screen.getByText('Analgésicos adultos')).toBeInTheDocument()
+    expect(screen.getByText(/S\/\s*5[.,]50/)).toBeInTheDocument()
     expect(screen.getByText(/S\/\s*12[.,]50/)).toBeInTheDocument()
     expect(screen.getByText('Gravado')).toBeInTheDocument()
     expect(screen.getByText('RS-12345')).toBeInTheDocument()

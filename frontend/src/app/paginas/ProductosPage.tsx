@@ -83,9 +83,17 @@ function ContenidoVacio({ hayProductos, puedeGestionar, alRegistrar }: Contenido
 export function ProductosPage() {
   const { hasPermission } = useAuth()
   const puedeGestionar = hasPermission(PERMISSIONS.PRODUCTS_MANAGE)
-  const { productos, guardarProducto, cambiarEstado } = useProductos()
-  const [parametros, setParametros] = useSearchParams()
   const [busqueda, setBusqueda] = useState('')
+  const busquedaDiferida = useDeferredValue(busqueda)
+  const {
+    productos,
+    guardarProducto,
+    cambiarEstado,
+    cargando,
+    error,
+    reintentar,
+  } = useProductos(busquedaDiferida)
+  const [parametros, setParametros] = useSearchParams()
   const [filtroEstado, setFiltroEstado] =
     useState<FiltroEstadoProducto>('todos')
   const [filtroCategoria, setFiltroCategoria] = useState('')
@@ -107,7 +115,10 @@ export function ProductosPage() {
   const disparadorFormulario = useRef<HTMLButtonElement | null>(null)
   const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
   const disparadorEstado = useRef<HTMLButtonElement | null>(null)
-  const busquedaDiferida = useDeferredValue(busqueda)
+  const mensajeErrorProductos =
+    error instanceof Error
+      ? error.message
+      : 'No se pudo cargar el catálogo de productos.'
 
   const productoDetalle =
     productos.find((producto) => producto.id === productoDetalleId) ?? null
@@ -358,7 +369,34 @@ export function ProductosPage() {
           </div>
         </div>
 
-        <div className="divide-y md:hidden">
+        {cargando ? (
+          <div
+            role="status"
+            className="flex min-h-56 flex-col items-center justify-center gap-3 px-5 py-14 text-center sm:px-6"
+          >
+            <LoaderCircle aria-hidden="true" className="size-8 animate-spin text-primary" />
+            <p className="font-semibold">Cargando productos</p>
+            <p className="text-sm text-muted-foreground">
+              Consultando el catálogo de tu organización.
+            </p>
+          </div>
+        ) : error ? (
+          <div
+            role="alert"
+            className="flex min-h-56 flex-col items-center justify-center gap-3 px-5 py-14 text-center sm:px-6"
+          >
+            <PackageSearch aria-hidden="true" className="size-8 text-destructive" />
+            <p className="font-semibold">No se pudo cargar el catálogo</p>
+            <p className="max-w-md text-sm leading-6 text-muted-foreground">
+              {mensajeErrorProductos}
+            </p>
+            <Button type="button" variant="outline" onClick={() => void reintentar()}>
+              Reintentar
+            </Button>
+          </div>
+        ) : (
+          <>
+          <div className="divide-y md:hidden">
           {paginaProductos.elementos.length ? (
             paginaProductos.elementos.map((producto) => (
               <article key={producto.id} className="px-5 py-5">
@@ -378,7 +416,7 @@ export function ProductosPage() {
                 </div>
                 <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                   <div>
-                    <dt className="text-xs text-muted-foreground">Laboratorio</dt>
+                    <dt className="text-xs text-muted-foreground">Marca</dt>
                     <dd className="mt-1">{producto.laboratorio || 'Sin definir'}</dd>
                   </div>
                   <div>
@@ -442,7 +480,7 @@ export function ProductosPage() {
                   Producto
                 </th>
                 <th scope="col" className="px-4 py-3 font-medium">
-                  Laboratorio
+                  Marca
                 </th>
                 <th scope="col" className="px-4 py-3 font-medium">
                   Presentación
@@ -471,7 +509,7 @@ export function ProductosPage() {
                     <td className="max-w-xs px-4 py-4">
                       <p className="font-medium">{producto.descripcion}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {producto.categoria || 'Sin categoría'}
+                         {producto.categoria || 'Sin línea'}
                       </p>
                     </td>
                     <td className="px-4 py-4 text-muted-foreground">
@@ -562,6 +600,8 @@ export function ProductosPage() {
             setPagina(1)
           }}
         />
+          </>
+        )}
       </section>
 
       {formularioAbierto && puedeGestionar ? (

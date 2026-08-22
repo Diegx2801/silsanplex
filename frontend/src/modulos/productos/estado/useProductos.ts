@@ -3,34 +3,42 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/useAuth'
 import type { DatosProducto, Producto } from '@/modulos/productos/modelo/producto'
 import {
-  cambiarEstadoProductoPersistente,
-  guardarProductoPersistente,
+  buscarProductos as buscarProductosEnSupabase,
+  cambiarEstadoProducto,
+  crearProducto,
+  editarProducto,
   listarProductos,
-} from '@/modulos/productos/servicios/productoService'
+} from '@/modulos/productos/servicios/productosService'
 
 const productosVacios: Producto[] = []
 
-export function useProductos() {
+export function useProductos(busqueda = '') {
   const { access, user } = useAuth()
   const queryClient = useQueryClient()
   const organizationId = access?.organizationId ?? ''
-  const queryKey = ['products', organizationId] as const
+  const terminoBusqueda = busqueda.trim()
+  const queryKey = ['products', organizationId, terminoBusqueda] as const
   const query = useQuery({
     queryKey,
-    queryFn: () => listarProductos(organizationId),
+    queryFn: () =>
+      terminoBusqueda
+        ? buscarProductosEnSupabase(organizationId, terminoBusqueda)
+        : listarProductos(organizationId),
     enabled: Boolean(organizationId),
   })
   const guardarMutation = useMutation({
     mutationFn: ({ datos, productoId }: { datos: DatosProducto; productoId?: string }) => {
       if (!user) throw new Error('La sesión ya no está disponible')
-      return guardarProductoPersistente(organizationId, user.id, datos, productoId)
+      return productoId
+        ? editarProducto(organizationId, user.id, productoId, datos)
+        : crearProducto(organizationId, user.id, datos)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   })
   const estadoMutation = useMutation({
     mutationFn: (producto: Producto) => {
       if (!user) throw new Error('La sesión ya no está disponible')
-      return cambiarEstadoProductoPersistente(organizationId, user.id, producto)
+      return cambiarEstadoProducto(organizationId, user.id, producto)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   })
@@ -39,6 +47,11 @@ export function useProductos() {
     productos: query.data ?? productosVacios,
     cargando: query.isLoading,
     error: query.error,
+    reintentar: query.refetch,
+    guardando: guardarMutation.isPending,
+    cambiandoEstado: estadoMutation.isPending,
+    buscarProductos: (busqueda: string) =>
+      buscarProductosEnSupabase(organizationId, busqueda),
     guardarProducto: async (datos: DatosProducto, productoId?: string) => {
       try {
         await guardarMutation.mutateAsync({ datos, productoId })

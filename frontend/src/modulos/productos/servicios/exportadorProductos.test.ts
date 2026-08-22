@@ -55,7 +55,7 @@ describe('exportadorProductos', () => {
     )
 
     expect(libro.SheetNames).toEqual(['Productos', 'Resumen'])
-    expect(libro.Sheets.Productos?.['!autofilter']).toEqual({ ref: 'A1:M3' })
+    expect(libro.Sheets.Productos?.['!autofilter']).toEqual({ ref: 'A1:O3' })
 
     const resumen = utils.sheet_to_json<(string | number)[]>(
       libro.Sheets.Resumen!,

@@ -11,10 +11,12 @@ export interface FilaProductoExportada {
   'Código de barras': string
   Producto: string
   Categoría: string
+  Sublínea: string
   'Laboratorio o marca': string
   Presentación: string
   'Unidad de medida': string
   'Afectación de IGV': string
+  'Costo base': number | ''
   'Precio de venta base': number | ''
   'Registro sanitario': string
   'Control por lote': 'Sí' | 'No'
@@ -27,10 +29,12 @@ const encabezados = [
   'Código de barras',
   'Producto',
   'Categoría',
+  'Sublínea',
   'Laboratorio o marca',
   'Presentación',
   'Unidad de medida',
   'Afectación de IGV',
+  'Costo base',
   'Precio de venta base',
   'Registro sanitario',
   'Control por lote',
@@ -39,7 +43,7 @@ const encabezados = [
 ] satisfies (keyof FilaProductoExportada)[]
 
 const anchosColumnas = [
-  16, 20, 36, 22, 28, 26, 18, 20, 21, 22, 19, 18, 12,
+  16, 20, 36, 22, 18, 28, 26, 18, 16, 21, 22, 19, 18, 18, 12,
 ].map((wch) => ({ wch }))
 
 function etiquetaAfectacionIgv(valor: Producto['afectacionIgv']) {
@@ -57,10 +61,12 @@ export function crearFilasProductos(
     'Código de barras': producto.codigoBarras,
     Producto: producto.descripcion,
     Categoría: producto.categoria,
+    Sublínea: producto.sublinea ?? '',
     'Laboratorio o marca': producto.laboratorio,
     Presentación: producto.presentacion,
     'Unidad de medida': producto.unidadMedida,
     'Afectación de IGV': etiquetaAfectacionIgv(producto.afectacionIgv),
+    'Costo base': producto.costo ? Number(producto.costo) : '',
     'Precio de venta base': producto.precioVenta
       ? Number(producto.precioVenta)
       : '',
@@ -96,7 +102,7 @@ export function crearLibroCatalogoProductos(
 
   hojaProductos['!cols'] = anchosColumnas
   hojaProductos['!autofilter'] = {
-    ref: `A1:M${ultimaFila}`,
+    ref: `A1:O${ultimaFila}`,
   }
 
   const hojaResumen = utils.aoa_to_sheet([

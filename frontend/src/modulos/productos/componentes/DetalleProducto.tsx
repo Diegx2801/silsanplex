@@ -135,7 +135,7 @@ export function DetalleProducto({
                   valor={mostrarValor(producto.codigoBarras)}
                 />
                 <DatoProducto
-                  etiqueta="Categoría"
+                  etiqueta="Línea"
                   valor={
                     <span className="inline-flex items-center gap-2">
                       <Tag aria-hidden="true" className="size-3.5 text-muted-foreground" />
@@ -144,7 +144,11 @@ export function DetalleProducto({
                   }
                 />
                 <DatoProducto
-                  etiqueta="Laboratorio o marca"
+                  etiqueta="Sublínea"
+                  valor={mostrarValor(producto.sublinea ?? '')}
+                />
+                <DatoProducto
+                  etiqueta="Marca"
                   valor={
                     <span className="inline-flex items-center gap-2">
                       <Building2
@@ -178,6 +182,14 @@ export function DetalleProducto({
                 Información comercial y sanitaria
               </h2>
               <dl className="mt-4 grid sm:grid-cols-2 sm:gap-x-6">
+                <DatoProducto
+                  etiqueta="Costo base"
+                  valor={
+                    <span className="font-mono text-xs tabular-nums">
+                      {mostrarPrecio(producto.costo ?? '')}
+                    </span>
+                  }
+                />
                 <DatoProducto
                   etiqueta="Precio de venta base"
                   valor={
