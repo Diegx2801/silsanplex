@@ -55,9 +55,9 @@ Proveedor
 
 - Frontend con React, TypeScript y Vite.
 - Aplicación orientada a módulos funcionales.
-- Supabase respalda autenticación, organizaciones, membresías, roles, permisos
-  y auditoría. Los dominios operativos todavía usan persistencia temporal y se
-  migrarán incrementalmente a PostgreSQL.
+- Supabase respalda autenticación, organizaciones, membresías, roles, permisos,
+  auditoría y el catálogo persistente de productos. Los dominios operativos que
+  todavía usan persistencia temporal se migrarán incrementalmente a PostgreSQL.
 - La primera versión prioriza el núcleo logístico y comercial.
 - Facturación electrónica, SUNAT y contabilidad completa son fases posteriores.
 - El inventario debe distinguir producto, almacén, ubicación y lote.

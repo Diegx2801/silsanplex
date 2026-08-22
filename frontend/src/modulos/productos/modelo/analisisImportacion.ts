@@ -22,15 +22,69 @@ export interface ResultadoImportacion {
   resumen: ResumenImportacion
   hallazgos: HallazgoImportacion[]
   tieneBloqueos: boolean
+  datos: DatosImportacionProductos
+  filasObservadas: FilaImportacionObservada[]
 }
 
 export type FilaImportacion = Record<string, string>
+
+export interface FilaProductoImportacion {
+  fila: number
+  codigo: string
+  descripcion: string
+  categoria: string
+  sublinea: string
+  laboratorio: string
+}
+
+export interface FilaPrecioImportacion {
+  fila: number
+  codigoProducto: string
+  producto: string
+  unidadMedida: string
+  precioVenta: string
+  incIgv: string
+}
+
+export interface DatosImportacionProductos {
+  productos: FilaProductoImportacion[]
+  precios: FilaPrecioImportacion[]
+}
+
+export type TipoFilaImportacion = 'producto' | 'precio'
+export type EstadoFilaImportacion = 'duplicada' | 'rechazada' | 'advertencia'
+
+export interface FilaImportacionObservada {
+  tipo: TipoFilaImportacion
+  fila: number
+  codigo: string
+  estado: EstadoFilaImportacion
+  motivo: string
+}
+
+export interface FilaImportacionRechazada {
+  tipo: TipoFilaImportacion
+  fila?: number
+  filas?: number[]
+  codigo?: string
+  motivo: string
+}
+
+export interface ResultadoImportacionPersistida {
+  estado: 'completado' | 'rechazado'
+  hash: string
+  idLote: string
+  creados: number
+  sinCambios: number
+  filasRechazadas: FilaImportacionRechazada[]
+}
 
 const gruposUnidades: Record<string, string[]> = {
   UNIDAD: ['UNIDAD', 'UND'],
   CAJA: ['CAJA', 'CJA'],
   PAQUETE: ['PAQUETE', 'PAQ', 'PQT'],
 }
+const precioMaximo = 999_999_999_999.99
 
 const normalizar = (valor: string) => valor.trim().toLocaleUpperCase('es-PE')
 
@@ -54,10 +108,128 @@ function ejemplosLimitados(valores: Iterable<string>) {
   return [...valores].filter(Boolean).slice(0, 3)
 }
 
-function firmaFila(fila: FilaImportacion) {
-  return Object.entries(fila)
-    .map(([clave, valor]) => `${clave}:${normalizar(valor)}`)
+function firmaProducto(fila: FilaImportacion) {
+  return [
+    fila.Producto,
+    fila.Linea,
+    fila.SubLinea,
+    fila.Marca_Laboratorio,
+  ]
+    .map((valor) => normalizar(valor ?? ''))
     .join('|')
+}
+
+function normalizarPrecio(valor: string) {
+  return valor.trim().replace(',', '.')
+}
+
+function firmaPrecio(fila: FilaImportacion) {
+  const precio = normalizarPrecio(fila.Precio_venta ?? '')
+  return [
+    fila.Producto,
+    fila.Medida,
+    precio === '' ? '' : String(Number(precio)),
+    fila.IncIGV,
+  ]
+    .map((valor) => normalizar(valor ?? ''))
+    .join('|')
+}
+
+function filaProducto(fila: FilaImportacion, indice: number): FilaProductoImportacion {
+  return {
+    fila: indice + 2,
+    codigo: (fila.Codigo ?? '').trim().toUpperCase(),
+    descripcion: (fila.Producto ?? '').trim(),
+    categoria: (fila.Linea ?? '').trim(),
+    sublinea: (fila.SubLinea ?? '').trim(),
+    laboratorio: (fila.Marca_Laboratorio ?? '').trim(),
+  }
+}
+
+function normalizarIncIgv(valor: string) {
+  switch (normalizar(valor)) {
+    case 'SI':
+    case 'SÍ':
+      return 'Sí'
+    case 'NO':
+      return 'No'
+    default:
+      return 'Pendiente'
+  }
+}
+
+function filaPrecio(fila: FilaImportacion, indice: number): FilaPrecioImportacion {
+  return {
+    fila: indice + 2,
+    codigoProducto: (fila.CodigoProducto ?? '').trim().toUpperCase(),
+    producto: (fila.Producto ?? '').trim(),
+    unidadMedida: (fila.Medida ?? '').trim(),
+    precioVenta: normalizarPrecio(fila.Precio_venta ?? ''),
+    incIgv: normalizarIncIgv(fila.IncIGV ?? ''),
+  }
+}
+
+function primerosPorCodigo<T>(
+  filas: T[],
+  obtenerCodigo: (fila: T) => string,
+  comparar: (primerValor: T, segundoValor: T) => number,
+) {
+  const primeras = new Map<string, T>()
+
+  for (const fila of filas) {
+    const codigo = obtenerCodigo(fila)
+    if (codigo && !primeras.has(codigo)) primeras.set(codigo, fila)
+  }
+
+  return [...primeras.values()].toSorted(comparar)
+}
+
+function crearDatosImportacion(
+  productos: FilaImportacion[],
+  precios: FilaImportacion[],
+): DatosImportacionProductos {
+  const productosNormalizados = productos.map(filaProducto)
+  const preciosNormalizados = precios.map(filaPrecio)
+  const comparadorCodigo = (primero: { codigo: string }, segundo: { codigo: string }) =>
+    primero.codigo.localeCompare(segundo.codigo, 'es-PE', { numeric: true })
+
+  return {
+    productos: primerosPorCodigo(
+      productosNormalizados,
+      (fila) => fila.codigo,
+      comparadorCodigo,
+    ),
+    precios: primerosPorCodigo(
+      preciosNormalizados,
+      (fila) => fila.codigoProducto,
+      (primero, segundo) =>
+        primero.codigoProducto.localeCompare(segundo.codigoProducto, 'es-PE', {
+          numeric: true,
+        }),
+    ),
+  }
+}
+
+function agregarObservaciones(
+  destino: FilaImportacionObservada[],
+  tipo: TipoFilaImportacion,
+  filas: FilaImportacion[],
+  obtenerCodigo: (fila: FilaImportacion) => string,
+  codigos: ReadonlySet<string>,
+  estado: EstadoFilaImportacion,
+  motivo: string,
+) {
+  for (const [indice, fila] of filas.entries()) {
+    const codigo = normalizar(obtenerCodigo(fila))
+    if (!codigos.has(codigo)) continue
+    destino.push({
+      tipo,
+      fila: indice + 2,
+      codigo,
+      estado,
+      motivo,
+    })
+  }
 }
 
 export function analizarFilasImportacion(
@@ -73,10 +245,13 @@ export function analizarFilasImportacion(
   const codigosProducto = new Set(productosPorCodigo.keys())
   const codigosPrecio = new Set(preciosPorCodigo.keys())
   const hallazgos: HallazgoImportacion[] = []
+  const filasObservadas: FilaImportacionObservada[] = []
 
   const codigosAmbiguos = [...productosPorCodigo.entries()].filter(
-    ([, filas]) =>
-      new Set(filas.map((fila) => normalizar(fila.Producto ?? ''))).size > 1,
+    ([, filas]) => new Set(filas.map(firmaProducto)).size > 1,
+  )
+  const codigosProductoDuplicados = [...productosPorCodigo.entries()].filter(
+    ([, filas]) => filas.length > 1,
   )
 
   if (codigosAmbiguos.length) {
@@ -90,6 +265,95 @@ export function analizarFilasImportacion(
       unidad: 'código',
       ejemplos: ejemplosLimitados(codigosAmbiguos.map(([codigo]) => codigo)),
     })
+    agregarObservaciones(
+      filasObservadas,
+      'producto',
+      productos,
+      (fila) => fila.Codigo ?? '',
+      new Set(codigosAmbiguos.map(([codigo]) => codigo)),
+      'rechazada',
+      'El código aparece con datos de producto distintos.',
+    )
+  }
+
+  const duplicadosProducto = codigosProductoDuplicados.reduce(
+    (total, [, filas]) => total + filas.length - 1,
+    0,
+  )
+  if (duplicadosProducto) {
+    hallazgos.push({
+      id: 'productos-duplicados',
+      nivel: 'advertencia',
+      titulo: 'Filas de producto repetidas',
+      detalle:
+        'Las filas idénticas se consolidarán y solo se importará una por código.',
+      cantidad: duplicadosProducto,
+      unidad: 'fila',
+      ejemplos: ejemplosLimitados(
+        codigosProductoDuplicados.map(([codigo]) => codigo),
+      ),
+    })
+
+    for (const [codigo, filas] of codigosProductoDuplicados) {
+      if (new Set(filas.map(firmaProducto)).size > 1) continue
+      const primera = filas[0]
+      let encontrada = false
+      for (const [indice, fila] of productos.entries()) {
+        if (normalizar(fila.Codigo ?? '') !== codigo) continue
+        if (!encontrada && fila === primera) {
+          encontrada = true
+          continue
+        }
+        filasObservadas.push({
+          tipo: 'producto',
+          fila: indice + 2,
+          codigo,
+          estado: 'duplicada',
+          motivo: 'Fila idéntica consolidada con la primera aparición.',
+        })
+      }
+    }
+  }
+
+  const productosInvalidos = productos.filter((fila) => {
+    const codigo = (fila.Codigo ?? '').trim().toUpperCase()
+    const descripcion = (fila.Producto ?? '').trim()
+    const categoria = (fila.Linea ?? '').trim()
+    const sublinea = (fila.SubLinea ?? '').trim()
+    const laboratorio = (fila.Marca_Laboratorio ?? '').trim()
+    return (
+      !/^[A-Z0-9][A-Z0-9._-]{0,29}$/.test(codigo) ||
+      descripcion.length < 2 ||
+      descripcion.length > 160 ||
+      categoria.length > 80 ||
+      sublinea.length > 80 ||
+      laboratorio.length > 100
+    )
+  })
+  if (productosInvalidos.length) {
+    hallazgos.push({
+      id: 'productos-invalidos',
+      nivel: 'bloqueo',
+      titulo: 'Filas de producto inválidas',
+      detalle:
+        'El código, la descripción o uno de los campos descriptivos no cumplen las restricciones del catálogo persistente.',
+      cantidad: productosInvalidos.length,
+      unidad: 'fila',
+      ejemplos: ejemplosLimitados(
+        productosInvalidos.map((fila) => fila.Codigo ?? '(sin código)'),
+      ),
+    })
+    agregarObservaciones(
+      filasObservadas,
+      'producto',
+      productos,
+      (fila) => fila.Codigo ?? '',
+      new Set(
+        productosInvalidos.map((fila) => normalizar(fila.Codigo ?? '')),
+      ),
+      'rechazada',
+      'El código, la descripción o uno de los campos descriptivos no cumplen las restricciones del catálogo.',
+    )
   }
 
   const codigosPrecioSinProducto = [...codigosPrecio].filter(
@@ -106,9 +370,45 @@ export function analizarFilasImportacion(
       unidad: 'código',
       ejemplos: ejemplosLimitados(codigosPrecioSinProducto),
     })
+    agregarObservaciones(
+      filasObservadas,
+      'precio',
+      precios,
+      (fila) => fila.CodigoProducto ?? '',
+      new Set(codigosPrecioSinProducto),
+      'rechazada',
+      'El código de precio no existe en el archivo de productos.',
+    )
   }
 
-  const firmasPrecios = agruparPor(precios, firmaFila)
+  const codigosPrecioConflictos = [...preciosPorCodigo.entries()].filter(
+    ([, filas]) => new Set(filas.map(firmaPrecio)).size > 1,
+  )
+  if (codigosPrecioConflictos.length) {
+    hallazgos.push({
+      id: 'precios-conflictivos',
+      nivel: 'bloqueo',
+      titulo: 'Códigos con varias filas de precio distintas',
+      detalle:
+        'El catálogo actual admite un único precio y unidad por producto; estas filas deben corregirse antes de importar.',
+      cantidad: codigosPrecioConflictos.length,
+      unidad: 'código',
+      ejemplos: ejemplosLimitados(
+        codigosPrecioConflictos.map(([codigo]) => codigo),
+      ),
+    })
+    agregarObservaciones(
+      filasObservadas,
+      'precio',
+      precios,
+      (fila) => fila.CodigoProducto ?? '',
+      new Set(codigosPrecioConflictos.map(([codigo]) => codigo)),
+      'rechazada',
+      'El código tiene varias filas de precio distintas.',
+    )
+  }
+
+  const firmasPrecios = agruparPor(precios, firmaPrecio)
   const filasPrecioDuplicadas = [...firmasPrecios.values()].reduce(
     (total, filas) => total + Math.max(0, filas.length - 1),
     0,
@@ -124,11 +424,67 @@ export function analizarFilasImportacion(
       nivel: 'advertencia',
       titulo: 'Filas de precio repetidas',
       detalle:
-        'Son registros idénticos adicionales; deberán consolidarse antes de guardar.',
+        'Son registros idénticos adicionales; se consolidarán antes de guardar.',
       cantidad: filasPrecioDuplicadas,
       unidad: 'fila',
       ejemplos: ejemplosLimitados(codigosDuplicados),
     })
+    const ocurrencias = new Map<string, number>()
+    for (const [indice, fila] of precios.entries()) {
+      const firma = firmaPrecio(fila)
+      const ocurrenciasAnteriores = ocurrencias.get(firma) ?? 0
+      ocurrencias.set(firma, ocurrenciasAnteriores + 1)
+      if (ocurrenciasAnteriores) {
+        filasObservadas.push({
+          tipo: 'precio',
+          fila: indice + 2,
+          codigo: normalizar(fila.CodigoProducto ?? ''),
+          estado: 'duplicada',
+          motivo: 'Fila idéntica consolidada con la primera aparición.',
+        })
+      }
+    }
+  }
+
+  const preciosInvalidos = precios.filter((fila) => {
+    const precio = (fila.Precio_venta ?? '').trim()
+    const unidadMedida = (fila.Medida ?? '').trim()
+    const incIgv = normalizar(fila.IncIGV ?? '')
+    const precioNumerico = precio === '' ? null : Number(normalizarPrecio(precio))
+    const precioValido =
+      precio === '' ||
+      (/^(0|\d+)([.,]\d{1,2})?$/.test(precio) &&
+        precioNumerico !== null &&
+        Number.isFinite(precioNumerico) &&
+        precioNumerico <= precioMaximo)
+    const incIgvValido =
+      incIgv === '' || ['SI', 'SÍ', 'NO', 'PENDIENTE'].includes(incIgv)
+    return !precioValido || !incIgvValido || unidadMedida.length > 40
+  })
+  if (preciosInvalidos.length) {
+    hallazgos.push({
+      id: 'precios-invalidos',
+      nivel: 'bloqueo',
+      titulo: 'Filas de precio inválidas',
+      detalle:
+        'El precio, la unidad de medida o el indicador de IGV no cumple las restricciones del catálogo persistente.',
+      cantidad: preciosInvalidos.length,
+      unidad: 'fila',
+      ejemplos: ejemplosLimitados(
+        preciosInvalidos.map((fila) => fila.CodigoProducto ?? '(sin código)'),
+      ),
+    })
+    for (const [indice, fila] of precios.entries()) {
+      if (!preciosInvalidos.includes(fila)) continue
+      filasObservadas.push({
+        tipo: 'precio',
+        fila: indice + 2,
+        codigo: normalizar(fila.CodigoProducto ?? ''),
+        estado: 'rechazada',
+        motivo:
+          'El precio, la unidad de medida o el indicador de IGV no cumple las restricciones del catálogo persistente.',
+      })
+    }
   }
 
   const preciosEnCero = precios.filter((fila) => {
@@ -148,6 +504,16 @@ export function analizarFilasImportacion(
         preciosEnCero.map((fila) => fila.CodigoProducto ?? ''),
       ),
     })
+    for (const [indice, fila] of precios.entries()) {
+      if (!preciosEnCero.includes(fila)) continue
+      filasObservadas.push({
+        tipo: 'precio',
+        fila: indice + 2,
+        codigo: normalizar(fila.CodigoProducto ?? ''),
+        estado: 'advertencia',
+        motivo: 'El precio es cero y quedará pendiente de revisión.',
+      })
+    }
   }
 
   const unidadesPresentes = new Set(
@@ -177,6 +543,20 @@ export function analizarFilasImportacion(
         ),
       ),
     })
+    for (const [indice, fila] of precios.entries()) {
+      if (
+        !gruposConVariantes.some(([, variantes]) =>
+          variantes.includes(normalizar(fila.Medida ?? '')),
+        )
+      ) continue
+      filasObservadas.push({
+        tipo: 'precio',
+        fila: indice + 2,
+        codigo: normalizar(fila.CodigoProducto ?? ''),
+        estado: 'advertencia',
+        motivo: 'La unidad tiene una variante equivalente en el archivo.',
+      })
+    }
   }
 
   const nombresConEspacios = productos.filter((fila) => {
@@ -189,13 +569,23 @@ export function analizarFilasImportacion(
       nivel: 'advertencia',
       titulo: 'Nombres con espacios sobrantes',
       detalle:
-        'La futura importación podrá limpiarlos sin cambiar el contenido del nombre.',
+        'La importación los limpiará sin cambiar el contenido del nombre.',
       cantidad: nombresConEspacios.length,
       unidad: 'producto',
       ejemplos: ejemplosLimitados(
         nombresConEspacios.map((fila) => (fila.Producto ?? '').trim()),
       ),
     })
+    for (const [indice, fila] of productos.entries()) {
+      if (!nombresConEspacios.includes(fila)) continue
+      filasObservadas.push({
+        tipo: 'producto',
+        fila: indice + 2,
+        codigo: normalizar(fila.Codigo ?? ''),
+        estado: 'advertencia',
+        motivo: 'La descripción tiene espacios externos y será recortada.',
+      })
+    }
   }
 
   const preciosSinBarras = precios.filter(
@@ -223,11 +613,20 @@ export function analizarFilasImportacion(
       nivel: 'advertencia',
       titulo: 'Productos sin filas de precio',
       detalle:
-        'Pueden mantenerse en el catálogo, pero quedarán sin presentación comercial definida.',
+        'Pueden mantenerse en el catálogo, pero quedarán sin precio ni unidad comercial.',
       cantidad: codigosSinPrecio.length,
       unidad: 'producto',
       ejemplos: ejemplosLimitados(codigosSinPrecio),
     })
+    agregarObservaciones(
+      filasObservadas,
+      'producto',
+      productos,
+      (fila) => fila.Codigo ?? '',
+      new Set(codigosSinPrecio),
+      'advertencia',
+      'El producto no tiene una fila de precio relacionada.',
+    )
   }
 
   const coincidencias = [...codigosPrecio].filter((codigo) =>
@@ -244,5 +643,7 @@ export function analizarFilasImportacion(
     },
     hallazgos,
     tieneBloqueos: hallazgos.some((hallazgo) => hallazgo.nivel === 'bloqueo'),
+    datos: crearDatosImportacion(productos, precios),
+    filasObservadas,
   }
 }

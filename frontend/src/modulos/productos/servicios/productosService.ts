@@ -8,6 +8,11 @@ import type {
   OrdenProductos,
   ResultadoProductosPaginados,
 } from '@/modulos/productos/modelo/consultaProductos'
+import type {
+  DatosImportacionProductos,
+  FilaImportacionRechazada,
+  ResultadoImportacionPersistida,
+} from '@/modulos/productos/modelo/analisisImportacion'
 import type { DatosProducto, Producto } from '@/modulos/productos/modelo/producto'
 
 interface ProductoFila {
@@ -45,7 +50,12 @@ const comparadorOpciones = new Intl.Collator('es-PE', {
 
 const textoONulo = (valor: string) => valor.trim() || null
 
-type ContextoError = 'consultar' | 'crear' | 'editar' | 'cambiarEstado'
+type ContextoError =
+  | 'consultar'
+  | 'crear'
+  | 'editar'
+  | 'cambiarEstado'
+  | 'importar'
 
 function mapearProducto(fila: ProductoFila): Producto {
   return {
@@ -75,6 +85,12 @@ function mensajeError(error: PostgrestError, contexto: ContextoError) {
       ? 'No tienes permiso para consultar productos'
       : 'No tienes permiso para administrar productos'
   }
+  if (
+    error.code === 'P0001' &&
+    error.message === 'PRODUCT_IMPORT_INVALID_PAYLOAD'
+  ) {
+    return 'La carga de importación no tiene un formato válido'
+  }
   if (error.code === '23514') return 'Los datos del producto no cumplen las reglas del catálogo'
 
   return {
@@ -82,6 +98,7 @@ function mensajeError(error: PostgrestError, contexto: ContextoError) {
     crear: 'No se pudo registrar el producto',
     editar: 'No se pudo actualizar el producto',
     cambiarEstado: 'No se pudo cambiar el estado del producto',
+    importar: 'No se pudo importar el catálogo de productos',
   }[contexto]
 }
 
@@ -318,6 +335,61 @@ export async function listarOpcionesProductos(
   return {
     categorias: obtenerOpcionesUnicas(filas.map((fila) => fila.category)),
     laboratorios: obtenerOpcionesUnicas(filas.map((fila) => fila.laboratory)),
+  }
+}
+
+function construirPayloadImportacion(datos: DatosImportacionProductos) {
+  return {
+    productos: datos.productos.map((fila) => ({
+      fila: fila.fila,
+      codigo: fila.codigo,
+      descripcion: fila.descripcion,
+      categoria: fila.categoria,
+      sublinea: fila.sublinea,
+      laboratorio: fila.laboratorio,
+    })),
+    precios: datos.precios.map((fila) => ({
+      fila: fila.fila,
+      codigo_producto: fila.codigoProducto,
+      producto: fila.producto,
+      unidad_medida: fila.unidadMedida,
+      precio_venta: fila.precioVenta,
+      inc_igv: fila.incIgv,
+    })),
+  }
+}
+
+interface RespuestaImportacion {
+  estado: 'completado' | 'rechazado'
+  hash: string
+  id_lote: string
+  creados: number
+  sin_cambios: number
+  filas_rechazadas: FilaImportacionRechazada[]
+}
+
+export async function importarProductos(
+  organizationId: string,
+  datos: DatosImportacionProductos,
+): Promise<ResultadoImportacionPersistida> {
+  const { data, error } = await supabase.rpc('import_products', {
+    requested_organization_id: organizationId,
+    payload: construirPayloadImportacion(datos),
+  })
+
+  if (error) throw new Error(mensajeError(error, 'importar'))
+  if (!data) throw new Error(mensajeError({ code: 'XX000' } as PostgrestError, 'importar'))
+
+  const resultado = data as RespuestaImportacion
+  return {
+    estado: resultado.estado,
+    hash: resultado.hash,
+    idLote: resultado.id_lote,
+    creados: resultado.creados,
+    sinCambios: resultado.sin_cambios,
+    filasRechazadas: Array.isArray(resultado.filas_rechazadas)
+      ? resultado.filas_rechazadas
+      : [],
   }
 }
 

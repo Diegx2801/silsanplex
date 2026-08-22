@@ -61,4 +61,93 @@ describe('analizarFilasImportacion', () => {
       ]),
     )
   })
+
+  it('prepara una fila por código y expone duplicados y conflictos por fila', () => {
+    const resultado = analizarFilasImportacion(
+      [
+        { Codigo: '0001', Producto: 'Producto uno' },
+        { Codigo: '0001', Producto: 'Producto uno' },
+        { Codigo: '0002', Producto: 'Producto dos' },
+        { Codigo: '0002', Producto: 'Producto diferente' },
+      ],
+      [
+        {
+          CodigoProducto: '0001',
+          Producto: 'Producto uno',
+          Medida: 'UND',
+          Precio_venta: '10,50',
+          IncIGV: 'Si',
+        },
+        {
+          CodigoProducto: '0001',
+          Producto: 'Producto uno',
+          Medida: 'UND',
+          Precio_venta: '10,50',
+          IncIGV: 'Si',
+        },
+      ],
+    )
+
+    expect(resultado.tieneBloqueos).toBe(true)
+    expect(resultado.datos.productos).toHaveLength(2)
+    expect(resultado.datos.precios[0]).toMatchObject({
+      codigoProducto: '0001',
+      precioVenta: '10.50',
+      incIgv: 'Sí',
+    })
+    expect(resultado.filasObservadas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ fila: 3, estado: 'duplicada' }),
+        expect.objectContaining({ fila: 4, estado: 'rechazada' }),
+      ]),
+    )
+  })
+
+  it('bloquea valores de precio o IGV que la base no puede interpretar', () => {
+    const resultado = analizarFilasImportacion(
+      [{ Codigo: '0001', Producto: 'Producto uno' }],
+      [
+        {
+          CodigoProducto: '0001',
+          Medida: 'UND',
+          Precio_venta: 'no disponible',
+          IncIGV: 'desconocido',
+        },
+      ],
+    )
+
+    expect(resultado.hallazgos).toContainEqual(
+      expect.objectContaining({ id: 'precios-invalidos', nivel: 'bloqueo' }),
+    )
+    expect(resultado.filasObservadas).toContainEqual(
+      expect.objectContaining({ tipo: 'precio', estado: 'rechazada' }),
+    )
+  })
+
+  it('bloquea campos que exceden las restricciones del catálogo', () => {
+    const resultado = analizarFilasImportacion(
+      [
+        {
+          Codigo: '0001',
+          Producto: 'Producto uno',
+          Linea: 'L'.repeat(81),
+        },
+      ],
+      [
+        {
+          CodigoProducto: '0001',
+          Medida: 'U'.repeat(41),
+          Precio_venta: '1000000000000.00',
+          IncIGV: 'Sí',
+        },
+      ],
+    )
+
+    expect(resultado.hallazgos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'productos-invalidos', nivel: 'bloqueo' }),
+        expect.objectContaining({ id: 'precios-invalidos', nivel: 'bloqueo' }),
+      ]),
+    )
+  })
 })

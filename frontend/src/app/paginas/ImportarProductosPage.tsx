@@ -10,14 +10,21 @@ import {
   ShieldCheck,
   Upload,
 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { type ChangeEvent, type FormEvent, useState } from 'react'
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import type {
+  FilaImportacionObservada,
+  FilaImportacionRechazada,
   NivelHallazgo,
   ResultadoImportacion,
+  ResultadoImportacionPersistida,
 } from '@/modulos/productos/modelo/analisisImportacion'
+import { PERMISSIONS } from '@/features/auth/permissions'
+import { useAuth } from '@/features/auth/useAuth'
+import { importarProductos } from '@/modulos/productos/servicios/productosService'
 
 const formatoEntero = new Intl.NumberFormat('es-PE')
 
@@ -109,6 +116,139 @@ const configuracionNivel: Record<
     tono: 'revision',
     icono: Info,
   },
+}
+
+const configuracionFila: Record<
+  FilaImportacionObservada['estado'],
+  { etiqueta: string; tono: 'pendiente' | 'revision' }
+> = {
+  rechazada: { etiqueta: 'Rechazada', tono: 'pendiente' },
+  duplicada: { etiqueta: 'Duplicada', tono: 'revision' },
+  advertencia: { etiqueta: 'Advertencia', tono: 'revision' },
+}
+
+function FilasObservadas({ filas }: { filas: FilaImportacionObservada[] }) {
+  if (!filas.length) return null
+
+  return (
+    <section aria-labelledby="filas-importacion-title" className="ledger-sheet">
+      <div className="border-b px-5 py-4 sm:px-6">
+        <h2 id="filas-importacion-title" className="text-lg font-semibold">
+          Filas que requieren atención
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {filas.length} filas observadas; las rechazadas impiden guardar el lote.
+        </p>
+      </div>
+      <div className="divide-y">
+        {filas.map((fila, indice) => {
+          const configuracion = configuracionFila[fila.estado]
+
+          return (
+            <article
+              key={`${fila.tipo}-${fila.fila}-${fila.codigo}-${indice}`}
+              className="grid gap-3 px-5 py-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:px-6"
+            >
+              <div className="flex items-center gap-2 font-mono text-xs tabular-nums text-muted-foreground">
+                <span>{fila.tipo === 'producto' ? 'Producto' : 'Precio'}</span>
+                <span>fila {fila.fila}</span>
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs font-medium text-primary">
+                    {fila.codigo || 'Sin código'}
+                  </span>
+                  <span className="status-label" data-tone={configuracion.tono}>
+                    {configuracion.etiqueta}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{fila.motivo}</p>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function traducirMotivoRechazo(motivo: string) {
+  return {
+    PRODUCT_DUPLICATE_CONFLICT:
+      'El código aparece con datos de producto distintos.',
+    PRICE_DUPLICATE_CONFLICT:
+      'El código tiene varias filas de precio distintas.',
+    PRICE_PRODUCT_NOT_FOUND:
+      'El código de precio no corresponde a un producto del archivo.',
+    PRODUCT_EXISTING_CONFLICT:
+      'El código ya existe con datos diferentes en el catálogo.',
+  }[motivo] ?? 'La fila no cumple las reglas de importación.'
+}
+
+function convertirRechazos(
+  filas: FilaImportacionRechazada[],
+): FilaImportacionObservada[] {
+  return filas.flatMap((fila) => {
+    const numeros = fila.filas ?? (fila.fila === undefined ? [] : [fila.fila])
+
+    return numeros.map((numero) => ({
+      tipo: fila.tipo,
+      fila: numero,
+      codigo: fila.codigo ?? '',
+      estado: 'rechazada' as const,
+      motivo: traducirMotivoRechazo(fila.motivo),
+    }))
+  })
+}
+
+function ResultadoPersistencia({
+  resultado,
+}: {
+  resultado: ResultadoImportacionPersistida
+}) {
+  const filas = convertirRechazos(resultado.filasRechazadas)
+  const rechazado = resultado.estado === 'rechazado'
+
+  return (
+    <section aria-labelledby="resultado-persistencia-title" className="space-y-5">
+      <div
+        className="border px-5 py-5 sm:px-6"
+        data-estado={rechazado ? 'bloqueado' : 'listo'}
+      >
+        <h2 id="resultado-persistencia-title" className="font-semibold">
+          {rechazado
+            ? 'La importación no modificó el catálogo'
+            : 'Importación completada'}
+        </h2>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {rechazado
+            ? 'Se detectaron conflictos en el servidor. La operación fue revertida completa.'
+            : 'Los productos aceptados quedaron persistidos en la organización.'}
+        </p>
+      </div>
+      <div className="ledger-sheet">
+        <div className="grid sm:grid-cols-2">
+          <div className="border-b px-5 py-5 sm:border-e sm:px-6">
+            <p className="font-mono text-[0.68rem] tracking-[0.08em] text-muted-foreground uppercase">
+              Productos creados
+            </p>
+            <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">
+              {formatoEntero.format(resultado.creados)}
+            </p>
+          </div>
+          <div className="px-5 py-5 sm:px-6">
+            <p className="font-mono text-[0.68rem] tracking-[0.08em] text-muted-foreground uppercase">
+              Sin cambios
+            </p>
+            <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">
+              {formatoEntero.format(resultado.sinCambios)}
+            </p>
+          </div>
+        </div>
+      </div>
+      <FilasObservadas filas={filas} />
+    </section>
+  )
 }
 
 function ResultadoAnalisis({ resultado }: { resultado: ResultadoImportacion }) {
@@ -235,28 +375,37 @@ function ResultadoAnalisis({ resultado }: { resultado: ResultadoImportacion }) {
           </div>
         )}
       </div>
+      <FilasObservadas filas={resultado.filasObservadas} />
     </section>
   )
 }
 
 export function ImportarProductosPage() {
+  const { access, hasPermission } = useAuth()
+  const queryClient = useQueryClient()
+  const puedeImportar = hasPermission(PERMISSIONS.PRODUCTS_MANAGE)
   const [archivoProductos, setArchivoProductos] = useState<File | null>(null)
   const [archivoPrecios, setArchivoPrecios] = useState<File | null>(null)
   const [resultado, setResultado] = useState<ResultadoImportacion | null>(null)
+  const [resultadoPersistencia, setResultadoPersistencia] =
+    useState<ResultadoImportacionPersistida | null>(null)
   const [error, setError] = useState('')
   const [analizando, setAnalizando] = useState(false)
+  const [importando, setImportando] = useState(false)
   const [versionSelectores, setVersionSelectores] = useState(0)
   const [mensajeEstado, setMensajeEstado] = useState('')
 
   const cambiarProductos = (archivo: File | null) => {
     setArchivoProductos(archivo)
     setResultado(null)
+    setResultadoPersistencia(null)
     setError('')
   }
 
   const cambiarPrecios = (archivo: File | null) => {
     setArchivoPrecios(archivo)
     setResultado(null)
+    setResultadoPersistencia(null)
     setError('')
   }
 
@@ -266,6 +415,7 @@ export function ImportarProductosPage() {
 
     setAnalizando(true)
     setError('')
+    setResultadoPersistencia(null)
 
     try {
       const { analizarArchivosProductos } = await import(
@@ -294,10 +444,53 @@ export function ImportarProductosPage() {
     }
   }
 
+  const importar = async () => {
+    if (
+      !resultado ||
+      resultado.tieneBloqueos ||
+      !puedeImportar ||
+      !access?.organizationId ||
+      importando
+    ) {
+      return
+    }
+
+    setImportando(true)
+    setError('')
+    setResultadoPersistencia(null)
+
+    try {
+      const nuevoResultado = await importarProductos(
+        access.organizationId,
+        resultado.datos,
+      )
+      await queryClient.invalidateQueries({
+        queryKey: ['products', access.organizationId],
+      })
+      setResultadoPersistencia(nuevoResultado)
+      setMensajeEstado(
+        nuevoResultado.estado === 'completado'
+          ? `Importación completada: ${nuevoResultado.creados} productos creados.`
+          : 'La importación fue rechazada sin modificar el catálogo.',
+      )
+    } catch (causa) {
+      setResultadoPersistencia(null)
+      setError(
+        causa instanceof Error
+          ? causa.message
+          : 'No pudimos importar el catálogo.',
+      )
+      setMensajeEstado('No se pudo completar la importación.')
+    } finally {
+      setImportando(false)
+    }
+  }
+
   const reiniciar = () => {
     setArchivoProductos(null)
     setArchivoPrecios(null)
     setResultado(null)
+    setResultadoPersistencia(null)
     setError('')
     setMensajeEstado('Selección de archivos limpiada.')
     setVersionSelectores((version) => version + 1)
@@ -318,12 +511,13 @@ export function ImportarProductosPage() {
               Revisar archivos de productos
             </h1>
             <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
-              Comprueba la exportación actual antes de diseñar la importación
-              definitiva. El análisis ocurre en este navegador y no guarda datos.
+              Analiza los archivos localmente y confirma una importación atómica
+              cuando no existan bloqueos. La base de datos vuelve a validar cada
+              fila antes de guardar.
             </p>
           </div>
           <span className="font-mono text-xs tabular-nums text-muted-foreground">
-            SOLO VISTA PREVIA
+            {puedeImportar ? 'PREVISUALIZACIÓN + IMPORTACIÓN' : 'SOLO VISTA PREVIA'}
           </span>
         </div>
       </header>
@@ -356,7 +550,8 @@ export function ImportarProductosPage() {
           />
           <div className="flex flex-col gap-3 border-t bg-muted/30 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <p className="max-w-[62ch] text-xs leading-5 text-muted-foreground">
-              Los archivos no se suben a un servidor ni modifican el catálogo de esta sesión.
+              El análisis ocurre en este navegador. La confirmación solo guarda
+              el lote completo si todas sus filas son válidas.
             </p>
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
               {archivoProductos || archivoPrecios ? (
@@ -401,7 +596,42 @@ export function ImportarProductosPage() {
         {mensajeEstado}
       </p>
 
-      {resultado ? <ResultadoAnalisis resultado={resultado} /> : null}
+      {resultado ? (
+        <>
+          <ResultadoAnalisis resultado={resultado} />
+          {!resultado.tieneBloqueos ? (
+            <section className="ledger-sheet">
+              <div className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div>
+                  <h2 className="font-semibold">Confirmar importación</h2>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    {puedeImportar
+                      ? 'La operación será atómica. Si el servidor detecta un conflicto, no se guardará ninguna fila.'
+                      : 'Tu rol puede revisar los archivos, pero no administrar el catálogo.'}
+                  </p>
+                </div>
+                {puedeImportar ? (
+                  <Button
+                    type="button"
+                    disabled={importando}
+                    onClick={() => void importar()}
+                  >
+                    {importando ? (
+                      <LoaderCircle aria-hidden="true" className="animate-spin" />
+                    ) : (
+                      <ShieldCheck aria-hidden="true" />
+                    )}
+                    {importando ? 'Importando…' : 'Importar catálogo'}
+                  </Button>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+          {resultadoPersistencia ? (
+            <ResultadoPersistencia resultado={resultadoPersistencia} />
+          ) : null}
+        </>
+      ) : null}
     </div>
   )
 }

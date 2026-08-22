@@ -4,6 +4,7 @@ import { productoInicial } from '@/modulos/productos/modelo/producto'
 
 const supabaseMock = vi.hoisted(() => ({
   from: vi.fn(),
+  rpc: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase', () => ({ supabase: supabaseMock }))
@@ -14,6 +15,7 @@ import {
   contarProductos,
   crearProducto,
   editarProducto,
+  importarProductos,
   listarOpcionesProductos,
   listarProductosPaginados,
   listarProductos,
@@ -81,6 +83,7 @@ describe('productosService', () => {
     cadena = crearCadena(() => respuesta)
     supabaseMock.from.mockReset()
     supabaseMock.from.mockReturnValue(cadena)
+    supabaseMock.rpc.mockReset()
   })
 
   it('lista únicamente los productos de la organización recibida', async () => {
@@ -199,6 +202,77 @@ describe('productosService', () => {
     })
     expect(supabaseMock.from).toHaveBeenCalledWith('product_catalog_options')
     expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
+  })
+
+  it('envía la carga normalizada a la RPC transaccional', async () => {
+    supabaseMock.rpc.mockResolvedValue({
+      data: {
+        estado: 'completado',
+        hash: 'a'.repeat(64),
+        id_lote: 'lote-1',
+        creados: 2,
+        sin_cambios: 1,
+        filas_rechazadas: [],
+      },
+      error: null,
+    })
+
+    const resultado = await importarProductos('org-1', {
+      productos: [
+        {
+          fila: 2,
+          codigo: 'MED-001',
+          descripcion: 'Producto',
+          categoria: 'Línea',
+          sublinea: '',
+          laboratorio: 'Marca',
+        },
+      ],
+      precios: [
+        {
+          fila: 2,
+          codigoProducto: 'MED-001',
+          producto: 'Producto',
+          unidadMedida: 'Unidad',
+          precioVenta: '10.50',
+          incIgv: 'Sí',
+        },
+      ],
+    })
+
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('import_products', {
+      requested_organization_id: 'org-1',
+      payload: {
+        productos: [
+          {
+            fila: 2,
+            codigo: 'MED-001',
+            descripcion: 'Producto',
+            categoria: 'Línea',
+            sublinea: '',
+            laboratorio: 'Marca',
+          },
+        ],
+        precios: [
+          {
+            fila: 2,
+            codigo_producto: 'MED-001',
+            producto: 'Producto',
+            unidad_medida: 'Unidad',
+            precio_venta: '10.50',
+            inc_igv: 'Sí',
+          },
+        ],
+      },
+    })
+    expect(resultado).toEqual({
+      estado: 'completado',
+      hash: 'a'.repeat(64),
+      idLote: 'lote-1',
+      creados: 2,
+      sinCambios: 1,
+      filasRechazadas: [],
+    })
   })
 
   it('crea un producto normalizando el código y enviando el actor', async () => {
