@@ -86,6 +86,7 @@ describe('DialogoConfirmacionEstado', () => {
       <DialogoConfirmacionEstado
         abierto
         producto={producto}
+        cambiandoEstado={false}
         alCambiarApertura={vi.fn()}
         alConfirmar={alConfirmar}
         alRestaurarFoco={vi.fn()}
@@ -111,6 +112,7 @@ describe('DialogoConfirmacionEstado', () => {
       <DialogoConfirmacionEstado
         abierto
         producto={{ ...producto, activo: false }}
+        cambiandoEstado={false}
         alCambiarApertura={vi.fn()}
         alConfirmar={vi.fn()}
         alRestaurarFoco={vi.fn()}
@@ -123,5 +125,22 @@ describe('DialogoConfirmacionEstado', () => {
     expect(
       screen.getByText(/volverá a estar disponible/i),
     ).toBeInTheDocument()
+  })
+
+  it('deshabilita la confirmación mientras cambia el estado', () => {
+    render(
+      <DialogoConfirmacionEstado
+        abierto
+        producto={producto}
+        cambiandoEstado
+        alCambiarApertura={vi.fn()}
+        alConfirmar={vi.fn()}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'Desactivar producto' }),
+    ).toBeDisabled()
   })
 })

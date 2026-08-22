@@ -92,6 +92,7 @@ export function ProductosPage() {
     cargando,
     error,
     reintentar,
+    cambiandoEstado,
   } = useProductos(busquedaDiferida)
   const [parametros, setParametros] = useSearchParams()
   const [filtroEstado, setFiltroEstado] =
@@ -446,17 +447,20 @@ export function ProductosPage() {
                     <Pencil aria-hidden="true" />
                     Editar
                   </Button> : null}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="lg"
-                    onClick={(evento) =>
-                      solicitarCambioEstado(producto, evento)
-                    }
-                  >
-                    <CirclePower aria-hidden="true" />
-                    {producto.activo ? 'Desactivar' : 'Activar'}
-                  </Button>
+                  {puedeGestionar ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="lg"
+                      disabled={cambiandoEstado}
+                      onClick={(evento) =>
+                        solicitarCambioEstado(producto, evento)
+                      }
+                    >
+                      <CirclePower aria-hidden="true" />
+                      {producto.activo ? 'Desactivar' : 'Activar'}
+                    </Button>
+                  ) : null}
                 </div>
               </article>
             ))
@@ -551,22 +555,25 @@ export function ProductosPage() {
                         >
                           <Pencil aria-hidden="true" />
                         </Button> : null}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`${producto.activo ? 'Desactivar' : 'Activar'} ${producto.descripcion}`}
-                          title={
-                            producto.activo
-                              ? 'Desactivar producto'
-                              : 'Activar producto'
-                          }
-                          onClick={(evento) =>
-                            solicitarCambioEstado(producto, evento)
-                          }
-                        >
-                          <CirclePower aria-hidden="true" />
-                        </Button>
+                        {puedeGestionar ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            disabled={cambiandoEstado}
+                            aria-label={`${producto.activo ? 'Desactivar' : 'Activar'} ${producto.descripcion}`}
+                            title={
+                              producto.activo
+                                ? 'Desactivar producto'
+                                : 'Activar producto'
+                            }
+                            onClick={(evento) =>
+                              solicitarCambioEstado(producto, evento)
+                            }
+                          >
+                            <CirclePower aria-hidden="true" />
+                          </Button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -634,6 +641,7 @@ export function ProductosPage() {
         <DialogoConfirmacionEstado
           abierto={Boolean(productoCambioEstadoId)}
           producto={productoCambioEstado}
+          cambiandoEstado={cambiandoEstado}
           alCambiarApertura={(abierto) => {
             if (!abierto) setProductoCambioEstadoId(null)
           }}
