@@ -7,6 +7,7 @@ import type { Producto } from '@/modulos/productos/modelo/producto'
 interface DialogoConfirmacionEstadoProps {
   abierto: boolean
   producto: Producto
+  cambiandoEstado: boolean
   alCambiarApertura: (abierto: boolean) => void
   alConfirmar: () => void
   alRestaurarFoco: () => void
@@ -15,6 +16,7 @@ interface DialogoConfirmacionEstadoProps {
 export function DialogoConfirmacionEstado({
   abierto,
   producto,
+  cambiandoEstado,
   alCambiarApertura,
   alConfirmar,
   alRestaurarFoco,
@@ -84,6 +86,7 @@ export function DialogoConfirmacionEstado({
                 type="button"
                 variant={seDesactivara ? 'destructive' : 'default'}
                 size="lg"
+                disabled={cambiandoEstado}
                 onClick={alConfirmar}
               >
                 {accion} producto
