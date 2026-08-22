@@ -300,7 +300,7 @@ Los bordes son finos y estructurales. No introducir contenedores redondeados ani
 - **Current required fields:** Código interno y Nombre o descripción. El código admite hasta 30 caracteres; la descripción, entre 2 y 160 después de recortar espacios.
 - **Current optional fields:** Código de barras (50), Categoría o línea (80), Laboratorio o marca (100), Presentación (100), Unidad de medida (40), Registro sanitario (80), Afectación de IGV y Precio de venta base. Los máximos entre paréntesis son caracteres.
 - **Commercial validation:** el precio puede quedar vacío o usar un importe no negativo con hasta dos decimales. La afectación de IGV permanece explícitamente en Por definir, Gravado, Exonerado o Inafecto; no inferir si el precio incluye IGV.
-- **Session uniqueness:** el código interno es único dentro de los productos temporales, sin distinguir mayúsculas y minúsculas; el conflicto se presenta sobre el campo Código interno.
+- **Organization uniqueness:** el código interno es único dentro de los productos de la organización, sin distinguir mayúsculas y minúsculas; el conflicto se presenta sobre el campo Código interno.
 
 ### Product Form
 
@@ -308,8 +308,8 @@ Los bordes son finos y estructurales. No introducir contenedores redondeados ani
 - **Defaults:** un producto nuevo no precarga datos factuales: los campos textuales, el precio y la afectación de IGV comienzan vacíos. Controlar por lote y Producto activo comienzan seleccionados, mientras Venta con receta comienza desmarcada.
 - **Control options:** las opciones binarias combinan checkbox, etiqueta y explicación completa; no usan switches sin contexto.
 - **Scrolling:** cabecera y pie permanecen visibles como límites del panel; únicamente la secuencia de campos tiene desplazamiento vertical.
-- **Temporary persistence:** altas, ediciones y cambios de estado se escriben en `sessionStorage` bajo una clave versionada. Al cargar, los datos se validan contra el esquema vigente; contenido ausente, inválido o ilegible produce un registro vacío.
-- **Scope:** la persistencia dura solo la sesión del navegador, no sincroniza con Supabase y se identifica como “SESIÓN LOCAL”. No debe presentarse como guardado definitivo ni como dato compartido.
+- **Persistent storage:** altas, ediciones y cambios de estado se escriben en `public.products` mediante Supabase. La organización activa se valida en RLS y los valores se validan contra las restricciones del catálogo.
+- **Scope:** el catálogo persiste y se comparte dentro de la organización autorizada; los módulos que todavía usan persistencia temporal deben identificarse de forma explícita y no presentarse como datos empresariales definitivos.
 
 ### Page Header
 
@@ -348,7 +348,7 @@ Los bordes son finos y estructurales. No introducir contenedores redondeados ani
 - **Don't** añadir gradientes, sombras decorativas, grandes rellenos de acento ni cuadrículas de tarjetas genéricas.
 - **Don't** usar movimiento ornamental ni ignorar `prefers-reduced-motion`.
 - **Don't** depender solo del color, del hover o de una disposición de escritorio para comunicar o completar una tarea.
-- **Don't** confundir `sessionStorage` con persistencia definitiva, omitir la marca “SESIÓN LOCAL” ni prometer sincronización mientras Supabase siga pendiente.
+- **Don't** confundir `sessionStorage` usado por módulos temporales con persistencia definitiva, ni prometer sincronización para dominios que todavía no estén conectados a Supabase.
 - **Don't** convertir el formulario esencial en una ficha multipestaña ni hacer obligatorios los campos opcionales antes de confirmar la regla empresarial.
 - **Don't** inferir si el precio base incluye IGV ni inventar catálogos controlados de clasificación o presentación.
 - **Don't** introducir logotipo, fotografía, ilustración o recursos de marca hasta recibir activos y autorización de Droguería SILSAN S.A.C.

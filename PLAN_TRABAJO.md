@@ -19,7 +19,7 @@ Este calendario asume una línea principal de desarrollo. Cada tarea se consider
 - Autenticación y administración de usuarios implementadas para una
   organización activa por identidad, con aislamiento multiempresa en base de
   datos y aprovisionamiento de clientes reservado a la plataforma.
-- Catálogo persistente de productos, importación de revisión y dashboard administrativo inicial disponibles.
+- Catálogo persistente de productos, importación masiva transaccional y dashboard administrativo inicial disponibles; la validación local de la migración de importación sigue pendiente por disponibilidad de Docker.
 - Proveedores, compras e inventario ya cuentan con persistencia multiempresa y permisos; ventas, caja y reportes todavía no tienen flujo persistente completo.
 
 ## Semana 1 — Alineación y estabilización (19–21 de agosto)

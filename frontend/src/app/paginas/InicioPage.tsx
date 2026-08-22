@@ -21,7 +21,7 @@ const formatoEntero = new Intl.NumberFormat('es-PE')
 const modulos = [
   {
     nombre: 'Productos',
-    detalle: 'Registro, edición y revisión previa de archivos',
+    detalle: 'Registro, edición e importación atómica de archivos',
     estado: 'Disponible',
     tono: 'listo',
     icono: PackageSearch,
@@ -165,8 +165,8 @@ export function InicioPage() {
           </h2>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
             {hayProductos
-              ? 'Compara el catálogo exportado y sus precios antes de definir la migración definitiva.'
-              : 'Revisa los archivos exportados para conocer conflictos y decisiones pendientes del catálogo.'}
+              ? 'Revisa el catálogo exportado y sus precios para detectar conflictos antes de importar.'
+              : 'Revisa los archivos exportados para conocer conflictos antes de importar el catálogo.'}
           </p>
           <Button asChild variant="outline" className="mt-5 w-full">
             <Link to="/productos/importar">
@@ -175,7 +175,7 @@ export function InicioPage() {
             </Link>
           </Button>
           <p className="mt-3 text-xs leading-5 text-muted-foreground">
-            La revisión ocurre localmente y no guarda ni modifica información.
+            El análisis ocurre localmente; la confirmación requiere permiso de administración y guarda el lote de forma atómica.
           </p>
         </aside>
       </div>
