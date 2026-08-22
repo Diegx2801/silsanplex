@@ -6,6 +6,10 @@ import { productoInicial, type Producto } from '@/modulos/productos/modelo/produ
 
 const mocks = vi.hoisted(() => ({
   buscarProductos: vi.fn(),
+  contarProductos: vi.fn(),
+  listarOpcionesProductos: vi.fn(),
+  listarProductosFiltrados: vi.fn(),
+  listarProductosPaginados: vi.fn(),
   listarProductos: vi.fn(),
   crearProducto: vi.fn(),
   editarProducto: vi.fn(),
@@ -68,12 +72,42 @@ function EstadoProbe() {
   )
 }
 
+function PaginaProbe() {
+  const { productos, totalFiltrado, totalProductos } = useProductos('', {
+    consulta: {
+      busqueda: 'med',
+      estado: 'todos',
+      categoria: '',
+      laboratorio: '',
+      orden: 'codigo-asc',
+    },
+    pagina: 2,
+    tamanioPagina: 10,
+  })
+
+  return (
+    <output>
+      {productos.length}:{totalFiltrado}:{totalProductos}
+    </output>
+  )
+}
+
 describe('useProductos', () => {
   afterEach(cleanup)
 
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.buscarProductos.mockResolvedValue([])
+    mocks.contarProductos.mockResolvedValue(30)
+    mocks.listarOpcionesProductos.mockResolvedValue({
+      categorias: [],
+      laboratorios: [],
+    })
+    mocks.listarProductosFiltrados.mockResolvedValue([])
+    mocks.listarProductosPaginados.mockResolvedValue({
+      elementos: [producto],
+      totalFiltrado: 21,
+    })
     mocks.listarProductos.mockResolvedValue([])
     mocks.crearProducto.mockResolvedValue(undefined)
     mocks.editarProducto.mockResolvedValue(undefined)
@@ -115,6 +149,34 @@ describe('useProductos', () => {
       expect(invalidar).toHaveBeenCalledWith({
         queryKey: ['products', 'org-1'],
       }),
+      )
+  })
+
+  it('consulta la página y los totales server-side cuando recibe filtros', async () => {
+    const queryClient = crearCliente()
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PaginaProbe />
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => {
+      expect(mocks.listarProductosPaginados).toHaveBeenCalledWith('org-1', {
+        busqueda: 'med',
+        estado: 'todos',
+        categoria: '',
+        laboratorio: '',
+        orden: 'codigo-asc',
+        pagina: 2,
+        tamanioPagina: 10,
+      })
+      expect(mocks.contarProductos).toHaveBeenCalledWith('org-1')
+      expect(mocks.listarOpcionesProductos).toHaveBeenCalledWith('org-1')
+    })
+
+    await waitFor(() =>
+      expect(document.querySelector('output')).toHaveTextContent('1:21:30'),
     )
   })
 })

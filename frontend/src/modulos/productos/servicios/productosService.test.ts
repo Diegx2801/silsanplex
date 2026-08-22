@@ -11,22 +11,28 @@ vi.mock('@/lib/supabase', () => ({ supabase: supabaseMock }))
 import {
   buscarProductos,
   cambiarEstadoProducto,
+  contarProductos,
   crearProducto,
   editarProducto,
+  listarOpcionesProductos,
+  listarProductosPaginados,
   listarProductos,
 } from './productosService'
 
 interface RespuestaSupabase {
   data: unknown
   error: { code: string } | null
+  count?: number | null
 }
 
 function crearCadena(respuestaActual: () => RespuestaSupabase) {
   const cadena = {
     select: vi.fn(),
     eq: vi.fn(),
+    ilike: vi.fn(),
     order: vi.fn(),
     or: vi.fn(),
+    range: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
     then: (
@@ -37,8 +43,10 @@ function crearCadena(respuestaActual: () => RespuestaSupabase) {
 
   cadena.select.mockReturnValue(cadena)
   cadena.eq.mockReturnValue(cadena)
+  cadena.ilike.mockReturnValue(cadena)
   cadena.order.mockReturnValue(cadena)
   cadena.or.mockReturnValue(cadena)
+  cadena.range.mockReturnValue(cadena)
   cadena.insert.mockReturnValue(cadena)
   cadena.update.mockReturnValue(cadena)
 
@@ -116,6 +124,81 @@ describe('productosService', () => {
     await expect(buscarProductos('org-1', 'producto')).rejects.toThrow(
       'No se pudo cargar el catálogo de productos',
     )
+  })
+
+  it('aplica filtros, orden y rango en la consulta paginada', async () => {
+    respuesta = { data: [productoFila], error: null, count: 27 }
+
+    const resultado = await listarProductosPaginados('org-1', {
+      busqueda: 'producto',
+      estado: 'activos',
+      categoria: 'Línea',
+      laboratorio: 'Marca',
+      orden: 'precio-desc',
+      pagina: 2,
+      tamanioPagina: 10,
+    })
+
+    expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
+    expect(cadena.eq).toHaveBeenCalledWith('is_active', true)
+    expect(cadena.ilike).toHaveBeenCalledWith('category', 'Línea')
+    expect(cadena.ilike).toHaveBeenCalledWith('laboratory', 'Marca')
+    expect(cadena.or).toHaveBeenCalledWith(
+      expect.stringContaining('description.ilike.%producto%'),
+    )
+    expect(cadena.order).toHaveBeenCalledWith('sale_price', {
+      ascending: false,
+      nullsFirst: false,
+    })
+    expect(cadena.range).toHaveBeenCalledWith(10, 19)
+    expect(resultado).toMatchObject({
+      totalFiltrado: 27,
+      elementos: [{ id: 'producto-1' }],
+    })
+  })
+
+  it('limita el tamaño de página antes de enviarlo a Supabase', async () => {
+    respuesta = { data: [], error: null, count: 0 }
+
+    await listarProductosPaginados('org-1', {
+      busqueda: '',
+      estado: 'todos',
+      categoria: '',
+      laboratorio: '',
+      orden: 'codigo-asc',
+      pagina: 1,
+      tamanioPagina: 500,
+    })
+
+    expect(cadena.range).toHaveBeenCalledWith(0, 49)
+  })
+
+  it('cuenta el total de productos de la organización sin descargar filas', async () => {
+    respuesta = { data: null, error: null, count: 34 }
+
+    await expect(contarProductos('org-1')).resolves.toBe(34)
+    expect(cadena.select).toHaveBeenCalledWith('id', {
+      count: 'exact',
+      head: true,
+    })
+    expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
+  })
+
+  it('obtiene opciones únicas de la vista segura del catálogo', async () => {
+    respuesta = {
+      data: [
+        { category: 'Línea', laboratory: 'Marca' },
+        { category: 'línea', laboratory: 'Marca secundaria' },
+      ],
+      error: null,
+    }
+
+    await expect(listarOpcionesProductos('org-1')).resolves.toEqual({
+      categorias: ['Línea'],
+      laboratorios: ['Marca', 'Marca secundaria'],
+    })
+    expect(supabaseMock.from).toHaveBeenCalledWith('product_catalog_options')
+    expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
   })
 
   it('crea un producto normalizando el código y enviando el actor', async () => {

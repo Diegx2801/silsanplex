@@ -1,8 +1,9 @@
 begin;
 
-select plan(16);
+select plan(19);
 
 select has_table('public', 'products', 'existe el catálogo persistente');
+select has_view('public', 'product_catalog_options', 'existe la vista de opciones del catálogo');
 select has_column('public', 'products', 'cost', 'products conserva el costo');
 select has_column('public', 'products', 'subline', 'products conserva la sublínea');
 
@@ -19,6 +20,12 @@ select is(
   has_table_privilege('authenticated', 'public.products', 'INSERT'),
   true,
   'authenticated puede insertar productos bajo RLS'
+);
+
+select is(
+  has_table_privilege('authenticated', 'public.product_catalog_options', 'SELECT'),
+  true,
+  'authenticated puede consultar opciones del catálogo'
 );
 
 insert into public.organizations (id, name, slug)
@@ -123,6 +130,16 @@ select is(
   ),
   'Sublínea prueba',
   'el producto conserva la sublínea'
+);
+
+select results_eq(
+  $$
+    select category, laboratory
+    from public.product_catalog_options
+    where organization_id = 'a1111111-1111-4111-8111-111111111111'
+  $$,
+  $$values ('Línea prueba'::text, 'Marca prueba'::text)$$,
+  'la vista expone opciones únicamente de la organización'
 );
 
 select lives_ok(

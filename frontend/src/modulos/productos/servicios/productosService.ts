@@ -1,6 +1,13 @@
 import type { PostgrestError } from '@supabase/supabase-js'
 
 import { supabase } from '@/lib/supabase'
+import type {
+  ConsultaProductos,
+  ConsultaProductosPaginada,
+  OpcionesProductos,
+  OrdenProductos,
+  ResultadoProductosPaginados,
+} from '@/modulos/productos/modelo/consultaProductos'
 import type { DatosProducto, Producto } from '@/modulos/productos/modelo/producto'
 
 interface ProductoFila {
@@ -22,8 +29,19 @@ interface ProductoFila {
   is_active: boolean
 }
 
+interface OpcionProductoFila {
+  category: string | null
+  laboratory: string | null
+}
+
 const columnasProducto =
   'id,code,description,barcode,category,subline,laboratory,presentation,unit_of_measure,tax_affectation,cost,sale_price,health_registry,batch_control,prescription_sale,is_active' as const
+const columnasOpcionesProducto = 'category,laboratory' as const
+const tamanioPaginaMaximo = 50
+const comparadorOpciones = new Intl.Collator('es-PE', {
+  numeric: true,
+  sensitivity: 'base',
+})
 
 const textoONulo = (valor: string) => valor.trim() || null
 
@@ -73,6 +91,99 @@ function normalizarTerminoBusqueda(valor: string) {
     .replace(/[\\%_(),*]/g, ' ')
     .replace(/\s+/g, ' ')
     .slice(0, 100)
+}
+
+function escaparPatronIlike(valor: string) {
+  return valor.trim().replace(/[\\%_]/g, '\\$&')
+}
+
+function normalizarOpcion(valor: string) {
+  return valor
+    .trim()
+    .toLocaleLowerCase('es-PE')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+}
+
+function obtenerOpcionesUnicas(valores: readonly (string | null)[]) {
+  const opciones = new Map<string, string>()
+
+  for (const valorOriginal of valores) {
+    const valor = valorOriginal?.trim() ?? ''
+    const clave = normalizarOpcion(valor)
+    if (valor && !opciones.has(clave)) opciones.set(clave, valor)
+  }
+
+  return [...opciones.values()].toSorted(comparadorOpciones.compare)
+}
+
+function limitarEntero(valor: number, minimo: number, maximo: number) {
+  if (!Number.isFinite(valor)) return minimo
+  return Math.min(maximo, Math.max(minimo, Math.trunc(valor)))
+}
+
+function construirConsultaProductos(
+  organizationId: string,
+  consulta: ConsultaProductos,
+  incluirConteo: boolean,
+) {
+  const seleccion = incluirConteo
+    ? supabase
+        .from('products')
+        .select(columnasProducto, { count: 'exact' })
+    : supabase.from('products').select(columnasProducto)
+
+  let query = seleccion.eq('organization_id', organizationId)
+  const termino = normalizarTerminoBusqueda(consulta.busqueda)
+
+  if (consulta.estado === 'activos') query = query.eq('is_active', true)
+  if (consulta.estado === 'inactivos') query = query.eq('is_active', false)
+  if (consulta.categoria.trim()) {
+    query = query.ilike('category', escaparPatronIlike(consulta.categoria))
+  }
+  if (consulta.laboratorio.trim()) {
+    query = query.ilike('laboratory', escaparPatronIlike(consulta.laboratorio))
+  }
+  if (termino) {
+    query = query.or(
+      [
+        'code',
+        'description',
+        'barcode',
+        'category',
+        'subline',
+        'laboratory',
+        'presentation',
+        'unit_of_measure',
+      ]
+        .map((columna) => `${columna}.ilike.%${termino}%`)
+        .join(','),
+    )
+  }
+
+  switch (consulta.orden as OrdenProductos) {
+    case 'codigo-desc':
+      query = query.order('code', { ascending: false }).order('id', { ascending: true })
+      break
+    case 'descripcion-asc':
+      query = query.order('description', { ascending: true }).order('id', { ascending: true })
+      break
+    case 'precio-asc':
+      query = query
+        .order('sale_price', { ascending: true, nullsFirst: false })
+        .order('id', { ascending: true })
+      break
+    case 'precio-desc':
+      query = query
+        .order('sale_price', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: true })
+      break
+    case 'codigo-asc':
+      query = query.order('code', { ascending: true }).order('id', { ascending: true })
+      break
+  }
+
+  return query
 }
 
 function construirFilaProducto(
@@ -143,6 +254,71 @@ export async function buscarProductos(
 
   if (error) throw new Error(mensajeError(error, 'consultar'))
   return ((data ?? []) as ProductoFila[]).map(mapearProducto)
+}
+
+export async function listarProductosPaginados(
+  organizationId: string,
+  consulta: ConsultaProductosPaginada,
+): Promise<ResultadoProductosPaginados> {
+  const pagina = limitarEntero(consulta.pagina, 1, Number.MAX_SAFE_INTEGER)
+  const tamanioPagina = limitarEntero(consulta.tamanioPagina, 1, tamanioPaginaMaximo)
+  const indiceInicial = (pagina - 1) * tamanioPagina
+
+  const { data, error, count } = await construirConsultaProductos(
+    organizationId,
+    consulta,
+    true,
+  ).range(indiceInicial, indiceInicial + tamanioPagina - 1)
+
+  if (error) throw new Error(mensajeError(error, 'consultar'))
+
+  return {
+    elementos: ((data ?? []) as ProductoFila[]).map(mapearProducto),
+    totalFiltrado: count ?? 0,
+  }
+}
+
+export async function listarProductosFiltrados(
+  organizationId: string,
+  consulta: ConsultaProductos,
+): Promise<Producto[]> {
+  const { data, error } = await construirConsultaProductos(
+    organizationId,
+    consulta,
+    false,
+  )
+
+  if (error) throw new Error(mensajeError(error, 'consultar'))
+  return ((data ?? []) as ProductoFila[]).map(mapearProducto)
+}
+
+export async function contarProductos(organizationId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('products')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', organizationId)
+
+  if (error) throw new Error(mensajeError(error, 'consultar'))
+  return count ?? 0
+}
+
+export async function listarOpcionesProductos(
+  organizationId: string,
+): Promise<OpcionesProductos> {
+  const { data, error } = await supabase
+    .from('product_catalog_options')
+    .select(columnasOpcionesProducto)
+    .eq('organization_id', organizationId)
+    .order('category', { ascending: true })
+    .order('laboratory', { ascending: true })
+
+  if (error) throw new Error(mensajeError(error, 'consultar'))
+
+  const filas = (data ?? []) as OpcionProductoFila[]
+  return {
+    categorias: obtenerOpcionesUnicas(filas.map((fila) => fila.category)),
+    laboratorios: obtenerOpcionesUnicas(filas.map((fila) => fila.laboratory)),
+  }
 }
 
 export async function crearProducto(
