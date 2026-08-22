@@ -17,7 +17,8 @@ export function useProductos(busqueda = '') {
   const queryClient = useQueryClient()
   const organizationId = access?.organizationId ?? ''
   const terminoBusqueda = busqueda.trim()
-  const queryKey = ['products', organizationId, terminoBusqueda] as const
+  const productosQueryKey = ['products', organizationId] as const
+  const queryKey = [...productosQueryKey, terminoBusqueda] as const
   const query = useQuery({
     queryKey,
     queryFn: () =>
@@ -33,14 +34,16 @@ export function useProductos(busqueda = '') {
         ? editarProducto(organizationId, user.id, productoId, datos)
         : crearProducto(organizationId, user.id, datos)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: productosQueryKey }),
   })
   const estadoMutation = useMutation({
     mutationFn: (producto: Producto) => {
       if (!user) throw new Error('La sesión ya no está disponible')
       return cambiarEstadoProducto(organizationId, user.id, producto)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: productosQueryKey }),
   })
 
   return {
