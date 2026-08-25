@@ -35,6 +35,18 @@ export interface FilaProductoImportacion {
   categoria: string
   sublinea: string
   laboratorio: string
+  descripcionAmpliada: string
+  codigoBarras: string
+  presentacion: string
+  registroSanitario: string
+  stockMaximo: string
+  anchoCm: string
+  altoCm: string
+  largoCm: string
+  pesoKg: string
+  controlLote: boolean
+  controlVencimiento: boolean
+  ventaReceta: boolean
 }
 
 export interface FilaPrecioImportacion {
@@ -44,6 +56,8 @@ export interface FilaPrecioImportacion {
   unidadMedida: string
   precioVenta: string
   incIgv: string
+  costoBase: string
+  precioMinimo: string
 }
 
 export interface DatosImportacionProductos {
@@ -114,6 +128,18 @@ function firmaProducto(fila: FilaImportacion) {
     fila.Linea,
     fila.SubLinea,
     fila.Marca_Laboratorio,
+    fila.DescripcionAmpliada,
+    fila.CodigoBarras,
+    fila.Presentacion,
+    fila.RegistroSanitario,
+    fila.StockMaximo,
+    fila.AnchoCm,
+    fila.AltoCm,
+    fila.LargoCm,
+    fila.PesoKg,
+    fila.ControlLote,
+    fila.ControlVencimiento,
+    fila.VentaReceta,
   ]
     .map((valor) => normalizar(valor ?? ''))
     .join('|')
@@ -130,6 +156,8 @@ function firmaPrecio(fila: FilaImportacion) {
     fila.Medida,
     precio === '' ? '' : String(Number(precio)),
     fila.IncIGV,
+    fila.CostoBase,
+    fila.PrecioMinimo,
   ]
     .map((valor) => normalizar(valor ?? ''))
     .join('|')
@@ -143,6 +171,19 @@ function filaProducto(fila: FilaImportacion, indice: number): FilaProductoImport
     categoria: (fila.Linea ?? '').trim(),
     sublinea: (fila.SubLinea ?? '').trim(),
     laboratorio: (fila.Marca_Laboratorio ?? '').trim(),
+    descripcionAmpliada: (fila.DescripcionAmpliada ?? '').trim(),
+    codigoBarras: (fila.CodigoBarras ?? '').trim(),
+    presentacion: (fila.Presentacion ?? '').trim(),
+    registroSanitario: (fila.RegistroSanitario ?? '').trim(),
+    stockMaximo: normalizarPrecio(fila.StockMaximo ?? ''),
+    anchoCm: normalizarPrecio(fila.AnchoCm ?? ''),
+    altoCm: normalizarPrecio(fila.AltoCm ?? ''),
+    largoCm: normalizarPrecio(fila.LargoCm ?? ''),
+    pesoKg: normalizarPrecio(fila.PesoKg ?? ''),
+    controlLote: normalizarBooleano(fila.ControlLote ?? '') === true,
+    controlVencimiento:
+      normalizarBooleano(fila.ControlVencimiento ?? '') === true,
+    ventaReceta: normalizarBooleano(fila.VentaReceta ?? '') === true,
   }
 }
 
@@ -158,6 +199,23 @@ function normalizarIncIgv(valor: string) {
   }
 }
 
+function normalizarBooleano(valor: string) {
+  switch (normalizar(valor)) {
+    case 'SI':
+    case 'SÍ':
+    case 'TRUE':
+    case '1':
+      return true
+    case 'NO':
+    case 'FALSE':
+    case '0':
+    case '':
+      return false
+    default:
+      return null
+  }
+}
+
 function filaPrecio(fila: FilaImportacion, indice: number): FilaPrecioImportacion {
   return {
     fila: indice + 2,
@@ -166,6 +224,8 @@ function filaPrecio(fila: FilaImportacion, indice: number): FilaPrecioImportacio
     unidadMedida: (fila.Medida ?? '').trim(),
     precioVenta: normalizarPrecio(fila.Precio_venta ?? ''),
     incIgv: normalizarIncIgv(fila.IncIGV ?? ''),
+    costoBase: normalizarPrecio(fila.CostoBase ?? ''),
+    precioMinimo: normalizarPrecio(fila.PrecioMinimo ?? ''),
   }
 }
 
@@ -321,6 +381,23 @@ export function analizarFilasImportacion(
     const categoria = (fila.Linea ?? '').trim()
     const sublinea = (fila.SubLinea ?? '').trim()
     const laboratorio = (fila.Marca_Laboratorio ?? '').trim()
+    const descripcionAmpliada = (fila.DescripcionAmpliada ?? '').trim()
+    const codigoBarras = (fila.CodigoBarras ?? '').trim()
+    const presentacion = (fila.Presentacion ?? '').trim()
+    const registroSanitario = (fila.RegistroSanitario ?? '').trim()
+    const decimalesPositivos = ['AnchoCm', 'AltoCm', 'LargoCm', 'PesoKg'].every(
+      (campo) => {
+        const valor = (fila[campo] ?? '').trim()
+        return !valor || (/^\d+([.,]\d{1,3})?$/.test(valor) && Number(normalizarPrecio(valor)) > 0)
+      },
+    )
+    const stockMaximo = (fila.StockMaximo ?? '').trim()
+    const stockMaximoValido =
+      !stockMaximo ||
+      (/^\d+([.,]\d{1,3})?$/.test(stockMaximo) && Number(normalizarPrecio(stockMaximo)) >= 0)
+    const booleanosValidos = ['ControlLote', 'ControlVencimiento', 'VentaReceta'].every(
+      (campo) => normalizarBooleano(fila[campo] ?? '') !== null,
+    )
     return (
       !/^[A-Z0-9][A-Z0-9._-]{0,29}$/.test(codigo) ||
       descripcion.length < 2 ||
@@ -328,6 +405,13 @@ export function analizarFilasImportacion(
       categoria.length > 80 ||
       sublinea.length > 80 ||
       laboratorio.length > 100
+      || descripcionAmpliada.length > 4000
+      || codigoBarras.length > 50
+      || presentacion.length > 100
+      || registroSanitario.length > 80
+      || !decimalesPositivos
+      || !stockMaximoValido
+      || !booleanosValidos
     )
   })
   if (productosInvalidos.length) {
@@ -451,6 +535,10 @@ export function analizarFilasImportacion(
     const unidadMedida = (fila.Medida ?? '').trim()
     const incIgv = normalizar(fila.IncIGV ?? '')
     const precioNumerico = precio === '' ? null : Number(normalizarPrecio(precio))
+    const costo = (fila.CostoBase ?? '').trim()
+    const precioMinimo = (fila.PrecioMinimo ?? '').trim()
+    const numeroMonetarioValido = (valor: string) =>
+      !valor || (/^(0|\d+)([.,]\d{1,2})?$/.test(valor) && Number(normalizarPrecio(valor)) <= precioMaximo)
     const precioValido =
       precio === '' ||
       (/^(0|\d+)([.,]\d{1,2})?$/.test(precio) &&
@@ -459,7 +547,11 @@ export function analizarFilasImportacion(
         precioNumerico <= precioMaximo)
     const incIgvValido =
       incIgv === '' || ['SI', 'SÍ', 'NO', 'PENDIENTE'].includes(incIgv)
-    return !precioValido || !incIgvValido || unidadMedida.length > 40
+    const minimoNoSuperaVenta =
+      !precioMinimo || !precio || Number(normalizarPrecio(precioMinimo)) <= Number(normalizarPrecio(precio))
+    return !precioValido || !numeroMonetarioValido(costo) ||
+      !numeroMonetarioValido(precioMinimo) || !minimoNoSuperaVenta ||
+      !incIgvValido || unidadMedida.length > 40
   })
   if (preciosInvalidos.length) {
     hallazgos.push({

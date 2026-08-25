@@ -47,6 +47,31 @@ describe('esquemaProducto', () => {
 
     expect(resultado.success).toBe(false)
   })
+
+  it('rechaza un precio mínimo mayor al precio base', () => {
+    const resultado = esquemaProducto.safeParse({
+      ...productoInicial,
+      codigo: 'PROD-001',
+      descripcion: 'Producto de prueba',
+      precioVenta: '10',
+      precioMinimo: '11',
+    })
+
+    expect(resultado.success).toBe(false)
+  })
+
+  it('permite controlar lote y vencimiento de manera independiente', () => {
+    const resultado = esquemaProducto.parse({
+      ...productoInicial,
+      codigo: 'PROD-001',
+      descripcion: 'Producto de prueba',
+      controlLote: false,
+      controlVencimiento: true,
+    })
+
+    expect(resultado.controlLote).toBe(false)
+    expect(resultado.controlVencimiento).toBe(true)
+  })
 })
 
 describe('resumirProductos', () => {

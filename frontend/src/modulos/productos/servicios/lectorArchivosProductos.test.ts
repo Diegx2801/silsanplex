@@ -98,4 +98,30 @@ describe('analizarArchivosProductos', () => {
     expect(resultado.resumen.codigosConPrecio).toBe(1)
     expect(resultado.resumen.coincidencias).toBe(1)
   })
+
+  it('lee las columnas extendidas cuando están presentes', async () => {
+    const productos = crearArchivo(
+      'Productos.xlsx',
+      [...encabezadosProductos, 'DescripcionAmpliada', 'StockMaximo', 'ControlLote', 'ControlVencimiento'],
+      ['0001', 'Producto uno', 'Línea', 'SubLínea', 'Marca', 'Detalle técnico', '100', 'Sí', 'No'],
+    )
+    const precios = crearArchivo(
+      'Precios.xlsx',
+      [...encabezadosPrecios, 'CostoBase', 'PrecioMinimo'],
+      ['0001', 'Producto uno', 'UNIDAD', '10', 'Si', '7.50', '8.00'],
+    )
+
+    const resultado = await analizarArchivosProductos(productos, precios)
+
+    expect(resultado.datos.productos[0]).toMatchObject({
+      descripcionAmpliada: 'Detalle técnico',
+      stockMaximo: '100',
+      controlLote: true,
+      controlVencimiento: false,
+    })
+    expect(resultado.datos.precios[0]).toMatchObject({
+      costoBase: '7.50',
+      precioMinimo: '8.00',
+    })
+  })
 })

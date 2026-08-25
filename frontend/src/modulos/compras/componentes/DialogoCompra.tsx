@@ -354,7 +354,9 @@ export function DialogoCompra({
                           />
                         </div>
                         <div>
-                          <label className="field-label">Vencimiento</label>
+                          <label className="field-label">
+                            Vencimiento {producto?.controlVencimiento ? '*' : ''}
+                          </label>
                           <input
                             type="date"
                             className="field-control"

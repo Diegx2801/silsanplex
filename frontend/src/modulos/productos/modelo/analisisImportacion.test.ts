@@ -150,4 +150,32 @@ describe('analizarFilasImportacion', () => {
       ]),
     )
   })
+
+  it('bloquea dimensiones, booleanos y precio mínimo extendidos inválidos', () => {
+    const resultado = analizarFilasImportacion(
+      [
+        {
+          Codigo: '0001',
+          Producto: 'Producto uno',
+          AnchoCm: '0',
+          ControlLote: 'tal vez',
+        },
+      ],
+      [
+        {
+          CodigoProducto: '0001',
+          Medida: 'UND',
+          Precio_venta: '10',
+          PrecioMinimo: '11',
+        },
+      ],
+    )
+
+    expect(resultado.hallazgos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'productos-invalidos' }),
+        expect.objectContaining({ id: 'precios-invalidos' }),
+      ]),
+    )
+  })
 })

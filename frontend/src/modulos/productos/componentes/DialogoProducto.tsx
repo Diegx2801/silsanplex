@@ -204,6 +204,29 @@ export function DialogoProducto({
                     {...register('descripcion')}
                   />
                 </div>
+                <div className="sm:col-span-2">
+                  <label htmlFor="descripcion-ampliada" className="field-label">
+                    Descripción ampliada
+                  </label>
+                  <textarea
+                    id="descripcion-ampliada"
+                    rows={5}
+                    className="field-control min-h-28 resize-y"
+                    placeholder="Características, composición, uso, conservación u otras observaciones"
+                    aria-invalid={Boolean(errors.descripcionAmpliada)}
+                    aria-describedby={
+                      errors.descripcionAmpliada
+                        ? 'descripcion-ampliada-error'
+                        : undefined
+                    }
+                    {...register('descripcionAmpliada')}
+                  />
+                  {errors.descripcionAmpliada ? (
+                    <p id="descripcion-ampliada-error" className="field-error">
+                      {errors.descripcionAmpliada.message}
+                    </p>
+                  ) : null}
+                </div>
                 <CampoTexto
                   etiqueta="Línea"
                   autoComplete="off"
@@ -288,6 +311,24 @@ export function DialogoProducto({
                   error={errors.precioVenta?.message}
                   {...register('precioVenta')}
                 />
+                <CampoTexto
+                  etiqueta="Precio mínimo permitido (S/)"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="0.00"
+                  ayuda="Debe ser menor o igual al precio de venta base."
+                  error={errors.precioMinimo?.message}
+                  {...register('precioMinimo')}
+                />
+                <CampoTexto
+                  etiqueta="Stock máximo global"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="Sin límite"
+                  ayuda="Referencia global; los mínimos continúan definidos por almacén."
+                  error={errors.stockMaximo?.message}
+                  {...register('stockMaximo')}
+                />
                 <div className="sm:col-span-2">
                   <CampoTexto
                     etiqueta="Registro sanitario"
@@ -300,14 +341,36 @@ export function DialogoProducto({
               </div>
             </section>
 
+            <section aria-labelledby="dimensiones-title" className="border-t px-5 py-6 sm:px-7">
+              <div className="mb-5">
+                <h2 id="dimensiones-title" className="font-semibold">
+                  Dimensiones y peso
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Medidas de la presentación comercial, útiles para almacenamiento y despacho.
+                </p>
+              </div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <CampoTexto etiqueta="Ancho (cm)" inputMode="decimal" placeholder="0.000" error={errors.anchoCm?.message} {...register('anchoCm')} />
+                <CampoTexto etiqueta="Alto (cm)" inputMode="decimal" placeholder="0.000" error={errors.altoCm?.message} {...register('altoCm')} />
+                <CampoTexto etiqueta="Largo (cm)" inputMode="decimal" placeholder="0.000" error={errors.largoCm?.message} {...register('largoCm')} />
+                <CampoTexto etiqueta="Peso (kg)" inputMode="decimal" placeholder="0.000" error={errors.pesoKg?.message} {...register('pesoKg')} />
+              </div>
+            </section>
+
             <section aria-labelledby="control-title" className="border-t px-5 py-6 sm:px-7">
               <h2 id="control-title" className="mb-2 font-semibold">
                 Control operativo
               </h2>
               <OpcionBinaria
                 etiqueta="Controlar por lote"
-                descripcion="Prepara el producto para registrar lotes y vencimientos en Inventario."
+                descripcion="Agrupa las existencias por número de lote."
                 {...register('controlLote')}
+              />
+              <OpcionBinaria
+                etiqueta="Controlar vencimiento"
+                descripcion="Exige y supervisa fechas de vencimiento, independientemente del lote."
+                {...register('controlVencimiento')}
               />
               <OpcionBinaria
                 etiqueta="Venta con receta"

@@ -119,8 +119,17 @@ export function validarCotizacion(
     }
     seleccionados.add(linea.productoId)
 
-    if (!productosPorId.get(linea.productoId)?.activo) {
+    const producto = productosPorId.get(linea.productoId)
+    if (!producto?.activo) {
       return 'Uno de los productos ya no está disponible'
+    }
+
+    const precioMinimo = Number(producto.precioMinimo)
+    if (
+      producto.precioMinimo &&
+      Number(linea.precioUnitario) < precioMinimo
+    ) {
+      return `${producto.descripcion}: el precio unitario no puede ser menor a S/ ${precioMinimo.toFixed(2)}`
     }
   }
 

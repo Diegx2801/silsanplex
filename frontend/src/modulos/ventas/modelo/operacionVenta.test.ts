@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { crearMovimientoInventario } from '@/modulos/inventario/modelo/inventario'
-import type { Producto } from '@/modulos/productos/modelo/producto'
+import { productoInicial, type Producto } from '@/modulos/productos/modelo/producto'
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
 
 import {
@@ -11,6 +11,7 @@ import {
 } from './operacionVenta'
 
 const producto = {
+  ...productoInicial,
   id: 'producto-1',
   codigo: 'MED-001',
   descripcion: 'Paracetamol 500 mg',

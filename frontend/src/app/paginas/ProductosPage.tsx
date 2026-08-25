@@ -3,6 +3,7 @@ import {
   Download,
   Eye,
   FileSpreadsheet,
+  ImageIcon,
   LoaderCircle,
   PackageSearch,
   Pencil,
@@ -42,6 +43,23 @@ const formatoMoneda = new Intl.NumberFormat('es-PE', {
 
 function mostrarPrecio(precio: string) {
   return precio ? formatoMoneda.format(Number(precio)) : 'Sin definir'
+}
+
+function MiniaturaProducto({ producto }: { producto: Producto }) {
+  return (
+    <span className="grid size-12 shrink-0 place-items-center overflow-hidden border bg-muted text-muted-foreground">
+      {producto.miniaturaUrl ? (
+        <img
+          src={producto.miniaturaUrl}
+          alt=""
+          loading="lazy"
+          className="size-full object-cover"
+        />
+      ) : (
+        <ImageIcon aria-hidden="true" className="size-4" />
+      )}
+    </span>
+  )
 }
 
 interface ContenidoVacioProps {
@@ -407,11 +425,16 @@ export function ProductosPage() {
             paginaProductos.elementos.map((producto) => (
               <article key={producto.id} className="px-5 py-5">
                 <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="font-mono text-xs font-medium tabular-nums text-primary">
-                      {producto.codigo}
-                    </p>
-                    <h3 className="mt-2 font-semibold">{producto.descripcion}</h3>
+                  <div className="flex min-w-0 gap-3">
+                    <MiniaturaProducto producto={producto} />
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs font-medium tabular-nums text-primary">
+                        {producto.codigo}
+                      </p>
+                      <h3 className="mt-1 line-clamp-2 font-semibold">
+                        {producto.descripcion}
+                      </h3>
+                    </div>
                   </div>
                   <span
                     className="status-label"
@@ -433,7 +456,7 @@ export function ProductosPage() {
                   </div>
                 </dl>
                 <div className="mt-5 grid grid-cols-2 gap-2 border-t pt-4">
-                  {puedeGestionar ? <Button
+                  <Button
                     type="button"
                     variant="secondary"
                     size="lg"
@@ -442,7 +465,7 @@ export function ProductosPage() {
                   >
                     <Eye aria-hidden="true" />
                     Ver detalle
-                  </Button> : null}
+                  </Button>
                   {puedeGestionar ? <Button
                     type="button"
                     variant="outline"
@@ -515,11 +538,16 @@ export function ProductosPage() {
                     <td className="px-5 py-4 font-mono text-xs font-medium tabular-nums sm:px-6">
                       {producto.codigo}
                     </td>
-                    <td className="max-w-xs px-4 py-4">
-                      <p className="font-medium">{producto.descripcion}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                         {producto.categoria || 'Sin línea'}
-                      </p>
+                    <td className="max-w-sm px-4 py-4">
+                      <div className="flex items-center gap-3">
+                        <MiniaturaProducto producto={producto} />
+                        <div className="min-w-0">
+                          <p className="font-medium">{producto.descripcion}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {producto.categoria || 'Sin línea'}
+                          </p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-4 text-muted-foreground">
                       {producto.laboratorio || 'Sin definir'}
@@ -540,7 +568,7 @@ export function ProductosPage() {
                     </td>
                     <td className="px-5 py-4 sm:px-6">
                       <div className="flex justify-end gap-1">
-                        {puedeGestionar ? <Button
+                        <Button
                           type="button"
                           variant="ghost"
                           size="icon"
@@ -549,7 +577,7 @@ export function ProductosPage() {
                           onClick={(evento) => abrirDetalle(producto, evento)}
                         >
                           <Eye aria-hidden="true" />
-                        </Button> : null}
+                        </Button>
                         {puedeGestionar ? <Button
                           type="button"
                           variant="ghost"
