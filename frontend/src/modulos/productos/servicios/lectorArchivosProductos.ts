@@ -12,6 +12,21 @@ const columnasProductos = [
   'Marca_Laboratorio',
 ]
 
+export const columnasOpcionalesProductos = [
+  'DescripcionAmpliada',
+  'CodigoBarras',
+  'Presentacion',
+  'RegistroSanitario',
+  'StockMaximo',
+  'AnchoCm',
+  'AltoCm',
+  'LargoCm',
+  'PesoKg',
+  'ControlLote',
+  'ControlVencimiento',
+  'VentaReceta',
+] as const
+
 const columnasPrecios = [
   'CodigoProducto',
   'Producto',
@@ -19,6 +34,8 @@ const columnasPrecios = [
   'Precio_venta',
   'IncIGV',
 ]
+
+export const columnasOpcionalesPrecios = ['CostoBase', 'PrecioMinimo'] as const
 
 function validarExtension(archivo: File) {
   if (!archivo.name.toLocaleLowerCase('es-PE').endsWith('.xlsx')) {

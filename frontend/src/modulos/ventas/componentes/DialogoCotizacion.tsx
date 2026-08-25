@@ -225,6 +225,9 @@ export function DialogoCotizacion({
               <div className="space-y-4">
                 {fields.map((field, indice) => {
                   const erroresLinea = errors.lineas?.[indice]
+                  const productoSeleccionado = productos.find(
+                    (producto) => producto.id === lineas[indice]?.productoId,
+                  )
                   const registroProducto = register(
                     `lineas.${indice}.productoId`,
                   )
@@ -297,6 +300,14 @@ export function DialogoCotizacion({
                           {erroresLinea?.precioUnitario ? (
                             <p className="field-error">
                               {erroresLinea.precioUnitario.message}
+                            </p>
+                          ) : null}
+                          {productoSeleccionado?.precioMinimo ? (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Mínimo permitido:{' '}
+                              {formatoMoneda.format(
+                                Number(productoSeleccionado.precioMinimo),
+                              )}
                             </p>
                           ) : null}
                         </div>

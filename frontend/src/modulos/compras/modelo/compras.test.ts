@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Producto } from '@/modulos/productos/modelo/producto'
+import { productoInicial, type Producto } from '@/modulos/productos/modelo/producto'
 
 import {
   calcularTotalesCompra,
@@ -12,6 +12,7 @@ import {
 } from './compras'
 
 const producto = {
+  ...productoInicial,
   id: 'producto-1',
   codigo: 'MED-001',
   descripcion: 'Paracetamol 500 mg',

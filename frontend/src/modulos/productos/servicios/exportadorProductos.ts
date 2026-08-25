@@ -10,6 +10,7 @@ export interface FilaProductoExportada {
   Código: string
   'Código de barras': string
   Producto: string
+  'Descripción ampliada': string
   Categoría: string
   Sublínea: string
   'Laboratorio o marca': string
@@ -18,8 +19,15 @@ export interface FilaProductoExportada {
   'Afectación de IGV': string
   'Costo base': number | ''
   'Precio de venta base': number | ''
+  'Precio mínimo': number | ''
+  'Stock máximo': number | ''
+  'Ancho (cm)': number | ''
+  'Alto (cm)': number | ''
+  'Largo (cm)': number | ''
+  'Peso (kg)': number | ''
   'Registro sanitario': string
   'Control por lote': 'Sí' | 'No'
+  'Control de vencimiento': 'Sí' | 'No'
   'Venta con receta': 'Sí' | 'No'
   Estado: 'Activo' | 'Inactivo'
 }
@@ -28,6 +36,7 @@ const encabezados = [
   'Código',
   'Código de barras',
   'Producto',
+  'Descripción ampliada',
   'Categoría',
   'Sublínea',
   'Laboratorio o marca',
@@ -36,14 +45,22 @@ const encabezados = [
   'Afectación de IGV',
   'Costo base',
   'Precio de venta base',
+  'Precio mínimo',
+  'Stock máximo',
+  'Ancho (cm)',
+  'Alto (cm)',
+  'Largo (cm)',
+  'Peso (kg)',
   'Registro sanitario',
   'Control por lote',
+  'Control de vencimiento',
   'Venta con receta',
   'Estado',
 ] satisfies (keyof FilaProductoExportada)[]
 
 const anchosColumnas = [
-  16, 20, 36, 22, 18, 28, 26, 18, 16, 21, 22, 19, 18, 18, 12,
+  16, 20, 36, 46, 22, 18, 28, 26, 18, 16, 21, 22, 18, 18, 14, 14, 14,
+  14, 19, 18, 22, 18, 12,
 ].map((wch) => ({ wch }))
 
 function etiquetaAfectacionIgv(valor: Producto['afectacionIgv']) {
@@ -60,6 +77,7 @@ export function crearFilasProductos(
     Código: producto.codigo,
     'Código de barras': producto.codigoBarras,
     Producto: producto.descripcion,
+    'Descripción ampliada': producto.descripcionAmpliada,
     Categoría: producto.categoria,
     Sublínea: producto.sublinea ?? '',
     'Laboratorio o marca': producto.laboratorio,
@@ -70,8 +88,15 @@ export function crearFilasProductos(
     'Precio de venta base': producto.precioVenta
       ? Number(producto.precioVenta)
       : '',
+    'Precio mínimo': producto.precioMinimo ? Number(producto.precioMinimo) : '',
+    'Stock máximo': producto.stockMaximo ? Number(producto.stockMaximo) : '',
+    'Ancho (cm)': producto.anchoCm ? Number(producto.anchoCm) : '',
+    'Alto (cm)': producto.altoCm ? Number(producto.altoCm) : '',
+    'Largo (cm)': producto.largoCm ? Number(producto.largoCm) : '',
+    'Peso (kg)': producto.pesoKg ? Number(producto.pesoKg) : '',
     'Registro sanitario': producto.registroSanitario,
     'Control por lote': producto.controlLote ? 'Sí' : 'No',
+    'Control de vencimiento': producto.controlVencimiento ? 'Sí' : 'No',
     'Venta con receta': producto.ventaReceta ? 'Sí' : 'No',
     Estado: producto.activo ? 'Activo' : 'Inactivo',
   }))
@@ -102,7 +127,7 @@ export function crearLibroCatalogoProductos(
 
   hojaProductos['!cols'] = anchosColumnas
   hojaProductos['!autofilter'] = {
-    ref: `A1:O${ultimaFila}`,
+    ref: `A1:W${ultimaFila}`,
   }
 
   const hojaResumen = utils.aoa_to_sheet([

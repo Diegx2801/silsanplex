@@ -11,6 +11,21 @@ const importeOpcional = z
     'Usa un importe válido con hasta 2 decimales',
   )
 
+const decimalOpcional = (decimales: number, positivo: boolean) =>
+  z
+    .string()
+    .trim()
+    .refine(
+      (valor) =>
+        valor === '' ||
+        new RegExp(`^\\d+(\\.\\d{1,${decimales}})?$`).test(valor),
+      `Usa un número válido con hasta ${decimales} decimales`,
+    )
+    .refine(
+      (valor) => valor === '' || !positivo || Number(valor) > 0,
+      'El valor debe ser mayor que cero',
+    )
+
 export const afectacionesIgv = [
   { valor: '', etiqueta: 'Por definir' },
   { valor: 'gravado', etiqueta: 'Gravado' },
@@ -29,6 +44,7 @@ export const esquemaProducto = z.object({
     .trim()
     .min(2, 'Ingresa una descripción válida')
     .max(160, 'Máximo 160 caracteres'),
+  descripcionAmpliada: textoOpcional(5000),
   codigoBarras: textoOpcional(50),
   categoria: textoOpcional(80),
   sublinea: textoOpcional(80),
@@ -38,10 +54,29 @@ export const esquemaProducto = z.object({
   afectacionIgv: z.enum(['', 'gravado', 'exonerado', 'inafecto']),
   costo: importeOpcional,
   precioVenta: importeOpcional,
+  precioMinimo: importeOpcional,
+  stockMaximo: decimalOpcional(3, false),
+  anchoCm: decimalOpcional(3, true),
+  altoCm: decimalOpcional(3, true),
+  largoCm: decimalOpcional(3, true),
+  pesoKg: decimalOpcional(3, true),
   registroSanitario: textoOpcional(80),
   controlLote: z.boolean(),
+  controlVencimiento: z.boolean(),
   ventaReceta: z.boolean(),
   activo: z.boolean(),
+}).superRefine((datos, contexto) => {
+  if (
+    datos.precioMinimo &&
+    datos.precioVenta &&
+    Number(datos.precioMinimo) > Number(datos.precioVenta)
+  ) {
+    contexto.addIssue({
+      code: 'custom',
+      path: ['precioMinimo'],
+      message: 'No puede superar el precio de venta base',
+    })
+  }
 })
 
 export type DatosProducto = z.infer<typeof esquemaProducto>
@@ -50,6 +85,44 @@ export interface Producto extends Omit<DatosProducto, 'sublinea' | 'costo'> {
   id: string
   sublinea?: string
   costo?: string
+  miniaturaUrl?: string
+}
+
+export type TipoArchivoProducto = 'image' | 'technical-sheet' | 'attachment'
+
+export interface ArchivoProducto {
+  id: string
+  ruta: string
+  tipo: TipoArchivoProducto
+  nombre: string
+  mimeType: string
+  bytes: number
+  descripcion: string
+  principal: boolean
+  orden: number
+  creadoEn: string
+  url: string
+}
+
+export type TipoEventoProducto =
+  | 'baseline'
+  | 'created'
+  | 'updated'
+  | 'status-changed'
+  | 'restored'
+  | 'file-added'
+  | 'file-updated'
+  | 'file-removed'
+
+export interface VersionProducto {
+  id: number
+  numero: number
+  tipo: TipoEventoProducto
+  resumen: string
+  cambios: Record<string, { before?: unknown; after?: unknown }>
+  actorId: string | null
+  creadoEn: string
+  snapshot: Producto
 }
 
 export interface ResumenProductos {
@@ -77,6 +150,7 @@ export function resumirProductos(
 export const productoInicial: DatosProducto = {
   codigo: '',
   descripcion: '',
+  descripcionAmpliada: '',
   codigoBarras: '',
   categoria: '',
   sublinea: '',
@@ -86,8 +160,15 @@ export const productoInicial: DatosProducto = {
   afectacionIgv: '',
   costo: '',
   precioVenta: '',
+  precioMinimo: '',
+  stockMaximo: '',
+  anchoCm: '',
+  altoCm: '',
+  largoCm: '',
+  pesoKg: '',
   registroSanitario: '',
   controlLote: true,
+  controlVencimiento: true,
   ventaReceta: false,
   activo: true,
 }

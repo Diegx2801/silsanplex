@@ -144,6 +144,9 @@ export function validarCompra(
     if (producto.controlLote && !linea.lote) {
       return `Ingresa el lote de ${producto.descripcion}`
     }
+    if (producto.controlVencimiento && !linea.fechaVencimiento) {
+      return `Ingresa la fecha de vencimiento de ${producto.descripcion}`
+    }
   }
 
   return undefined

@@ -117,6 +117,19 @@ export function calcularSaldoDisponible(
   return saldo
 }
 
+export function calcularStockTotal(
+  movimientos: readonly MovimientoInventario[],
+  productoId: string,
+) {
+  return movimientos.reduce(
+    (saldo, movimiento) =>
+      movimiento.productoId === productoId
+        ? saldo + obtenerVariacion(movimiento)
+        : saldo,
+    0,
+  )
+}
+
 export function validarMovimientoInventario(
   datos: DatosMovimientoInventario,
   producto: Producto,
@@ -126,7 +139,21 @@ export function validarMovimientoInventario(
     return 'Ingresa el lote para este producto'
   }
 
-  if (!movimientoEsSalida(datos.tipo)) return undefined
+  if (producto.controlVencimiento && !datos.fechaVencimiento) {
+    return 'Ingresa la fecha de vencimiento para este producto'
+  }
+
+  if (!movimientoEsSalida(datos.tipo)) {
+    const stockMaximo = Number(producto.stockMaximo)
+    const stockResultante =
+      calcularStockTotal(movimientos, producto.id) + Number(datos.cantidad)
+
+    if (producto.stockMaximo && stockResultante > stockMaximo) {
+      return `La entrada superaría el stock máximo del producto (${stockMaximo})`
+    }
+
+    return undefined
+  }
 
   const disponible = calcularSaldoDisponible(
     movimientos,

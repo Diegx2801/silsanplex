@@ -19,6 +19,7 @@ const producto = {
   descripcion: 'Paracetamol 500 mg',
   unidadMedida: 'Caja',
   controlLote: true,
+  stockMaximo: '12',
 } satisfies Producto
 
 const datosBase = {
@@ -116,6 +117,24 @@ describe('inventario', () => {
         [movimiento('entrada', 10)],
       ),
     ).toMatch(/stock disponible/i)
+  })
+
+  it('impide entradas que superen el stock máximo global', () => {
+    expect(
+      validarMovimientoInventario(
+        { ...datosBase, cantidad: '3', lote: 'L-002' },
+        producto,
+        [movimiento('entrada', 10)],
+      ),
+    ).toContain('stock máximo')
+
+    expect(
+      validarMovimientoInventario(
+        { ...datosBase, cantidad: '2', lote: 'L-002' },
+        producto,
+        [movimiento('entrada', 10)],
+      ),
+    ).toBeUndefined()
   })
 
   it('crea un movimiento con instantánea del producto', () => {

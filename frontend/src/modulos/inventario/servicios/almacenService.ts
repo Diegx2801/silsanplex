@@ -15,6 +15,7 @@ import type {
 function errorAlmacen(error: { code?: string; message?: string }) {
   const mensaje = error.message ?? ''
   if (mensaje.includes('INVENTORY_INSUFFICIENT_STOCK')) return 'La operacion supera el stock disponible del lote y ubicacion seleccionados.'
+  if (mensaje.includes('INVENTORY_MAXIMUM_STOCK_EXCEEDED')) return 'La operación superaría el stock máximo configurado para el producto.'
   if (mensaje.includes('TRANSFER_WAREHOUSES_MUST_DIFFER')) return 'El almacen de destino debe ser diferente al de origen.'
   if (mensaje.includes('LOCATION_UNAVAILABLE')) return 'La ubicacion seleccionada no esta disponible.'
   if (mensaje.includes('INVENTORY_FORBIDDEN') || error.code === '42501') return 'No tienes permiso para administrar almacenes.'

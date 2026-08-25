@@ -536,7 +536,7 @@ export function ImportarProductosPage() {
             key={`productos-${versionSelectores}`}
             id="archivo-productos"
             titulo="Catálogo de productos"
-            descripcion="Archivo con Código, Producto, Línea, SubLínea y Marca o laboratorio."
+            descripcion="Archivo con Código, Producto, Línea, SubLínea y Marca. Admite ficha técnica, dimensiones y controles como columnas opcionales."
             archivo={archivoProductos}
             alCambiar={cambiarProductos}
           />
@@ -544,7 +544,7 @@ export function ImportarProductosPage() {
             key={`precios-${versionSelectores}`}
             id="archivo-precios"
             titulo="Precios de los productos"
-            descripcion="Archivo con CódigoProducto, Medida, Precio_venta e indicador de IGV."
+            descripcion="Archivo con CódigoProducto, Medida, Precio_venta e IGV. Admite CostoBase y PrecioMinimo como columnas opcionales."
             archivo={archivoPrecios}
             alCambiar={cambiarPrecios}
           />

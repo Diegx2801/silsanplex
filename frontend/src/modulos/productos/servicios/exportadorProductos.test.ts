@@ -19,6 +19,10 @@ const productos = [
     laboratorio: 'Laboratorio Central',
     afectacionIgv: 'gravado',
     precioVenta: '12.50',
+    precioMinimo: '10.00',
+    stockMaximo: '100',
+    anchoCm: '12.5',
+    controlVencimiento: true,
     controlLote: true,
     activo: true,
   },
@@ -40,7 +44,11 @@ describe('exportadorProductos', () => {
       Producto: 'Paracetamol 500 mg',
       'Afectación de IGV': 'Gravado',
       'Precio de venta base': 12.5,
+      'Precio mínimo': 10,
+      'Stock máximo': 100,
+      'Ancho (cm)': 12.5,
       'Control por lote': 'Sí',
+      'Control de vencimiento': 'Sí',
       Estado: 'Activo',
     })
     expect(filas[1]?.['Precio de venta base']).toBe('')
@@ -55,7 +63,7 @@ describe('exportadorProductos', () => {
     )
 
     expect(libro.SheetNames).toEqual(['Productos', 'Resumen'])
-    expect(libro.Sheets.Productos?.['!autofilter']).toEqual({ ref: 'A1:O3' })
+    expect(libro.Sheets.Productos?.['!autofilter']).toEqual({ ref: 'A1:W3' })
 
     const resumen = utils.sheet_to_json<(string | number)[]>(
       libro.Sheets.Resumen!,

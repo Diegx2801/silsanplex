@@ -48,6 +48,9 @@ function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
 
 function mensajeError(error: { code?: string; message?: string }) {
   if (error.message?.includes('INVENTORY_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock disponible'
+  if (error.message?.includes('INVENTORY_MAXIMUM_STOCK_EXCEEDED')) return 'La entrada superaría el stock máximo configurado para el producto'
+  if (error.message?.includes('INVENTORY_EXPIRATION_REQUIRED')) return 'El producto requiere fecha de vencimiento'
+  if (error.message?.includes('INVENTORY_BATCH_REQUIRED')) return 'El producto requiere lote'
   if (error.message?.includes('INVENTORY_PRODUCT_UNAVAILABLE')) return 'El producto ya no está disponible o requiere lote'
   if (error.code === '42501' || error.message?.includes('INVENTORY_FORBIDDEN')) return 'No tienes permiso para registrar movimientos'
   return 'No se pudo registrar el movimiento de inventario'

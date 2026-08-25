@@ -13,11 +13,15 @@ Las migraciones nuevas son:
 - `backend/supabase/migrations/20260821191000_secure_logistics_foundation.sql`
 - `backend/supabase/migrations/20260821230000_extend_products_catalog.sql`
 
-El contrato activo del frontend para el catálogo es `public.products`, creado
-por la migración persistente existente. Las tablas `public.productos` y sus
-maestros normalizados permanecen preparadas para una futura unificación; no se
-conectan automáticamente para evitar duplicar o cambiar el contrato que ya usan
-Compras e Inventario.
+El contrato activo y canónico es `public.products`, `public.warehouses`,
+`public.warehouse_locations` e `public.inventory_movements`. La migración
+`20260825000000_consolidate_inventory_data_model.sql` converge los datos del
+modelo alterno, conserva su traza y retira `productos`, `almacenes`,
+`ubicaciones`, `lotes` y `movimientos_inventario`.
+
+Los maestros `marcas`, `lineas`, `sublineas` y `unidades_medida` permanecen
+disponibles. Sus valores se proyectan a los campos textuales de `products`
+durante la convergencia y podrán normalizarse en una evolución independiente.
 
 ## Tablas creadas
 
@@ -189,10 +193,10 @@ La prueba añadida en
 - Se añadieron pruebas unitarias del servicio y pruebas SQL de RLS, CRUD y
   duplicados.
 
-La normalización de esos campos contra `public.marcas`, `public.lineas`,
-`public.sublineas` y `public.unidades_medida` queda pendiente de una decisión
-de unificación de contratos. No se modifica todavía Inventario, Compras ni
-Ventas.
+La convergencia del catálogo y del inventario se completó sin convertir aún los
+maestros `marcas`, `lineas`, `sublineas` y `unidades_medida` en claves foráneas
+del contrato canónico. Esa normalización queda como una evolución posterior y
+no requiere mantener tablas duplicadas de productos o inventario.
 
 ### Commit 3: núcleo transaccional de Inventario
 

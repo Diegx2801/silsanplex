@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Cliente } from '@/modulos/clientes/modelo/cliente'
-import type { Producto } from '@/modulos/productos/modelo/producto'
+import { productoInicial, type Producto } from '@/modulos/productos/modelo/producto'
 
 import {
   calcularTotalesCotizacion,
@@ -33,6 +33,7 @@ const cliente = {
 } satisfies Cliente
 
 const producto = {
+  ...productoInicial,
   id: 'producto-1',
   codigo: 'MED-001',
   descripcion: 'Paracetamol 500 mg',
@@ -43,6 +44,7 @@ const producto = {
   unidadMedida: 'Caja',
   afectacionIgv: 'gravado',
   precioVenta: '23.60',
+  precioMinimo: '20.00',
   registroSanitario: '',
   controlLote: true,
   ventaReceta: false,
@@ -86,6 +88,18 @@ describe('cotizaciones', () => {
         [producto],
       ),
     ).toContain('una sola vez')
+  })
+
+  it('impide cotizar por debajo del precio mínimo del producto', () => {
+    expect(
+      validarCotizacion(
+        {
+          ...datos,
+          lineas: [{ ...datos.lineas[0], precioUnitario: '19.99' }],
+        },
+        [producto],
+      ),
+    ).toContain('no puede ser menor a S/ 20.00')
   })
 
   it('crea un borrador con instantáneas comerciales', () => {

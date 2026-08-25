@@ -71,7 +71,14 @@ export function DialogoMovimientoInventario({
   const guardar = async (datos: DatosMovimientoInventario) => {
     const error = await alGuardar(datos)
     if (error) {
-      setError(error.includes('lote') ? 'lote' : 'cantidad', { message: error })
+      setError(
+        error.includes('vencimiento')
+          ? 'fechaVencimiento'
+          : error.includes('lote')
+            ? 'lote'
+            : 'cantidad',
+        { message: error },
+      )
       return
     }
 
@@ -256,14 +263,18 @@ export function DialogoMovimientoInventario({
               </div>
               <div>
                 <label htmlFor="vencimiento-movimiento" className="field-label">
-                  Fecha de vencimiento
+                  Fecha de vencimiento {producto?.controlVencimiento ? '*' : ''}
                 </label>
                 <input
                   id="vencimiento-movimiento"
                   type="date"
                   className="field-control"
+                  aria-invalid={Boolean(errors.fechaVencimiento)}
                   {...register('fechaVencimiento')}
                 />
+                {errors.fechaVencimiento ? (
+                  <p className="field-error">{errors.fechaVencimiento.message}</p>
+                ) : null}
               </div>
 
               <div className="sm:col-span-2">
