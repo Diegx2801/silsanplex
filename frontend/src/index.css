@@ -44,7 +44,6 @@
   --sidebar-border: #cbd7d1;
   --sidebar-ring: #16705a;
 }
-
 body {
   margin: 0;
   min-width: 320px;
@@ -205,3 +204,4 @@ a {
     animation-iteration-count: 1 !important;
   }
 }
+
