@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Building2,
+  ChevronLeft,
+  ChevronRight,
   CircleDollarSign,
+  Eye,
   PackageCheck,
   Pencil,
   Plus,
@@ -20,6 +23,8 @@ import { Button } from '@/components/ui/button'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
 import { DialogoProveedor } from '@/modulos/proveedores/componentes/DialogoProveedor'
+import { ComparativoProveedores } from '@/modulos/proveedores/componentes/ComparativoProveedores'
+import { DetalleProveedor } from '@/modulos/proveedores/componentes/DetalleProveedor'
 import {
   categoriasProveedor,
   frecuenciasEntregaProveedor,
@@ -36,6 +41,7 @@ import {
 type FiltroEstado = 'todos' | 'activos' | 'inactivos'
 type FiltroCategoria = 'todas' | CategoriaProveedor
 const proveedoresVacios: Proveedor[] = []
+const proveedoresPorPagina = 10
 
 const etiquetasCategoria = new Map(
   categoriasProveedor.map((categoria) => [categoria.valor, categoria.etiqueta]),
@@ -87,10 +93,14 @@ export function ProveedoresPage() {
   const [filtroCategoria, setFiltroCategoria] =
     useState<FiltroCategoria>('todas')
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
+  const [detalleAbierto, setDetalleAbierto] = useState(false)
+  const [proveedorDetalle, setProveedorDetalle] = useState<Proveedor | null>(null)
+  const [pagina, setPagina] = useState(1)
   const [proveedorSeleccionado, setProveedorSeleccionado] =
     useState<Proveedor | null>(null)
   const [mensaje, setMensaje] = useState<string | null>(null)
   const disparador = useRef<HTMLButtonElement | null>(null)
+  const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
 
   const proveedoresQuery = useQuery({
@@ -149,6 +159,12 @@ export function ProveedoresPage() {
       )
     })
   }, [busquedaDiferida, filtroCategoria, filtroEstado, proveedores])
+  const totalPaginas = Math.max(1, Math.ceil(proveedoresFiltrados.length / proveedoresPorPagina))
+  const paginaActual = Math.min(pagina, totalPaginas)
+  const proveedoresPagina = proveedoresFiltrados.slice(
+    (paginaActual - 1) * proveedoresPorPagina,
+    paginaActual * proveedoresPorPagina,
+  )
 
   const activos = proveedores.filter((proveedor) => proveedor.activo)
   const evaluados = proveedores.filter(
@@ -203,6 +219,12 @@ export function ProveedoresPage() {
     setMensaje(null)
     guardarMutation.reset()
     setDialogoAbierto(true)
+  }
+
+  function abrirDetalle(evento: ReactMouseEvent<HTMLButtonElement>, proveedor: Proveedor) {
+    disparadorDetalle.current = evento.currentTarget
+    setProveedorDetalle(proveedor)
+    setDetalleAbierto(true)
   }
 
   async function guardar(datos: DatosProveedor, proveedorId?: string) {
@@ -261,6 +283,8 @@ export function ProveedoresPage() {
         </div>
       </section>
 
+      <ComparativoProveedores organizationId={organizationId} proveedores={proveedores} />
+
       <section aria-labelledby="proveedores-title" className="ledger-sheet">
         <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(12rem,1fr)_minmax(16rem,28rem)_11rem_12rem] lg:items-end">
           <div>
@@ -281,7 +305,7 @@ export function ProveedoresPage() {
                 id="buscar-proveedor"
                 type="search"
                 value={busqueda}
-                onChange={(evento) => setBusqueda(evento.target.value)}
+                onChange={(evento) => { setBusqueda(evento.target.value); setPagina(1) }}
                 className="field-control ps-9"
                 placeholder="RUC, razón social, producto o zona"
               />
@@ -294,9 +318,7 @@ export function ProveedoresPage() {
             <select
               id="categoria-proveedor-filtro"
               value={filtroCategoria}
-              onChange={(evento) =>
-                setFiltroCategoria(evento.target.value as FiltroCategoria)
-              }
+              onChange={(evento) => { setFiltroCategoria(evento.target.value as FiltroCategoria); setPagina(1) }}
               className="field-control"
             >
               <option value="todas">Todas</option>
@@ -314,7 +336,7 @@ export function ProveedoresPage() {
             <select
               id="estado-proveedor-filtro"
               value={filtroEstado}
-              onChange={(evento) => setFiltroEstado(evento.target.value as FiltroEstado)}
+              onChange={(evento) => { setFiltroEstado(evento.target.value as FiltroEstado); setPagina(1) }}
               className="field-control"
             >
               <option value="activos">Activos</option>
@@ -357,7 +379,7 @@ export function ProveedoresPage() {
         ) : (
           <>
             <div className="divide-y md:hidden">
-              {proveedoresFiltrados.map((proveedor) => (
+              {proveedoresPagina.map((proveedor) => (
                 <article key={proveedor.id} className="px-5 py-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -383,11 +405,10 @@ export function ProveedoresPage() {
                       <p className="mt-1"><Calificacion valor={proveedor.calificacionDesempeno} /></p>
                     </div>
                   </div>
-                  {puedeAdministrar ? (
-                    <Button type="button" variant="outline" className="mt-4" onClick={(evento) => abrirFormulario(evento, proveedor)}>
-                      <Pencil aria-hidden="true" /> Editar proveedor
-                    </Button>
-                  ) : null}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" onClick={(evento) => abrirDetalle(evento, proveedor)}><Eye aria-hidden="true" /> Ver expediente</Button>
+                    {puedeAdministrar ? <Button type="button" variant="ghost" onClick={(evento) => abrirFormulario(evento, proveedor)}><Pencil aria-hidden="true" /> Editar</Button> : null}
+                  </div>
                 </article>
               ))}
             </div>
@@ -405,7 +426,7 @@ export function ProveedoresPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {proveedoresFiltrados.map((proveedor) => (
+                  {proveedoresPagina.map((proveedor) => (
                     <tr key={proveedor.id} className="hover:bg-muted/35">
                       <td className="px-6 py-4 font-mono text-xs">
                         <p>{etiquetasDocumento.get(proveedor.tipoDocumento)} {proveedor.numeroDocumento}</p>
@@ -437,6 +458,16 @@ export function ProveedoresPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          title="Ver expediente"
+                          aria-label={`Ver expediente de ${proveedor.razonSocial}`}
+                          onClick={(evento) => abrirDetalle(evento, proveedor)}
+                        >
+                          <Eye aria-hidden="true" />
+                        </Button>
                         {puedeAdministrar ? (
                           <Button
                             type="button"
@@ -448,15 +479,25 @@ export function ProveedoresPage() {
                           >
                             <Pencil aria-hidden="true" />
                           </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Solo lectura</span>
-                        )}
+                        ) : null}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <footer className="flex flex-col gap-3 border-t px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <span className="text-muted-foreground">
+                {proveedoresFiltrados.length
+                  ? `${(paginaActual - 1) * proveedoresPorPagina + 1}–${Math.min(paginaActual * proveedoresPorPagina, proveedoresFiltrados.length)} de ${proveedoresFiltrados.length}`
+                  : '0 registros'}
+              </span>
+              <nav aria-label="Paginación de proveedores" className="flex items-center gap-2">
+                <Button type="button" size="sm" variant="outline" disabled={paginaActual <= 1} onClick={() => setPagina((valor) => Math.max(1, valor - 1))}><ChevronLeft aria-hidden="true" />Anterior</Button>
+                <span className="px-2 font-mono text-xs">Página {paginaActual} / {totalPaginas}</span>
+                <Button type="button" size="sm" variant="outline" disabled={paginaActual >= totalPaginas} onClick={() => setPagina((valor) => Math.min(totalPaginas, valor + 1))}>Siguiente<ChevronRight aria-hidden="true" /></Button>
+              </nav>
+            </footer>
           </>
         )}
       </section>
@@ -469,6 +510,17 @@ export function ProveedoresPage() {
           alCambiarApertura={setDialogoAbierto}
           alGuardar={guardar}
           alRestaurarFoco={() => disparador.current?.focus()}
+        />
+      ) : null}
+      {detalleAbierto && proveedorDetalle ? (
+        <DetalleProveedor
+          key={proveedorDetalle.id}
+          abierto={detalleAbierto}
+          proveedor={proveedorDetalle}
+          puedeGestionar={puedeAdministrar}
+          puedeCompletarDevolucion={hasPermission(PERMISSIONS.INVENTORY_MANAGE)}
+          alCambiarApertura={setDetalleAbierto}
+          alRestaurarFoco={() => disparadorDetalle.current?.focus()}
         />
       ) : null}
     </div>

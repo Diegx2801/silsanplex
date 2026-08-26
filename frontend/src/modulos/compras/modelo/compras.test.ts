@@ -67,6 +67,7 @@ const compraBase = {
   numero: '000001',
   fechaEmision: '2026-08-19',
   fechaVencimientoPago: '',
+  fechaEntregaEsperada: '2026-08-25',
   almacen: 'Almacén principal',
   preciosIncluyenIgv: true,
   observacion: '',

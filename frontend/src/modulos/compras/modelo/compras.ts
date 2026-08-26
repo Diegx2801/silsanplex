@@ -43,6 +43,7 @@ export const esquemaDatosCompra = z.object({
     .max(20, 'Máximo 20 caracteres'),
   fechaEmision: z.string().min(1, 'Selecciona la fecha de emisión'),
   fechaVencimientoPago: z.string(),
+  fechaEntregaEsperada: z.string(),
   almacen: z
     .string()
     .trim()
@@ -53,6 +54,18 @@ export const esquemaDatosCompra = z.object({
   lineas: z
     .array(esquemaLineaCompraFormulario)
     .min(1, 'Agrega al menos un producto'),
+}).superRefine((datos, contexto) => {
+  if (
+    datos.fechaEntregaEsperada &&
+    datos.fechaEmision &&
+    datos.fechaEntregaEsperada < datos.fechaEmision
+  ) {
+    contexto.addIssue({
+      code: 'custom',
+      path: ['fechaEntregaEsperada'],
+      message: 'No puede ser anterior a la fecha de emisión',
+    })
+  }
 })
 
 export type DatosCompra = z.infer<typeof esquemaDatosCompra>
@@ -83,6 +96,7 @@ export const esquemaCompra = z.object({
   numero: z.string().min(1),
   fechaEmision: z.string().min(1),
   fechaVencimientoPago: z.string(),
+  fechaEntregaEsperada: z.string(),
   almacen: z.string().min(1),
   preciosIncluyenIgv: z.boolean(),
   observacion: z.string(),
@@ -173,6 +187,7 @@ export function crearCompra(
     numero: datos.numero,
     fechaEmision: datos.fechaEmision,
     fechaVencimientoPago: datos.fechaVencimientoPago,
+    fechaEntregaEsperada: datos.fechaEntregaEsperada,
     almacen: datos.almacen,
     preciosIncluyenIgv: datos.preciosIncluyenIgv,
     observacion: datos.observacion,
@@ -206,6 +221,7 @@ export function compraAFormulario(compra: Compra): DatosCompra {
     numero: compra.numero,
     fechaEmision: compra.fechaEmision,
     fechaVencimientoPago: compra.fechaVencimientoPago,
+    fechaEntregaEsperada: compra.fechaEntregaEsperada,
     almacen: compra.almacen,
     preciosIncluyenIgv: compra.preciosIncluyenIgv,
     observacion: compra.observacion,

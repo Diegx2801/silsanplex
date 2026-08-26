@@ -48,6 +48,7 @@ export function DialogoCompra({
         numero: '',
         fechaEmision: hoy(),
         fechaVencimientoPago: '',
+        fechaEntregaEsperada: '',
         almacen: 'Almacén principal',
         preciosIncluyenIgv: true,
         observacion: '',
@@ -227,6 +228,21 @@ export function DialogoCompra({
                     className="field-control"
                     {...register('fechaVencimientoPago')}
                   />
+                </div>
+                <div>
+                  <label htmlFor="entrega-esperada-compra" className="field-label">
+                    Entrega comprometida
+                  </label>
+                  <input
+                    id="entrega-esperada-compra"
+                    type="date"
+                    className="field-control"
+                    aria-invalid={Boolean(errors.fechaEntregaEsperada)}
+                    {...register('fechaEntregaEsperada')}
+                  />
+                  {errors.fechaEntregaEsperada ? (
+                    <p className="field-error">{errors.fechaEntregaEsperada.message}</p>
+                  ) : null}
                 </div>
                 <div>
                   <label htmlFor="almacen-compra" className="field-label">
