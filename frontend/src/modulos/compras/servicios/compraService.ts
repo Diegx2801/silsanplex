@@ -24,6 +24,7 @@ interface CompraFila {
   document_number: string
   issue_date: string
   payment_due_date: string | null
+  expected_delivery_date: string | null
   warehouse: string
   prices_include_tax: boolean
   notes: string | null
@@ -35,7 +36,7 @@ interface CompraFila {
 }
 
 const columnasCompra =
-  'id,supplier_id,supplier_document,supplier_name,document_type,series,document_number,issue_date,payment_due_date,warehouse,prices_include_tax,notes,status,issued_at,received_at,created_at,purchase_order_items(id,product_id,product_code,product_description,unit_of_measure,batch_control,quantity,unit_cost,lot,expiration_date)' as const
+  'id,supplier_id,supplier_document,supplier_name,document_type,series,document_number,issue_date,payment_due_date,expected_delivery_date,warehouse,prices_include_tax,notes,status,issued_at,received_at,created_at,purchase_order_items(id,product_id,product_code,product_description,unit_of_measure,batch_control,quantity,unit_cost,lot,expiration_date)' as const
 
 const estados: Record<CompraFila['status'], EstadoCompra> = {
   draft: 'borrador',
@@ -70,6 +71,7 @@ function mapearCompra(fila: CompraFila): Compra {
     numero: fila.document_number,
     fechaEmision: fila.issue_date,
     fechaVencimientoPago: fila.payment_due_date ?? '',
+    fechaEntregaEsperada: fila.expected_delivery_date ?? '',
     almacen: fila.warehouse,
     preciosIncluyenIgv: fila.prices_include_tax,
     observacion: fila.notes ?? '',
@@ -118,6 +120,7 @@ export async function guardarCompraPersistente(organizationId: string, datos: Da
       document_number: datos.numero,
       issue_date: datos.fechaEmision,
       payment_due_date: datos.fechaVencimientoPago,
+      expected_delivery_date: datos.fechaEntregaEsperada,
       warehouse: datos.almacen,
       currency: 'PEN',
       prices_include_tax: datos.preciosIncluyenIgv,
