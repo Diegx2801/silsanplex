@@ -163,8 +163,12 @@ export const router = createBrowserRouter([
         path: 'distribucion',
         lazy: async () => {
           const { DistribucionPage } = await import('@/app/paginas/DistribucionPage')
-
-          return { Component: DistribucionPage }
+          const DistribucionProtegida = () => (
+            <PermissionRoute permission={PERMISSIONS.DISTRIBUTION_VIEW}>
+              <DistribucionPage />
+            </PermissionRoute>
+          )
+          return { Component: DistribucionProtegida }
         },
       },
       {

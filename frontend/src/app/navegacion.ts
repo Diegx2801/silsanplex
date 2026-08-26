@@ -89,6 +89,7 @@ export const seccionesNavegacion: SeccionNavegacion[] = [
         ruta: '/distribucion',
         descripcion: 'Despachos y entregas',
         icono: Truck,
+        permission: PERMISSIONS.DISTRIBUTION_VIEW,
       },
     ],
   },
