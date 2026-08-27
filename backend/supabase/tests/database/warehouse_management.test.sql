@@ -1,6 +1,6 @@
 begin;
 
-select plan(43);
+select plan(50);
 
 select has_table('public', 'warehouses', 'existe el maestro de almacenes');
 select has_table('public', 'warehouse_locations', 'existen ubicaciones fisicas');
@@ -13,6 +13,74 @@ select has_view('public', 'inventory_kardex', 'existe kardex valorizado');
 select has_function('public', 'transfer_inventory', array['jsonb'], 'existe transferencia atomica');
 select has_function('public', 'reclassify_inventory', array['jsonb'], 'existe reclasificacion atomica');
 select ok(position('pg_advisory_xact_lock' in pg_get_functiondef('public.transfer_inventory(jsonb)'::regprocedure)) > 0, 'transferencias serializan el bucket de stock');
+select has_function(
+  'public',
+  'inventory_bucket_lock_key',
+  array['uuid', 'uuid', 'uuid', 'uuid', 'text', 'text', 'date'],
+  'existe una identidad canonica reutilizable para el bucket'
+);
+select has_function(
+  'public',
+  'inventory_bucket_quantity',
+  array['uuid', 'uuid', 'uuid', 'uuid', 'text', 'text', 'date'],
+  'existe un calculo canonico del saldo del bucket'
+);
+select has_function(
+  'public',
+  'lock_inventory_bucket',
+  array['uuid', 'uuid', 'uuid', 'uuid', 'text', 'text', 'date'],
+  'existe un bloqueo canonico del bucket'
+);
+select trigger_is(
+  'public',
+  'inventory_movements',
+  'inventory_movements_enforce_outbound_balance',
+  'public',
+  'enforce_inventory_outbound_balance',
+  'toda salida pasa por la barrera autoritativa de saldo'
+);
+select is(
+  public.inventory_bucket_lock_key(
+    '81000000-0000-4000-8000-000000000001',
+    '83000000-0000-4000-8000-000000000001',
+    '84000000-0000-4000-8000-000000000001',
+    '85000000-0000-4000-8000-000000000001',
+    'available',
+    'L-2026',
+    '2026-09-15'
+  ),
+  public.inventory_bucket_lock_key(
+    '81000000-0000-4000-8000-000000000001',
+    '83000000-0000-4000-8000-000000000001',
+    '84000000-0000-4000-8000-000000000001',
+    '85000000-0000-4000-8000-000000000001',
+    'available',
+    'l-2026',
+    '2026-09-15'
+  ),
+  'el lote usa la misma normalizacion en toda clave de bucket'
+);
+select isnt(
+  public.inventory_bucket_lock_key(
+    '81000000-0000-4000-8000-000000000001',
+    '83000000-0000-4000-8000-000000000001',
+    '84000000-0000-4000-8000-000000000001',
+    '85000000-0000-4000-8000-000000000001',
+    'available',
+    'L-2026',
+    '2026-09-15'
+  ),
+  public.inventory_bucket_lock_key(
+    '81000000-0000-4000-8000-000000000001',
+    '83000000-0000-4000-8000-000000000001',
+    '84000000-0000-4000-8000-000000000001',
+    '85000000-0000-4000-8000-000000000001',
+    'available',
+    'L-2026',
+    '2026-10-15'
+  ),
+  'vencimientos diferentes generan buckets diferentes'
+);
 
 select ok((select relrowsecurity from pg_class where oid = 'public.warehouses'::regclass), 'almacenes tiene RLS');
 select ok((select relrowsecurity from pg_class where oid = 'public.warehouse_locations'::regclass), 'ubicaciones tiene RLS');
@@ -66,6 +134,10 @@ select is((select has_low_stock_alert from public.inventory_alerts where product
 select lives_ok($$
   select public.record_inventory_movement('{"organization_id":"81000000-0000-4000-8000-000000000001","product_id":"83000000-0000-4000-8000-000000000001","warehouse_id":"84000000-0000-4000-8000-000000000001","location_id":"85000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":"10","unit_cost":"7.5","stock_status":"available","lot":"L-2026","expiration_date":"2026-09-15","operation_date":"2026-08-21","reason":"Entrada inicial valorizada"}'::jsonb)
 $$, 'registra entrada por almacen, ubicacion y lote');
+
+select throws_ok($$
+  select public.record_inventory_movement('{"organization_id":"81000000-0000-4000-8000-000000000001","product_id":"83000000-0000-4000-8000-000000000001","warehouse_id":"84000000-0000-4000-8000-000000000001","location_id":"85000000-0000-4000-8000-000000000001","movement_type":"salida","quantity":"1","stock_status":"available","lot":"L-2026","expiration_date":"2026-10-15","operation_date":"2026-08-21","reason":"Vencimiento sin saldo"}'::jsonb)
+$$, 'P0001', 'INVENTORY_INSUFFICIENT_STOCK', 'no usa el saldo de otro vencimiento del mismo lote');
 
 select results_eq(
   $$select quantity, inventory_value, average_cost from public.inventory_balances where product_id = '83000000-0000-4000-8000-000000000001'$$,
