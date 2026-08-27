@@ -72,6 +72,17 @@ describe('esquemaProducto', () => {
     expect(resultado.controlLote).toBe(false)
     expect(resultado.controlVencimiento).toBe(true)
   })
+
+  it('acepta el control por número de serie', () => {
+    const resultado = esquemaProducto.parse({
+      ...productoInicial,
+      codigo: 'PROD-001',
+      descripcion: 'Producto de prueba',
+      serialControl: true,
+    })
+
+    expect(resultado.serialControl).toBe(true)
+  })
 })
 
 describe('resumirProductos', () => {

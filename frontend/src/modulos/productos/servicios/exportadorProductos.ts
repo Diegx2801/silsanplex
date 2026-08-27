@@ -28,6 +28,7 @@ export interface FilaProductoExportada {
   'Registro sanitario': string
   'Control por lote': 'Sí' | 'No'
   'Control de vencimiento': 'Sí' | 'No'
+  'Control por serie': 'Sí' | 'No'
   'Venta con receta': 'Sí' | 'No'
   Estado: 'Activo' | 'Inactivo'
 }
@@ -54,13 +55,14 @@ const encabezados = [
   'Registro sanitario',
   'Control por lote',
   'Control de vencimiento',
+  'Control por serie',
   'Venta con receta',
   'Estado',
 ] satisfies (keyof FilaProductoExportada)[]
 
 const anchosColumnas = [
   16, 20, 36, 46, 22, 18, 28, 26, 18, 16, 21, 22, 18, 18, 14, 14, 14,
-  14, 19, 18, 22, 18, 12,
+  14, 19, 18, 22, 18, 18, 12,
 ].map((wch) => ({ wch }))
 
 function etiquetaAfectacionIgv(valor: Producto['afectacionIgv']) {
@@ -97,6 +99,7 @@ export function crearFilasProductos(
     'Registro sanitario': producto.registroSanitario,
     'Control por lote': producto.controlLote ? 'Sí' : 'No',
     'Control de vencimiento': producto.controlVencimiento ? 'Sí' : 'No',
+    'Control por serie': producto.serialControl ? 'Sí' : 'No',
     'Venta con receta': producto.ventaReceta ? 'Sí' : 'No',
     Estado: producto.activo ? 'Activo' : 'Inactivo',
   }))
@@ -127,7 +130,7 @@ export function crearLibroCatalogoProductos(
 
   hojaProductos['!cols'] = anchosColumnas
   hojaProductos['!autofilter'] = {
-    ref: `A1:W${ultimaFila}`,
+    ref: `A1:X${ultimaFila}`,
   }
 
   const hojaResumen = utils.aoa_to_sheet([

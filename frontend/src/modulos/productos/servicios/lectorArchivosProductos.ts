@@ -24,6 +24,7 @@ export const columnasOpcionalesProductos = [
   'PesoKg',
   'ControlLote',
   'ControlVencimiento',
+  'ControlSerie',
   'VentaReceta',
 ] as const
 

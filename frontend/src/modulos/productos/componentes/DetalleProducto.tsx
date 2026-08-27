@@ -261,6 +261,7 @@ const camposComparables = [
   ['registroSanitario', 'Registro sanitario'],
   ['controlLote', 'Control por lote'],
   ['controlVencimiento', 'Control de vencimiento'],
+  ['serialControl', 'Control por número de serie'],
   ['ventaReceta', 'Venta con receta'],
   ['activo', 'Estado'],
 ] as const satisfies readonly (readonly [keyof Producto, string])[]
@@ -667,9 +668,10 @@ export function DetalleProducto({
                 <ShieldCheck aria-hidden="true" className="size-4 text-primary" />
                 Control operativo
               </h2>
-              <dl className="mt-4 grid sm:grid-cols-3 sm:gap-x-6">
+              <dl className="mt-4 grid sm:grid-cols-2 lg:grid-cols-4 sm:gap-x-6">
                 <DatoProducto etiqueta="Control por lote" valor={producto.controlLote ? 'Sí' : 'No'} />
                 <DatoProducto etiqueta="Control de vencimiento" valor={producto.controlVencimiento ? 'Sí' : 'No'} />
+                <DatoProducto etiqueta="Control por serie" valor={producto.serialControl ? 'Sí' : 'No'} />
                 <DatoProducto etiqueta="Venta con receta" valor={producto.ventaReceta ? 'Sí' : 'No'} />
               </dl>
               <div className="mt-2 flex items-start gap-3 border bg-muted/35 p-4 text-sm leading-6 text-muted-foreground">

@@ -24,6 +24,7 @@ const rutasModulos = elementosNavegacion
       elemento.ruta !== '/compras' &&
       elemento.ruta !== '/clientes' &&
       elemento.ruta !== '/ventas' &&
+      elemento.ruta !== '/reparaciones' &&
       elemento.ruta !== '/distribucion' &&
       elemento.ruta !== '/usuarios',
   )
@@ -149,6 +150,22 @@ export const router = createBrowserRouter([
             </PermissionRoute>
           )
           return { Component: ClientesProtegidos }
+        },
+      },
+      {
+        path: 'reparaciones',
+        lazy: async () => {
+          const { ReparacionesPage } = await import(
+            '@/app/paginas/ReparacionesPage'
+          )
+
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.REPAIRS_VIEW}>
+                <ReparacionesPage />
+              </PermissionRoute>
+            ),
+          }
         },
       },
       {

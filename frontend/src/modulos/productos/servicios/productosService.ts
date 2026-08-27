@@ -45,6 +45,7 @@ interface ProductoFila {
   health_registry: string | null
   batch_control: boolean
   expiration_control: boolean
+  serial_control: boolean
   prescription_sale: boolean
   is_active: boolean
 }
@@ -79,7 +80,7 @@ interface OpcionProductoFila {
 }
 
 const columnasProducto =
-  'id,code,description,extended_description,barcode,category,subline,laboratory,presentation,unit_of_measure,tax_affectation,cost,sale_price,minimum_sale_price,maximum_stock,width_cm,height_cm,length_cm,weight_kg,health_registry,batch_control,expiration_control,prescription_sale,is_active' as const
+  'id,code,description,extended_description,barcode,category,subline,laboratory,presentation,unit_of_measure,tax_affectation,cost,sale_price,minimum_sale_price,maximum_stock,width_cm,height_cm,length_cm,weight_kg,health_registry,batch_control,expiration_control,serial_control,prescription_sale,is_active' as const
 const columnasOpcionesProducto = 'category,laboratory' as const
 const tamanioPaginaMaximo = 50
 const comparadorOpciones = new Intl.Collator('es-PE', {
@@ -122,6 +123,7 @@ function mapearProducto(fila: ProductoFila): Producto {
     registroSanitario: fila.health_registry ?? '',
     controlLote: fila.batch_control,
     controlVencimiento: fila.expiration_control,
+    serialControl: fila.serial_control ?? false,
     ventaReceta: fila.prescription_sale,
     activo: fila.is_active,
   }
@@ -281,6 +283,7 @@ function construirFilaProducto(
     health_registry: textoONulo(datos.registroSanitario),
     batch_control: datos.controlLote,
     expiration_control: datos.controlVencimiento,
+    serial_control: datos.serialControl,
     prescription_sale: datos.ventaReceta,
     is_active: datos.activo,
     updated_by: userId,
@@ -419,6 +422,7 @@ function construirPayloadImportacion(datos: DatosImportacionProductos) {
       peso_kg: fila.pesoKg,
       control_lote: fila.controlLote,
       control_vencimiento: fila.controlVencimiento,
+      control_serie: fila.serialControl,
       venta_receta: fila.ventaReceta,
     })),
     precios: datos.precios.map((fila) => ({

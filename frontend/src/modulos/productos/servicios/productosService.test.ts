@@ -93,6 +93,7 @@ const productoFila = {
   health_registry: null,
   batch_control: true,
   expiration_control: false,
+  serial_control: true,
   prescription_sale: false,
   is_active: true,
 }
@@ -140,6 +141,7 @@ describe('productosService', () => {
       costo: '10',
       precioMinimo: '12',
       controlVencimiento: false,
+      serialControl: true,
     })
   })
 
@@ -279,6 +281,7 @@ describe('productosService', () => {
           pesoKg: '0.5',
           controlLote: true,
           controlVencimiento: true,
+          serialControl: true,
           ventaReceta: false,
         },
       ],
@@ -318,6 +321,7 @@ describe('productosService', () => {
             peso_kg: '0.5',
             control_lote: true,
             control_vencimiento: true,
+            control_serie: true,
             venta_receta: false,
           },
         ],
@@ -354,6 +358,7 @@ describe('productosService', () => {
       precioVenta: '15.00',
       precioMinimo: '12.00',
       stockMaximo: '100',
+      serialControl: true,
     }
 
     await crearProducto('org-1', 'user-1', datos)
@@ -366,6 +371,7 @@ describe('productosService', () => {
       sale_price: 15,
       minimum_sale_price: 12,
       maximum_stock: 100,
+      serial_control: true,
       created_by: 'user-1',
       updated_by: 'user-1',
     })
@@ -388,6 +394,7 @@ describe('productosService', () => {
       ...productoInicial,
       codigo: 'MED-001',
       descripcion: 'Producto actualizado',
+      serialControl: true,
     }
 
     await editarProducto('org-1', 'user-1', 'producto-1', datos)
@@ -396,6 +403,7 @@ describe('productosService', () => {
       expect.objectContaining({
         organization_id: 'org-1',
         code: 'MED-001',
+        serial_control: true,
         updated_by: 'user-1',
       }),
     )
