@@ -12,12 +12,16 @@ Las migraciones nuevas son:
 - `backend/supabase/migrations/20260821190000_create_logistics_foundation.sql`
 - `backend/supabase/migrations/20260821191000_secure_logistics_foundation.sql`
 - `backend/supabase/migrations/20260821230000_extend_products_catalog.sql`
+- `backend/supabase/migrations/20260825000000_consolidate_inventory_data_model.sql`
+- `backend/supabase/migrations/20260826010000_retire_spanish_legacy_model.sql`
 
 El contrato activo y canónico es `public.products`, `public.warehouses`,
 `public.warehouse_locations` e `public.inventory_movements`. La migración
-`20260825000000_consolidate_inventory_data_model.sql` converge los datos del
-modelo alterno, conserva su traza y retira `productos`, `almacenes`,
-`ubicaciones`, `lotes` y `movimientos_inventario`.
+`20260825000000_consolidate_inventory_data_model.sql` realiza el backfill del
+modelo alterno y conserva su traza. La migración posterior
+`20260826010000_retire_spanish_legacy_model.sql` retira `productos`,
+`almacenes`, `ubicaciones` y `movimientos_inventario`. `lotes` se conserva
+temporalmente y queda ligado a `public.products`.
 
 Los maestros `marcas`, `lineas`, `sublineas` y `unidades_medida` permanecen
 disponibles. Sus valores se proyectan a los campos textuales de `products`
@@ -170,8 +174,8 @@ npm run db:reset
 npm run db:lint
 ```
 
-La prueba añadida en
-`backend/supabase/tests/database/logistics_foundation.test.sql` cubre:
+La prueba de almacenes en
+`backend/supabase/tests/database/warehouse_management.test.sql` cubre:
 
 - aislamiento entre organizaciones
 - referencias compuestas entre tenants
@@ -179,6 +183,10 @@ La prueba añadida en
 - inserción de movimientos con usuario incorrecto
 - imposibilidad de actualizar o eliminar movimientos
 - creación de eventos en `audit_events`
+
+La prueba `backend/supabase/tests/database/data_model_consolidation.test.sql`
+confirma que las cuatro tablas duplicadas se retiren y que `lotes` permanezca
+vinculado a `public.products`.
 
 ## Futuras migraciones
 

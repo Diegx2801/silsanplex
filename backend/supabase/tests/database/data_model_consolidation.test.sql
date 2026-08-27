@@ -1,6 +1,6 @@
 begin;
 
-select plan(22);
+select plan(23);
 
 select has_table('public', 'products', 'products es el catalogo canonico');
 select has_table('public', 'warehouses', 'warehouses es el maestro canonico');
@@ -11,8 +11,21 @@ select has_table('public', 'legacy_model_migration_trace', 'existe la traza de c
 select ok(to_regclass('public.productos') is null, 'se retiro productos');
 select ok(to_regclass('public.almacenes') is null, 'se retiro almacenes');
 select ok(to_regclass('public.ubicaciones') is null, 'se retiro ubicaciones');
-select ok(to_regclass('public.lotes') is null, 'se retiro lotes alternos');
+select has_table('public', 'lotes', 'lotes se conserva temporalmente');
 select ok(to_regclass('public.movimientos_inventario') is null, 'se retiro movimientos_inventario');
+
+select is(
+  (
+    select count(*)
+    from pg_constraint
+    where conrelid = 'public.lotes'::regclass
+      and confrelid = 'public.products'::regclass
+      and conname = 'lotes_product_canonical_fk'
+      and contype = 'f'
+  ),
+  1::bigint,
+  'lotes conserva una relacion con products'
+);
 
 select has_table('public', 'marcas', 'marcas se conserva como maestro de catalogo');
 select has_table('public', 'lineas', 'lineas se conserva como maestro de catalogo');

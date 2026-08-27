@@ -2,8 +2,7 @@
 
 ## Contrato canónico
 
-Desde la migración `20260825000000_consolidate_inventory_data_model.sql`, el
-contrato operativo es:
+El contrato canónico de catálogo e inventario es:
 
 - `public.products`
 - `public.warehouses`
@@ -11,8 +10,11 @@ contrato operativo es:
 - `public.inventory_movements`
 
 El frontend, Compras y las RPC de inventario ya utilizaban este contrato. Las
-tablas `productos`, `almacenes`, `ubicaciones`, `lotes` y
-`movimientos_inventario` se retiran al finalizar la migración.
+tablas `productos`, `almacenes`, `ubicaciones` y `movimientos_inventario` se
+retiran en la migración posterior
+`20260826010000_retire_spanish_legacy_model.sql`. `lotes` se conserva
+temporalmente y queda vinculado al catálogo canónico mediante
+`lotes_product_canonical_fk`.
 
 Los maestros `marcas`, `lineas`, `sublineas` y `unidades_medida` no son un
 segundo libro de inventario y se conservan para una normalización futura del
@@ -71,9 +73,11 @@ group by legacy_table, resolution
 order by legacy_table, resolution;
 ```
 
-Antes de ejecutar los `DROP`, la propia migración verifica que cada fila origen
-tenga traza y que cada ID destino exista. Cualquier diferencia aborta y revierte
-toda la transacción.
+Antes de ejecutar los `DROP`,
+`20260826010000_retire_spanish_legacy_model.sql` verifica que cada fila origen
+tenga traza, que cada ID destino exista, que no queden FKs, vistas o funciones
+dependientes y que el contrato canónico conserve sus RPC, RLS, policies y
+triggers. Cualquier diferencia aborta y revierte toda la transacción.
 
 ## Despliegue y recuperación
 
@@ -84,12 +88,27 @@ Antes de desplegar en un entorno con datos reales:
    corrigieron dos colisiones de versión renombrando las segundas migraciones a
    `20260821230001` y `20260821233001`; si ese SQL se aplicó manualmente en el
    entorno, primero debe alinearse la historia con `supabase migration repair`.
-3. Medir filas de las cinco tablas legadas y espacio disponible.
+3. Medir filas de las cuatro tablas que se retirarán, filas de `lotes` y espacio
+   disponible.
 4. Programar una ventana de mantenimiento, porque se toman bloqueos exclusivos.
 5. Aplicar la migración y comparar los conteos con la traza.
 6. Validar existencias, kardex y una recepción/transferencia por organización.
+7. Ejecutar en `frontend/` `npm run test`, `npm run lint`, `npm run build` y las
+   pruebas E2E para confirmar que React no mantiene accesos al contrato retirado.
+
+Entre el backfill y el retiro no deben ejecutarse escrituras sobre las tablas
+legacy. La migración de retiro compara los snapshots por registro y aborta si
+detecta cambios; `lotes.producto_id` es la única columna legacy normalizada por
+el backfill. El trigger de `lotes` también actualiza `updated_at`; ambas
+columnas se validan por separado contra la clave canónica trazada y el resto
+del snapshot original.
 
 Si la migración falla antes del `COMMIT`, PostgreSQL restaura automáticamente el
 estado anterior. Después de un despliegue exitoso, la recuperación completa del
 modelo retirado requiere restaurar el backup previo; la traza permite investigar
 y reconstruir registros concretos, pero no reemplaza una copia de seguridad.
+
+La migración de retiro no elimina `lotes`. Antes de eliminar esa tabla en una
+evolución futura debe existir un modelo canónico de lotes que conserve el
+producto, número de lote, fecha de fabricación, vencimiento e identidad
+histórica.

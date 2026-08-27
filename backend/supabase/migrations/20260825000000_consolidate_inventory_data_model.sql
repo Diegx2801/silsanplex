@@ -1,12 +1,16 @@
 -- ============================================================
--- SILSANPLEX: unificacion del modelo de catalogo e inventario
+-- SILSANPLEX: backfill del modelo de catalogo e inventario
 -- Canonico: products / warehouses / inventory_movements
+-- Esta migracion no elimina tablas. El retiro ocurre despues del backfill.
 -- ============================================================
 
 begin;
 
--- Evita escrituras concurrentes mientras se obtiene el snapshot legado, se
--- migran los datos y se retiran las tablas alternativas.
+set local lock_timeout = '5s';
+set local statement_timeout = '10min';
+
+-- Evita escrituras concurrentes mientras se obtiene el snapshot legado y se
+-- migran los datos. Las tablas legacy se retiran en una migracion posterior.
 lock table public.productos in access exclusive mode;
 lock table public.almacenes in access exclusive mode;
 lock table public.ubicaciones in access exclusive mode;
@@ -32,7 +36,7 @@ create table public.legacy_model_migration_trace (
     legacy_table in ('productos', 'almacenes', 'ubicaciones', 'lotes', 'movimientos_inventario')
   ),
   constraint legacy_model_migration_trace_canonical_table_valid check (
-    canonical_table in ('products', 'warehouses', 'warehouse_locations', 'inventory_movements')
+    canonical_table in ('products', 'warehouses', 'warehouse_locations', 'inventory_movements', 'lotes')
   ),
   constraint legacy_model_migration_trace_resolution_valid check (
     resolution in ('matched', 'migrated', 'represented')
@@ -65,6 +69,36 @@ revoke all on function public.prevent_legacy_model_migration_trace_mutation() fr
 create trigger legacy_model_migration_trace_immutable
 before update or delete on public.legacy_model_migration_trace
 for each row execute function public.prevent_legacy_model_migration_trace_mutation();
+
+-- Los destinos tienen precision acotada. Fallar antes de insertar evita que un
+-- valor valido en la tabla legacy se convierta en un error poco descriptivo a
+-- mitad del backfill.
+do $$
+begin
+  if exists (
+    select 1
+    from public.productos product
+    where product.costo > 999999999999.99
+      or product.precio_venta > 999999999999.99
+      or product.stock_minimo > 99999999999.999
+      or product.stock_maximo > 99999999999.999
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'LEGACY_MODEL_PRODUCT_NUMERIC_OVERFLOW';
+  end if;
+
+  if exists (
+    select 1
+    from public.movimientos_inventario movement
+    where movement.cantidad > 99999999999.999
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'LEGACY_MODEL_MOVEMENT_NUMERIC_OVERFLOW';
+  end if;
+end;
+$$;
 
 -- ------------------------------------------------------------
 -- 1. Productos
@@ -377,11 +411,11 @@ on conflict (organization_id, product_id, warehouse_id) do nothing;
 -- ------------------------------------------------------------
 
 insert into public.legacy_model_migration_trace (
-  legacy_table, legacy_id, organization_id, canonical_table, canonical_key,
-  resolution, source_snapshot
+  legacy_table, legacy_id, organization_id, canonical_table, canonical_id,
+  canonical_key, resolution, source_snapshot
 )
 select
-  'lotes', lot.id, lot.organization_id, 'inventory_movements',
+  'lotes', lot.id, lot.organization_id, 'lotes', lot.id,
   jsonb_build_object(
     'product_id', product.canonical_id,
     'lot', lot.numero_lote,
@@ -480,30 +514,48 @@ select
 from public.movimientos_inventario legacy
 join movement_legacy_map mapping on mapping.legacy_id = legacy.id;
 
--- La migracion se detiene antes de cualquier DROP si una fila no quedo trazada
--- o si un destino canonico requerido no existe.
-do $$
-declare
-  missing_count bigint;
-begin
-  select
-    (select count(*) from public.productos)
-      - (select count(*) from public.legacy_model_migration_trace where legacy_table = 'productos')
-    + (select count(*) from public.almacenes)
-      - (select count(*) from public.legacy_model_migration_trace where legacy_table = 'almacenes')
-    + (select count(*) from public.ubicaciones)
-      - (select count(*) from public.legacy_model_migration_trace where legacy_table = 'ubicaciones')
-    + (select count(*) from public.lotes)
-      - (select count(*) from public.legacy_model_migration_trace where legacy_table = 'lotes')
-    + (select count(*) from public.movimientos_inventario)
-      - (select count(*) from public.legacy_model_migration_trace where legacy_table = 'movimientos_inventario')
-  into missing_count;
+-- Lotes se conserva temporalmente, pero deja de depender de productos. Se
+-- actualiza su producto al UUID canonico para permitir retirar productos sin
+-- perder la identidad ni las fechas del lote.
+alter table public.movimientos_inventario
+  drop constraint movimientos_lote_fk;
+alter table public.lotes
+  drop constraint lotes_producto_fk;
 
-  if missing_count <> 0 then
+update public.lotes lot
+set producto_id = product.canonical_id
+from product_legacy_map product
+where product.legacy_id = lot.producto_id;
+
+alter table public.lotes
+  add constraint lotes_product_canonical_fk
+  foreign key (organization_id, producto_id)
+  references public.products (organization_id, id)
+  on delete restrict;
+
+-- La migracion se detiene si una fila no quedo trazada o si un destino
+-- canonico requerido no existe. La comprobacion es por tabla para que una
+-- diferencia en una tabla no pueda compensarse con otra.
+do $$
+begin
+  if exists (
+    select 1
+    from (values
+      ('productos'::text, (select count(*) from public.productos)),
+      ('almacenes'::text, (select count(*) from public.almacenes)),
+      ('ubicaciones'::text, (select count(*) from public.ubicaciones)),
+      ('lotes'::text, (select count(*) from public.lotes)),
+      ('movimientos_inventario'::text, (select count(*) from public.movimientos_inventario))
+    ) expected(legacy_table, row_count)
+    where expected.row_count <> (
+      select count(*)
+      from public.legacy_model_migration_trace trace
+      where trace.legacy_table = expected.legacy_table
+    )
+  ) then
     raise exception using
       errcode = 'P0001',
-      message = 'LEGACY_MODEL_MIGRATION_TRACE_MISMATCH',
-      detail = format('Diferencia total de filas: %s', missing_count);
+      message = 'LEGACY_MODEL_MIGRATION_TRACE_MISMATCH';
   end if;
 
   if exists (
@@ -527,9 +579,26 @@ begin
           select 1 from public.inventory_movements target
           where target.id = trace.canonical_id and target.organization_id = trace.organization_id
         ))
+        or (trace.canonical_table = 'lotes' and not exists (
+          select 1 from public.lotes target
+          where target.id = trace.canonical_id and target.organization_id = trace.organization_id
+        ))
       )
   ) then
     raise exception using errcode = 'P0001', message = 'LEGACY_MODEL_MIGRATION_TARGET_MISSING';
+  end if;
+
+  if exists (
+    select 1
+    from public.lotes lot
+    where not exists (
+      select 1
+      from public.products product
+      where product.organization_id = lot.organization_id
+        and product.id = lot.producto_id
+    )
+  ) then
+    raise exception using errcode = 'P0001', message = 'LEGACY_LOT_CANONICAL_PRODUCT_MISSING';
   end if;
 end;
 $$;
@@ -555,21 +624,14 @@ from (
 ) trace
 group by trace.organization_id;
 
--- ------------------------------------------------------------
--- 4. Retiro del contrato alterno
--- ------------------------------------------------------------
-
-drop table public.movimientos_inventario;
-drop table public.lotes;
-drop table public.ubicaciones;
-drop table public.almacenes;
-drop table public.productos;
-
 comment on table public.products is
   'Contrato canonico del catalogo de productos de SILSANPLEX.';
 comment on table public.warehouses is
   'Contrato canonico de almacenes de SILSANPLEX.';
 comment on table public.inventory_movements is
   'Libro canonico, append-only, de movimientos de inventario de SILSANPLEX.';
+
+comment on table public.lotes is
+  'Lotes legacy conservados temporalmente y vinculados al catalogo canonico.';
 
 commit;
