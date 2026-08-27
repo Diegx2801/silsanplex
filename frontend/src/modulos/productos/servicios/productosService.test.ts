@@ -81,6 +81,9 @@ const productoFila = {
   laboratory: 'Marca',
   presentation: 'Caja',
   unit_of_measure: 'Unidad',
+  product_type: 'good' as const,
+  base_unit_id: '11111111-1111-4111-8111-111111111111',
+  product_unit_conversions: [],
   tax_affectation: 'por-definir' as const,
   cost: 10,
   sale_price: 15,
@@ -113,6 +116,7 @@ describe('productosService', () => {
     supabaseMock.from.mockReset()
     supabaseMock.from.mockReturnValue(cadena)
     supabaseMock.rpc.mockReset()
+    supabaseMock.rpc.mockImplementation(() => Promise.resolve(respuesta))
     storage = {
       createSignedUrl: vi.fn().mockResolvedValue({
         data: { signedUrl: 'https://storage.test/archivo' },
@@ -345,7 +349,7 @@ describe('productosService', () => {
     })
   })
 
-  it('crea un producto normalizando el código y enviando el actor', async () => {
+  it('crea el catálogo mediante la operación transaccional', async () => {
     const datos = {
       ...productoInicial,
       codigo: ' med-001 ',
@@ -358,17 +362,11 @@ describe('productosService', () => {
 
     await crearProducto('org-1', 'user-1', datos)
 
-    const payload = cadena.insert.mock.calls[0]?.[0] as Record<string, unknown>
-    expect(payload).toMatchObject({
-      organization_id: 'org-1',
-      code: 'MED-001',
-      cost: 10,
-      sale_price: 15,
-      minimum_sale_price: 12,
-      maximum_stock: 100,
-      created_by: 'user-1',
-      updated_by: 'user-1',
-    })
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('save_product_catalog', expect.objectContaining({
+      requested_organization_id: 'org-1',
+      requested_product_id: null,
+      payload: expect.objectContaining({ code: 'MED-001', cost: 10, sale_price: 15 }),
+    }))
   })
 
   it('usa un mensaje específico cuando falla el registro', async () => {
@@ -392,15 +390,11 @@ describe('productosService', () => {
 
     await editarProducto('org-1', 'user-1', 'producto-1', datos)
 
-    expect(cadena.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organization_id: 'org-1',
-        code: 'MED-001',
-        updated_by: 'user-1',
-      }),
-    )
-    expect(cadena.eq).toHaveBeenCalledWith('id', 'producto-1')
-    expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('save_product_catalog', expect.objectContaining({
+      requested_organization_id: 'org-1',
+      requested_product_id: 'producto-1',
+      payload: expect.objectContaining({ code: 'MED-001' }),
+    }))
   })
 
   it('usa un mensaje específico cuando falla la edición', async () => {

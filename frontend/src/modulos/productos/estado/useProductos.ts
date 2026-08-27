@@ -13,6 +13,7 @@ import {
   crearProducto,
   editarProducto,
   listarOpcionesProductos,
+  listarUnidadesMedida,
   listarProductosFiltrados,
   listarProductosPaginados,
   listarProductos,
@@ -71,6 +72,12 @@ export function useProductos(
     enabled: Boolean(organizationId) && Boolean(consultaPaginada),
     staleTime: 5 * 60_000,
   })
+  const unidadesQuery = useQuery({
+    queryKey: [...productosQueryKey, 'unidades-medida'],
+    queryFn: () => listarUnidadesMedida(organizationId),
+    enabled: Boolean(organizationId) && Boolean(consultaPaginada),
+    staleTime: 30 * 60_000,
+  })
   const guardarMutation = useMutation({
     mutationFn: ({ datos, productoId }: { datos: DatosProducto; productoId?: string }) => {
       if (!user) throw new Error('La sesión ya no está disponible')
@@ -100,7 +107,7 @@ export function useProductos(
   const reintentar = async () => {
     await query.refetch()
     if (consultaPaginada) {
-      await Promise.all([totalQuery.refetch(), opcionesQuery.refetch()])
+      await Promise.all([totalQuery.refetch(), opcionesQuery.refetch(), unidadesQuery.refetch()])
     }
   }
 
@@ -113,11 +120,12 @@ export function useProductos(
     categorias: opcionesQuery.data?.categorias ?? opcionesVacias.categorias,
     laboratorios:
       opcionesQuery.data?.laboratorios ?? opcionesVacias.laboratorios,
+    unidadesMedida: unidadesQuery.data ?? [],
     cargando:
       query.isLoading ||
       (Boolean(consultaPaginada) &&
-        (totalQuery.isLoading || opcionesQuery.isLoading)),
-    error: query.error ?? totalQuery.error ?? opcionesQuery.error,
+        (totalQuery.isLoading || opcionesQuery.isLoading || unidadesQuery.isLoading)),
+    error: query.error ?? totalQuery.error ?? opcionesQuery.error ?? unidadesQuery.error,
     reintentar,
     guardando: guardarMutation.isPending,
     cambiandoEstado: estadoMutation.isPending,

@@ -84,7 +84,7 @@ export function FiltrosProductos({
               value={busqueda}
               onChange={(evento) => alCambiarBusqueda(evento.target.value)}
               className="field-control ps-9"
-              placeholder="Código, barras, producto o marca"
+              placeholder="SKU, barras, producto o marca"
             />
           </div>
         </div>
@@ -157,8 +157,8 @@ export function FiltrosProductos({
             }
             className="field-control"
           >
-            <option value="codigo-asc">Código: menor a mayor</option>
-            <option value="codigo-desc">Código: mayor a menor</option>
+            <option value="codigo-asc">SKU: menor a mayor</option>
+            <option value="codigo-desc">SKU: mayor a menor</option>
             <option value="descripcion-asc">Nombre: A a Z</option>
             <option value="precio-asc">Precio: menor a mayor</option>
             <option value="precio-desc">Precio: mayor a menor</option>

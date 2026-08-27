@@ -7,24 +7,18 @@ import {
 } from '@/modulos/productos/modelo/producto'
 
 export interface FilaProductoExportada {
-  Código: string
+  SKU: string
   'Código de barras': string
   Producto: string
-  'Descripción ampliada': string
-  Categoría: string
+  Tipo: 'Producto físico' | 'Servicio'
+  Línea: string
   Sublínea: string
   'Laboratorio o marca': string
   Presentación: string
   'Unidad de medida': string
+  'Unidades alternativas': string
   'Afectación de IGV': string
-  'Costo base': number | ''
   'Precio de venta base': number | ''
-  'Precio mínimo': number | ''
-  'Stock máximo': number | ''
-  'Ancho (cm)': number | ''
-  'Alto (cm)': number | ''
-  'Largo (cm)': number | ''
-  'Peso (kg)': number | ''
   'Registro sanitario': string
   'Control por lote': 'Sí' | 'No'
   'Control de vencimiento': 'Sí' | 'No'
@@ -33,24 +27,18 @@ export interface FilaProductoExportada {
 }
 
 const encabezados = [
-  'Código',
+  'SKU',
   'Código de barras',
   'Producto',
-  'Descripción ampliada',
-  'Categoría',
+  'Tipo',
+  'Línea',
   'Sublínea',
   'Laboratorio o marca',
   'Presentación',
   'Unidad de medida',
+  'Unidades alternativas',
   'Afectación de IGV',
-  'Costo base',
   'Precio de venta base',
-  'Precio mínimo',
-  'Stock máximo',
-  'Ancho (cm)',
-  'Alto (cm)',
-  'Largo (cm)',
-  'Peso (kg)',
   'Registro sanitario',
   'Control por lote',
   'Control de vencimiento',
@@ -59,8 +47,7 @@ const encabezados = [
 ] satisfies (keyof FilaProductoExportada)[]
 
 const anchosColumnas = [
-  16, 20, 36, 46, 22, 18, 28, 26, 18, 16, 21, 22, 18, 18, 14, 14, 14,
-  14, 19, 18, 22, 18, 12,
+  16, 20, 36, 18, 22, 18, 28, 26, 18, 36, 16, 22, 19, 18, 22, 18, 12,
 ].map((wch) => ({ wch }))
 
 function etiquetaAfectacionIgv(valor: Producto['afectacionIgv']) {
@@ -74,26 +61,22 @@ export function crearFilasProductos(
   productos: readonly Producto[],
 ): FilaProductoExportada[] {
   return productos.map((producto) => ({
-    Código: producto.codigo,
+    SKU: producto.codigo,
     'Código de barras': producto.codigoBarras,
     Producto: producto.descripcion,
-    'Descripción ampliada': producto.descripcionAmpliada,
-    Categoría: producto.categoria,
+    Tipo: producto.tipo === 'service' ? 'Servicio' : 'Producto físico',
+    Línea: producto.categoria,
     Sublínea: producto.sublinea ?? '',
     'Laboratorio o marca': producto.laboratorio,
     Presentación: producto.presentacion,
     'Unidad de medida': producto.unidadMedida,
+    'Unidades alternativas': producto.unidadesAlternativas
+      .map((unidad) => `${unidad.unidadNombre || 'Unidad'} x ${unidad.equivalencia}`)
+      .join('; '),
     'Afectación de IGV': etiquetaAfectacionIgv(producto.afectacionIgv),
-    'Costo base': producto.costo ? Number(producto.costo) : '',
     'Precio de venta base': producto.precioVenta
       ? Number(producto.precioVenta)
       : '',
-    'Precio mínimo': producto.precioMinimo ? Number(producto.precioMinimo) : '',
-    'Stock máximo': producto.stockMaximo ? Number(producto.stockMaximo) : '',
-    'Ancho (cm)': producto.anchoCm ? Number(producto.anchoCm) : '',
-    'Alto (cm)': producto.altoCm ? Number(producto.altoCm) : '',
-    'Largo (cm)': producto.largoCm ? Number(producto.largoCm) : '',
-    'Peso (kg)': producto.pesoKg ? Number(producto.pesoKg) : '',
     'Registro sanitario': producto.registroSanitario,
     'Control por lote': producto.controlLote ? 'Sí' : 'No',
     'Control de vencimiento': producto.controlVencimiento ? 'Sí' : 'No',
@@ -127,7 +110,7 @@ export function crearLibroCatalogoProductos(
 
   hojaProductos['!cols'] = anchosColumnas
   hojaProductos['!autofilter'] = {
-    ref: `A1:W${ultimaFila}`,
+    ref: `A1:Q${ultimaFila}`,
   }
 
   const hojaResumen = utils.aoa_to_sheet([

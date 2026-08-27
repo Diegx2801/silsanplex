@@ -19,6 +19,7 @@ import type {
   Producto,
   TipoArchivoProducto,
   TipoEventoProducto,
+  UnidadMedida,
   VersionProducto,
 } from '@/modulos/productos/modelo/producto'
 
@@ -33,6 +34,16 @@ interface ProductoFila {
   laboratory: string | null
   presentation: string | null
   unit_of_measure: string | null
+  product_type: 'good' | 'service'
+  base_unit_id: string
+  product_unit_conversions: Array<{
+    id: string
+    unit_id: string
+    conversion_factor: number
+    barcode: string | null
+    sale_price: number | null
+    measurement_units: Array<{ name: string }> | null
+  }> | null
   tax_affectation: 'por-definir' | 'gravado' | 'exonerado' | 'inafecto'
   cost: number | null
   sale_price: number | null
@@ -79,7 +90,7 @@ interface OpcionProductoFila {
 }
 
 const columnasProducto =
-  'id,code,description,extended_description,barcode,category,subline,laboratory,presentation,unit_of_measure,tax_affectation,cost,sale_price,minimum_sale_price,maximum_stock,width_cm,height_cm,length_cm,weight_kg,health_registry,batch_control,expiration_control,prescription_sale,is_active' as const
+  'id,code,description,extended_description,barcode,category,subline,laboratory,presentation,unit_of_measure,product_type,base_unit_id,product_unit_conversions(id,unit_id,conversion_factor,barcode,sale_price,measurement_units(name)),tax_affectation,cost,sale_price,minimum_sale_price,maximum_stock,width_cm,height_cm,length_cm,weight_kg,health_registry,batch_control,expiration_control,prescription_sale,is_active' as const
 const columnasOpcionesProducto = 'category,laboratory' as const
 const tamanioPaginaMaximo = 50
 const comparadorOpciones = new Intl.Collator('es-PE', {
@@ -108,6 +119,8 @@ function mapearProducto(fila: ProductoFila): Producto {
     sublinea: fila.subline ?? '',
     laboratorio: fila.laboratory ?? '',
     presentacion: fila.presentation ?? '',
+    tipo: fila.product_type,
+    unidadBaseId: fila.base_unit_id,
     unidadMedida: fila.unit_of_measure ?? '',
     afectacionIgv: fila.tax_affectation === 'por-definir' ? '' : fila.tax_affectation,
     costo: fila.cost === null ? '' : String(fila.cost),
@@ -124,6 +137,20 @@ function mapearProducto(fila: ProductoFila): Producto {
     controlVencimiento: fila.expiration_control,
     ventaReceta: fila.prescription_sale,
     activo: fila.is_active,
+    unidadesAlternativas: (fila.product_unit_conversions ?? []).map((unidad) => {
+      const relacion = unidad.measurement_units as unknown
+      const unidadRelacionada = Array.isArray(relacion)
+        ? relacion[0] as { name?: string } | undefined
+        : relacion as { name?: string } | null
+      return {
+        id: unidad.id,
+        unidadId: unidad.unit_id,
+        unidadNombre: unidadRelacionada?.name ?? '',
+        equivalencia: String(unidad.conversion_factor),
+        codigoBarras: unidad.barcode ?? '',
+        precioVenta: unidad.sale_price === null ? '' : String(unidad.sale_price),
+      }
+    }),
   }
 }
 
@@ -253,13 +280,8 @@ function construirConsultaProductos(
   return query
 }
 
-function construirFilaProducto(
-  organizationId: string,
-  userId: string,
-  datos: DatosProducto,
-) {
+function construirPayloadProducto(datos: DatosProducto) {
   return {
-    organization_id: organizationId,
     code: datos.codigo.trim().toUpperCase(),
     description: datos.descripcion.trim(),
     extended_description: textoONulo(datos.descripcionAmpliada),
@@ -268,7 +290,8 @@ function construirFilaProducto(
     subline: textoONulo(datos.sublinea),
     laboratory: textoONulo(datos.laboratorio),
     presentation: textoONulo(datos.presentacion),
-    unit_of_measure: textoONulo(datos.unidadMedida),
+    product_type: datos.tipo,
+    base_unit_id: datos.unidadBaseId,
     tax_affectation: datos.afectacionIgv || 'por-definir',
     cost: numeroONulo(datos.costo),
     sale_price: numeroONulo(datos.precioVenta),
@@ -283,8 +306,24 @@ function construirFilaProducto(
     expiration_control: datos.controlVencimiento,
     prescription_sale: datos.ventaReceta,
     is_active: datos.activo,
-    updated_by: userId,
+    alternate_units: datos.unidadesAlternativas.map((unidad) => ({
+      unit_id: unidad.unidadId,
+      conversion_factor: unidad.equivalencia,
+      barcode: unidad.codigoBarras.trim(),
+      sale_price: unidad.precioVenta,
+    })),
   }
+}
+
+export async function listarUnidadesMedida(organizationId: string): Promise<UnidadMedida[]> {
+  const { data, error } = await supabase
+    .from('measurement_units')
+    .select('id,code,name')
+    .eq('organization_id', organizationId)
+    .eq('is_active', true)
+    .order('name', { ascending: true })
+  if (error) throw new Error(mensajeError(error, 'consultar'))
+  return (data ?? []).map((unidad) => ({ id: unidad.id, codigo: unidad.code, nombre: unidad.name }))
 }
 
 export async function listarProductos(organizationId: string): Promise<Producto[]> {
@@ -470,29 +509,28 @@ export async function importarProductos(
 
 export async function crearProducto(
   organizationId: string,
-  userId: string,
+  _userId: string,
   datos: DatosProducto,
 ) {
-  const { error } = await supabase
-    .from('products')
-    .insert({
-      ...construirFilaProducto(organizationId, userId, datos),
-      created_by: userId,
-    })
+  const { error } = await supabase.rpc('save_product_catalog', {
+    requested_organization_id: organizationId,
+    requested_product_id: null,
+    payload: construirPayloadProducto(datos),
+  })
   if (error) throw new Error(mensajeError(error, 'crear'))
 }
 
 export async function editarProducto(
   organizationId: string,
-  userId: string,
+  _userId: string,
   productoId: string,
   datos: DatosProducto,
 ) {
-  const { error } = await supabase
-    .from('products')
-    .update(construirFilaProducto(organizationId, userId, datos))
-    .eq('id', productoId)
-    .eq('organization_id', organizationId)
+  const { error } = await supabase.rpc('save_product_catalog', {
+    requested_organization_id: organizationId,
+    requested_product_id: productoId,
+    payload: construirPayloadProducto(datos),
+  })
   if (error) throw new Error(mensajeError(error, 'editar'))
 }
 

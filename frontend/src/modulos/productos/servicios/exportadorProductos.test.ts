@@ -40,13 +40,10 @@ describe('exportadorProductos', () => {
     const filas = crearFilasProductos(productos)
 
     expect(filas[0]).toMatchObject({
-      Código: 'MED-001',
+      SKU: 'MED-001',
       Producto: 'Paracetamol 500 mg',
       'Afectación de IGV': 'Gravado',
       'Precio de venta base': 12.5,
-      'Precio mínimo': 10,
-      'Stock máximo': 100,
-      'Ancho (cm)': 12.5,
       'Control por lote': 'Sí',
       'Control de vencimiento': 'Sí',
       Estado: 'Activo',
@@ -63,7 +60,7 @@ describe('exportadorProductos', () => {
     )
 
     expect(libro.SheetNames).toEqual(['Productos', 'Resumen'])
-    expect(libro.Sheets.Productos?.['!autofilter']).toEqual({ ref: 'A1:W3' })
+    expect(libro.Sheets.Productos?.['!autofilter']).toEqual({ ref: 'A1:Q3' })
 
     const resumen = utils.sheet_to_json<(string | number)[]>(
       libro.Sheets.Resumen!,

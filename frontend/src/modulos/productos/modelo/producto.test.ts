@@ -8,18 +8,21 @@ import {
 } from './producto'
 
 describe('esquemaProducto', () => {
+  const unidadBaseId = '11111111-1111-4111-8111-111111111111'
   it('acepta el registro mínimo y limpia espacios', () => {
     const resultado = esquemaProducto.parse({
       ...productoInicial,
       codigo: '  PROD-001  ',
       descripcion: '  Producto de prueba  ',
+      unidadMedida: 'Unidad',
+      unidadBaseId,
     })
 
     expect(resultado.codigo).toBe('PROD-001')
     expect(resultado.descripcion).toBe('Producto de prueba')
   })
 
-  it('exige código y descripción', () => {
+  it('exige SKU, descripción y unidad de medida', () => {
     const resultado = esquemaProducto.safeParse(productoInicial)
 
     expect(resultado.success).toBe(false)
@@ -30,6 +33,8 @@ describe('esquemaProducto', () => {
       ...productoInicial,
       codigo: 'PROD-001',
       descripcion: 'Producto de prueba',
+      unidadMedida: 'Unidad',
+      unidadBaseId,
       precioVenta: '12.345',
     })
 
@@ -41,6 +46,8 @@ describe('esquemaProducto', () => {
       ...productoInicial,
       codigo: 'PROD-001',
       descripcion: 'Producto de prueba',
+      unidadMedida: 'Unidad',
+      unidadBaseId,
       costo: '-1',
       precioVenta: '-2',
     })
@@ -53,6 +60,8 @@ describe('esquemaProducto', () => {
       ...productoInicial,
       codigo: 'PROD-001',
       descripcion: 'Producto de prueba',
+      unidadMedida: 'Unidad',
+      unidadBaseId,
       precioVenta: '10',
       precioMinimo: '11',
     })
@@ -65,6 +74,8 @@ describe('esquemaProducto', () => {
       ...productoInicial,
       codigo: 'PROD-001',
       descripcion: 'Producto de prueba',
+      unidadMedida: 'Unidad',
+      unidadBaseId,
       controlLote: false,
       controlVencimiento: true,
     })

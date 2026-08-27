@@ -33,12 +33,22 @@ export const afectacionesIgv = [
   { valor: 'inafecto', etiqueta: 'Inafecto' },
 ] as const
 
+const esquemaUnidadAlternativa = z.object({
+  id: z.string().uuid().optional(),
+  unidadId: z.string().uuid('Selecciona una unidad válida'),
+  unidadNombre: textoOpcional(40),
+  equivalencia: decimalOpcional(6, true).refine(Boolean, 'Ingresa la equivalencia'),
+  codigoBarras: textoOpcional(50),
+  precioVenta: importeOpcional,
+})
+
 export const esquemaProducto = z.object({
   codigo: z
     .string()
     .trim()
     .min(1, 'Ingresa el código interno')
-    .max(30, 'Máximo 30 caracteres'),
+    .max(30, 'Máximo 30 caracteres')
+    .transform((valor) => valor.toUpperCase()),
   descripcion: z
     .string()
     .trim()
@@ -50,7 +60,13 @@ export const esquemaProducto = z.object({
   sublinea: textoOpcional(80),
   laboratorio: textoOpcional(100),
   presentacion: textoOpcional(100),
-  unidadMedida: textoOpcional(40),
+  tipo: z.enum(['good', 'service']),
+  unidadBaseId: z.string().uuid('Selecciona una unidad de medida'),
+  unidadMedida: z
+    .string()
+    .trim()
+    .min(1, 'Selecciona o ingresa la unidad de medida')
+    .max(40, 'Máximo 40 caracteres'),
   afectacionIgv: z.enum(['', 'gravado', 'exonerado', 'inafecto']),
   costo: importeOpcional,
   precioVenta: importeOpcional,
@@ -65,6 +81,7 @@ export const esquemaProducto = z.object({
   controlVencimiento: z.boolean(),
   ventaReceta: z.boolean(),
   activo: z.boolean(),
+  unidadesAlternativas: z.array(esquemaUnidadAlternativa).max(12, 'Máximo 12 unidades alternativas'),
 }).superRefine((datos, contexto) => {
   if (
     datos.precioMinimo &&
@@ -77,9 +94,28 @@ export const esquemaProducto = z.object({
       message: 'No puede superar el precio de venta base',
     })
   }
+
+  if (datos.tipo === 'service' && (datos.controlLote || datos.controlVencimiento)) {
+    contexto.addIssue({ code: 'custom', path: ['tipo'], message: 'Los servicios no controlan lote ni vencimiento' })
+  }
+
+  const unidades = new Set<string>()
+  for (const [indice, unidad] of datos.unidadesAlternativas.entries()) {
+    if (unidad.unidadId === datos.unidadBaseId || unidades.has(unidad.unidadId)) {
+      contexto.addIssue({ code: 'custom', path: ['unidadesAlternativas', indice, 'unidadId'], message: 'La unidad debe ser diferente y no repetirse' })
+    }
+    unidades.add(unidad.unidadId)
+  }
 })
 
 export type DatosProducto = z.infer<typeof esquemaProducto>
+export type UnidadAlternativaProducto = DatosProducto['unidadesAlternativas'][number]
+
+export interface UnidadMedida {
+  id: string
+  codigo: string
+  nombre: string
+}
 
 export interface Producto extends Omit<DatosProducto, 'sublinea' | 'costo'> {
   id: string
@@ -156,6 +192,8 @@ export const productoInicial: DatosProducto = {
   sublinea: '',
   laboratorio: '',
   presentacion: '',
+  tipo: 'good',
+  unidadBaseId: '',
   unidadMedida: '',
   afectacionIgv: '',
   costo: '',
@@ -167,8 +205,9 @@ export const productoInicial: DatosProducto = {
   largoCm: '',
   pesoKg: '',
   registroSanitario: '',
-  controlLote: true,
-  controlVencimiento: true,
+  controlLote: false,
+  controlVencimiento: false,
   ventaReceta: false,
   activo: true,
+  unidadesAlternativas: [],
 }

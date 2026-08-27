@@ -141,6 +141,7 @@ export function ProductosPage() {
     totalProductos,
     categorias,
     laboratorios,
+    unidadesMedida,
     exportarProductos,
   } = useProductos('', { consulta, pagina, tamanioPagina })
   const mensajeErrorProductos =
@@ -506,7 +507,7 @@ export function ProductosPage() {
             <thead>
               <tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
                 <th scope="col" className="px-5 py-3 font-medium sm:px-6">
-                  Código
+                  SKU
                 </th>
                 <th scope="col" className="px-4 py-3 font-medium">
                   Producto
@@ -649,6 +650,7 @@ export function ProductosPage() {
           key={productoSeleccionado?.id ?? 'nuevo'}
           abierto={formularioAbierto}
           producto={productoSeleccionado}
+          unidadesMedida={unidadesMedida}
           alCambiarApertura={cambiarAperturaFormulario}
           alGuardar={guardar}
           alRestaurarFoco={() => disparadorFormulario.current?.focus()}
