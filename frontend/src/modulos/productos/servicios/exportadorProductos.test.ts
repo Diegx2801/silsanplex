@@ -22,9 +22,10 @@ const productos = [
     precioMinimo: '10.00',
     stockMaximo: '100',
     anchoCm: '12.5',
-    controlVencimiento: true,
-    controlLote: true,
-    activo: true,
+      controlVencimiento: true,
+      controlLote: true,
+      serialControl: true,
+      activo: true,
   },
   {
     ...productoInicial,
@@ -49,6 +50,7 @@ describe('exportadorProductos', () => {
       'Ancho (cm)': 12.5,
       'Control por lote': 'Sí',
       'Control de vencimiento': 'Sí',
+      'Control por serie': 'Sí',
       Estado: 'Activo',
     })
     expect(filas[1]?.['Precio de venta base']).toBe('')
@@ -63,7 +65,7 @@ describe('exportadorProductos', () => {
     )
 
     expect(libro.SheetNames).toEqual(['Productos', 'Resumen'])
-    expect(libro.Sheets.Productos?.['!autofilter']).toEqual({ ref: 'A1:W3' })
+    expect(libro.Sheets.Productos?.['!autofilter']).toEqual({ ref: 'A1:X3' })
 
     const resumen = utils.sheet_to_json<(string | number)[]>(
       libro.Sheets.Resumen!,

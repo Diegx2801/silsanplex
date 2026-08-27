@@ -373,6 +373,11 @@ export function DialogoProducto({
                 {...register('controlVencimiento')}
               />
               <OpcionBinaria
+                etiqueta="Controlar por número de serie"
+                descripcion="Exige un número de serie al registrar equipos en reparaciones."
+                {...register('serialControl')}
+              />
+              <OpcionBinaria
                 etiqueta="Venta con receta"
                 descripcion="Identifica productos que requieren esta condición comercial."
                 {...register('ventaReceta')}

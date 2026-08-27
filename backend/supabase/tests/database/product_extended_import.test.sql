@@ -38,7 +38,7 @@ select lives_ok($$
         "descripcion_ampliada":"Detalle técnico","codigo_barras":"775000000001",
         "presentacion":"Caja","registro_sanitario":"RS-001","stock_maximo":"100",
         "ancho_cm":"10","alto_cm":"20","largo_cm":"30","peso_kg":"0.5",
-        "control_lote":true,"control_vencimiento":true,"venta_receta":false
+         "control_lote":true,"control_vencimiento":true,"control_serie":true,"venta_receta":false
       }],
       "precios":[{
         "fila":2,"codigo_producto":"EXT-001","producto":"Producto extendido",
@@ -68,14 +68,14 @@ select results_eq(
 );
 
 select results_eq(
-  $$select batch_control, expiration_control, prescription_sale from public.products where code = 'EXT-001'$$,
-  $$values (true, true, false)$$,
+  $$select batch_control, expiration_control, serial_control, prescription_sale from public.products where code = 'EXT-001'$$,
+  $$values (true, true, true, false)$$,
   'persiste los controles independientes'
 );
 
 select is(
   (select count(*) from public.product_versions where product_id = (select id from public.products where code = 'EXT-001')),
-  2::bigint,
+  3::bigint,
   'la ampliacion importada queda versionada'
 );
 

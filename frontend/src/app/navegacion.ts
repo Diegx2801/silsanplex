@@ -10,6 +10,7 @@ import {
   ShoppingCart,
   Truck,
   Users,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -77,6 +78,13 @@ export const seccionesNavegacion: SeccionNavegacion[] = [
         descripcion: 'Datos fiscales y de contacto',
         icono: ContactRound,
         permission: PERMISSIONS.CUSTOMERS_VIEW,
+      },
+      {
+        titulo: 'Reparaciones',
+        ruta: '/reparaciones',
+        descripcion: 'Órdenes, diagnóstico y entrega técnica',
+        icono: Wrench,
+        permission: PERMISSIONS.REPAIRS_VIEW,
       },
       {
         titulo: 'Ventas',

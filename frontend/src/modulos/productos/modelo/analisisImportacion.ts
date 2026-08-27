@@ -46,6 +46,7 @@ export interface FilaProductoImportacion {
   pesoKg: string
   controlLote: boolean
   controlVencimiento: boolean
+  serialControl: boolean
   ventaReceta: boolean
 }
 
@@ -139,6 +140,7 @@ function firmaProducto(fila: FilaImportacion) {
     fila.PesoKg,
     fila.ControlLote,
     fila.ControlVencimiento,
+    fila.ControlSerie,
     fila.VentaReceta,
   ]
     .map((valor) => normalizar(valor ?? ''))
@@ -183,6 +185,7 @@ function filaProducto(fila: FilaImportacion, indice: number): FilaProductoImport
     controlLote: normalizarBooleano(fila.ControlLote ?? '') === true,
     controlVencimiento:
       normalizarBooleano(fila.ControlVencimiento ?? '') === true,
+    serialControl: normalizarBooleano(fila.ControlSerie ?? '') === true,
     ventaReceta: normalizarBooleano(fila.VentaReceta ?? '') === true,
   }
 }
@@ -395,7 +398,7 @@ export function analizarFilasImportacion(
     const stockMaximoValido =
       !stockMaximo ||
       (/^\d+([.,]\d{1,3})?$/.test(stockMaximo) && Number(normalizarPrecio(stockMaximo)) >= 0)
-    const booleanosValidos = ['ControlLote', 'ControlVencimiento', 'VentaReceta'].every(
+    const booleanosValidos = ['ControlLote', 'ControlVencimiento', 'ControlSerie', 'VentaReceta'].every(
       (campo) => normalizarBooleano(fila[campo] ?? '') !== null,
     )
     return (

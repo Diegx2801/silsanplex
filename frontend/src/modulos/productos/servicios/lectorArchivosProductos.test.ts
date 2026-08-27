@@ -102,8 +102,8 @@ describe('analizarArchivosProductos', () => {
   it('lee las columnas extendidas cuando están presentes', async () => {
     const productos = crearArchivo(
       'Productos.xlsx',
-      [...encabezadosProductos, 'DescripcionAmpliada', 'StockMaximo', 'ControlLote', 'ControlVencimiento'],
-      ['0001', 'Producto uno', 'Línea', 'SubLínea', 'Marca', 'Detalle técnico', '100', 'Sí', 'No'],
+      [...encabezadosProductos, 'DescripcionAmpliada', 'StockMaximo', 'ControlLote', 'ControlVencimiento', 'ControlSerie'],
+      ['0001', 'Producto uno', 'Línea', 'SubLínea', 'Marca', 'Detalle técnico', '100', 'Sí', 'No', 'Sí'],
     )
     const precios = crearArchivo(
       'Precios.xlsx',
@@ -118,6 +118,7 @@ describe('analizarArchivosProductos', () => {
       stockMaximo: '100',
       controlLote: true,
       controlVencimiento: false,
+      serialControl: true,
     })
     expect(resultado.datos.precios[0]).toMatchObject({
       costoBase: '7.50',
