@@ -23,7 +23,7 @@ export function DialogoImportarProductos({ abierto, alCambiarApertura, alComplet
           <DialogPrimitive.Close asChild><button type="button" aria-label="Cerrar importación" className="grid size-9 place-items-center rounded-md hover:bg-muted"><X aria-hidden="true" className="size-5" /></button></DialogPrimitive.Close>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-7">
-          <ImportarProductosPage integrado alCompletar={alCompletar} />
+          <ImportarProductosPage integrado alCompletar={alCompletar} alCerrar={() => alCambiarApertura(false)} />
         </div>
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
