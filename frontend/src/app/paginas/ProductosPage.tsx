@@ -16,7 +16,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { PERMISSIONS } from '@/features/auth/permissions'
@@ -24,6 +24,7 @@ import { useAuth } from '@/features/auth/useAuth'
 import { DetalleProducto } from '@/modulos/productos/componentes/DetalleProducto'
 import { DialogoConfirmacionEstado } from '@/modulos/productos/componentes/DialogoConfirmacionEstado'
 import { DialogoProducto } from '@/modulos/productos/componentes/DialogoProducto'
+import { DialogoImportarProductos } from '@/modulos/productos/componentes/DialogoImportarProductos'
 import { FiltrosProductos } from '@/modulos/productos/componentes/FiltrosProductos'
 import { PaginacionProductos } from '@/modulos/productos/componentes/PaginacionProductos'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
@@ -109,6 +110,7 @@ export function ProductosPage() {
   const [formularioAbierto, setFormularioAbierto] = useState(
     () => parametros.get('nuevo') === '1',
   )
+  const [importacionAbierta, setImportacionAbierta] = useState(() => parametros.get('importar') === '1')
   const [productoSeleccionado, setProductoSeleccionado] =
     useState<Producto | null>(null)
   const [productoDetalleId, setProductoDetalleId] = useState<string | null>(null)
@@ -118,6 +120,7 @@ export function ProductosPage() {
   const [mensaje, setMensaje] = useState('')
   const [exportando, setExportando] = useState(false)
   const disparadorFormulario = useRef<HTMLButtonElement | null>(null)
+  const disparadorImportacion = useRef<HTMLButtonElement | null>(null)
   const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
   const disparadorEstado = useRef<HTMLButtonElement | null>(null)
   const consulta = {
@@ -285,11 +288,9 @@ export function ProductosPage() {
           </p>
         </div>
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:self-end">
-          <Button asChild size="lg" variant="outline">
-            <Link to="/productos/importar">
-              <FileSpreadsheet aria-hidden="true" />
-              Revisar importación
-            </Link>
+          <Button ref={disparadorImportacion} type="button" size="lg" variant="outline" onClick={() => setImportacionAbierta(true)}>
+            <FileSpreadsheet aria-hidden="true" />
+            Importar productos
           </Button>
           {puedeGestionar ? (
             <Button size="lg" onClick={abrirRegistro}>
@@ -623,6 +624,15 @@ export function ProductosPage() {
           alRestaurarFoco={() => disparadorFormulario.current?.focus()}
         />
       ) : null}
+
+      {importacionAbierta ? <DialogoImportarProductos abierto={importacionAbierta} alCambiarApertura={(abierto) => {
+        setImportacionAbierta(abierto)
+        if (!abierto && parametros.has('importar')) {
+          const siguientesParametros = new URLSearchParams(parametros)
+          siguientesParametros.delete('importar')
+          setParametros(siguientesParametros, { replace: true })
+        }
+      }} alCompletar={() => { void reintentar(); setMensaje('Importación de productos finalizada.') }} alRestaurarFoco={() => disparadorImportacion.current?.focus()} /> : null}
 
       {productoDetalle ? (
         <DetalleProducto

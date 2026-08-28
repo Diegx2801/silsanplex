@@ -83,7 +83,7 @@ describe('analizarFilasImportacion', () => {
       [{ CodigoProducto: 'C', Precio_venta: '5', Medida: 'CAJA' }],
     )
 
-    expect(resultado.tieneBloqueos).toBe(true)
+    expect(resultado.tieneBloqueos).toBe(false)
     expect(resultado.hallazgos).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'precios-sin-producto', cantidad: 1 }),
@@ -118,8 +118,8 @@ describe('analizarFilasImportacion', () => {
       ],
     )
 
-    expect(resultado.tieneBloqueos).toBe(true)
-    expect(resultado.datos.productos).toHaveLength(2)
+    expect(resultado.tieneBloqueos).toBe(false)
+    expect(resultado.datos.productos).toHaveLength(1)
     expect(resultado.datos.precios[0]).toMatchObject({
       codigoProducto: '0001',
       precioVenta: '10.50',

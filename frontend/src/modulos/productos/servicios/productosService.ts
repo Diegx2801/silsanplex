@@ -12,6 +12,7 @@ import type {
   DatosImportacionProductos,
   FilaImportacionRechazada,
   ResultadoImportacionPersistida,
+  ModoImportacionProductos,
 } from '@/modulos/productos/modelo/analisisImportacion'
 import type {
   ArchivoProducto,
@@ -476,10 +477,13 @@ function construirPayloadImportacion(datos: DatosImportacionProductos) {
 }
 
 interface RespuestaImportacion {
-  estado: 'completado' | 'rechazado'
+  estado: 'completado' | 'parcial' | 'rechazado'
   hash: string
   id_lote: string
   creados: number
+  actualizados: number
+  omitidos: number
+  fallidos: number
   sin_cambios: number
   filas_rechazadas: FilaImportacionRechazada[]
 }
@@ -487,10 +491,11 @@ interface RespuestaImportacion {
 export async function importarProductos(
   organizationId: string,
   datos: DatosImportacionProductos,
+  modo: ModoImportacionProductos = 'SKIP',
 ): Promise<ResultadoImportacionPersistida> {
-  const { data, error } = await supabase.rpc('import_products', {
+  const { data, error } = await supabase.rpc('import_products_partial', {
     requested_organization_id: organizationId,
-    payload: construirPayloadImportacion(datos),
+    payload: { ...construirPayloadImportacion(datos), modo },
   })
 
   if (error) throw new Error(mensajeError(error, 'importar'))
@@ -502,6 +507,9 @@ export async function importarProductos(
     hash: resultado.hash,
     idLote: resultado.id_lote,
     creados: resultado.creados,
+    actualizados: resultado.actualizados ?? 0,
+    omitidos: resultado.omitidos ?? 0,
+    fallidos: resultado.fallidos ?? 0,
     sinCambios: resultado.sin_cambios,
     filasRechazadas: Array.isArray(resultado.filas_rechazadas)
       ? resultado.filas_rechazadas
@@ -522,6 +530,25 @@ export async function crearProducto(
   if (error) throw new Error(mensajeError(error, 'crear'))
   if (!data) throw new Error('El producto se guardó sin devolver un identificador válido')
   return data as string
+}
+
+export async function consultarCodigosProductosExistentes(
+  organizationId: string,
+  codigos: string[],
+) {
+  const existentes = new Set<string>()
+  for (let inicio = 0; inicio < codigos.length; inicio += 100) {
+    const lote = codigos.slice(inicio, inicio + 100)
+    if (!lote.length) continue
+    const { data, error } = await supabase
+      .from('products')
+      .select('code')
+      .eq('organization_id', organizationId)
+      .in('code', lote)
+    if (error) throw new Error(mensajeError(error, 'consultar'))
+    for (const fila of data ?? []) existentes.add(String(fila.code).toUpperCase())
+  }
+  return existentes
 }
 
 export async function editarProducto(

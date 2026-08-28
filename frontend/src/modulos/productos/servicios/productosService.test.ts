@@ -302,9 +302,10 @@ describe('productosService', () => {
       ],
     })
 
-    expect(supabaseMock.rpc).toHaveBeenCalledWith('import_products', {
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('import_products_partial', {
       requested_organization_id: 'org-1',
       payload: {
+        modo: 'SKIP',
         productos: [
           {
             fila: 2,
@@ -348,6 +349,9 @@ describe('productosService', () => {
       hash: 'a'.repeat(64),
       idLote: 'lote-1',
       creados: 2,
+      actualizados: 0,
+      omitidos: 0,
+      fallidos: 0,
       sinCambios: 1,
       filasRechazadas: [],
     })

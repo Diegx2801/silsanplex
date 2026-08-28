@@ -1,6 +1,6 @@
 begin;
 
-select plan(59);
+select plan(61);
 
 select has_table('public', 'products', 'existe el catálogo persistente');
 select has_view('public', 'product_catalog_options', 'existe la vista de opciones del catálogo');
@@ -925,6 +925,34 @@ select is(
       and unit.name = 'Blister especial'),
   0::bigint,
   'un lote rechazado no deja unidades personalizadas huérfanas'
+);
+
+select is(
+  public.import_products_partial(
+    'a1111111-1111-4111-8111-111111111111',
+    '{
+      "modo": "SKIP",
+      "productos": [
+        {"fila": 100, "codigo": "IMP-PARTIAL-OK", "descripcion": "Producto parcial valido"},
+        {"fila": 101, "codigo": "IMP-PARTIAL-FAIL", "descripcion": "Producto parcial invalido"}
+      ],
+      "precios": [
+        {"fila": 100, "codigo_producto": "IMP-PARTIAL-OK", "unidad_medida": "Unidad", "precio_venta": "5", "inc_igv": "Si"},
+        {"fila": 101, "codigo_producto": "IMP-PARTIAL-FAIL", "unidad_medida": "Unidad", "precio_venta": "5", "inc_igv": "Si"},
+        {"fila": 102, "codigo_producto": "IMP-PARTIAL-FAIL", "unidad_medida": "Caja", "precio_venta": "50", "inc_igv": "Si"}
+      ]
+    }'::jsonb
+  ) ->> 'estado',
+  'parcial',
+  'la importacion parcial conserva los SKU validos cuando otro SKU falla'
+);
+
+select is(
+  (select count(*) from public.products product
+    where product.organization_id = 'a1111111-1111-4111-8111-111111111111'
+      and product.code in ('IMP-PARTIAL-OK', 'IMP-PARTIAL-FAIL')),
+  1::bigint,
+  'la importacion parcial no deja datos incompletos del SKU fallido'
 );
 
 reset role;

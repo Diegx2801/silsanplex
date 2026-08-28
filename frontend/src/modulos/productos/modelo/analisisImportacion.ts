@@ -24,7 +24,10 @@ export interface ResultadoImportacion {
   tieneBloqueos: boolean
   datos: DatosImportacionProductos
   filasObservadas: FilaImportacionObservada[]
+  codigosImportables: string[]
 }
+
+export type ModoImportacionProductos = 'SKIP' | 'UPDATE'
 
 export type FilaImportacion = Record<string, string>
 
@@ -87,10 +90,13 @@ export interface FilaImportacionRechazada {
 }
 
 export interface ResultadoImportacionPersistida {
-  estado: 'completado' | 'rechazado'
+  estado: 'completado' | 'parcial' | 'rechazado'
   hash: string
   idLote: string
   creados: number
+  actualizados: number
+  omitidos: number
+  fallidos: number
   sinCambios: number
   filasRechazadas: FilaImportacionRechazada[]
 }
@@ -746,6 +752,24 @@ export function analizarFilasImportacion(
     codigosProducto.has(codigo),
   ).length
 
+  const codigosRechazados = new Set<string>([
+    ...codigosAmbiguos.map(([codigo]) => codigo),
+    ...productosInvalidos.map((fila) => normalizar(fila.Codigo ?? '')),
+    ...codigosPrecioConflictos.map(([clave]) => clave.split('|')[0] ?? ''),
+    ...preciosInvalidos.map((fila) => normalizar(fila.CodigoProducto ?? '')),
+  ])
+  const datosAnalizados = crearDatosImportacion(productos, precios)
+  const productosImportables = datosAnalizados.productos.filter(
+    (fila) => fila.codigo && !codigosRechazados.has(fila.codigo),
+  )
+  const codigosImportables = new Set(productosImportables.map((fila) => fila.codigo))
+  const datosImportables = {
+    productos: productosImportables,
+    precios: datosAnalizados.precios.filter((fila) =>
+      codigosImportables.has(fila.codigoProducto) && !codigosRechazados.has(fila.codigoProducto),
+    ),
+  }
+
   return {
     resumen: {
       productos: productos.length,
@@ -755,8 +779,9 @@ export function analizarFilasImportacion(
       coincidencias,
     },
     hallazgos,
-    tieneBloqueos: hallazgos.some((hallazgo) => hallazgo.nivel === 'bloqueo'),
-    datos: crearDatosImportacion(productos, precios),
+    tieneBloqueos: datosImportables.productos.length === 0,
+    datos: datosImportables,
     filasObservadas,
+    codigosImportables: [...codigosImportables],
   }
 }
