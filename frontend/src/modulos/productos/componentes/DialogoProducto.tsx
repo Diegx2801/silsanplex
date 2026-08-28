@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Plus, Trash2, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { type ComponentProps, useEffect, useId } from 'react'
+import { type ComponentProps, useEffect, useId, useRef } from 'react'
 import { useFieldArray, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
@@ -34,6 +34,7 @@ interface DialogoProductoProps {
 export function DialogoProducto({ abierto, producto, unidadesMedida, alCambiarApertura, alGuardar, alRestaurarFoco }: DialogoProductoProps) {
   const valores = producto ? { ...producto, sublinea: producto.sublinea ?? '', costo: producto.costo ?? '' } : { ...productoInicial }
   const { register, control, handleSubmit, setError, setValue, watch, formState: { errors, isSubmitting } } = useForm<DatosProducto>({ resolver: zodResolver(esquemaProducto), defaultValues: valores })
+  const formularioRef = useRef<HTMLFormElement | null>(null)
   const { fields, append, remove } = useFieldArray({ control, name: 'unidadesAlternativas' })
   const tipo = watch('tipo')
   const unidadBaseId = watch('unidadBaseId')
@@ -48,19 +49,23 @@ export function DialogoProducto({ abierto, producto, unidadesMedida, alCambiarAp
   const guardar = async (datos: DatosProducto) => {
     const unidad = unidadesMedida.find((opcion) => opcion.id === datos.unidadBaseId)
     const error = await alGuardar({ ...datos, unidadMedida: unidad?.nombre ?? datos.unidadMedida }, producto?.id)
-    if (error) { setError('codigo', { message: error }); return }
+    if (error) {
+      setError('root.server', { message: error })
+      formularioRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
     alCambiarApertura(false)
   }
 
-  return <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}><DialogPrimitive.Portal><DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25" /><DialogPrimitive.Content className="fixed inset-y-0 end-0 z-50 flex w-full max-w-2xl flex-col border-s bg-background shadow-xl outline-none" onCloseAutoFocus={(evento) => { evento.preventDefault(); alRestaurarFoco() }}>
+  return <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}><DialogPrimitive.Portal><DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25" /><DialogPrimitive.Content className="fixed inset-0 z-50 m-auto flex h-dvh w-full flex-col bg-background shadow-xl outline-none sm:h-[min(90vh,860px)] sm:max-w-3xl sm:rounded-lg sm:border" onCloseAutoFocus={(evento) => { evento.preventDefault(); alRestaurarFoco() }}>
     <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7"><div><DialogPrimitive.Title className="text-xl font-semibold">{producto ? 'Editar producto' : 'Registrar producto'}</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">Cada presentación con stock propio se registra como un SKU.</DialogPrimitive.Description></div><DialogPrimitive.Close asChild><button type="button" aria-label="Cerrar formulario" className="grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-muted"><X className="size-5" /></button></DialogPrimitive.Close></header>
-    <form id="formulario-producto" className="min-h-0 flex-1 overflow-y-auto" onSubmit={handleSubmit(guardar)}>
-      <section className="px-5 py-6 sm:px-7"><div className="mb-5 border-b pb-3"><h2 className="font-semibold">Identificación</h2><p className="mt-1 text-sm text-muted-foreground">Solo SKU, nombre, tipo y unidad base son obligatorios.</p></div><div className="grid gap-5 sm:grid-cols-2">
+    <form ref={formularioRef} id="formulario-producto" className="min-h-0 flex-1 overflow-y-auto" onSubmit={handleSubmit(guardar)}>
+      <section className="px-5 py-6 sm:px-7">{errors.root?.server ? <div role="alert" className="mb-5 border border-destructive/35 bg-destructive/5 px-4 py-3 text-sm text-destructive"><p className="font-medium">No se pudo guardar el producto</p><p className="mt-1 text-muted-foreground">{errors.root.server.message}</p></div> : null}<div className="mb-5 border-b pb-3"><h2 className="font-semibold">Identificación</h2><p className="mt-1 text-sm text-muted-foreground">Solo SKU, nombre, tipo y unidad base son obligatorios.</p></div><div className="grid gap-5 sm:grid-cols-2">
         <CampoTexto etiqueta="SKU / código interno *" autoFocus placeholder="Ej. PARA-CJ20" error={errors.codigo?.message} {...register('codigo')} />
         <div><label htmlFor="tipo-producto" className="field-label">Tipo *</label><select id="tipo-producto" className="field-control" {...register('tipo')}><option value="good">Producto físico</option><option value="service">Servicio</option></select>{errors.tipo ? <p className="field-error">{errors.tipo.message}</p> : null}</div>
         <div className="sm:col-span-2"><CampoTexto etiqueta="Nombre o descripción *" placeholder="Ej. Paracetamol 500 mg" error={errors.descripcion?.message} {...register('descripcion')} /></div>
         <CampoTexto etiqueta="Presentación" placeholder="Ej. Caja x 20 tabletas" error={errors.presentacion?.message} {...register('presentacion')} />
-        <div><label htmlFor="unidad-base" className="field-label">Unidad base *</label><select id="unidad-base" className="field-control" aria-invalid={Boolean(errors.unidadBaseId)} {...register('unidadBaseId')}><option value="">Seleccionar</option>{unidadesMedida.map((unidad) => <option key={unidad.id} value={unidad.id}>{unidad.nombre}</option>)}</select>{errors.unidadBaseId ? <p className="field-error">{errors.unidadBaseId.message}</p> : <p className="field-help">Unidad mínima usada para controlar stock.</p>}</div>
+        <div><label htmlFor="unidad-base" className="field-label">Unidad base *</label><select id="unidad-base" className="field-control" aria-invalid={Boolean(errors.unidadBaseId)} {...register('unidadBaseId')}><option value="">Seleccionar unidad</option>{unidadesMedida.map((unidad) => <option key={unidad.id} value={unidad.id}>{unidad.nombre}</option>)}</select>{errors.unidadBaseId ? <p className="field-error">{errors.unidadBaseId.message}</p> : <p className="field-help">Unidad mínima utilizada para controlar el stock.</p>}</div>
         <CampoTexto etiqueta="Código de barras" placeholder="Opcional" error={errors.codigoBarras?.message} {...register('codigoBarras')} />
       </div></section>
       <section className="border-t px-5 py-6 sm:px-7"><div className="mb-5"><h2 className="font-semibold">Clasificación</h2><p className="mt-1 text-sm text-muted-foreground">Campos opcionales para ordenar el catálogo.</p></div><div className="grid gap-5 sm:grid-cols-2"><CampoTexto etiqueta="Línea" placeholder="Ej. Medicamentos" error={errors.categoria?.message} {...register('categoria')} /><CampoTexto etiqueta="Sublínea" placeholder="Ej. Analgésicos" error={errors.sublinea?.message} {...register('sublinea')} /><CampoTexto etiqueta="Marca o laboratorio" error={errors.laboratorio?.message} {...register('laboratorio')} /><CampoTexto etiqueta="Registro sanitario" error={errors.registroSanitario?.message} {...register('registroSanitario')} /></div></section>

@@ -1,6 +1,6 @@
 begin;
 
-select plan(54);
+select plan(59);
 
 select has_table('public', 'products', 'existe el catálogo persistente');
 select has_view('public', 'product_catalog_options', 'existe la vista de opciones del catálogo');
@@ -859,6 +859,75 @@ select ok(
   ),
   'crear y editar productos generan auditoría'
 );
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  'a3111111-1111-4111-8111-111111111111',
+  true
+);
+
+select lives_ok(
+  $$
+    select public.import_products(
+      'a1111111-1111-4111-8111-111111111111',
+      '{
+        "productos": [{"fila": 80, "codigo": "IMP-UNIT", "descripcion": "Producto con conversion", "categoria": "Linea", "laboratorio": "Marca"}],
+        "precios": [
+          {"fila": 80, "codigo_producto": "IMP-UNIT", "producto": "Producto con conversion", "unidad_medida": "Unidad", "precio_venta": "2", "inc_igv": "Si", "equivalencia": "1"},
+          {"fila": 81, "codigo_producto": "IMP-UNIT", "producto": "Producto con conversion", "unidad_medida": "Caja", "precio_venta": "20", "inc_igv": "Si", "equivalencia": "10"}
+        ]
+      }'::jsonb
+    )
+  $$,
+  'la importacion admite varias unidades del mismo producto'
+);
+
+select is(
+  (select product.unit_of_measure from public.products product
+    where product.organization_id = 'a1111111-1111-4111-8111-111111111111'
+      and product.code = 'IMP-UNIT'),
+  'Unidad',
+  'la primera presentacion queda como unidad base'
+);
+
+select is(
+  (select conversion.conversion_factor
+    from public.product_unit_conversions conversion
+    join public.products product on product.id = conversion.product_id
+      and product.organization_id = conversion.organization_id
+    where product.organization_id = 'a1111111-1111-4111-8111-111111111111'
+      and product.code = 'IMP-UNIT'),
+  10.000000::numeric,
+  'la presentacion adicional conserva su equivalencia'
+);
+
+select is(
+  public.import_products(
+    'a1111111-1111-4111-8111-111111111111',
+    '{
+      "productos": [
+        {"fila": 90, "codigo": "IMP-REJECT-UNIT", "descripcion": "Producto rechazado"},
+        {"fila": 91, "codigo": "IMP-REJECT-UNIT", "descripcion": "Producto incompatible"}
+      ],
+      "precios": [
+        {"fila": 90, "codigo_producto": "IMP-REJECT-UNIT", "unidad_medida": "Blister especial", "precio_venta": "3", "inc_igv": "Si"}
+      ]
+    }'::jsonb
+  ) ->> 'estado',
+  'rechazado',
+  'un lote inválido con una unidad personalizada se rechaza'
+);
+
+select is(
+  (select count(*) from public.measurement_units unit
+    where unit.organization_id = 'a1111111-1111-4111-8111-111111111111'
+      and unit.name = 'Blister especial'),
+  0::bigint,
+  'un lote rechazado no deja unidades personalizadas huérfanas'
+);
+
+reset role;
 
 select * from finish();
 

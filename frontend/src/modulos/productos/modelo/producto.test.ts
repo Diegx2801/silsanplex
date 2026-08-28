@@ -14,12 +14,12 @@ describe('esquemaProducto', () => {
       ...productoInicial,
       codigo: '  PROD-001  ',
       descripcion: '  Producto de prueba  ',
-      unidadMedida: 'Unidad',
       unidadBaseId,
     })
 
     expect(resultado.codigo).toBe('PROD-001')
     expect(resultado.descripcion).toBe('Producto de prueba')
+    expect(resultado.unidadMedida).toBe('')
   })
 
   it('exige SKU, descripción y unidad de medida', () => {
@@ -82,6 +82,26 @@ describe('esquemaProducto', () => {
 
     expect(resultado.controlLote).toBe(false)
     expect(resultado.controlVencimiento).toBe(true)
+  })
+
+  it('rechaza códigos de barras repetidos entre presentaciones', () => {
+    const resultado = esquemaProducto.safeParse({
+      ...productoInicial,
+      codigo: 'PROD-001',
+      descripcion: 'Producto de prueba',
+      unidadBaseId,
+      unidadMedida: 'Unidad',
+      codigoBarras: '775000000001',
+      unidadesAlternativas: [{
+        unidadId: '22222222-2222-4222-8222-222222222222',
+        unidadNombre: 'Caja',
+        equivalencia: '10',
+        codigoBarras: '775000000001',
+        precioVenta: '',
+      }],
+    })
+
+    expect(resultado.success).toBe(false)
   })
 })
 

@@ -102,9 +102,7 @@ export function ProductosPage() {
   const busquedaDiferida = useDeferredValue(busqueda)
   const [parametros, setParametros] = useSearchParams()
   const [filtroEstado, setFiltroEstado] =
-    useState<FiltroEstadoProducto>('todos')
-  const [filtroCategoria, setFiltroCategoria] = useState('')
-  const [filtroLaboratorio, setFiltroLaboratorio] = useState('')
+    useState<FiltroEstadoProducto>('activos')
   const [orden, setOrden] = useState<OrdenProductos>('codigo-asc')
   const [pagina, setPagina] = useState(1)
   const [tamanioPagina, setTamanioPagina] = useState(10)
@@ -125,8 +123,8 @@ export function ProductosPage() {
   const consulta = {
     busqueda: busquedaDiferida,
     estado: filtroEstado,
-    categoria: filtroCategoria,
-    laboratorio: filtroLaboratorio,
+    categoria: '',
+    laboratorio: '',
     orden,
   }
   const {
@@ -139,8 +137,6 @@ export function ProductosPage() {
     cambiandoEstado,
     totalFiltrado,
     totalProductos,
-    categorias,
-    laboratorios,
     unidadesMedida,
     exportarProductos,
   } = useProductos('', { consulta, pagina, tamanioPagina })
@@ -174,15 +170,11 @@ export function ProductosPage() {
 
   const cantidadFiltrosActivos =
     Number(Boolean(busqueda.trim())) +
-    Number(filtroEstado !== 'todos') +
-    Number(Boolean(filtroCategoria)) +
-    Number(Boolean(filtroLaboratorio))
+    Number(filtroEstado !== 'todos')
 
   const limpiarFiltros = () => {
     setBusqueda('')
     setFiltroEstado('todos')
-    setFiltroCategoria('')
-    setFiltroLaboratorio('')
     setPagina(1)
   }
 
@@ -324,11 +316,7 @@ export function ProductosPage() {
       <FiltrosProductos
         busqueda={busqueda}
         estado={filtroEstado}
-        categoria={filtroCategoria}
-        laboratorio={filtroLaboratorio}
         orden={orden}
-        categorias={categorias}
-        laboratorios={laboratorios}
         cantidadActivos={cantidadFiltrosActivos}
         alCambiarBusqueda={(valor) => {
           setBusqueda(valor)
@@ -336,14 +324,6 @@ export function ProductosPage() {
         }}
         alCambiarEstado={(valor) => {
           setFiltroEstado(valor)
-          setPagina(1)
-        }}
-        alCambiarCategoria={(valor) => {
-          setFiltroCategoria(valor)
-          setPagina(1)
-        }}
-        alCambiarLaboratorio={(valor) => {
-          setFiltroLaboratorio(valor)
           setPagina(1)
         }}
         alCambiarOrden={(valor) => {

@@ -469,6 +469,8 @@ function construirPayloadImportacion(datos: DatosImportacionProductos) {
       inc_igv: fila.incIgv,
       costo_base: fila.costoBase,
       precio_minimo: fila.precioMinimo,
+      equivalencia: fila.equivalencia,
+      codigo_barras: fila.codigoBarras,
     })),
   }
 }

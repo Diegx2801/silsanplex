@@ -62,11 +62,9 @@ export const esquemaProducto = z.object({
   presentacion: textoOpcional(100),
   tipo: z.enum(['good', 'service']),
   unidadBaseId: z.string().uuid('Selecciona una unidad de medida'),
-  unidadMedida: z
-    .string()
-    .trim()
-    .min(1, 'Selecciona o ingresa la unidad de medida')
-    .max(40, 'Máximo 40 caracteres'),
+  // Campo derivado de unidadBaseId para conservar compatibilidad con lecturas
+  // anteriores. El usuario no debe completarlo ni puede bloquear el formulario.
+  unidadMedida: textoOpcional(40),
   afectacionIgv: z.enum(['', 'gravado', 'exonerado', 'inafecto']),
   costo: importeOpcional,
   precioVenta: importeOpcional,
@@ -100,11 +98,19 @@ export const esquemaProducto = z.object({
   }
 
   const unidades = new Set<string>()
+  const codigosBarras = new Set(
+    datos.codigoBarras ? [datos.codigoBarras.trim().toLocaleUpperCase('es-PE')] : [],
+  )
   for (const [indice, unidad] of datos.unidadesAlternativas.entries()) {
     if (unidad.unidadId === datos.unidadBaseId || unidades.has(unidad.unidadId)) {
       contexto.addIssue({ code: 'custom', path: ['unidadesAlternativas', indice, 'unidadId'], message: 'La unidad debe ser diferente y no repetirse' })
     }
     unidades.add(unidad.unidadId)
+    const codigoBarras = unidad.codigoBarras.trim().toLocaleUpperCase('es-PE')
+    if (codigoBarras && codigosBarras.has(codigoBarras)) {
+      contexto.addIssue({ code: 'custom', path: ['unidadesAlternativas', indice, 'codigoBarras'], message: 'Este código de barras ya está usado en el producto' })
+    }
+    if (codigoBarras) codigosBarras.add(codigoBarras)
   }
 })
 

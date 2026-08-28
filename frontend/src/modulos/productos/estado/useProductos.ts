@@ -12,7 +12,6 @@ import {
   contarProductos,
   crearProducto,
   editarProducto,
-  listarOpcionesProductos,
   listarUnidadesMedida,
   listarProductosFiltrados,
   listarProductosPaginados,
@@ -20,7 +19,6 @@ import {
 } from '@/modulos/productos/servicios/productosService'
 
 const productosVacios: Producto[] = []
-const opcionesVacias = { categorias: [], laboratorios: [] }
 
 interface ConfiguracionConsultaProductos {
   consulta?: ConsultaProductos
@@ -66,12 +64,6 @@ export function useProductos(
     enabled: Boolean(organizationId) && Boolean(consultaPaginada),
     staleTime: 30_000,
   })
-  const opcionesQuery = useQuery({
-    queryKey: [...productosQueryKey, 'opciones'],
-    queryFn: () => listarOpcionesProductos(organizationId),
-    enabled: Boolean(organizationId) && Boolean(consultaPaginada),
-    staleTime: 5 * 60_000,
-  })
   const unidadesQuery = useQuery({
     queryKey: [...productosQueryKey, 'unidades-medida'],
     queryFn: () => listarUnidadesMedida(organizationId),
@@ -107,7 +99,7 @@ export function useProductos(
   const reintentar = async () => {
     await query.refetch()
     if (consultaPaginada) {
-      await Promise.all([totalQuery.refetch(), opcionesQuery.refetch(), unidadesQuery.refetch()])
+      await Promise.all([totalQuery.refetch(), unidadesQuery.refetch()])
     }
   }
 
@@ -117,15 +109,12 @@ export function useProductos(
     totalProductos: consultaPaginada
       ? totalQuery.data ?? totalFiltrado
       : productos.length,
-    categorias: opcionesQuery.data?.categorias ?? opcionesVacias.categorias,
-    laboratorios:
-      opcionesQuery.data?.laboratorios ?? opcionesVacias.laboratorios,
     unidadesMedida: unidadesQuery.data ?? [],
     cargando:
       query.isLoading ||
       (Boolean(consultaPaginada) &&
-        (totalQuery.isLoading || opcionesQuery.isLoading || unidadesQuery.isLoading)),
-    error: query.error ?? totalQuery.error ?? opcionesQuery.error ?? unidadesQuery.error,
+        (totalQuery.isLoading || unidadesQuery.isLoading)),
+    error: query.error ?? totalQuery.error ?? unidadesQuery.error,
     reintentar,
     guardando: guardarMutation.isPending,
     cambiandoEstado: estadoMutation.isPending,

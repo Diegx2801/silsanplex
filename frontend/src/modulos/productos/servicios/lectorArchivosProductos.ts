@@ -35,7 +35,7 @@ const columnasPrecios = [
   'IncIGV',
 ]
 
-export const columnasOpcionalesPrecios = ['CostoBase', 'PrecioMinimo'] as const
+export const columnasOpcionalesPrecios = ['CostoBase', 'PrecioMinimo', 'Equivalencia', 'CodigoBarra'] as const
 
 function validarExtension(archivo: File) {
   if (!archivo.name.toLocaleLowerCase('es-PE').endsWith('.xlsx')) {

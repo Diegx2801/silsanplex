@@ -58,6 +58,8 @@ export interface FilaPrecioImportacion {
   incIgv: string
   costoBase: string
   precioMinimo: string
+  equivalencia: string
+  codigoBarras: string
 }
 
 export interface DatosImportacionProductos {
@@ -97,6 +99,10 @@ const gruposUnidades: Record<string, string[]> = {
   UNIDAD: ['UNIDAD', 'UND'],
   CAJA: ['CAJA', 'CJA'],
   PAQUETE: ['PAQUETE', 'PAQ', 'PQT'],
+}
+function unidadCanonica(valor: string) {
+  const unidad = normalizar(valor)
+  return Object.entries(gruposUnidades).find(([, variantes]) => variantes.includes(unidad))?.[0] ?? unidad
 }
 const precioMaximo = 999_999_999_999.99
 
@@ -158,6 +164,8 @@ function firmaPrecio(fila: FilaImportacion) {
     fila.IncIGV,
     fila.CostoBase,
     fila.PrecioMinimo,
+    fila.Equivalencia,
+    fila.CodigoBarra,
   ]
     .map((valor) => normalizar(valor ?? ''))
     .join('|')
@@ -226,6 +234,8 @@ function filaPrecio(fila: FilaImportacion, indice: number): FilaPrecioImportacio
     incIgv: normalizarIncIgv(fila.IncIGV ?? ''),
     costoBase: normalizarPrecio(fila.CostoBase ?? ''),
     precioMinimo: normalizarPrecio(fila.PrecioMinimo ?? ''),
+    equivalencia: normalizarPrecio(fila.Equivalencia ?? ''),
+    codigoBarras: (fila.CodigoBarra ?? '').trim(),
   }
 }
 
@@ -261,7 +271,7 @@ function crearDatosImportacion(
     ),
     precios: primerosPorCodigo(
       preciosNormalizados,
-      (fila) => fila.codigoProducto,
+      (fila) => `${fila.codigoProducto}|${unidadCanonica(fila.unidadMedida)}`,
       (primero, segundo) =>
         primero.codigoProducto.localeCompare(segundo.codigoProducto, 'es-PE', {
           numeric: true,
@@ -465,31 +475,38 @@ export function analizarFilasImportacion(
     )
   }
 
-  const codigosPrecioConflictos = [...preciosPorCodigo.entries()].filter(
+  const preciosPorProductoUnidad = agruparPor(precios, (fila) =>
+    `${normalizar(fila.CodigoProducto ?? '')}|${unidadCanonica(fila.Medida ?? '')}`,
+  )
+  const codigosPrecioConflictos = [...preciosPorProductoUnidad.entries()].filter(
     ([, filas]) => new Set(filas.map(firmaPrecio)).size > 1,
   )
   if (codigosPrecioConflictos.length) {
     hallazgos.push({
       id: 'precios-conflictivos',
       nivel: 'bloqueo',
-      titulo: 'Códigos con varias filas de precio distintas',
+      titulo: 'Precios distintos para la misma unidad',
       detalle:
-        'El catálogo actual admite un único precio y unidad por producto; estas filas deben corregirse antes de importar.',
+        'Una misma unidad del producto tiene datos comerciales incompatibles; debe elegirse cuál fila es la correcta.',
       cantidad: codigosPrecioConflictos.length,
       unidad: 'código',
       ejemplos: ejemplosLimitados(
-        codigosPrecioConflictos.map(([codigo]) => codigo),
+        codigosPrecioConflictos.map(([clave]) => clave.split('|')[0] ?? clave),
       ),
     })
-    agregarObservaciones(
-      filasObservadas,
-      'precio',
-      precios,
-      (fila) => fila.CodigoProducto ?? '',
-      new Set(codigosPrecioConflictos.map(([codigo]) => codigo)),
-      'rechazada',
-      'El código tiene varias filas de precio distintas.',
-    )
+    const clavesConflictivas = new Set(codigosPrecioConflictos.map(([clave]) => clave))
+    for (const [indice, fila] of precios.entries()) {
+      const codigo = normalizar(fila.CodigoProducto ?? '')
+      const clave = `${codigo}|${unidadCanonica(fila.Medida ?? '')}`
+      if (!clavesConflictivas.has(clave)) continue
+      filasObservadas.push({
+        tipo: 'precio',
+        fila: indice + 2,
+        codigo,
+        estado: 'rechazada',
+        motivo: 'La misma unidad tiene más de una configuración comercial.',
+      })
+    }
   }
 
   const firmasPrecios = agruparPor(precios, firmaPrecio)
@@ -537,6 +554,8 @@ export function analizarFilasImportacion(
     const precioNumerico = precio === '' ? null : Number(normalizarPrecio(precio))
     const costo = (fila.CostoBase ?? '').trim()
     const precioMinimo = (fila.PrecioMinimo ?? '').trim()
+    const equivalencia = (fila.Equivalencia ?? '').trim()
+    const codigoBarras = (fila.CodigoBarra ?? '').trim()
     const numeroMonetarioValido = (valor: string) =>
       !valor || (/^(0|\d+)([.,]\d{1,2})?$/.test(valor) && Number(normalizarPrecio(valor)) <= precioMaximo)
     const precioValido =
@@ -552,6 +571,8 @@ export function analizarFilasImportacion(
     return !precioValido || !numeroMonetarioValido(costo) ||
       !numeroMonetarioValido(precioMinimo) || !minimoNoSuperaVenta ||
       !incIgvValido || unidadMedida.length > 40
+      || (equivalencia !== '' && (!/^\d+([.,]\d{1,6})?$/.test(equivalencia) || Number(normalizarPrecio(equivalencia)) <= 0))
+      || codigoBarras.length > 50
   })
   if (preciosInvalidos.length) {
     hallazgos.push({

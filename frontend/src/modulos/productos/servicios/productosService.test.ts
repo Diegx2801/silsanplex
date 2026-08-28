@@ -296,6 +296,8 @@ describe('productosService', () => {
           incIgv: 'Sí',
           costoBase: '8.00',
           precioMinimo: '9.50',
+          equivalencia: '1',
+          codigoBarras: '',
         },
       ],
     })
@@ -335,6 +337,8 @@ describe('productosService', () => {
             inc_igv: 'Sí',
             costo_base: '8.00',
             precio_minimo: '9.50',
+            equivalencia: '1',
+            codigo_barras: '',
           },
         ],
       },

@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import type {
   FilaImportacionObservada,
   FilaImportacionRechazada,
+  EstadoFilaImportacion,
   NivelHallazgo,
   ResultadoImportacion,
   ResultadoImportacionPersistida,
@@ -127,21 +128,33 @@ const configuracionFila: Record<
   advertencia: { etiqueta: 'Advertencia', tono: 'revision' },
 }
 
+const filasPorPagina = 25
+
 function FilasObservadas({ filas }: { filas: FilaImportacionObservada[] }) {
+  const [filtro, setFiltro] = useState<'todas' | EstadoFilaImportacion>('todas')
+  const [pagina, setPagina] = useState(1)
   if (!filas.length) return null
+
+  const filtradas = filtro === 'todas' ? filas : filas.filter((fila) => fila.estado === filtro)
+  const totalPaginas = Math.max(1, Math.ceil(filtradas.length / filasPorPagina))
+  const paginaActual = Math.min(pagina, totalPaginas)
+  const visibles = filtradas.slice((paginaActual - 1) * filasPorPagina, paginaActual * filasPorPagina)
 
   return (
     <section aria-labelledby="filas-importacion-title" className="ledger-sheet">
-      <div className="border-b px-5 py-4 sm:px-6">
+      <div className="flex flex-col gap-4 border-b px-5 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-6">
+        <div>
         <h2 id="filas-importacion-title" className="text-lg font-semibold">
           Filas que requieren atención
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {filas.length} filas observadas; las rechazadas impiden guardar el lote.
+          {filtradas.length} de {filas.length} filas observadas; las rechazadas impiden guardar el lote.
         </p>
+        </div>
+        <div><label htmlFor="filtro-filas-importacion" className="field-label">Mostrar</label><select id="filtro-filas-importacion" className="field-control min-w-44" value={filtro} onChange={(evento) => { setFiltro(evento.target.value as 'todas' | EstadoFilaImportacion); setPagina(1) }}><option value="todas">Todas</option><option value="rechazada">Rechazadas</option><option value="advertencia">Advertencias</option><option value="duplicada">Duplicadas</option></select></div>
       </div>
       <div className="divide-y">
-        {filas.map((fila, indice) => {
+        {visibles.map((fila, indice) => {
           const configuracion = configuracionFila[fila.estado]
 
           return (
@@ -168,6 +181,7 @@ function FilasObservadas({ filas }: { filas: FilaImportacionObservada[] }) {
           )
         })}
       </div>
+      <div className="flex items-center justify-between gap-3 border-t px-5 py-4 text-sm sm:px-6"><span>Página {paginaActual} de {totalPaginas}</span><div className="flex gap-2"><Button type="button" variant="outline" size="sm" disabled={paginaActual <= 1} onClick={() => setPagina((valor) => Math.max(1, valor - 1))}>Anterior</Button><Button type="button" variant="outline" size="sm" disabled={paginaActual >= totalPaginas} onClick={() => setPagina((valor) => Math.min(totalPaginas, valor + 1))}>Siguiente</Button></div></div>
     </section>
   )
 }
@@ -599,13 +613,14 @@ export function ImportarProductosPage() {
       {resultado ? (
         <>
           <ResultadoAnalisis resultado={resultado} />
-          {!resultado.tieneBloqueos ? (
-            <section className="ledger-sheet">
+          <section className="ledger-sheet">
               <div className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <div>
                   <h2 className="font-semibold">Confirmar importación</h2>
                   <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    {puedeImportar
+                    {resultado.tieneBloqueos
+                      ? 'Corrige las filas rechazadas indicadas arriba antes de importar. Las advertencias no bloquean la operación.'
+                      : puedeImportar
                       ? 'La operación será atómica. Si el servidor detecta un conflicto, no se guardará ninguna fila.'
                       : 'Tu rol puede revisar los archivos, pero no administrar el catálogo.'}
                   </p>
@@ -613,7 +628,7 @@ export function ImportarProductosPage() {
                 {puedeImportar ? (
                   <Button
                     type="button"
-                    disabled={importando}
+                    disabled={importando || resultado.tieneBloqueos}
                     onClick={() => void importar()}
                   >
                     {importando ? (
@@ -621,12 +636,11 @@ export function ImportarProductosPage() {
                     ) : (
                       <ShieldCheck aria-hidden="true" />
                     )}
-                    {importando ? 'Importando…' : 'Importar catálogo'}
+                    {importando ? 'Importando…' : resultado.tieneBloqueos ? 'Importación bloqueada' : 'Importar catálogo'}
                   </Button>
                 ) : null}
               </div>
             </section>
-          ) : null}
           {resultadoPersistencia ? (
             <ResultadoPersistencia resultado={resultadoPersistencia} />
           ) : null}

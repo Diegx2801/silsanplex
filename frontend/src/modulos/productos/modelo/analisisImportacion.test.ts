@@ -3,6 +3,36 @@ import { describe, expect, it } from 'vitest'
 import { analizarFilasImportacion } from './analisisImportacion'
 
 describe('analizarFilasImportacion', () => {
+  it('conserva varias unidades comerciales del mismo producto', () => {
+    const resultado = analizarFilasImportacion(
+      [{ Codigo: 'SKU-1', Producto: 'Producto uno', Linea: '', SubLinea: '', Marca_Laboratorio: '' }],
+      [
+        { CodigoProducto: 'SKU-1', Producto: 'Producto uno', Medida: 'Unidad', Precio_venta: '2', IncIGV: 'Sí', Equivalencia: '1' },
+        { CodigoProducto: 'SKU-1', Producto: 'Producto uno', Medida: 'Caja', Precio_venta: '20', IncIGV: 'Sí', Equivalencia: '10' },
+      ],
+    )
+
+    expect(resultado.hallazgos.some((hallazgo) => hallazgo.id === 'precios-conflictivos')).toBe(false)
+    expect(resultado.datos.precios).toHaveLength(2)
+  })
+
+  it('rechaza solo la unidad que tiene precios incompatibles', () => {
+    const resultado = analizarFilasImportacion(
+      [{ Codigo: 'SKU-1', Producto: 'Producto uno' }],
+      [
+        { CodigoProducto: 'SKU-1', Medida: 'Unidad', Precio_venta: '2', IncIGV: 'Sí' },
+        { CodigoProducto: 'SKU-1', Medida: 'Caja', Precio_venta: '20', IncIGV: 'Sí', Equivalencia: '10' },
+        { CodigoProducto: 'SKU-1', Medida: 'Caja', Precio_venta: '25', IncIGV: 'Sí', Equivalencia: '10' },
+      ],
+    )
+
+    expect(resultado.filasObservadas.filter((fila) => fila.estado === 'rechazada'))
+      .toEqual([
+        expect.objectContaining({ fila: 3, codigo: 'SKU-1' }),
+        expect.objectContaining({ fila: 4, codigo: 'SKU-1' }),
+      ])
+  })
+
   it('bloquea códigos que identifican productos distintos', () => {
     const resultado = analizarFilasImportacion(
       [

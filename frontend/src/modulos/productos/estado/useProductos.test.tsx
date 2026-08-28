@@ -7,7 +7,7 @@ import { productoInicial, type Producto } from '@/modulos/productos/modelo/produ
 const mocks = vi.hoisted(() => ({
   buscarProductos: vi.fn(),
   contarProductos: vi.fn(),
-  listarOpcionesProductos: vi.fn(),
+  listarUnidadesMedida: vi.fn(),
   listarProductosFiltrados: vi.fn(),
   listarProductosPaginados: vi.fn(),
   listarProductos: vi.fn(),
@@ -99,10 +99,7 @@ describe('useProductos', () => {
     vi.clearAllMocks()
     mocks.buscarProductos.mockResolvedValue([])
     mocks.contarProductos.mockResolvedValue(30)
-    mocks.listarOpcionesProductos.mockResolvedValue({
-      categorias: [],
-      laboratorios: [],
-    })
+    mocks.listarUnidadesMedida.mockResolvedValue([])
     mocks.listarProductosFiltrados.mockResolvedValue([])
     mocks.listarProductosPaginados.mockResolvedValue({
       elementos: [producto],
@@ -172,7 +169,7 @@ describe('useProductos', () => {
         tamanioPagina: 10,
       })
       expect(mocks.contarProductos).toHaveBeenCalledWith('org-1')
-      expect(mocks.listarOpcionesProductos).toHaveBeenCalledWith('org-1')
+      expect(mocks.listarUnidadesMedida).toHaveBeenCalledWith('org-1')
     })
 
     await waitFor(() =>

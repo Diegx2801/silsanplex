@@ -171,6 +171,16 @@ begin
     if nullif(btrim(new.unit_of_measure), '') is null then
       normalized_code := 'UNIT';
     elsif normalized_code is null then
+      select unit.* into resolved_unit
+      from public.measurement_units unit
+      where unit.organization_id = new.organization_id
+        and lower(btrim(unit.name)) = lower(btrim(new.unit_of_measure))
+        and unit.is_active;
+      if found then
+        new.base_unit_id := resolved_unit.id;
+        new.unit_of_measure := resolved_unit.name;
+        return new;
+      end if;
       raise exception using errcode = '22023', message = 'PRODUCT_BASE_UNIT_INVALID';
     end if;
     select unit.* into resolved_unit
@@ -460,6 +470,187 @@ $$;
 revoke all on function public.save_product_catalog(uuid, uuid, jsonb) from public, anon;
 grant execute on function public.save_product_catalog(uuid, uuid, jsonb)
   to authenticated, service_role;
+
+-- Conserva todas las presentaciones del archivo de precios legado: la primera
+-- unidad queda como base y las demás se registran como conversiones.
+alter function public.import_products(uuid, jsonb)
+  rename to import_products_single_unit_core;
+revoke all on function public.import_products_single_unit_core(uuid, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.import_products_single_unit_core(uuid, jsonb)
+  to service_role;
+
+create function public.import_products(requested_organization_id uuid, payload jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  result jsonb;
+  reduced_payload jsonb;
+  alternate record;
+  resolved_unit_id uuid;
+  resolved_unit_code text;
+  created_unit_ids uuid[] := '{}'::uuid[];
+begin
+  if (select auth.uid()) is null or not public.has_organization_permission(
+    requested_organization_id,
+    'PRODUCTS_MANAGE'
+  ) then
+    raise exception using errcode = '42501', message = 'PRODUCT_IMPORT_FORBIDDEN';
+  end if;
+  if payload is null or jsonb_typeof(payload) <> 'object'
+    or jsonb_typeof(coalesce(payload -> 'precios', 'null'::jsonb)) <> 'array'
+  then
+    raise exception using errcode = 'P0001', message = 'PRODUCT_IMPORT_INVALID_PAYLOAD';
+  end if;
+
+  with inserted_units as (
+    insert into public.measurement_units (organization_id, code, name)
+    select distinct
+      requested_organization_id,
+      'CUSTOM_' || upper(substr(md5(upper(btrim(source.item ->> 'unidad_medida'))), 1, 12)),
+      btrim(source.item ->> 'unidad_medida')
+    from jsonb_array_elements(payload -> 'precios') source(item)
+    where nullif(btrim(source.item ->> 'unidad_medida'), '') is not null
+      and public.normalized_measurement_unit_code(source.item ->> 'unidad_medida') is null
+    on conflict (organization_id, code) do nothing
+    returning id
+  )
+  select coalesce(array_agg(inserted_units.id), '{}'::uuid[])
+  into created_unit_ids
+  from inserted_units;
+
+  reduced_payload := jsonb_set(
+    payload,
+    '{precios}',
+    coalesce((
+      select jsonb_agg(selected.item order by selected.row_number)
+      from (
+        select ranked.item, ranked.row_number
+        from (
+          select source.item,
+            coalesce((source.item ->> 'fila')::integer, source.ordinality::integer) as row_number,
+            coalesce(
+              public.normalized_measurement_unit_code(source.item ->> 'unidad_medida'),
+              upper(btrim(source.item ->> 'unidad_medida'))
+            ) as unit_key,
+            first_value(coalesce(
+              public.normalized_measurement_unit_code(source.item ->> 'unidad_medida'),
+              upper(btrim(source.item ->> 'unidad_medida'))
+            )) over (
+              partition by upper(btrim(source.item ->> 'codigo_producto'))
+              order by coalesce((source.item ->> 'fila')::integer, source.ordinality::integer)
+            ) as base_unit_key
+          from jsonb_array_elements(payload -> 'precios') with ordinality source(item, ordinality)
+        ) ranked
+        where ranked.unit_key = ranked.base_unit_key
+      ) selected
+    ), '[]'::jsonb)
+  );
+
+  result := public.import_products_single_unit_core(
+    requested_organization_id,
+    reduced_payload
+  );
+
+  if result ->> 'estado' <> 'completado' then
+    delete from public.measurement_units unit
+    where unit.id = any(created_unit_ids)
+      and not exists (
+        select 1 from public.products product
+        where product.organization_id = unit.organization_id
+          and product.base_unit_id = unit.id
+      )
+      and not exists (
+        select 1 from public.product_unit_conversions conversion
+        where conversion.organization_id = unit.organization_id
+          and conversion.unit_id = unit.id
+      );
+    return result;
+  end if;
+
+  for alternate in
+    select ranked.item
+    from (
+      select deduplicated.item,
+        row_number() over (
+          partition by upper(btrim(deduplicated.item ->> 'codigo_producto'))
+          order by deduplicated.row_number
+        ) as position
+      from (
+        select distinct on (
+          upper(btrim(source.item ->> 'codigo_producto')),
+          coalesce(
+            public.normalized_measurement_unit_code(source.item ->> 'unidad_medida'),
+            upper(btrim(source.item ->> 'unidad_medida'))
+          )
+        ) source.item,
+          coalesce((source.item ->> 'fila')::integer, source.ordinality::integer) as row_number
+        from jsonb_array_elements(payload -> 'precios') with ordinality source(item, ordinality)
+        order by
+          upper(btrim(source.item ->> 'codigo_producto')),
+          coalesce(
+            public.normalized_measurement_unit_code(source.item ->> 'unidad_medida'),
+            upper(btrim(source.item ->> 'unidad_medida'))
+          ),
+          row_number
+      ) deduplicated
+    ) ranked
+    where ranked.position > 1
+  loop
+    if nullif(btrim(alternate.item ->> 'equivalencia'), '') is null
+      or not (btrim(alternate.item ->> 'equivalencia') ~ '^\d+(\.\d{1,6})?$')
+      or (alternate.item ->> 'equivalencia')::numeric <= 0
+    then
+      raise exception using errcode = '22023', message = 'PRODUCT_IMPORT_UNIT_CONVERSION_REQUIRED';
+    end if;
+
+    resolved_unit_code := public.normalized_measurement_unit_code(alternate.item ->> 'unidad_medida');
+    select unit.id into resolved_unit_id
+    from public.measurement_units unit
+    where unit.organization_id = requested_organization_id
+      and unit.is_active
+      and (
+        (resolved_unit_code is not null and unit.code = resolved_unit_code)
+        or (resolved_unit_code is null and lower(btrim(unit.name)) = lower(btrim(alternate.item ->> 'unidad_medida')))
+      );
+    if resolved_unit_id is null then
+      raise exception using errcode = '22023', message = 'PRODUCT_IMPORT_UNIT_INVALID';
+    end if;
+
+    insert into public.product_unit_conversions (
+      organization_id, product_id, unit_id, conversion_factor, barcode,
+      sale_price, is_active, created_by, updated_by
+    )
+    select
+      requested_organization_id,
+      product.id,
+      resolved_unit_id,
+      (alternate.item ->> 'equivalencia')::numeric,
+      nullif(btrim(alternate.item ->> 'codigo_barras'), ''),
+      nullif(btrim(alternate.item ->> 'precio_venta'), '')::numeric,
+      true,
+      (select auth.uid()),
+      (select auth.uid())
+    from public.products product
+    where product.organization_id = requested_organization_id
+      and product.code = upper(btrim(alternate.item ->> 'codigo_producto'))
+    on conflict (organization_id, product_id, unit_id) do update set
+      conversion_factor = excluded.conversion_factor,
+      barcode = excluded.barcode,
+      sale_price = excluded.sale_price,
+      is_active = true,
+      updated_by = excluded.updated_by;
+  end loop;
+
+  return result;
+end;
+$$;
+
+revoke all on function public.import_products(uuid, jsonb) from public, anon;
+grant execute on function public.import_products(uuid, jsonb) to authenticated, service_role;
 
 comment on column public.products.code is
   'SKU único dentro de la organización; identifica una presentación almacenada.';
