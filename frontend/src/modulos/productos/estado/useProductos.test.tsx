@@ -106,8 +106,8 @@ describe('useProductos', () => {
       totalFiltrado: 21,
     })
     mocks.listarProductos.mockResolvedValue([])
-    mocks.crearProducto.mockResolvedValue(undefined)
-    mocks.editarProducto.mockResolvedValue(undefined)
+    mocks.crearProducto.mockResolvedValue('producto-1')
+    mocks.editarProducto.mockResolvedValue('producto-1')
     mocks.cambiarEstadoProducto.mockResolvedValue(undefined)
   })
 

@@ -514,12 +514,14 @@ export async function crearProducto(
   _userId: string,
   datos: DatosProducto,
 ) {
-  const { error } = await supabase.rpc('save_product_catalog', {
+  const { data, error } = await supabase.rpc('save_product_catalog', {
     requested_organization_id: organizationId,
     requested_product_id: null,
     payload: construirPayloadProducto(datos),
   })
   if (error) throw new Error(mensajeError(error, 'crear'))
+  if (!data) throw new Error('El producto se guardó sin devolver un identificador válido')
+  return data as string
 }
 
 export async function editarProducto(
@@ -528,12 +530,14 @@ export async function editarProducto(
   productoId: string,
   datos: DatosProducto,
 ) {
-  const { error } = await supabase.rpc('save_product_catalog', {
+  const { data, error } = await supabase.rpc('save_product_catalog', {
     requested_organization_id: organizationId,
     requested_product_id: productoId,
     payload: construirPayloadProducto(datos),
   })
   if (error) throw new Error(mensajeError(error, 'editar'))
+  if (!data) throw new Error('El producto se actualizó sin devolver un identificador válido')
+  return data as string
 }
 
 export async function cambiarEstadoProducto(

@@ -16,6 +16,7 @@ import {
   listarProductosFiltrados,
   listarProductosPaginados,
   listarProductos,
+  subirArchivoProducto,
 } from '@/modulos/productos/servicios/productosService'
 
 const productosVacios: Producto[] = []
@@ -122,12 +123,29 @@ export function useProductos(
       buscarProductosEnSupabase(organizationId, busqueda),
     exportarProductos: (consulta: ConsultaProductos) =>
       listarProductosFiltrados(organizationId, consulta),
-    guardarProducto: async (datos: DatosProducto, productoId?: string) => {
+    guardarProducto: async (datos: DatosProducto, productoId?: string, imagenPrincipal?: File | null) => {
       try {
-        await guardarMutation.mutateAsync({ datos, productoId })
-        return undefined
+        const productoGuardadoId = await guardarMutation.mutateAsync({ datos, productoId })
+        if (imagenPrincipal && user) {
+          try {
+            await subirArchivoProducto(organizationId, productoGuardadoId, user.id, {
+              archivo: imagenPrincipal,
+              tipo: 'image',
+              descripcion: '',
+            })
+            await queryClient.invalidateQueries({ queryKey: productosQueryKey })
+          } catch (errorImagen) {
+            return {
+              productoId: productoGuardadoId,
+              advertencia: errorImagen instanceof Error
+                ? `El producto se guardó, pero la imagen quedó pendiente: ${errorImagen.message}`
+                : 'El producto se guardó, pero la imagen quedó pendiente.',
+            }
+          }
+        }
+        return { productoId: productoGuardadoId }
       } catch (error) {
-        return error instanceof Error ? error.message : 'No se pudo guardar el producto'
+        return { error: error instanceof Error ? error.message : 'No se pudo guardar el producto' }
       }
     },
     cambiarEstado: async (producto: Producto) => {

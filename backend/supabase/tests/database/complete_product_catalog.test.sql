@@ -1,6 +1,6 @@
 begin;
 
-select plan(31);
+select plan(32);
 
 select has_column('public', 'products', 'extended_description', 'producto tiene descripción ampliada');
 select has_column('public', 'products', 'width_cm', 'producto tiene ancho');
@@ -54,15 +54,21 @@ select ok((select changes ? 'minimum_sale_price' from public.product_versions wh
 
 insert into public.product_files (
   id, organization_id, product_id, kind, storage_path, file_name,
-  mime_type, byte_size, is_primary, created_by
+  mime_type, byte_size, created_by
 ) values (
   'b4000000-0000-4000-8000-000000000001',
   'b1000000-0000-4000-8000-000000000001',
   'b3000000-0000-4000-8000-000000000001',
   'image',
   'b1000000-0000-4000-8000-000000000001/b3000000-0000-4000-8000-000000000001/imagen.webp',
-  'imagen.webp', 'image/webp', 2048, true,
+  'imagen.webp', 'image/webp', 2048,
   'b2000000-0000-4000-8000-000000000001'
+);
+
+select is(
+  (select is_primary from public.product_files where id = 'b4000000-0000-4000-8000-000000000001'),
+  true,
+  'la primera imagen del producto se establece como principal'
 );
 
 select is((select max(version_number) from public.product_versions where product_id = 'b3000000-0000-4000-8000-000000000001'), 3, 'archivo agregado entra al historial');

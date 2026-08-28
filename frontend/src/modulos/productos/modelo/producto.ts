@@ -123,6 +123,12 @@ export interface UnidadMedida {
   nombre: string
 }
 
+export interface ResultadoGuardadoProducto {
+  productoId?: string
+  error?: string
+  advertencia?: string
+}
+
 export interface Producto extends Omit<DatosProducto, 'sublinea' | 'costo'> {
   id: string
   sublinea?: string

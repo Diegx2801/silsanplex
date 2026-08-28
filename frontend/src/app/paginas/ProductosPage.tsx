@@ -193,18 +193,14 @@ export function ProductosPage() {
     setFormularioAbierto(true)
   }
 
-  const guardar = async (datos: DatosProducto, productoId?: string) => {
-    const error = await guardarProducto(datos, productoId)
-
-    if (!error) {
-      setMensaje(
-        productoId
-          ? 'Los cambios se guardaron correctamente.'
-          : 'El producto se registró correctamente.',
-      )
+  const guardar = async (datos: DatosProducto, productoId?: string, imagenPrincipal?: File | null) => {
+    const resultado = await guardarProducto(datos, productoId, imagenPrincipal)
+    if (!resultado.error) {
+      setMensaje(resultado.advertencia ?? (productoId
+        ? 'Los cambios se guardaron correctamente.'
+        : 'El producto se registró correctamente.'))
     }
-
-    return error
+    return resultado
   }
 
   const abrirDetalle = (
@@ -213,15 +209,6 @@ export function ProductosPage() {
   ) => {
     disparadorDetalle.current = evento.currentTarget
     setProductoDetalleId(producto.id)
-  }
-
-  const editarDesdeDetalle = () => {
-    if (!productoDetalle) return
-
-    disparadorFormulario.current = disparadorDetalle.current
-    setProductoSeleccionado(productoDetalle)
-    setProductoDetalleId(null)
-    setFormularioAbierto(true)
   }
 
   const solicitarCambioEstado = (
@@ -644,10 +631,6 @@ export function ProductosPage() {
           alCambiarApertura={(abierto) => {
             if (!abierto) setProductoDetalleId(null)
           }}
-          alEditar={puedeGestionar ? editarDesdeDetalle : undefined}
-          alSolicitarCambioEstado={puedeGestionar ? (evento) =>
-            solicitarCambioEstado(productoDetalle, evento)
-          : undefined}
           alRestaurarFoco={() => disparadorDetalle.current?.focus()}
         />
       ) : null}

@@ -354,6 +354,7 @@ describe('productosService', () => {
   })
 
   it('crea el catálogo mediante la operación transaccional', async () => {
+    respuesta = { data: 'producto-1', error: null }
     const datos = {
       ...productoInicial,
       codigo: ' med-001 ',
@@ -364,7 +365,7 @@ describe('productosService', () => {
       stockMaximo: '100',
     }
 
-    await crearProducto('org-1', 'user-1', datos)
+    await expect(crearProducto('org-1', 'user-1', datos)).resolves.toBe('producto-1')
 
     expect(supabaseMock.rpc).toHaveBeenCalledWith('save_product_catalog', expect.objectContaining({
       requested_organization_id: 'org-1',
@@ -386,13 +387,14 @@ describe('productosService', () => {
   })
 
   it('edita un producto dentro de la organización indicada', async () => {
+    respuesta = { data: 'producto-1', error: null }
     const datos = {
       ...productoInicial,
       codigo: 'MED-001',
       descripcion: 'Producto actualizado',
     }
 
-    await editarProducto('org-1', 'user-1', 'producto-1', datos)
+    await expect(editarProducto('org-1', 'user-1', 'producto-1', datos)).resolves.toBe('producto-1')
 
     expect(supabaseMock.rpc).toHaveBeenCalledWith('save_product_catalog', expect.objectContaining({
       requested_organization_id: 'org-1',
