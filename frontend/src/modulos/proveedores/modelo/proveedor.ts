@@ -79,8 +79,14 @@ export const esquemaDatosProveedor = z
         (valor) => valor === '' || z.string().email().safeParse(valor).success,
         'Ingresa un correo válido',
       ),
-    telefono: textoOpcional(30),
-    direccion: textoOpcional(250),
+    telefono: textoOpcional(30).refine(
+      (valor) => valor === '' || valor.length >= 6,
+      'El teléfono debe tener al menos 6 caracteres',
+    ),
+    direccion: textoOpcional(250).refine(
+      (valor) => valor === '' || valor.length >= 3,
+      'La dirección fiscal debe tener al menos 3 caracteres',
+    ),
     ubigeo: z.string().trim().refine(
       (valor) => valor === '' || /^\d{6}$/.test(valor),
       'El ubigeo debe contener 6 dígitos',
@@ -88,7 +94,7 @@ export const esquemaDatosProveedor = z
     estadoContribuyente: textoOpcional(40),
     condicionDomicilio: textoOpcional(40),
     fuenteDatosFiscales: textoOpcional(40),
-    fechaConsultaSunat: z.string().datetime().nullable(),
+    fechaConsultaSunat: z.string().datetime({ offset: true }).nullable(),
     zonaGeografica: textoOpcional(120),
     tiposProducto: textoOpcional(250),
     categoria: z.enum([

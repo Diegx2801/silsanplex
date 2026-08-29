@@ -44,7 +44,10 @@ export const esquemaDatosCliente = z
         'Ingresa un correo válido',
       ),
     telefono: textoOpcional(30),
-    direccion: textoOpcional(240),
+    direccion: textoOpcional(240).refine(
+      (valor) => valor === '' || valor.length >= 3,
+      'La dirección fiscal debe tener al menos 3 caracteres',
+    ),
     ubigeo: z.string().trim().regex(/^$|^\d{6}$/, 'El ubigeo debe tener 6 dígitos'),
     estadoSunat: textoOpcional(40),
     condicionDomicilio: z.enum(condicionesDomicilio).or(z.literal('')),

@@ -39,10 +39,13 @@ export function DialogoCompra({
   alGuardar,
   alRestaurarFoco,
 }: DialogoCompraProps) {
+  const proveedoresDisponibles = proveedores.filter(
+    (proveedor) => proveedor.activo || proveedor.id === compra?.proveedorId,
+  )
   const valoresIniciales: DatosCompra = compra
     ? compraAFormulario(compra)
     : {
-        proveedorId: proveedores[0]?.id ?? '',
+        proveedorId: proveedoresDisponibles[0]?.id ?? '',
         tipoDocumento: 'factura',
         serie: '',
         numero: '',
@@ -150,7 +153,8 @@ export function DialogoCompra({
                     aria-invalid={Boolean(errors.proveedorId)}
                     {...register('proveedorId')}
                   >
-                    {proveedores.map((proveedor) => (
+                    <option value="">Seleccionar proveedor</option>
+                    {proveedoresDisponibles.map((proveedor) => (
                       <option key={proveedor.id} value={proveedor.id}>
                         {proveedor.numeroDocumento} · {proveedor.razonSocial}
                       </option>

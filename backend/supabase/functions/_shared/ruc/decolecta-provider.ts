@@ -27,7 +27,8 @@ export interface DecolectaProviderOptions {
 const DEFAULT_URL = "https://api.decolecta.com/v1/sunat/ruc";
 
 function optionalText(value: string | null | undefined) {
-  return value?.trim() ?? "";
+  const normalized = value?.trim() ?? "";
+  return normalized === "-" ? "" : normalized;
 }
 
 function providerFailure(status: number) {

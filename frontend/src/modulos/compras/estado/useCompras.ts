@@ -44,7 +44,10 @@ export function useCompras(productos: readonly Producto[], proveedores: readonly
     cargando: query.isLoading,
     error: query.error,
     guardarCompra: async (datos: DatosCompra, compraId?: string) => {
-      const proveedor = proveedores.find((item) => item.id === datos.proveedorId && item.activo)
+      const compraActual = compraId ? (query.data ?? []).find((item) => item.id === compraId) : undefined
+      const proveedor = proveedores.find(
+        (item) => item.id === datos.proveedorId && (item.activo || compraActual?.proveedorId === item.id),
+      )
       if (!proveedor) return 'El proveedor seleccionado ya no está disponible'
       const errorValidacion = validarCompra(datos, productos)
       if (errorValidacion) return errorValidacion

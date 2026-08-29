@@ -3,10 +3,12 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
+  Download,
   Eye,
   Pencil,
   Plus,
   Search,
+  Upload,
 } from 'lucide-react'
 import {
   type MouseEvent as ReactMouseEvent,
@@ -20,6 +22,8 @@ import { Button } from '@/components/ui/button'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
 import { DialogoProveedor } from '@/modulos/proveedores/componentes/DialogoProveedor'
+import { DialogoEstadoProveedor } from '@/modulos/proveedores/componentes/DialogoEstadoProveedor'
+import { DialogoImportarProveedores } from '@/modulos/proveedores/componentes/DialogoImportarProveedores'
 import { consultarRuc } from '@/modulos/clientes/servicios/rucLookupService'
 import { DetalleProveedor } from '@/modulos/proveedores/componentes/DetalleProveedor'
 import {
@@ -28,9 +32,11 @@ import {
   type Proveedor,
 } from '@/modulos/proveedores/modelo/proveedor'
 import {
+  cambiarEstadoProveedor,
   guardarProveedor,
   listarProveedores,
 } from '@/modulos/proveedores/servicios/proveedorService'
+import { exportarProveedores } from '@/modulos/proveedores/servicios/exportarProveedores'
 
 type FiltroEstado = 'todos' | 'activos' | 'inactivos'
 const proveedoresVacios: Proveedor[] = []
@@ -64,12 +70,15 @@ export function ProveedoresPage() {
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
   const [detalleAbierto, setDetalleAbierto] = useState(false)
   const [proveedorDetalle, setProveedorDetalle] = useState<Proveedor | null>(null)
+  const [proveedorEstado, setProveedorEstado] = useState<Proveedor | null>(null)
+  const [importacionAbierta, setImportacionAbierta] = useState(false)
   const [pagina, setPagina] = useState(1)
   const [proveedorSeleccionado, setProveedorSeleccionado] =
     useState<Proveedor | null>(null)
   const [mensaje, setMensaje] = useState<string | null>(null)
   const disparador = useRef<HTMLButtonElement | null>(null)
   const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
+  const disparadorImportacion = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
 
   const proveedoresQuery = useQuery({
@@ -96,6 +105,15 @@ export function ProveedoresPage() {
           ? 'Proveedor actualizado correctamente.'
           : 'Proveedor registrado correctamente.',
       )
+    },
+  })
+  const estadoMutation = useMutation({
+    mutationFn: ({ proveedorId, activo }: { proveedorId: string; activo: boolean }) =>
+      cambiarEstadoProveedor(proveedorId, activo),
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey })
+      setProveedorEstado(null)
+      setMensaje(variables.activo ? 'Proveedor activado correctamente.' : 'Proveedor desactivado correctamente.')
     },
   })
 
@@ -166,11 +184,11 @@ export function ProveedoresPage() {
             Maestro fiscal y comercial para órdenes y compras.
           </p>
         </div>
-        {puedeAdministrar ? (
-          <Button type="button" size="lg" onClick={(evento) => abrirFormulario(evento)}>
-            <Plus aria-hidden="true" /> Registrar proveedor
-          </Button>
-        ) : null}
+        {puedeAdministrar ? <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={(evento) => { disparadorImportacion.current = evento.currentTarget; setImportacionAbierta(true) }}><Upload aria-hidden="true" /> Importar</Button>
+          <Button type="button" variant="outline" disabled={!proveedores.length} onClick={() => void exportarProveedores(proveedores)}><Download aria-hidden="true" /> Exportar</Button>
+          <Button type="button" size="lg" onClick={(evento) => abrirFormulario(evento)}><Plus aria-hidden="true" /> Registrar proveedor</Button>
+        </div> : null}
       </header>
 
       {mensaje ? (
@@ -306,7 +324,7 @@ export function ProveedoresPage() {
                       <td className="px-4 py-4">
                         <p className="font-medium">{proveedor.razonSocial}</p>
                         <p className="mt-1 max-w-64 truncate text-xs text-muted-foreground">
-                          {proveedor.tiposProducto || proveedor.nombreComercial || 'Sin productos clasificados'}
+                          {proveedor.nombreComercial || 'Sin nombre comercial'}
                         </p>
                       </td>
                       <td className="px-4 py-4">
@@ -388,11 +406,21 @@ export function ProveedoresPage() {
           abierto={detalleAbierto}
           proveedor={proveedorDetalle}
           puedeGestionar={puedeAdministrar}
-          puedeCompletarDevolucion={hasPermission(PERMISSIONS.INVENTORY_MANAGE)}
+          alEditar={() => {
+            setDetalleAbierto(false)
+            setProveedorSeleccionado(proveedorDetalle)
+            setDialogoAbierto(true)
+          }}
+          alCambiarEstado={() => {
+            setDetalleAbierto(false)
+            setProveedorEstado(proveedorDetalle)
+          }}
           alCambiarApertura={setDetalleAbierto}
           alRestaurarFoco={() => disparadorDetalle.current?.focus()}
         />
       ) : null}
+      {proveedorEstado ? <DialogoEstadoProveedor proveedor={proveedorEstado} procesando={estadoMutation.isPending} error={estadoMutation.error?.message} alCancelar={() => { estadoMutation.reset(); setProveedorEstado(null) }} alConfirmar={async () => { try { await estadoMutation.mutateAsync({ proveedorId: proveedorEstado.id, activo: !proveedorEstado.activo }) } catch { /* El diálogo conserva y muestra el error controlado. */ } }} /> : null}
+      {importacionAbierta ? <DialogoImportarProveedores abierto={importacionAbierta} alCambiarApertura={setImportacionAbierta} alCompletar={(resultado) => { void queryClient.invalidateQueries({ queryKey }); setMensaje(`Importación finalizada: ${resultado.created} creados, ${resultado.updated} actualizados, ${resultado.skipped} omitidos y ${resultado.failed} fallidos.`) }} alRestaurarFoco={() => disparadorImportacion.current?.focus()} /> : null}
     </div>
   )
 }

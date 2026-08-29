@@ -200,3 +200,15 @@ export async function guardarProveedor(
   if (error) throw new Error(mensajeError(error))
   return mapearProveedor(data as ProveedorFila)
 }
+
+export async function cambiarEstadoProveedor(proveedorId: string, activo: boolean) {
+  const { error } = await supabase.rpc('set_supplier_status', {
+    requested_supplier_id: proveedorId,
+    requested_active: activo,
+  })
+  if (error) {
+    if (error.code === '42501') throw new Error('No tienes permiso para gestionar proveedores.')
+    if (error.message.includes('SUPPLIER_NOT_FOUND')) throw new Error('El proveedor ya no está disponible.')
+    throw new Error('No se pudo cambiar el estado del proveedor.')
+  }
+}

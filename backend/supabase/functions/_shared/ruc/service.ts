@@ -14,17 +14,30 @@ interface CacheRow {
   source_checked_at: string
 }
 
+function cachedText(value: string | null) {
+  const normalized = value?.trim() ?? ''
+  return normalized === '-' ? '' : normalized
+}
+
 function fromCache(row: CacheRow): RucLookupResult {
+  const checkedAt = new Date(row.source_checked_at)
+  if (Number.isNaN(checkedAt.getTime())) {
+    throw new RucLookupError(
+      'RUC_LOOKUP_STORAGE_FAILED',
+      'La consulta almacenada no tiene una fecha válida.',
+      500,
+    )
+  }
   return {
     lookupId: row.id,
     ruc: row.ruc,
     legalName: row.legal_name,
-    taxpayerStatus: row.taxpayer_status ?? '',
-    domicileCondition: row.domicile_condition ?? '',
-    ubigeoCode: row.ubigeo_code ?? '',
-    fiscalAddress: row.fiscal_address ?? '',
+    taxpayerStatus: cachedText(row.taxpayer_status),
+    domicileCondition: cachedText(row.domicile_condition),
+    ubigeoCode: cachedText(row.ubigeo_code),
+    fiscalAddress: cachedText(row.fiscal_address),
     source: row.source,
-    checkedAt: row.source_checked_at,
+    checkedAt: checkedAt.toISOString(),
     cacheHit: true,
   }
 }

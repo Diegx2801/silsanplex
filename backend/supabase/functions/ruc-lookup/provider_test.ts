@@ -45,6 +45,15 @@ Deno.test("normaliza la respuesta oficial de Decolecta y autentica por Bearer", 
   assert(requestedAuthorization === "Bearer token-de-prueba", "No envió el token por Bearer");
 });
 
+Deno.test("descarta marcadores vacíos de Decolecta", async () => {
+  const provider = new DecolectaRucProvider({
+    token: "token-de-prueba",
+    fetcher: () => Promise.resolve(new Response(JSON.stringify(validPayload({ direccion: "-" })), { status: 200 })),
+  });
+  const result = await provider.lookup("20550154065");
+  assert(result.fiscalAddress === "", "Interpretó el guion como una dirección real");
+});
+
 Deno.test("traduce un RUC inexistente a un error de dominio", async () => {
   const provider = new DecolectaRucProvider({ token: "token-de-prueba", fetcher: () => Promise.resolve(new Response("{}", { status: 404 })) });
   try {

@@ -10,7 +10,7 @@ const esquemaConsultaRuc = z.object({
   ubigeoCode: z.string(),
   fiscalAddress: z.string(),
   source: z.string(),
-  checkedAt: z.string().datetime(),
+  checkedAt: z.string().datetime({ offset: true }),
   cacheHit: z.boolean(),
 })
 
@@ -18,5 +18,9 @@ export type ResultadoConsultaRuc = z.infer<typeof esquemaConsultaRuc>
 
 export async function consultarRuc(ruc: string): Promise<ResultadoConsultaRuc> {
   const resultado = await invokeEdgeFunction<unknown>('ruc-lookup', { ruc })
-  return esquemaConsultaRuc.parse(resultado)
+  const validacion = esquemaConsultaRuc.safeParse(resultado)
+  if (!validacion.success) {
+    throw new Error('El servicio tributario devolvió datos incompletos. Puedes continuar manualmente.')
+  }
+  return validacion.data
 }
