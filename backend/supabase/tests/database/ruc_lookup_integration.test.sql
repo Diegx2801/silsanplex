@@ -44,7 +44,7 @@ select throws_ok(
   $$ insert into public.ruc_lookup_cache (
        ruc, legal_name, source, source_checked_at, expires_at
      ) values (
-       '123', 'Empresa inválida', 'APISPERU', now(), now() + interval '1 hour'
+       '123', 'Empresa inválida', 'DECOLECTA', now(), now() + interval '1 hour'
      ) $$,
   '23514', null, 'la caché rechaza un RUC inválido'
 );
@@ -55,7 +55,7 @@ select lives_ok(
        fiscal_address, source, source_checked_at, expires_at
      ) values (
        '20550154065', 'Empresa de prueba S.A.C.', 'ACTIVO', 'HABIDO', '150140',
-       'Av. Prueba 123', 'APISPERU', now(), now() + interval '24 hours'
+       'Av. Prueba 123', 'DECOLECTA', now(), now() + interval '24 hours'
      ) $$,
   'la caché admite un resultado normalizado'
 );
@@ -65,7 +65,7 @@ select is(
   1::bigint,
   'almacena una sola entrada para el RUC consultado'
 );
-select is((select source from public.ruc_lookup_cache where ruc = '20550154065'), 'APISPERU', 'conserva la procedencia');
+select is((select source from public.ruc_lookup_cache where ruc = '20550154065'), 'DECOLECTA', 'conserva la procedencia');
 select is((select ubigeo_code from public.ruc_lookup_cache where ruc = '20550154065'), '150140', 'conserva el ubigeo');
 
 select * from finish();

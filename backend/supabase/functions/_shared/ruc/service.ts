@@ -43,6 +43,7 @@ export class RucLookupService {
         'id,ruc,legal_name,taxpayer_status,domicile_condition,ubigeo_code,fiscal_address,source,source_checked_at',
       )
       .eq('ruc', ruc)
+      .eq('source', this.provider.source)
       .gt('expires_at', new Date().toISOString())
       .maybeSingle()
 

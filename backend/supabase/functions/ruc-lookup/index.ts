@@ -7,7 +7,7 @@ import {
 } from "../_shared/authorization.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { errorResponse, jsonResponse } from "../_shared/responses.ts";
-import { ApisPeruRucProvider } from "../_shared/ruc/apisperu-provider.ts";
+import { DecolectaRucProvider } from "../_shared/ruc/decolecta-provider.ts";
 import { RucLookupService } from "../_shared/ruc/service.ts";
 import { RucLookupError } from "../_shared/ruc/types.ts";
 
@@ -139,9 +139,9 @@ Deno.serve(async (request) => {
       );
     }
 
-    const provider = new ApisPeruRucProvider({
-      token: Deno.env.get("APISPERU_API_TOKEN") ?? "",
-      baseUrl: Deno.env.get("APISPERU_API_URL"),
+    const provider = new DecolectaRucProvider({
+      token: Deno.env.get("DECOLECTA_API_TOKEN") ?? "",
+      baseUrl: Deno.env.get("DECOLECTA_API_URL"),
       timeoutMs: integerEnvironmentValue(
         "RUC_LOOKUP_TIMEOUT_MS",
         5_000,
@@ -192,7 +192,7 @@ Deno.serve(async (request) => {
             organizationId,
             actorId,
             requestedRuc,
-            "APISPERU",
+            "DECOLECTA",
             false,
             false,
           );

@@ -29,7 +29,7 @@ test('autocompleta el maestro de clientes mediante la Edge Function RUC', async 
           domicileCondition: 'HABIDO',
           ubigeoCode: '150140',
           fiscalAddress: 'AV. PRUEBA E2E 123',
-          source: 'APISPERU',
+          source: 'DECOLECTA',
           checkedAt: '2026-08-21T12:00:00.000Z',
           cacheHit: false,
         },

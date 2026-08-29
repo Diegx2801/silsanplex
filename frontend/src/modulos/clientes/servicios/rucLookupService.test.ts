@@ -17,7 +17,7 @@ describe('consultarRuc', () => {
       domicileCondition: 'HABIDO',
       ubigeoCode: '150140',
       fiscalAddress: 'AV. PRUEBA 123',
-      source: 'APISPERU',
+      source: 'DECOLECTA',
       checkedAt: '2026-08-21T12:00:00.000Z',
       cacheHit: false,
     })
