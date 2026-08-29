@@ -68,10 +68,44 @@ export type MovimientoInventario = z.infer<typeof esquemaMovimientoInventario>
 
 export interface ExistenciaProducto {
   producto: Producto
+  /** Stock asignable: disponible sanitario menos reservas activas. */
   stock: number
+  stockFisico: number
+  stockReservado: number
+  stockCuarentena: number
+  stockDanado: number
+  stockVencido: number
   almacenes: number
   lotesConStock: number
   ultimoMovimiento: MovimientoInventario | null
+}
+
+export interface ResumenStockInventario {
+  productoId: string
+  almacenId: string
+  stockFisico: number
+  stockDisponibleSanitario: number
+  stockReservado: number
+  stockAsignable: number
+  stockCuarentena: number
+  stockDanado: number
+  stockVencido: number
+  valorInventario: number
+  bucketsConStock: number
+  lotesConStock: number
+}
+
+export interface CandidatoFefo {
+  productoId: string
+  almacenId: string
+  ubicacionId: string
+  ubicacionCodigo: string
+  ubicacionNombre: string
+  lote: string
+  fechaVencimiento: string
+  cantidadAsignable: number
+  costoPromedio: number
+  ordenFefo: number
 }
 
 export function movimientoEsSalida(tipo: TipoMovimientoInventario) {
@@ -229,6 +263,11 @@ export function calcularExistencias(
     return {
       producto,
       stock,
+      stockFisico: stock,
+      stockReservado: 0,
+      stockCuarentena: 0,
+      stockDanado: 0,
+      stockVencido: 0,
       almacenes: [...saldoPorAlmacen.values()].filter((saldo) => saldo > 0)
         .length,
       lotesConStock: [...saldoPorLote.values()].filter((saldo) => saldo > 0)
@@ -241,9 +280,68 @@ export function calcularExistencias(
   })
 }
 
+/**
+ * Construye la presentacion por producto desde filas ya agregadas en PostgreSQL.
+ * Nunca recorre el ledger para reconstruir cantidades.
+ */
+export function calcularExistenciasDesdeResumen(
+  productos: readonly Producto[],
+  resumenStock: readonly ResumenStockInventario[],
+  movimientosRecientes: readonly MovimientoInventario[],
+): ExistenciaProducto[] {
+  const resumenPorProducto = new Map<
+    string,
+    Omit<ExistenciaProducto, 'producto' | 'ultimoMovimiento'>
+  >()
+  const ultimoMovimientoPorProducto = new Map<string, MovimientoInventario>()
+
+  for (const movimiento of movimientosRecientes) {
+    if (!ultimoMovimientoPorProducto.has(movimiento.productoId)) {
+      ultimoMovimientoPorProducto.set(movimiento.productoId, movimiento)
+    }
+  }
+
+  for (const fila of resumenStock) {
+    const actual = resumenPorProducto.get(fila.productoId) ?? {
+      stock: 0,
+      stockFisico: 0,
+      stockReservado: 0,
+      stockCuarentena: 0,
+      stockDanado: 0,
+      stockVencido: 0,
+      almacenes: 0,
+      lotesConStock: 0,
+    }
+    actual.stock += fila.stockAsignable
+    actual.stockFisico += fila.stockFisico
+    actual.stockReservado += fila.stockReservado
+    actual.stockCuarentena += fila.stockCuarentena
+    actual.stockDanado += fila.stockDanado
+    actual.stockVencido += fila.stockVencido
+    actual.almacenes += fila.stockFisico > 0 ? 1 : 0
+    actual.lotesConStock += fila.lotesConStock
+    resumenPorProducto.set(fila.productoId, actual)
+  }
+
+  return productos.map((producto) => ({
+    producto,
+    ...(resumenPorProducto.get(producto.id) ?? {
+      stock: 0,
+      stockFisico: 0,
+      stockReservado: 0,
+      stockCuarentena: 0,
+      stockDanado: 0,
+      stockVencido: 0,
+      almacenes: 0,
+      lotesConStock: 0,
+    }),
+    ultimoMovimiento: ultimoMovimientoPorProducto.get(producto.id) ?? null,
+  }))
+}
+
 export function resumirInventario(
   existencias: readonly ExistenciaProducto[],
-  movimientos: readonly MovimientoInventario[],
+  movimientos: readonly MovimientoInventario[] | number,
 ) {
   let productosConStock = 0
   let stockTotal = 0
@@ -258,6 +356,6 @@ export function resumirInventario(
     productosConStock,
     productosSinStock: existencias.length - productosConStock,
     stockTotal,
-    movimientos: movimientos.length,
+    movimientos: typeof movimientos === 'number' ? movimientos : movimientos.length,
   }
 }

@@ -97,6 +97,38 @@ test.describe('sesión del administrador', () => {
 
   test('no permite que el administrador se desactive a sí mismo', async ({ page }) => {
     await signIn(page, adminEmail, adminPassword)
+    const currentUserId = await page.evaluate(() => {
+      const sessionKey = Object.keys(window.localStorage).find(
+        (key) => key.startsWith('sb-') && key.endsWith('-auth-token'),
+      )
+      const session = JSON.parse(window.localStorage.getItem(sessionKey ?? '') ?? 'null') as {
+        user?: { id?: unknown }
+      } | null
+      if (typeof session?.user?.id !== 'string') throw new Error('Sesión E2E sin usuario.')
+      return session.user.id
+    })
+    await page.route('**/functions/v1/admin-users**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            users: [{
+              user_id: currentUserId,
+              organization_id: '00000000-0000-4000-8000-000000000001',
+              email: adminEmail,
+              full_name: 'Administrador E2E',
+              phone: null,
+              is_active: true,
+              auth_confirmed_at: new Date().toISOString(),
+              role_codes: ['ADMIN'],
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }],
+          },
+        }),
+      })
+    })
     await page.goto('/usuarios')
 
     const ownRow = page.getByRole('row').filter({ hasText: adminEmail })
@@ -107,7 +139,7 @@ test.describe('sesión del administrador', () => {
     page,
   }) => {
     await signIn(page, adminEmail, adminPassword)
-    await page.route('**/functions/v1/admin-users', async (route) => {
+    await page.route('**/functions/v1/admin-users**', async (route) => {
       await route.fulfill({
         status: 401,
         contentType: 'application/json',

@@ -142,8 +142,8 @@ select ok(
   'consumo serializa la reserva mediante advisory lock'
 );
 select ok(
-  position('pg_advisory_xact_lock' in pg_get_functiondef('public.reserve_repair_part(jsonb)'::regprocedure)) > 0,
-  'reserva serializa el bucket mediante advisory lock'
+  position('lock_inventory_bucket' in pg_get_functiondef('public.reserve_repair_part(jsonb)'::regprocedure)) > 0,
+  'reserva delega la serializacion a la primitiva canonica'
 );
 select is(
   (select count(*) from pg_constraint where conrelid = 'public.repair_part_consumptions'::regclass and conname = 'repair_part_consumptions_operation_key_unique'),

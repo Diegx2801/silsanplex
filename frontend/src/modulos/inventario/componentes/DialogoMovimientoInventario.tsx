@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowDownToLine, ArrowUpFromLine, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
+import { useCandidatosFefo } from '@/modulos/inventario/estado/useCandidatosFefo'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
 import {
   esquemaDatosMovimientoInventario,
@@ -62,11 +63,33 @@ export function DialogoMovimientoInventario({
   const productoId = watch('productoId')
   const tipo = watch('tipo')
   const almacenId = watch('almacenId')
+  const estadoStock = watch('estadoStock')
   const producto = useMemo(
     () => productos.find((item) => item.id === productoId),
     [productoId, productos],
   )
   const esSalida = movimientoEsSalida(tipo)
+  const usarFefo = tipo === 'salida' && estadoStock === 'available'
+  const { candidatos, cargando: cargandoFefo, error: errorFefo } =
+    useCandidatosFefo(productoId, almacenId ?? '', usarFefo)
+  const candidatoFefo = candidatos[0]
+  const cantidadAsignableFefo = candidatos.reduce(
+    (total, candidato) => total + candidato.cantidadAsignable,
+    0,
+  )
+
+  useEffect(() => {
+    if (!usarFefo) return
+    setValue('ubicacionId', candidatoFefo?.ubicacionId)
+    setValue('lote', candidatoFefo?.lote ?? '')
+    setValue('fechaVencimiento', candidatoFefo?.fechaVencimiento ?? '')
+  }, [
+    candidatoFefo?.fechaVencimiento,
+    candidatoFefo?.lote,
+    candidatoFefo?.ubicacionId,
+    setValue,
+    usarFefo,
+  ])
 
   const guardar = async (datos: DatosMovimientoInventario) => {
     const error = await alGuardar(datos)
@@ -183,6 +206,7 @@ export function DialogoMovimientoInventario({
                 <input
                   id="cantidad-movimiento"
                   inputMode="decimal"
+                  max={usarFefo ? cantidadAsignableFefo : undefined}
                   autoComplete="off"
                   placeholder="0"
                   className="field-control"
@@ -222,14 +246,24 @@ export function DialogoMovimientoInventario({
                 ) : null}
               </div>
 
-              <div>
+              {usarFefo ? <div>
+                <label htmlFor="ubicacion-movimiento-fefo" className="field-label">Ubicación FEFO</label>
+                <input type="hidden" {...register('ubicacionId')} />
+                <input
+                  id="ubicacion-movimiento-fefo"
+                  className="field-control"
+                  value={candidatoFefo ? `${candidatoFefo.ubicacionCodigo} · ${candidatoFefo.ubicacionNombre}` : ''}
+                  placeholder={cargandoFefo ? 'Consultando...' : 'Sin stock asignable'}
+                  readOnly
+                />
+              </div> : <div>
                 <label htmlFor="ubicacion-movimiento" className="field-label">Ubicación física *</label>
                 <select id="ubicacion-movimiento" className="field-control" {...register('ubicacionId')}>
                   {ubicaciones.filter((item) => item.almacenId === almacenId && item.activa).map((ubicacion) => (
                     <option key={ubicacion.id} value={ubicacion.id}>{ubicacion.codigo} · {ubicacion.nombre}</option>
                   ))}
                 </select>
-              </div>
+              </div>}
 
               <div>
                 <label htmlFor="estado-movimiento" className="field-label">Condición del stock *</label>
@@ -255,6 +289,7 @@ export function DialogoMovimientoInventario({
                   placeholder={producto?.controlLote ? 'Obligatorio' : 'Opcional'}
                   className="field-control"
                   aria-invalid={Boolean(errors.lote)}
+                  readOnly={usarFefo}
                   {...register('lote')}
                 />
                 {errors.lote ? (
@@ -270,6 +305,7 @@ export function DialogoMovimientoInventario({
                   type="date"
                   className="field-control"
                   aria-invalid={Boolean(errors.fechaVencimiento)}
+                  readOnly={usarFefo}
                   {...register('fechaVencimiento')}
                 />
                 {errors.fechaVencimiento ? (
@@ -309,7 +345,13 @@ export function DialogoMovimientoInventario({
               )}
               <p>
                 {esSalida
-                  ? 'La salida se rechazará si supera la existencia disponible en el almacén y lote indicados.'
+                  ? usarFefo
+                    ? candidatoFefo
+                      ? `FEFO iniciará por ${candidatoFefo.lote || 'stock sin lote'} · vence ${candidatoFefo.fechaVencimiento || 'sin fecha'} · ${cantidadAsignableFefo} asignables en ${candidatos.length} ${candidatos.length === 1 ? 'bucket' : 'buckets'}. Si hace falta, la salida se distribuirá automáticamente.`
+                      : cargandoFefo
+                        ? 'Consultando el primer lote asignable según FEFO...'
+                        : errorFefo || 'No existe stock sanitario asignable en este almacén.'
+                    : 'La salida se rechazará si supera la existencia disponible en el almacén y lote indicados.'
                   : 'La entrada incrementará la existencia del producto en el almacén indicado.'}
               </p>
             </div>
@@ -325,7 +367,7 @@ export function DialogoMovimientoInventario({
               type="submit"
               form="formulario-movimiento-inventario"
               size="lg"
-              disabled={isSubmitting}
+              disabled={isSubmitting || (usarFefo && (cargandoFefo || !candidatoFefo))}
             >
               Registrar movimiento
             </Button>

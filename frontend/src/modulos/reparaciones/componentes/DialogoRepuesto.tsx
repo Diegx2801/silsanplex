@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
+import { useCandidatosFefo } from '@/modulos/inventario/estado/useCandidatosFefo'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
 import {
   esquemaDatosConsumoParte,
@@ -63,6 +64,11 @@ export function DialogoReservaParte({
   const productoId = watch('productoId')
   const producto = productos.find((item) => item.id === productoId)
   const almacenId = watch('almacenId')
+  const estadoStock = watch('estadoStock')
+  const usarFefo = estadoStock === 'available'
+  const { candidatos, cargando: cargandoFefo, error: errorFefo } =
+    useCandidatosFefo(productoId, almacenId, abierto && usarFefo)
+  const candidatoFefo = candidatos[0]
 
   useEffect(() => {
     if (abierto) {
@@ -91,6 +97,19 @@ export function DialogoReservaParte({
     const ubicacion = ubicaciones.find((item) => item.almacenId === almacenId)
     if (ubicacion) setValue('ubicacionId', ubicacion.id)
   }, [almacenId, setValue, ubicaciones])
+
+  useEffect(() => {
+    if (!usarFefo) return
+    setValue('ubicacionId', candidatoFefo?.ubicacionId ?? '')
+    setValue('lote', candidatoFefo?.lote ?? '')
+    setValue('fechaVencimiento', candidatoFefo?.fechaVencimiento ?? '')
+  }, [
+    candidatoFefo?.fechaVencimiento,
+    candidatoFefo?.lote,
+    candidatoFefo?.ubicacionId,
+    setValue,
+    usarFefo,
+  ])
 
   const guardar = async (datos: DatosReservaParte) => {
     if (producto?.controlLote && !datos.lote.trim()) {
@@ -132,7 +151,7 @@ export function DialogoReservaParte({
             </div>
             <div>
               <label htmlFor="reserva-cantidad" className="field-label">Cantidad solicitada *</label>
-              <input id="reserva-cantidad" type="number" min="0.001" step="0.001" className="field-control" aria-invalid={Boolean(errors.cantidadSolicitada)} {...register('cantidadSolicitada')} />
+              <input id="reserva-cantidad" type="number" min="0.001" max={usarFefo ? candidatoFefo?.cantidadAsignable : undefined} step="0.001" className="field-control" aria-invalid={Boolean(errors.cantidadSolicitada)} {...register('cantidadSolicitada')} />
               {errors.cantidadSolicitada ? <p className="field-error">{errors.cantidadSolicitada.message}</p> : null}
             </div>
             <div>
@@ -148,21 +167,26 @@ export function DialogoReservaParte({
               </select>
               {errors.almacenId ? <p className="field-error">{errors.almacenId.message}</p> : null}
             </div>
-            <div>
+            {usarFefo ? <div>
+              <label htmlFor="reserva-ubicacion-fefo" className="field-label">Ubicación FEFO *</label>
+              <input type="hidden" {...register('ubicacionId')} />
+              <input id="reserva-ubicacion-fefo" className="field-control" value={candidatoFefo ? `${candidatoFefo.ubicacionCodigo} · ${candidatoFefo.ubicacionNombre}` : ''} placeholder={cargandoFefo ? 'Consultando...' : 'Sin stock asignable'} readOnly />
+              {errors.ubicacionId ? <p className="field-error">{errors.ubicacionId.message}</p> : null}
+            </div> : <div>
               <label htmlFor="reserva-ubicacion" className="field-label">Ubicación *</label>
               <select id="reserva-ubicacion" className="field-control" aria-invalid={Boolean(errors.ubicacionId)} {...register('ubicacionId')}>
                 {ubicaciones.filter((item) => item.almacenId === almacenId).map((ubicacion) => <option key={ubicacion.id} value={ubicacion.id}>{ubicacion.codigo} · {ubicacion.nombre}</option>)}
               </select>
               {errors.ubicacionId ? <p className="field-error">{errors.ubicacionId.message}</p> : null}
-            </div>
+            </div>}
             <div>
               <label htmlFor="reserva-lote" className="field-label">Lote {producto?.controlLote ? '*' : '(opcional)'}</label>
-              <input id="reserva-lote" className="field-control" autoComplete="off" placeholder={producto?.controlLote ? 'Obligatorio' : 'Sin lote'} aria-invalid={Boolean(errors.lote)} {...register('lote')} />
+              <input id="reserva-lote" className="field-control" autoComplete="off" placeholder={producto?.controlLote ? 'Obligatorio' : 'Sin lote'} aria-invalid={Boolean(errors.lote)} readOnly={usarFefo} {...register('lote')} />
               {errors.lote ? <p className="field-error">{errors.lote.message}</p> : null}
             </div>
             <div>
               <label htmlFor="reserva-vencimiento" className="field-label">Vencimiento {producto?.controlVencimiento ? '*' : '(opcional)'}</label>
-              <input id="reserva-vencimiento" type="date" className="field-control" min={new Date().toISOString().slice(0, 10)} aria-invalid={Boolean(errors.fechaVencimiento)} {...register('fechaVencimiento')} />
+              <input id="reserva-vencimiento" type="date" className="field-control" min={new Date().toISOString().slice(0, 10)} aria-invalid={Boolean(errors.fechaVencimiento)} readOnly={usarFefo} {...register('fechaVencimiento')} />
               {errors.fechaVencimiento ? <p className="field-error">{errors.fechaVencimiento.message}</p> : null}
             </div>
             <div className="sm:col-span-2">
@@ -170,11 +194,18 @@ export function DialogoReservaParte({
               <textarea id="reserva-notas" rows={3} className="field-control resize-y py-2" placeholder="Referencia interna de la reserva" aria-invalid={Boolean(errors.notas)} {...register('notas')} />
               {errors.notas ? <p className="field-error">{errors.notas.message}</p> : null}
             </div>
+            {usarFefo ? <p className="sm:col-span-2 border bg-muted/35 px-4 py-3 text-sm leading-6 text-muted-foreground">
+              {candidatoFefo
+                ? `FEFO seleccionó ${candidatoFefo.lote || 'stock sin lote'} · vence ${candidatoFefo.fechaVencimiento || 'sin fecha'} · ${candidatoFefo.cantidadAsignable} asignables.`
+                : cargandoFefo
+                  ? 'Consultando el primer lote asignable según FEFO...'
+                  : errorFefo || 'No existe stock sanitario asignable en este almacén.'}
+            </p> : null}
           </form>
           {mensaje ? <p role="alert" className="border-t bg-destructive/10 px-5 py-3 text-sm text-destructive sm:px-7">{mensaje}</p> : null}
           <footer className="flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
             <DialogPrimitive.Close asChild><Button type="button" variant="outline" size="lg">Cancelar</Button></DialogPrimitive.Close>
-            <Button type="submit" form="formulario-reserva-parte" size="lg" disabled={isSubmitting || !almacenes.length || !ubicaciones.length}>Reservar repuesto</Button>
+            <Button type="submit" form="formulario-reserva-parte" size="lg" disabled={isSubmitting || !almacenes.length || !ubicaciones.length || (usarFefo && (cargandoFefo || !candidatoFefo))}>Reservar repuesto</Button>
           </footer>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

@@ -26,7 +26,7 @@ import { PanelGestionAlmacenes } from '@/modulos/inventario/componentes/PanelGes
 import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import { useInventario } from '@/modulos/inventario/estado/useInventario'
 import {
-  calcularExistencias,
+  calcularExistenciasDesdeResumen,
   movimientoEsSalida,
   resumirInventario,
   tiposMovimientoInventario,
@@ -119,7 +119,7 @@ export function InventarioPage() {
     () => productos.filter((producto) => producto.activo),
     [productos],
   )
-  const { movimientos, registrarMovimiento } = useInventario()
+  const { movimientos, resumenStock, totalMovimientos, registrarMovimiento } = useInventario()
   const gestionAlmacenes = useAlmacenes()
   const [busqueda, setBusqueda] = useState('')
   const [filtroStock, setFiltroStock] = useState<FiltroStock>('todos')
@@ -129,12 +129,12 @@ export function InventarioPage() {
   const busquedaDiferida = useDeferredValue(busqueda)
 
   const existencias = useMemo(
-    () => calcularExistencias(productos, movimientos),
-    [movimientos, productos],
+    () => calcularExistenciasDesdeResumen(productos, resumenStock, movimientos),
+    [movimientos, productos, resumenStock],
   )
   const resumen = useMemo(
-    () => resumirInventario(existencias, movimientos),
-    [existencias, movimientos],
+    () => resumirInventario(existencias, totalMovimientos),
+    [existencias, totalMovimientos],
   )
   const existenciasFiltradas = useMemo(() => {
     const termino = busquedaDiferida
@@ -210,7 +210,7 @@ export function InventarioPage() {
       <header className="flex flex-col gap-5 border-b pb-7 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">
-            Control basado en movimientos
+            Existencias autoritativas en PostgreSQL
           </span>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">
             Inventario
@@ -337,7 +337,7 @@ export function InventarioPage() {
                   </div>
                   <dl className="mt-5 grid grid-cols-3 gap-3 border-t pt-4 text-sm">
                     <div>
-                      <dt className="text-xs text-muted-foreground">Stock</dt>
+                      <dt className="text-xs text-muted-foreground">Asignable</dt>
                       <dd className="mt-1 font-mono font-semibold tabular-nums">
                         {formatoCantidad.format(existencia.stock)}
                       </dd>
@@ -364,7 +364,7 @@ export function InventarioPage() {
                   <tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
                     <th className="px-6 py-3 font-medium">Código</th>
                     <th className="px-4 py-3 font-medium">Producto</th>
-                    <th className="px-4 py-3 text-end font-medium">Stock</th>
+                    <th className="px-4 py-3 text-end font-medium">Asignable</th>
                     <th className="px-4 py-3 text-end font-medium">Almacenes</th>
                     <th className="px-4 py-3 text-end font-medium">Lotes</th>
                     <th className="px-6 py-3 font-medium">Estado</th>

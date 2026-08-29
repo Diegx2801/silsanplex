@@ -1,6 +1,6 @@
 begin;
 
-select plan(23);
+select plan(25);
 
 select has_table('public', 'supplier_evaluations', 'existe el historial de evaluaciones');
 select has_table('public', 'supplier_incidents', 'existe la gestión de incidencias');
@@ -121,6 +121,38 @@ select lives_ok($$
     "quantity":"2","reason":"Empaque dañado al recibir","requested_at":"2026-08-08"
   }'::jsonb)
 $$, 'registra una devolución válida');
+
+set local role postgres;
+insert into public.inventory_reservations (
+  id, organization_id, product_id, warehouse_id, location_id, stock_status,
+  quantity, quantity_consumed, status, source_type, source_id, created_by, updated_by
+) values (
+  '99000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000001',
+  '94000000-0000-4000-8000-000000000001', '95000000-0000-4000-8000-000000000001',
+  '96000000-0000-4000-8000-000000000001', 'available', 9, 0, 'active',
+  'test-supplier-return', '99000000-0000-4000-8000-000000000002',
+  '92000000-0000-4000-8000-000000000001', '92000000-0000-4000-8000-000000000001'
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '92000000-0000-4000-8000-000000000001', true);
+
+select throws_ok($$
+  select public.complete_supplier_return(
+    '91000000-0000-4000-8000-000000000001', (select id from public.supplier_returns limit 1)
+  )
+$$, 'P0001', 'INVENTORY_RESERVED_STOCK', 'la devolución no consume stock reservado');
+select is(
+  (select count(*)::integer from public.inventory_movements where source_type = 'supplier-return'),
+  0,
+  'la devolución bloqueada no deja movimientos parciales'
+);
+
+set local role postgres;
+update public.inventory_reservations
+set status = 'released', updated_at = now()
+where id = '99000000-0000-4000-8000-000000000001';
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '92000000-0000-4000-8000-000000000001', true);
 select lives_ok($$
   select public.complete_supplier_return(
     '91000000-0000-4000-8000-000000000001', (select id from public.supplier_returns limit 1)

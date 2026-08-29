@@ -92,6 +92,9 @@ export function useReparaciones(
       queryClient.invalidateQueries({
         queryKey: ['repair-detail', organizationId],
       }),
+      queryClient.invalidateQueries({ queryKey: ['inventory', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['warehouse-management', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory-fefo', organizationId] }),
     ])
   }
 

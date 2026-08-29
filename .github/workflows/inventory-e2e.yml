@@ -1,0 +1,62 @@
+name: Inventario E2E
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: inventory-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: FEFO, transferencia, kardex y valorización
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v5
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Instalar dependencias del backend
+        run: npm ci
+        working-directory: backend
+
+      - name: Instalar dependencias del frontend
+        run: npm ci
+        working-directory: frontend
+
+      - name: Iniciar Supabase local
+        run: npm run db:start
+        working-directory: backend
+
+      - name: Configurar frontend local
+        run: npm run env:frontend
+        working-directory: backend
+
+      - name: Instalar Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Ejecutar pruebas E2E
+        run: npm run test:e2e:local
+        working-directory: frontend
+
+      - name: Detener Supabase local
+        if: always()
+        run: npm run db:stop -- --no-backup
+        working-directory: backend
