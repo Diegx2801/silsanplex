@@ -81,6 +81,9 @@ const productoFila = {
   laboratory: 'Marca',
   presentation: 'Caja',
   unit_of_measure: 'Unidad',
+  product_type: 'good' as const,
+  base_unit_id: '11111111-1111-4111-8111-111111111111',
+  product_unit_conversions: [],
   tax_affectation: 'por-definir' as const,
   cost: 10,
   sale_price: 15,
@@ -93,7 +96,6 @@ const productoFila = {
   health_registry: null,
   batch_control: true,
   expiration_control: false,
-  serial_control: true,
   prescription_sale: false,
   is_active: true,
 }
@@ -114,6 +116,7 @@ describe('productosService', () => {
     supabaseMock.from.mockReset()
     supabaseMock.from.mockReturnValue(cadena)
     supabaseMock.rpc.mockReset()
+    supabaseMock.rpc.mockImplementation(() => Promise.resolve(respuesta))
     storage = {
       createSignedUrl: vi.fn().mockResolvedValue({
         data: { signedUrl: 'https://storage.test/archivo' },
@@ -141,7 +144,6 @@ describe('productosService', () => {
       costo: '10',
       precioMinimo: '12',
       controlVencimiento: false,
-      serialControl: true,
     })
   })
 
@@ -281,7 +283,7 @@ describe('productosService', () => {
           pesoKg: '0.5',
           controlLote: true,
           controlVencimiento: true,
-          serialControl: true,
+          serialControl: false,
           ventaReceta: false,
         },
       ],
@@ -295,13 +297,16 @@ describe('productosService', () => {
           incIgv: 'Sí',
           costoBase: '8.00',
           precioMinimo: '9.50',
+          equivalencia: '1',
+          codigoBarras: '',
         },
       ],
     })
 
-    expect(supabaseMock.rpc).toHaveBeenCalledWith('import_products', {
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('import_products_partial', {
       requested_organization_id: 'org-1',
       payload: {
+        modo: 'SKIP',
         productos: [
           {
             fila: 2,
@@ -321,7 +326,7 @@ describe('productosService', () => {
             peso_kg: '0.5',
             control_lote: true,
             control_vencimiento: true,
-            control_serie: true,
+            control_serie: false,
             venta_receta: false,
           },
         ],
@@ -335,6 +340,8 @@ describe('productosService', () => {
             inc_igv: 'Sí',
             costo_base: '8.00',
             precio_minimo: '9.50',
+            equivalencia: '1',
+            codigo_barras: '',
           },
         ],
       },
@@ -344,12 +351,16 @@ describe('productosService', () => {
       hash: 'a'.repeat(64),
       idLote: 'lote-1',
       creados: 2,
+      actualizados: 0,
+      omitidos: 0,
+      fallidos: 0,
       sinCambios: 1,
       filasRechazadas: [],
     })
   })
 
-  it('crea un producto normalizando el código y enviando el actor', async () => {
+  it('crea el catálogo mediante la operación transaccional', async () => {
+    respuesta = { data: 'producto-1', error: null }
     const datos = {
       ...productoInicial,
       codigo: ' med-001 ',
@@ -358,23 +369,15 @@ describe('productosService', () => {
       precioVenta: '15.00',
       precioMinimo: '12.00',
       stockMaximo: '100',
-      serialControl: true,
     }
 
-    await crearProducto('org-1', 'user-1', datos)
+    await expect(crearProducto('org-1', 'user-1', datos)).resolves.toBe('producto-1')
 
-    const payload = cadena.insert.mock.calls[0]?.[0] as Record<string, unknown>
-    expect(payload).toMatchObject({
-      organization_id: 'org-1',
-      code: 'MED-001',
-      cost: 10,
-      sale_price: 15,
-      minimum_sale_price: 12,
-      maximum_stock: 100,
-      serial_control: true,
-      created_by: 'user-1',
-      updated_by: 'user-1',
-    })
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('save_product_catalog', expect.objectContaining({
+      requested_organization_id: 'org-1',
+      requested_product_id: null,
+      payload: expect.objectContaining({ code: 'MED-001', cost: 10, sale_price: 15 }),
+    }))
   })
 
   it('usa un mensaje específico cuando falla el registro', async () => {
@@ -390,25 +393,20 @@ describe('productosService', () => {
   })
 
   it('edita un producto dentro de la organización indicada', async () => {
+    respuesta = { data: 'producto-1', error: null }
     const datos = {
       ...productoInicial,
       codigo: 'MED-001',
       descripcion: 'Producto actualizado',
-      serialControl: true,
     }
 
-    await editarProducto('org-1', 'user-1', 'producto-1', datos)
+    await expect(editarProducto('org-1', 'user-1', 'producto-1', datos)).resolves.toBe('producto-1')
 
-    expect(cadena.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organization_id: 'org-1',
-        code: 'MED-001',
-        serial_control: true,
-        updated_by: 'user-1',
-      }),
-    )
-    expect(cadena.eq).toHaveBeenCalledWith('id', 'producto-1')
-    expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('save_product_catalog', expect.objectContaining({
+      requested_organization_id: 'org-1',
+      requested_product_id: 'producto-1',
+      payload: expect.objectContaining({ code: 'MED-001' }),
+    }))
   })
 
   it('usa un mensaje específico cuando falla la edición', async () => {

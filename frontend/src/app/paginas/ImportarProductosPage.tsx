@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  Download,
   FileCheck2,
   FileSpreadsheet,
   Info,
@@ -18,13 +19,15 @@ import { Button } from '@/components/ui/button'
 import type {
   FilaImportacionObservada,
   FilaImportacionRechazada,
+  EstadoFilaImportacion,
   NivelHallazgo,
+  ModoImportacionProductos,
   ResultadoImportacion,
   ResultadoImportacionPersistida,
 } from '@/modulos/productos/modelo/analisisImportacion'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
-import { importarProductos } from '@/modulos/productos/servicios/productosService'
+import { consultarCodigosProductosExistentes, importarProductos } from '@/modulos/productos/servicios/productosService'
 
 const formatoEntero = new Intl.NumberFormat('es-PE')
 
@@ -127,21 +130,33 @@ const configuracionFila: Record<
   advertencia: { etiqueta: 'Advertencia', tono: 'revision' },
 }
 
+const filasPorPagina = 25
+
 function FilasObservadas({ filas }: { filas: FilaImportacionObservada[] }) {
+  const [filtro, setFiltro] = useState<'todas' | EstadoFilaImportacion>('todas')
+  const [pagina, setPagina] = useState(1)
   if (!filas.length) return null
+
+  const filtradas = filtro === 'todas' ? filas : filas.filter((fila) => fila.estado === filtro)
+  const totalPaginas = Math.max(1, Math.ceil(filtradas.length / filasPorPagina))
+  const paginaActual = Math.min(pagina, totalPaginas)
+  const visibles = filtradas.slice((paginaActual - 1) * filasPorPagina, paginaActual * filasPorPagina)
 
   return (
     <section aria-labelledby="filas-importacion-title" className="ledger-sheet">
-      <div className="border-b px-5 py-4 sm:px-6">
+      <div className="flex flex-col gap-4 border-b px-5 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-6">
+        <div>
         <h2 id="filas-importacion-title" className="text-lg font-semibold">
           Filas que requieren atención
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {filas.length} filas observadas; las rechazadas impiden guardar el lote.
+          {filtradas.length} de {filas.length} filas observadas; las rechazadas se excluirán de la importación.
         </p>
+        </div>
+        <div><label htmlFor="filtro-filas-importacion" className="field-label">Mostrar</label><select id="filtro-filas-importacion" className="field-control min-w-44" value={filtro} onChange={(evento) => { setFiltro(evento.target.value as 'todas' | EstadoFilaImportacion); setPagina(1) }}><option value="todas">Todas</option><option value="rechazada">Rechazadas</option><option value="advertencia">Advertencias</option><option value="duplicada">Duplicadas</option></select></div>
       </div>
       <div className="divide-y">
-        {filas.map((fila, indice) => {
+        {visibles.map((fila, indice) => {
           const configuracion = configuracionFila[fila.estado]
 
           return (
@@ -168,6 +183,7 @@ function FilasObservadas({ filas }: { filas: FilaImportacionObservada[] }) {
           )
         })}
       </div>
+      <div className="flex items-center justify-between gap-3 border-t px-5 py-4 text-sm sm:px-6"><span>Página {paginaActual} de {totalPaginas}</span><div className="flex gap-2"><Button type="button" variant="outline" size="sm" disabled={paginaActual <= 1} onClick={() => setPagina((valor) => Math.max(1, valor - 1))}>Anterior</Button><Button type="button" variant="outline" size="sm" disabled={paginaActual >= totalPaginas} onClick={() => setPagina((valor) => Math.min(totalPaginas, valor + 1))}>Siguiente</Button></div></div>
     </section>
   )
 }
@@ -218,16 +234,16 @@ function ResultadoPersistencia({
         <h2 id="resultado-persistencia-title" className="font-semibold">
           {rechazado
             ? 'La importación no modificó el catálogo'
-            : 'Importación completada'}
+            : resultado.estado === 'parcial' ? 'Importación completada con incidencias' : 'Importación completada'}
         </h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
           {rechazado
-            ? 'Se detectaron conflictos en el servidor. La operación fue revertida completa.'
-            : 'Los productos aceptados quedaron persistidos en la organización.'}
+            ? 'Ningún SKU pudo procesarse de forma segura.'
+            : 'Los SKU aceptados quedaron guardados; los fallidos permanecen disponibles para corregir.'}
         </p>
       </div>
       <div className="ledger-sheet">
-        <div className="grid sm:grid-cols-2">
+        <div className="grid sm:grid-cols-2 xl:grid-cols-4">
           <div className="border-b px-5 py-5 sm:border-e sm:px-6">
             <p className="font-mono text-[0.68rem] tracking-[0.08em] text-muted-foreground uppercase">
               Productos creados
@@ -236,12 +252,20 @@ function ResultadoPersistencia({
               {formatoEntero.format(resultado.creados)}
             </p>
           </div>
+          <div className="border-b px-5 py-5 sm:px-6 xl:border-e">
+            <p className="font-mono text-[0.68rem] tracking-[0.08em] text-muted-foreground uppercase">Actualizados</p>
+            <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">{formatoEntero.format(resultado.actualizados)}</p>
+          </div>
+          <div className="border-b px-5 py-5 sm:border-e sm:px-6 xl:border-b-0">
+            <p className="font-mono text-[0.68rem] tracking-[0.08em] text-muted-foreground uppercase">Omitidos</p>
+            <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">{formatoEntero.format(resultado.omitidos)}</p>
+          </div>
           <div className="px-5 py-5 sm:px-6">
             <p className="font-mono text-[0.68rem] tracking-[0.08em] text-muted-foreground uppercase">
-              Sin cambios
+              Fallidos
             </p>
             <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">
-              {formatoEntero.format(resultado.sinCambios)}
+              {formatoEntero.format(resultado.fallidos)}
             </p>
           </div>
         </div>
@@ -251,7 +275,7 @@ function ResultadoPersistencia({
   )
 }
 
-function ResultadoAnalisis({ resultado }: { resultado: ResultadoImportacion }) {
+function ResultadoAnalisis({ resultado, compacto = false }: { resultado: ResultadoImportacion; compacto?: boolean }) {
   const metricas = [
     ['Filas de productos', resultado.resumen.productos],
     ['Códigos únicos', resultado.resumen.codigosProducto],
@@ -310,7 +334,9 @@ function ResultadoAnalisis({ resultado }: { resultado: ResultadoImportacion }) {
         </div>
       </div>
 
-      <div className="ledger-sheet">
+      <details className="ledger-sheet" open={!compacto}>
+        <summary className="cursor-pointer px-5 py-4 font-semibold sm:px-6">Ver detalles técnicos ({resultado.hallazgos.length} grupos)</summary>
+      <div className="border-t">
         <div className="border-b px-5 py-4 sm:px-6">
           <h2 className="text-lg font-semibold">Hallazgos para revisar</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -376,11 +402,22 @@ function ResultadoAnalisis({ resultado }: { resultado: ResultadoImportacion }) {
         )}
       </div>
       <FilasObservadas filas={resultado.filasObservadas} />
+      </details>
     </section>
   )
 }
 
-export function ImportarProductosPage() {
+function VistaPreviaSku({ resultado, existentes, modo }: { resultado: ResultadoImportacion; existentes: ReadonlySet<string>; modo: ModoImportacionProductos }) {
+  const [pagina, setPagina] = useState(1)
+  const totalPaginas = Math.max(1, Math.ceil(resultado.datos.productos.length / filasPorPagina))
+  const paginaActual = Math.min(pagina, totalPaginas)
+  const visibles = resultado.datos.productos.slice((paginaActual - 1) * filasPorPagina, paginaActual * filasPorPagina)
+  return <section className="ledger-sheet" aria-labelledby="vista-previa-sku-title"><div className="border-b px-5 py-4 sm:px-6"><h2 id="vista-previa-sku-title" className="text-lg font-semibold">Vista previa de decisiones</h2><p className="mt-1 text-sm text-muted-foreground">{resultado.datos.productos.length - existentes.size} nuevos · {existentes.size} existentes · {resultado.filasObservadas.filter((fila) => fila.estado === 'rechazada').length} filas excluidas</p></div><div className="overflow-x-auto"><table className="w-full min-w-[44rem] text-left text-sm"><thead className="border-b bg-muted/50"><tr><th className="px-5 py-3">SKU</th><th className="px-5 py-3">Producto</th><th className="px-5 py-3">Unidades/precios</th><th className="px-5 py-3">Decisión</th></tr></thead><tbody className="divide-y">{visibles.map((producto) => { const existe = existentes.has(producto.codigo); const precios = resultado.datos.precios.filter((precio) => precio.codigoProducto === producto.codigo).length; return <tr key={producto.codigo}><td className="px-5 py-3 font-mono text-xs">{producto.codigo}</td><td className="px-5 py-3">{producto.descripcion}</td><td className="px-5 py-3">{precios}</td><td className="px-5 py-3">{existe ? (modo === 'UPDATE' ? 'Actualizar existente' : 'Omitir existente') : 'Crear producto'}</td></tr> })}</tbody></table></div><div className="flex items-center justify-between border-t px-5 py-4 text-sm sm:px-6"><span>Página {paginaActual} de {totalPaginas}</span><div className="flex gap-2"><Button type="button" variant="outline" size="sm" disabled={paginaActual <= 1} onClick={() => setPagina((valor) => valor - 1)}>Anterior</Button><Button type="button" variant="outline" size="sm" disabled={paginaActual >= totalPaginas} onClick={() => setPagina((valor) => valor + 1)}>Siguiente</Button></div></div></section>
+}
+
+interface ImportarProductosPageProps { integrado?: boolean; alCompletar?: () => void; alCerrar?: () => void }
+
+export function ImportarProductosPage({ integrado = false, alCompletar, alCerrar }: ImportarProductosPageProps = {}) {
   const { access, hasPermission } = useAuth()
   const queryClient = useQueryClient()
   const puedeImportar = hasPermission(PERMISSIONS.PRODUCTS_MANAGE)
@@ -394,6 +431,8 @@ export function ImportarProductosPage() {
   const [importando, setImportando] = useState(false)
   const [versionSelectores, setVersionSelectores] = useState(0)
   const [mensajeEstado, setMensajeEstado] = useState('')
+  const [modo, setModo] = useState<ModoImportacionProductos>('SKIP')
+  const [codigosExistentes, setCodigosExistentes] = useState<Set<string>>(new Set())
 
   const cambiarProductos = (archivo: File | null) => {
     setArchivoProductos(archivo)
@@ -426,6 +465,9 @@ export function ImportarProductosPage() {
         archivoPrecios,
       )
       setResultado(nuevoResultado)
+      setCodigosExistentes(access?.organizationId
+        ? await consultarCodigosProductosExistentes(access.organizationId, nuevoResultado.codigosImportables)
+        : new Set())
       setMensajeEstado(
         nuevoResultado.tieneBloqueos
           ? `Análisis completado con ${nuevoResultado.hallazgos.length} grupos de hallazgos y correcciones requeridas.`
@@ -447,7 +489,6 @@ export function ImportarProductosPage() {
   const importar = async () => {
     if (
       !resultado ||
-      resultado.tieneBloqueos ||
       !puedeImportar ||
       !access?.organizationId ||
       importando
@@ -463,15 +504,17 @@ export function ImportarProductosPage() {
       const nuevoResultado = await importarProductos(
         access.organizationId,
         resultado.datos,
+        modo,
       )
       await queryClient.invalidateQueries({
         queryKey: ['products', access.organizationId],
       })
       setResultadoPersistencia(nuevoResultado)
+      alCompletar?.()
       setMensajeEstado(
         nuevoResultado.estado === 'completado'
-          ? `Importación completada: ${nuevoResultado.creados} productos creados.`
-          : 'La importación fue rechazada sin modificar el catálogo.',
+          ? `Importación completada: ${nuevoResultado.creados} creados y ${nuevoResultado.actualizados} actualizados.`
+          : nuevoResultado.estado === 'parcial' ? 'Importación parcial completada con incidencias.' : 'La importación fue rechazada.',
       )
     } catch (causa) {
       setResultadoPersistencia(null)
@@ -493,12 +536,59 @@ export function ImportarProductosPage() {
     setResultadoPersistencia(null)
     setError('')
     setMensajeEstado('Selección de archivos limpiada.')
+    setCodigosExistentes(new Set())
     setVersionSelectores((version) => version + 1)
   }
 
+  const descargarIncidencias = () => {
+    const incidenciasServidor = resultadoPersistencia?.filasRechazadas.flatMap((fila) =>
+      (fila.filas ?? (fila.fila === undefined ? [] : [fila.fila])).map((numero) => ({
+        tipo: fila.tipo,
+        fila: numero,
+        codigo: fila.codigo ?? '',
+        motivo: traducirMotivoRechazo(fila.motivo),
+      })),
+    ) ?? []
+    const incidencias = incidenciasServidor.length ? incidenciasServidor : (resultado?.filasObservadas ?? [])
+    const escapar = (valor: unknown) => `"${String(valor ?? '').replaceAll('"', '""')}"`
+    const contenido = ['tipo,fila,codigo,estado,motivo', ...incidencias.map((fila) => [fila.tipo, fila.fila, fila.codigo, 'estado' in fila ? fila.estado : 'rechazada', fila.motivo].map(escapar).join(','))].join('\r\n')
+    const enlace = document.createElement('a')
+    enlace.href = URL.createObjectURL(new Blob(['\uFEFF', contenido], { type: 'text/csv;charset=utf-8' }))
+    enlace.download = 'incidencias-importacion-productos.csv'
+    enlace.click()
+    URL.revokeObjectURL(enlace.href)
+  }
+
+  if (integrado) {
+    const errores = resultado?.filasObservadas.filter((fila) => fila.estado === 'rechazada').length ?? 0
+    const advertencias = resultado?.filasObservadas.filter((fila) => fila.estado !== 'rechazada').length ?? 0
+    const hayIncidencias = errores + advertencias > 0 || Boolean(resultadoPersistencia?.fallidos)
+    return <div className="space-y-4">
+      <form onSubmit={analizar}>
+        <section className="border">
+          <div className="grid lg:grid-cols-[minmax(0,1fr)_17rem]">
+            <div className="lg:border-e"><div className="border-b px-4 py-3"><h2 className="font-semibold">Archivos de origen</h2><p className="mt-1 text-sm text-muted-foreground">Selecciona las exportaciones de productos y precios de Codeplex.</p></div><SelectorArchivo key={`productos-${versionSelectores}`} id="archivo-productos" titulo="Catálogo de productos" descripcion="Código, producto, línea, sublínea y marca." archivo={archivoProductos} alCambiar={cambiarProductos} /><SelectorArchivo key={`precios-${versionSelectores}`} id="archivo-precios" titulo="Precios de los productos" descripcion="Código del producto, medida, precio e IGV." archivo={archivoPrecios} alCambiar={cambiarPrecios} /></div>
+            <div className="flex flex-col justify-between gap-4 p-4"><label><span className="field-label">Si el SKU ya existe</span><select className="field-control" value={modo} onChange={(evento) => setModo(evento.target.value as ModoImportacionProductos)} disabled={importando || Boolean(resultadoPersistencia)}><option value="SKIP">Omitir el producto</option><option value="UPDATE">Actualizar datos disponibles</option></select></label><div className="flex flex-col gap-2">{archivoProductos || archivoPrecios ? <Button type="button" variant="outline" onClick={reiniciar} disabled={analizando || importando}><RotateCcw aria-hidden="true" />Limpiar</Button> : null}<Button type="submit" disabled={!archivoProductos || !archivoPrecios || analizando || Boolean(resultadoPersistencia)}>{analizando ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}{analizando ? 'Analizando…' : 'Analizar archivos'}</Button></div></div>
+          </div>
+        </section>
+        {error ? <div role="alert" className="mt-4 border border-destructive/35 bg-destructive/5 px-4 py-3 text-sm text-destructive"><p className="font-medium">No se pudo completar la operación</p><p className="mt-1 text-muted-foreground">{error}</p></div> : null}
+      </form>
+      {resultado ? <><div className="grid grid-cols-2 gap-3 lg:grid-cols-5">{[
+        ['Filas', resultado.resumen.productos],
+        ['Importables', resultado.datos.productos.length],
+        ['Advertencias', advertencias],
+        ['Con errores', errores],
+        ['Ya existentes', codigosExistentes.size],
+      ].map(([etiqueta, valor]) => <div key={etiqueta} className="border px-4 py-3"><span className="block text-xs uppercase text-muted-foreground">{etiqueta}</span><strong className="mt-1 block text-xl">{valor}</strong></div>)}</div><VistaPreviaSku resultado={resultado} existentes={codigosExistentes} modo={modo} /><details className="border"><summary className="cursor-pointer px-4 py-3 font-medium">Ver detalles técnicos ({resultado.hallazgos.length})</summary><div className="divide-y border-t">{resultado.hallazgos.map((hallazgo) => <div key={hallazgo.id} className="px-4 py-3"><div className="flex items-center justify-between gap-3"><span className="font-medium">{hallazgo.titulo}</span><span className="text-sm tabular-nums text-muted-foreground">{hallazgo.cantidad}</span></div><p className="mt-1 text-sm text-muted-foreground">{hallazgo.detalle}</p></div>)}</div><FilasObservadas filas={resultado.filasObservadas} /></details></> : null}
+      {resultadoPersistencia ? <div role="status" className="border border-primary/30 bg-primary/5 px-4 py-3 text-sm">Importación finalizada: {resultadoPersistencia.creados} creados, {resultadoPersistencia.actualizados} actualizados, {resultadoPersistencia.omitidos} omitidos y {resultadoPersistencia.fallidos} fallidos.</div> : null}
+      <footer className="sticky bottom-0 -mx-5 flex flex-col-reverse gap-2 border-t bg-background px-5 py-4 sm:-mx-7 sm:flex-row sm:justify-end sm:px-7">{hayIncidencias ? <Button type="button" variant="outline" onClick={descargarIncidencias}><Download aria-hidden="true" />Descargar incidencias</Button> : null}<Button type="button" variant="outline" onClick={alCerrar}>{resultadoPersistencia ? 'Cerrar' : 'Cancelar'}</Button>{!resultadoPersistencia && puedeImportar ? <Button type="button" disabled={importando || !resultado || resultado.tieneBloqueos} onClick={() => void importar()}>{importando ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}{importando ? 'Importando…' : `Importar ${resultado?.datos.productos.length ?? 0} productos`}</Button> : null}</footer>
+      <p role="status" aria-live="polite" className="sr-only">{mensajeEstado}</p>
+    </div>
+  }
+
   return (
-    <div className="space-y-8">
-      <header className="border-b pb-7">
+    <div className={integrado ? 'space-y-5' : 'space-y-8'}>
+      {!integrado ? <header className="border-b pb-7">
         <Button asChild variant="ghost" className="-ms-2 mb-4">
           <Link to="/productos">
             <ArrowLeft aria-hidden="true" />
@@ -511,16 +601,15 @@ export function ImportarProductosPage() {
               Revisar archivos de productos
             </h1>
             <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
-              Analiza los archivos localmente y confirma una importación atómica
-              cuando no existan bloqueos. La base de datos vuelve a validar cada
-              fila antes de guardar.
+              Analiza los archivos localmente. Cada SKU válido se procesa de forma
+              independiente y la base de datos vuelve a validarlo antes de guardar.
             </p>
           </div>
           <span className="font-mono text-xs tabular-nums text-muted-foreground">
             {puedeImportar ? 'PREVISUALIZACIÓN + IMPORTACIÓN' : 'SOLO VISTA PREVIA'}
           </span>
         </div>
-      </header>
+      </header> : null}
 
       <form onSubmit={analizar} className="space-y-5">
         <section aria-labelledby="archivos-importacion-title" className="ledger-sheet">
@@ -550,8 +639,8 @@ export function ImportarProductosPage() {
           />
           <div className="flex flex-col gap-3 border-t bg-muted/30 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <p className="max-w-[62ch] text-xs leading-5 text-muted-foreground">
-              El análisis ocurre en este navegador. La confirmación solo guarda
-              el lote completo si todas sus filas son válidas.
+              El análisis ocurre en este navegador. Las filas rechazadas se excluyen;
+              cada producto aceptado se guarda junto con sus unidades y precios.
             </p>
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
               {archivoProductos || archivoPrecios ? (
@@ -598,22 +687,25 @@ export function ImportarProductosPage() {
 
       {resultado ? (
         <>
-          <ResultadoAnalisis resultado={resultado} />
-          {!resultado.tieneBloqueos ? (
-            <section className="ledger-sheet">
-              <div className="flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <ResultadoAnalisis resultado={resultado} compacto={integrado} />
+          <VistaPreviaSku resultado={resultado} existentes={codigosExistentes} modo={modo} />
+          <section className="ledger-sheet">
+              <div className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[1fr_18rem_auto] lg:items-end">
                 <div>
                   <h2 className="font-semibold">Confirmar importación</h2>
                   <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    {puedeImportar
-                      ? 'La operación será atómica. Si el servidor detecta un conflicto, no se guardará ninguna fila.'
+                    {resultado.tieneBloqueos
+                      ? 'No quedó ningún SKU válido. Corrige las filas rechazadas antes de continuar.'
+                      : puedeImportar
+                      ? `${resultado.datos.productos.length} SKU válidos serán procesados; los rechazados no afectan al resto.`
                       : 'Tu rol puede revisar los archivos, pero no administrar el catálogo.'}
                   </p>
                 </div>
+                <label><span className="field-label">Si el SKU ya existe</span><select className="field-control" value={modo} onChange={(evento) => setModo(evento.target.value as ModoImportacionProductos)} disabled={importando}><option value="SKIP">Omitir producto</option><option value="UPDATE">Actualizar datos disponibles</option></select></label>
                 {puedeImportar ? (
                   <Button
                     type="button"
-                    disabled={importando}
+                    disabled={importando || resultado.tieneBloqueos}
                     onClick={() => void importar()}
                   >
                     {importando ? (
@@ -621,14 +713,22 @@ export function ImportarProductosPage() {
                     ) : (
                       <ShieldCheck aria-hidden="true" />
                     )}
-                    {importando ? 'Importando…' : 'Importar catálogo'}
+                    {importando ? 'Importando…' : resultado.tieneBloqueos ? 'Importación bloqueada' : 'Importar catálogo'}
                   </Button>
                 ) : null}
               </div>
             </section>
-          ) : null}
           {resultadoPersistencia ? (
-            <ResultadoPersistencia resultado={resultadoPersistencia} />
+            <><ResultadoPersistencia resultado={resultadoPersistencia} />{resultadoPersistencia.filasRechazadas.length ? <Button type="button" variant="outline" onClick={() => {
+              const encabezado = 'tipo,fila,codigo,motivo'
+              const escapar = (valor: unknown) => `"${String(valor ?? '').replaceAll('"', '""')}"`
+              const contenido = [encabezado, ...resultadoPersistencia.filasRechazadas.map((fila) => [fila.tipo, fila.fila ?? fila.filas?.join('|') ?? '', fila.codigo ?? '', traducirMotivoRechazo(fila.motivo)].map(escapar).join(','))].join('\r\n')
+              const enlace = document.createElement('a')
+              enlace.href = URL.createObjectURL(new Blob(['\uFEFF', contenido], { type: 'text/csv;charset=utf-8' }))
+              enlace.download = 'incidencias-importacion-productos.csv'
+              enlace.click()
+              URL.revokeObjectURL(enlace.href)
+            }}><Download aria-hidden="true" />Descargar incidencias</Button> : null}</>
           ) : null}
         </>
       ) : null}

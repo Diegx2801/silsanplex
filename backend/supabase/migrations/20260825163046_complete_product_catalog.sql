@@ -214,6 +214,20 @@ as $$
 begin
   if tg_op = 'INSERT' then
     new.created_by := coalesce(auth.uid(), new.created_by);
+    if new.kind = 'image' and new.deleted_at is null then
+      perform pg_advisory_xact_lock(hashtextextended(new.product_id::text || ':images', 0));
+      if not exists (
+        select 1
+        from public.product_files file
+        where file.organization_id = new.organization_id
+          and file.product_id = new.product_id
+          and file.kind = 'image'
+          and file.is_primary
+          and file.deleted_at is null
+      ) then
+        new.is_primary := true;
+      end if;
+    end if;
     return new;
   end if;
 

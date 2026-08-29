@@ -12,6 +12,7 @@ import type {
   DatosImportacionProductos,
   FilaImportacionRechazada,
   ResultadoImportacionPersistida,
+  ModoImportacionProductos,
 } from '@/modulos/productos/modelo/analisisImportacion'
 import type {
   ArchivoProducto,
@@ -19,6 +20,7 @@ import type {
   Producto,
   TipoArchivoProducto,
   TipoEventoProducto,
+  UnidadMedida,
   VersionProducto,
 } from '@/modulos/productos/modelo/producto'
 
@@ -33,6 +35,16 @@ interface ProductoFila {
   laboratory: string | null
   presentation: string | null
   unit_of_measure: string | null
+  product_type: 'good' | 'service'
+  base_unit_id: string
+  product_unit_conversions: Array<{
+    id: string
+    unit_id: string
+    conversion_factor: number
+    barcode: string | null
+    sale_price: number | null
+    measurement_units: Array<{ name: string }> | null
+  }> | null
   tax_affectation: 'por-definir' | 'gravado' | 'exonerado' | 'inafecto'
   cost: number | null
   sale_price: number | null
@@ -80,7 +92,7 @@ interface OpcionProductoFila {
 }
 
 const columnasProducto =
-  'id,code,description,extended_description,barcode,category,subline,laboratory,presentation,unit_of_measure,tax_affectation,cost,sale_price,minimum_sale_price,maximum_stock,width_cm,height_cm,length_cm,weight_kg,health_registry,batch_control,expiration_control,serial_control,prescription_sale,is_active' as const
+  'id,code,description,extended_description,barcode,category,subline,laboratory,presentation,unit_of_measure,product_type,base_unit_id,product_unit_conversions(id,unit_id,conversion_factor,barcode,sale_price,measurement_units(name)),tax_affectation,cost,sale_price,minimum_sale_price,maximum_stock,width_cm,height_cm,length_cm,weight_kg,health_registry,batch_control,expiration_control,serial_control,prescription_sale,is_active' as const
 const columnasOpcionesProducto = 'category,laboratory' as const
 const tamanioPaginaMaximo = 50
 const comparadorOpciones = new Intl.Collator('es-PE', {
@@ -109,6 +121,8 @@ function mapearProducto(fila: ProductoFila): Producto {
     sublinea: fila.subline ?? '',
     laboratorio: fila.laboratory ?? '',
     presentacion: fila.presentation ?? '',
+    tipo: fila.product_type,
+    unidadBaseId: fila.base_unit_id,
     unidadMedida: fila.unit_of_measure ?? '',
     afectacionIgv: fila.tax_affectation === 'por-definir' ? '' : fila.tax_affectation,
     costo: fila.cost === null ? '' : String(fila.cost),
@@ -126,6 +140,20 @@ function mapearProducto(fila: ProductoFila): Producto {
     serialControl: fila.serial_control ?? false,
     ventaReceta: fila.prescription_sale,
     activo: fila.is_active,
+    unidadesAlternativas: (fila.product_unit_conversions ?? []).map((unidad) => {
+      const relacion = unidad.measurement_units as unknown
+      const unidadRelacionada = Array.isArray(relacion)
+        ? relacion[0] as { name?: string } | undefined
+        : relacion as { name?: string } | null
+      return {
+        id: unidad.id,
+        unidadId: unidad.unit_id,
+        unidadNombre: unidadRelacionada?.name ?? '',
+        equivalencia: String(unidad.conversion_factor),
+        codigoBarras: unidad.barcode ?? '',
+        precioVenta: unidad.sale_price === null ? '' : String(unidad.sale_price),
+      }
+    }),
   }
 }
 
@@ -255,13 +283,8 @@ function construirConsultaProductos(
   return query
 }
 
-function construirFilaProducto(
-  organizationId: string,
-  userId: string,
-  datos: DatosProducto,
-) {
+function construirPayloadProducto(datos: DatosProducto) {
   return {
-    organization_id: organizationId,
     code: datos.codigo.trim().toUpperCase(),
     description: datos.descripcion.trim(),
     extended_description: textoONulo(datos.descripcionAmpliada),
@@ -270,7 +293,8 @@ function construirFilaProducto(
     subline: textoONulo(datos.sublinea),
     laboratory: textoONulo(datos.laboratorio),
     presentation: textoONulo(datos.presentacion),
-    unit_of_measure: textoONulo(datos.unidadMedida),
+    product_type: datos.tipo,
+    base_unit_id: datos.unidadBaseId,
     tax_affectation: datos.afectacionIgv || 'por-definir',
     cost: numeroONulo(datos.costo),
     sale_price: numeroONulo(datos.precioVenta),
@@ -286,8 +310,24 @@ function construirFilaProducto(
     serial_control: datos.serialControl,
     prescription_sale: datos.ventaReceta,
     is_active: datos.activo,
-    updated_by: userId,
+    alternate_units: datos.unidadesAlternativas.map((unidad) => ({
+      unit_id: unidad.unidadId,
+      conversion_factor: unidad.equivalencia,
+      barcode: unidad.codigoBarras.trim(),
+      sale_price: unidad.precioVenta,
+    })),
   }
+}
+
+export async function listarUnidadesMedida(organizationId: string): Promise<UnidadMedida[]> {
+  const { data, error } = await supabase
+    .from('measurement_units')
+    .select('id,code,name')
+    .eq('organization_id', organizationId)
+    .eq('is_active', true)
+    .order('name', { ascending: true })
+  if (error) throw new Error(mensajeError(error, 'consultar'))
+  return (data ?? []).map((unidad) => ({ id: unidad.id, codigo: unidad.code, nombre: unidad.name }))
 }
 
 export async function listarProductos(organizationId: string): Promise<Producto[]> {
@@ -434,15 +474,20 @@ function construirPayloadImportacion(datos: DatosImportacionProductos) {
       inc_igv: fila.incIgv,
       costo_base: fila.costoBase,
       precio_minimo: fila.precioMinimo,
+      equivalencia: fila.equivalencia,
+      codigo_barras: fila.codigoBarras,
     })),
   }
 }
 
 interface RespuestaImportacion {
-  estado: 'completado' | 'rechazado'
+  estado: 'completado' | 'parcial' | 'rechazado'
   hash: string
   id_lote: string
   creados: number
+  actualizados: number
+  omitidos: number
+  fallidos: number
   sin_cambios: number
   filas_rechazadas: FilaImportacionRechazada[]
 }
@@ -450,10 +495,11 @@ interface RespuestaImportacion {
 export async function importarProductos(
   organizationId: string,
   datos: DatosImportacionProductos,
+  modo: ModoImportacionProductos = 'SKIP',
 ): Promise<ResultadoImportacionPersistida> {
-  const { data, error } = await supabase.rpc('import_products', {
+  const { data, error } = await supabase.rpc('import_products_partial', {
     requested_organization_id: organizationId,
-    payload: construirPayloadImportacion(datos),
+    payload: { ...construirPayloadImportacion(datos), modo },
   })
 
   if (error) throw new Error(mensajeError(error, 'importar'))
@@ -465,6 +511,9 @@ export async function importarProductos(
     hash: resultado.hash,
     idLote: resultado.id_lote,
     creados: resultado.creados,
+    actualizados: resultado.actualizados ?? 0,
+    omitidos: resultado.omitidos ?? 0,
+    fallidos: resultado.fallidos ?? 0,
     sinCambios: resultado.sin_cambios,
     filasRechazadas: Array.isArray(resultado.filas_rechazadas)
       ? resultado.filas_rechazadas
@@ -474,30 +523,52 @@ export async function importarProductos(
 
 export async function crearProducto(
   organizationId: string,
-  userId: string,
+  _userId: string,
   datos: DatosProducto,
 ) {
-  const { error } = await supabase
-    .from('products')
-    .insert({
-      ...construirFilaProducto(organizationId, userId, datos),
-      created_by: userId,
-    })
+  const { data, error } = await supabase.rpc('save_product_catalog', {
+    requested_organization_id: organizationId,
+    requested_product_id: null,
+    payload: construirPayloadProducto(datos),
+  })
   if (error) throw new Error(mensajeError(error, 'crear'))
+  if (!data) throw new Error('El producto se guardó sin devolver un identificador válido')
+  return data as string
+}
+
+export async function consultarCodigosProductosExistentes(
+  organizationId: string,
+  codigos: string[],
+) {
+  const existentes = new Set<string>()
+  for (let inicio = 0; inicio < codigos.length; inicio += 100) {
+    const lote = codigos.slice(inicio, inicio + 100)
+    if (!lote.length) continue
+    const { data, error } = await supabase
+      .from('products')
+      .select('code')
+      .eq('organization_id', organizationId)
+      .in('code', lote)
+    if (error) throw new Error(mensajeError(error, 'consultar'))
+    for (const fila of data ?? []) existentes.add(String(fila.code).toUpperCase())
+  }
+  return existentes
 }
 
 export async function editarProducto(
   organizationId: string,
-  userId: string,
+  _userId: string,
   productoId: string,
   datos: DatosProducto,
 ) {
-  const { error } = await supabase
-    .from('products')
-    .update(construirFilaProducto(organizationId, userId, datos))
-    .eq('id', productoId)
-    .eq('organization_id', organizationId)
+  const { data, error } = await supabase.rpc('save_product_catalog', {
+    requested_organization_id: organizationId,
+    requested_product_id: productoId,
+    payload: construirPayloadProducto(datos),
+  })
   if (error) throw new Error(mensajeError(error, 'editar'))
+  if (!data) throw new Error('El producto se actualizó sin devolver un identificador válido')
+  return data as string
 }
 
 export async function cambiarEstadoProducto(

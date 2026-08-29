@@ -9,16 +9,10 @@ import type {
 interface FiltrosProductosProps {
   busqueda: string
   estado: FiltroEstadoProducto
-  categoria: string
-  laboratorio: string
   orden: OrdenProductos
-  categorias: string[]
-  laboratorios: string[]
   cantidadActivos: number
   alCambiarBusqueda: (valor: string) => void
   alCambiarEstado: (valor: FiltroEstadoProducto) => void
-  alCambiarCategoria: (valor: string) => void
-  alCambiarLaboratorio: (valor: string) => void
   alCambiarOrden: (valor: OrdenProductos) => void
   alLimpiar: () => void
 }
@@ -26,16 +20,10 @@ interface FiltrosProductosProps {
 export function FiltrosProductos({
   busqueda,
   estado,
-  categoria,
-  laboratorio,
   orden,
-  categorias,
-  laboratorios,
   cantidadActivos,
   alCambiarBusqueda,
   alCambiarEstado,
-  alCambiarCategoria,
-  alCambiarLaboratorio,
   alCambiarOrden,
   alLimpiar,
 }: FiltrosProductosProps) {
@@ -68,7 +56,7 @@ export function FiltrosProductos({
         </Button>
       </div>
 
-      <div className="grid gap-4 px-5 py-5 sm:px-6 md:grid-cols-2 xl:grid-cols-[minmax(16rem,1.4fr)_minmax(10rem,0.7fr)_minmax(10rem,0.7fr)_minmax(10rem,0.7fr)_minmax(12rem,0.8fr)]">
+      <div className="grid gap-4 px-5 py-5 sm:px-6 md:grid-cols-[minmax(16rem,1.5fr)_minmax(10rem,0.7fr)_minmax(12rem,0.8fr)]">
         <div>
           <label htmlFor="buscar-productos" className="field-label">
             Buscar
@@ -84,7 +72,7 @@ export function FiltrosProductos({
               value={busqueda}
               onChange={(evento) => alCambiarBusqueda(evento.target.value)}
               className="field-control ps-9"
-              placeholder="Código, barras, producto o marca"
+            placeholder="Buscar por SKU, nombre o código de barras"
             />
           </div>
         </div>
@@ -108,44 +96,6 @@ export function FiltrosProductos({
         </div>
 
         <div>
-          <label htmlFor="filtro-categoria" className="field-label">
-            Línea
-          </label>
-          <select
-            id="filtro-categoria"
-            value={categoria}
-            onChange={(evento) => alCambiarCategoria(evento.target.value)}
-            className="field-control"
-          >
-            <option value="">Todas</option>
-            {categorias.map((opcion) => (
-              <option key={opcion} value={opcion}>
-                {opcion}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label htmlFor="filtro-laboratorio" className="field-label">
-            Marca
-          </label>
-          <select
-            id="filtro-laboratorio"
-            value={laboratorio}
-            onChange={(evento) => alCambiarLaboratorio(evento.target.value)}
-            className="field-control"
-          >
-            <option value="">Todos</option>
-            {laboratorios.map((opcion) => (
-              <option key={opcion} value={opcion}>
-                {opcion}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
           <label htmlFor="orden-productos" className="field-label">
             Ordenar por
           </label>
@@ -157,8 +107,8 @@ export function FiltrosProductos({
             }
             className="field-control"
           >
-            <option value="codigo-asc">Código: menor a mayor</option>
-            <option value="codigo-desc">Código: mayor a menor</option>
+            <option value="codigo-asc">SKU: menor a mayor</option>
+            <option value="codigo-desc">SKU: mayor a menor</option>
             <option value="descripcion-asc">Nombre: A a Z</option>
             <option value="precio-asc">Precio: menor a mayor</option>
             <option value="precio-desc">Precio: mayor a menor</option>

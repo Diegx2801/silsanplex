@@ -5,28 +5,27 @@ const detalleMock = vi.hoisted(() => ({
   archivos: [] as Array<Record<string, unknown>>,
   versiones: [] as Array<Record<string, unknown>>,
   organizarImagenes: vi.fn(),
-  restaurarVersion: vi.fn(),
+  retirarArchivo: vi.fn(),
+  subirArchivo: vi.fn(),
 }))
 
 vi.mock('@/modulos/productos/estado/useProductoDetalle', () => ({
   useProductoDetalle: () => ({
     archivos: detalleMock.archivos,
-    versiones: detalleMock.versiones,
     cargandoDetalle: false,
     errorDetalle: null,
     subiendoArchivo: false,
     retirandoArchivo: false,
     guardandoArchivo: false,
-    restaurandoVersion: false,
-    subirArchivo: vi.fn(),
-    retirarArchivo: vi.fn(),
+    subirArchivo: detalleMock.subirArchivo,
+    retirarArchivo: detalleMock.retirarArchivo,
     actualizarDescripcion: vi.fn(),
     organizarImagenes: detalleMock.organizarImagenes,
-    restaurarVersion: detalleMock.restaurarVersion,
   }),
 }))
 
 import { DetalleProducto } from './DetalleProducto'
+import { GestorImagenesProducto } from './GestorImagenesProducto'
 import { DialogoConfirmacionEstado } from './DialogoConfirmacionEstado'
 import { productoInicial, type Producto } from '../modelo/producto'
 
@@ -60,20 +59,19 @@ beforeEach(() => {
   detalleMock.archivos = []
   detalleMock.versiones = []
   detalleMock.organizarImagenes.mockReset()
-  detalleMock.restaurarVersion.mockReset()
+  detalleMock.retirarArchivo.mockReset()
+  detalleMock.subirArchivo.mockReset()
 })
 
 afterEach(cleanup)
 
 describe('DetalleProducto', () => {
-  it('presenta la ficha completa con valores comerciales y operativos', () => {
+  it('presenta la ficha operativa del SKU sin mezclar datos de compras o almacén', () => {
     render(
       <DetalleProducto
         abierto
         producto={producto}
         alCambiarApertura={vi.fn()}
-        alEditar={vi.fn()}
-        alSolicitarCambioEstado={vi.fn()}
         alRestaurarFoco={vi.fn()}
       />,
     )
@@ -84,38 +82,29 @@ describe('DetalleProducto', () => {
     expect(screen.getByText('7751234567890')).toBeInTheDocument()
     expect(screen.getByText('Laboratorio Central')).toBeInTheDocument()
     expect(screen.getByText('Analgésicos adultos')).toBeInTheDocument()
-    expect(screen.getByText(/S\/\s*5[.,]50/)).toBeInTheDocument()
     expect(screen.getByText(/S\/\s*12[.,]50/)).toBeInTheDocument()
     expect(screen.getByText('Gravado')).toBeInTheDocument()
     expect(screen.getByText('RS-12345')).toBeInTheDocument()
-    expect(screen.getByText(/se controlan de forma independiente/i)).toBeInTheDocument()
-    expect(screen.getByText(/S\/\s*10[.,]00/)).toBeInTheDocument()
-    expect(screen.getByText('500')).toBeInTheDocument()
+    expect(screen.getByText(/se administran en Inventario/i)).toBeInTheDocument()
+    expect(screen.queryByText('Costo base')).not.toBeInTheDocument()
+    expect(screen.queryByText('Stock máximo global')).not.toBeInTheDocument()
   })
 
-  it('expone las acciones de edición y cambio de estado', () => {
-    const alEditar = vi.fn()
-    const alSolicitarCambioEstado = vi.fn()
-
+  it('mantiene la consulta separada de las acciones de administración', () => {
     render(
       <DetalleProducto
         abierto
         producto={producto}
         alCambiarApertura={vi.fn()}
-        alEditar={alEditar}
-        alSolicitarCambioEstado={alSolicitarCambioEstado}
         alRestaurarFoco={vi.fn()}
       />,
     )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Desactivar' }))
-
-    expect(alEditar).toHaveBeenCalledOnce()
-    expect(alSolicitarCambioEstado).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Desactivar' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Nueva imagen')).not.toBeInTheDocument()
   })
 
-  it('permite ordenar imágenes, elegir la principal y comparar versiones', () => {
+  it('muestra las imágenes sin controles de modificación', () => {
     detalleMock.archivos = [
       {
         id: 'imagen-1',
@@ -144,53 +133,33 @@ describe('DetalleProducto', () => {
         url: 'https://storage.test/dos.webp',
       },
     ]
-    detalleMock.versiones = [
-      {
-        id: 2,
-        numero: 2,
-        tipo: 'updated',
-        resumen: 'Ficha actualizada',
-        cambios: {},
-        actorId: 'user-1',
-        creadoEn: '2026-08-25T10:02:00.000Z',
-        snapshot: { ...producto, descripcion: 'Paracetamol anterior' },
-      },
-    ]
-
     render(
       <DetalleProducto
         abierto
         producto={producto}
         alCambiarApertura={vi.fn()}
-        alEditar={vi.fn()}
-        alSolicitarCambioEstado={vi.fn()}
         alRestaurarFoco={vi.fn()}
       />,
     )
+    expect(screen.getAllByRole('img')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: /imagen principal/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /retirar/i })).not.toBeInTheDocument()
+  })
+})
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Mover dos.webp a la izquierda' }),
-    )
-    expect(detalleMock.organizarImagenes).toHaveBeenCalledWith(
-      [expect.objectContaining({ id: 'imagen-2' }), expect.objectContaining({ id: 'imagen-1' })],
-      'imagen-1',
-    )
+describe('GestorImagenesProducto', () => {
+  it('concentra la administración de imágenes en la edición', async () => {
+    detalleMock.archivos = [{
+      id: 'imagen-1', ruta: 'org/producto/uno.webp', tipo: 'image', nombre: 'uno.webp',
+      mimeType: 'image/webp', bytes: 100, descripcion: '', principal: false,
+      orden: 0, creadoEn: '2026-08-25T10:00:00.000Z', url: 'https://storage.test/uno.webp',
+    }]
+    detalleMock.subirArchivo.mockResolvedValue(undefined)
+    render(<GestorImagenesProducto producto={producto} />)
 
-    fireEvent.click(
-      screen.getByRole('button', {
-        name: 'Usar dos.webp como imagen principal',
-      }),
-    )
-    expect(detalleMock.organizarImagenes).toHaveBeenLastCalledWith(
-      expect.any(Array),
-      'imagen-2',
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Comparar con actual' }))
-    expect(
-      screen.getByText('Versión 2 frente al estado actual'),
-    ).toBeInTheDocument()
-    expect(screen.getByText('Paracetamol anterior')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Usar uno.webp como imagen principal' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retirar uno.webp' })).toBeInTheDocument()
+    expect(screen.getByText('Seleccionar imagen')).toBeInTheDocument()
   })
 })
 

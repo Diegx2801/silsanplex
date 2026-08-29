@@ -33,12 +33,22 @@ export const afectacionesIgv = [
   { valor: 'inafecto', etiqueta: 'Inafecto' },
 ] as const
 
+const esquemaUnidadAlternativa = z.object({
+  id: z.string().uuid().optional(),
+  unidadId: z.string().uuid('Selecciona una unidad válida'),
+  unidadNombre: textoOpcional(40),
+  equivalencia: decimalOpcional(6, true).refine(Boolean, 'Ingresa la equivalencia'),
+  codigoBarras: textoOpcional(50),
+  precioVenta: importeOpcional,
+})
+
 export const esquemaProducto = z.object({
   codigo: z
     .string()
     .trim()
     .min(1, 'Ingresa el código interno')
-    .max(30, 'Máximo 30 caracteres'),
+    .max(30, 'Máximo 30 caracteres')
+    .transform((valor) => valor.toUpperCase()),
   descripcion: z
     .string()
     .trim()
@@ -50,6 +60,10 @@ export const esquemaProducto = z.object({
   sublinea: textoOpcional(80),
   laboratorio: textoOpcional(100),
   presentacion: textoOpcional(100),
+  tipo: z.enum(['good', 'service']),
+  unidadBaseId: z.string().uuid('Selecciona una unidad de medida'),
+  // Campo derivado de unidadBaseId para conservar compatibilidad con lecturas
+  // anteriores. El usuario no debe completarlo ni puede bloquear el formulario.
   unidadMedida: textoOpcional(40),
   afectacionIgv: z.enum(['', 'gravado', 'exonerado', 'inafecto']),
   costo: importeOpcional,
@@ -66,6 +80,7 @@ export const esquemaProducto = z.object({
   serialControl: z.boolean(),
   ventaReceta: z.boolean(),
   activo: z.boolean(),
+  unidadesAlternativas: z.array(esquemaUnidadAlternativa).max(12, 'Máximo 12 unidades alternativas'),
 }).superRefine((datos, contexto) => {
   if (
     datos.precioMinimo &&
@@ -78,9 +93,42 @@ export const esquemaProducto = z.object({
       message: 'No puede superar el precio de venta base',
     })
   }
+
+  if (datos.tipo === 'service' && (datos.controlLote || datos.controlVencimiento || datos.serialControl)) {
+    contexto.addIssue({ code: 'custom', path: ['tipo'], message: 'Los servicios no controlan lote ni vencimiento' })
+  }
+
+  const unidades = new Set<string>()
+  const codigosBarras = new Set(
+    datos.codigoBarras ? [datos.codigoBarras.trim().toLocaleUpperCase('es-PE')] : [],
+  )
+  for (const [indice, unidad] of datos.unidadesAlternativas.entries()) {
+    if (unidad.unidadId === datos.unidadBaseId || unidades.has(unidad.unidadId)) {
+      contexto.addIssue({ code: 'custom', path: ['unidadesAlternativas', indice, 'unidadId'], message: 'La unidad debe ser diferente y no repetirse' })
+    }
+    unidades.add(unidad.unidadId)
+    const codigoBarras = unidad.codigoBarras.trim().toLocaleUpperCase('es-PE')
+    if (codigoBarras && codigosBarras.has(codigoBarras)) {
+      contexto.addIssue({ code: 'custom', path: ['unidadesAlternativas', indice, 'codigoBarras'], message: 'Este código de barras ya está usado en el producto' })
+    }
+    if (codigoBarras) codigosBarras.add(codigoBarras)
+  }
 })
 
 export type DatosProducto = z.infer<typeof esquemaProducto>
+export type UnidadAlternativaProducto = DatosProducto['unidadesAlternativas'][number]
+
+export interface UnidadMedida {
+  id: string
+  codigo: string
+  nombre: string
+}
+
+export interface ResultadoGuardadoProducto {
+  productoId?: string
+  error?: string
+  advertencia?: string
+}
 
 export interface Producto extends Omit<DatosProducto, 'sublinea' | 'costo'> {
   id: string
@@ -157,6 +205,8 @@ export const productoInicial: DatosProducto = {
   sublinea: '',
   laboratorio: '',
   presentacion: '',
+  tipo: 'good',
+  unidadBaseId: '',
   unidadMedida: '',
   afectacionIgv: '',
   costo: '',
@@ -168,9 +218,10 @@ export const productoInicial: DatosProducto = {
   largoCm: '',
   pesoKg: '',
   registroSanitario: '',
-  controlLote: true,
-  controlVencimiento: true,
+  controlLote: false,
+  controlVencimiento: false,
   serialControl: false,
   ventaReceta: false,
   activo: true,
+  unidadesAlternativas: [],
 }

@@ -16,7 +16,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { PERMISSIONS } from '@/features/auth/permissions'
@@ -24,6 +24,7 @@ import { useAuth } from '@/features/auth/useAuth'
 import { DetalleProducto } from '@/modulos/productos/componentes/DetalleProducto'
 import { DialogoConfirmacionEstado } from '@/modulos/productos/componentes/DialogoConfirmacionEstado'
 import { DialogoProducto } from '@/modulos/productos/componentes/DialogoProducto'
+import { DialogoImportarProductos } from '@/modulos/productos/componentes/DialogoImportarProductos'
 import { FiltrosProductos } from '@/modulos/productos/componentes/FiltrosProductos'
 import { PaginacionProductos } from '@/modulos/productos/componentes/PaginacionProductos'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
@@ -102,15 +103,14 @@ export function ProductosPage() {
   const busquedaDiferida = useDeferredValue(busqueda)
   const [parametros, setParametros] = useSearchParams()
   const [filtroEstado, setFiltroEstado] =
-    useState<FiltroEstadoProducto>('todos')
-  const [filtroCategoria, setFiltroCategoria] = useState('')
-  const [filtroLaboratorio, setFiltroLaboratorio] = useState('')
+    useState<FiltroEstadoProducto>('activos')
   const [orden, setOrden] = useState<OrdenProductos>('codigo-asc')
   const [pagina, setPagina] = useState(1)
   const [tamanioPagina, setTamanioPagina] = useState(10)
   const [formularioAbierto, setFormularioAbierto] = useState(
     () => parametros.get('nuevo') === '1',
   )
+  const [importacionAbierta, setImportacionAbierta] = useState(() => parametros.get('importar') === '1')
   const [productoSeleccionado, setProductoSeleccionado] =
     useState<Producto | null>(null)
   const [productoDetalleId, setProductoDetalleId] = useState<string | null>(null)
@@ -120,13 +120,14 @@ export function ProductosPage() {
   const [mensaje, setMensaje] = useState('')
   const [exportando, setExportando] = useState(false)
   const disparadorFormulario = useRef<HTMLButtonElement | null>(null)
+  const disparadorImportacion = useRef<HTMLButtonElement | null>(null)
   const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
   const disparadorEstado = useRef<HTMLButtonElement | null>(null)
   const consulta = {
     busqueda: busquedaDiferida,
     estado: filtroEstado,
-    categoria: filtroCategoria,
-    laboratorio: filtroLaboratorio,
+    categoria: '',
+    laboratorio: '',
     orden,
   }
   const {
@@ -139,8 +140,7 @@ export function ProductosPage() {
     cambiandoEstado,
     totalFiltrado,
     totalProductos,
-    categorias,
-    laboratorios,
+    unidadesMedida,
     exportarProductos,
   } = useProductos('', { consulta, pagina, tamanioPagina })
   const mensajeErrorProductos =
@@ -173,15 +173,11 @@ export function ProductosPage() {
 
   const cantidadFiltrosActivos =
     Number(Boolean(busqueda.trim())) +
-    Number(filtroEstado !== 'todos') +
-    Number(Boolean(filtroCategoria)) +
-    Number(Boolean(filtroLaboratorio))
+    Number(filtroEstado !== 'todos')
 
   const limpiarFiltros = () => {
     setBusqueda('')
     setFiltroEstado('todos')
-    setFiltroCategoria('')
-    setFiltroLaboratorio('')
     setPagina(1)
   }
 
@@ -200,18 +196,14 @@ export function ProductosPage() {
     setFormularioAbierto(true)
   }
 
-  const guardar = async (datos: DatosProducto, productoId?: string) => {
-    const error = await guardarProducto(datos, productoId)
-
-    if (!error) {
-      setMensaje(
-        productoId
-          ? 'Los cambios se guardaron correctamente.'
-          : 'El producto se registró correctamente.',
-      )
+  const guardar = async (datos: DatosProducto, productoId?: string, imagenPrincipal?: File | null) => {
+    const resultado = await guardarProducto(datos, productoId, imagenPrincipal)
+    if (!resultado.error) {
+      setMensaje(resultado.advertencia ?? (productoId
+        ? 'Los cambios se guardaron correctamente.'
+        : 'El producto se registró correctamente.'))
     }
-
-    return error
+    return resultado
   }
 
   const abrirDetalle = (
@@ -220,15 +212,6 @@ export function ProductosPage() {
   ) => {
     disparadorDetalle.current = evento.currentTarget
     setProductoDetalleId(producto.id)
-  }
-
-  const editarDesdeDetalle = () => {
-    if (!productoDetalle) return
-
-    disparadorFormulario.current = disparadorDetalle.current
-    setProductoSeleccionado(productoDetalle)
-    setProductoDetalleId(null)
-    setFormularioAbierto(true)
   }
 
   const solicitarCambioEstado = (
@@ -305,11 +288,9 @@ export function ProductosPage() {
           </p>
         </div>
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:self-end">
-          <Button asChild size="lg" variant="outline">
-            <Link to="/productos/importar">
-              <FileSpreadsheet aria-hidden="true" />
-              Revisar importación
-            </Link>
+          <Button ref={disparadorImportacion} type="button" size="lg" variant="outline" onClick={() => setImportacionAbierta(true)}>
+            <FileSpreadsheet aria-hidden="true" />
+            Importar productos
           </Button>
           {puedeGestionar ? (
             <Button size="lg" onClick={abrirRegistro}>
@@ -323,11 +304,7 @@ export function ProductosPage() {
       <FiltrosProductos
         busqueda={busqueda}
         estado={filtroEstado}
-        categoria={filtroCategoria}
-        laboratorio={filtroLaboratorio}
         orden={orden}
-        categorias={categorias}
-        laboratorios={laboratorios}
         cantidadActivos={cantidadFiltrosActivos}
         alCambiarBusqueda={(valor) => {
           setBusqueda(valor)
@@ -335,14 +312,6 @@ export function ProductosPage() {
         }}
         alCambiarEstado={(valor) => {
           setFiltroEstado(valor)
-          setPagina(1)
-        }}
-        alCambiarCategoria={(valor) => {
-          setFiltroCategoria(valor)
-          setPagina(1)
-        }}
-        alCambiarLaboratorio={(valor) => {
-          setFiltroLaboratorio(valor)
           setPagina(1)
         }}
         alCambiarOrden={(valor) => {
@@ -506,7 +475,7 @@ export function ProductosPage() {
             <thead>
               <tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
                 <th scope="col" className="px-5 py-3 font-medium sm:px-6">
-                  Código
+                  SKU
                 </th>
                 <th scope="col" className="px-4 py-3 font-medium">
                   Producto
@@ -649,11 +618,21 @@ export function ProductosPage() {
           key={productoSeleccionado?.id ?? 'nuevo'}
           abierto={formularioAbierto}
           producto={productoSeleccionado}
+          unidadesMedida={unidadesMedida}
           alCambiarApertura={cambiarAperturaFormulario}
           alGuardar={guardar}
           alRestaurarFoco={() => disparadorFormulario.current?.focus()}
         />
       ) : null}
+
+      {importacionAbierta ? <DialogoImportarProductos abierto={importacionAbierta} alCambiarApertura={(abierto) => {
+        setImportacionAbierta(abierto)
+        if (!abierto && parametros.has('importar')) {
+          const siguientesParametros = new URLSearchParams(parametros)
+          siguientesParametros.delete('importar')
+          setParametros(siguientesParametros, { replace: true })
+        }
+      }} alCompletar={() => { void reintentar(); setMensaje('Importación de productos finalizada.') }} alRestaurarFoco={() => disparadorImportacion.current?.focus()} /> : null}
 
       {productoDetalle ? (
         <DetalleProducto
@@ -662,10 +641,6 @@ export function ProductosPage() {
           alCambiarApertura={(abierto) => {
             if (!abierto) setProductoDetalleId(null)
           }}
-          alEditar={puedeGestionar ? editarDesdeDetalle : undefined}
-          alSolicitarCambioEstado={puedeGestionar ? (evento) =>
-            solicitarCambioEstado(productoDetalle, evento)
-          : undefined}
           alRestaurarFoco={() => disparadorDetalle.current?.focus()}
         />
       ) : null}
