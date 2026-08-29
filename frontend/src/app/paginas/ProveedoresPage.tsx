@@ -7,6 +7,7 @@ import {
   Eye,
   Pencil,
   Plus,
+  Power,
   Search,
   Upload,
 } from 'lucide-react'
@@ -356,16 +357,31 @@ export function ProveedoresPage() {
                           <Eye aria-hidden="true" />
                         </Button>
                         {puedeAdministrar ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            title="Editar proveedor"
-                            aria-label={`Editar ${proveedor.razonSocial}`}
-                            onClick={(evento) => abrirFormulario(evento, proveedor)}
-                          >
-                            <Pencil aria-hidden="true" />
-                          </Button>
+                          <>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              title="Editar proveedor"
+                              aria-label={`Editar ${proveedor.razonSocial}`}
+                              onClick={(evento) => abrirFormulario(evento, proveedor)}
+                            >
+                              <Pencil aria-hidden="true" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              title={proveedor.activo ? 'Desactivar proveedor' : 'Activar proveedor'}
+                              aria-label={`${proveedor.activo ? 'Desactivar' : 'Activar'} ${proveedor.razonSocial}`}
+                              onClick={() => {
+                                estadoMutation.reset()
+                                setProveedorEstado(proveedor)
+                              }}
+                            >
+                              <Power aria-hidden="true" />
+                            </Button>
+                          </>
                         ) : null}
                       </td>
                     </tr>
