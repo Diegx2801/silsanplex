@@ -3,13 +3,10 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
-  CircleDollarSign,
   Eye,
-  PackageCheck,
   Pencil,
   Plus,
   Search,
-  Star,
 } from 'lucide-react'
 import {
   type MouseEvent as ReactMouseEvent,
@@ -23,13 +20,10 @@ import { Button } from '@/components/ui/button'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
 import { DialogoProveedor } from '@/modulos/proveedores/componentes/DialogoProveedor'
-import { ComparativoProveedores } from '@/modulos/proveedores/componentes/ComparativoProveedores'
+import { consultarRuc } from '@/modulos/clientes/servicios/rucLookupService'
 import { DetalleProveedor } from '@/modulos/proveedores/componentes/DetalleProveedor'
 import {
-  categoriasProveedor,
-  frecuenciasEntregaProveedor,
   tiposDocumentoProveedor,
-  type CategoriaProveedor,
   type DatosProveedor,
   type Proveedor,
 } from '@/modulos/proveedores/modelo/proveedor'
@@ -39,19 +33,9 @@ import {
 } from '@/modulos/proveedores/servicios/proveedorService'
 
 type FiltroEstado = 'todos' | 'activos' | 'inactivos'
-type FiltroCategoria = 'todas' | CategoriaProveedor
 const proveedoresVacios: Proveedor[] = []
 const proveedoresPorPagina = 10
 
-const etiquetasCategoria = new Map(
-  categoriasProveedor.map((categoria) => [categoria.valor, categoria.etiqueta]),
-)
-const etiquetasFrecuencia = new Map(
-  frecuenciasEntregaProveedor.map((frecuencia) => [
-    frecuencia.valor,
-    frecuencia.etiqueta,
-  ]),
-)
 const etiquetasDocumento = new Map(
   tiposDocumentoProveedor.map((tipo) => [tipo.valor, tipo.etiqueta]),
 )
@@ -69,19 +53,6 @@ function etiquetaCondicion(proveedor: Proveedor) {
     : `${proveedor.diasCredito} días`
 }
 
-function Calificacion({ valor }: { valor: number | null }) {
-  if (valor === null) {
-    return <span className="text-xs text-muted-foreground">Sin evaluar</span>
-  }
-
-  return (
-    <span className="inline-flex items-center gap-1 font-mono text-xs">
-      <Star aria-hidden="true" className="size-3.5 fill-primary text-primary" />
-      {valor}/5
-    </span>
-  )
-}
-
 export function ProveedoresPage() {
   const { access, user, hasPermission } = useAuth()
   const queryClient = useQueryClient()
@@ -90,8 +61,6 @@ export function ProveedoresPage() {
   const queryKey = ['suppliers', organizationId] as const
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('activos')
-  const [filtroCategoria, setFiltroCategoria] =
-    useState<FiltroCategoria>('todas')
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
   const [detalleAbierto, setDetalleAbierto] = useState(false)
   const [proveedorDetalle, setProveedorDetalle] = useState<Proveedor | null>(null)
@@ -138,8 +107,6 @@ export function ProveedoresPage() {
       const coincideEstado =
         filtroEstado === 'todos' ||
         (filtroEstado === 'activos' ? proveedor.activo : !proveedor.activo)
-      const coincideCategoria =
-        filtroCategoria === 'todas' || proveedor.categoria === filtroCategoria
       const texto = normalizar(
         [
           proveedor.codigo,
@@ -147,18 +114,15 @@ export function ProveedoresPage() {
           proveedor.razonSocial,
           proveedor.nombreComercial,
           proveedor.contacto,
-          proveedor.tiposProducto,
-          proveedor.zonaGeografica,
         ].join(' '),
       )
 
       return (
         coincideEstado &&
-        coincideCategoria &&
         (!termino || texto.includes(termino))
       )
     })
-  }, [busquedaDiferida, filtroCategoria, filtroEstado, proveedores])
+  }, [busquedaDiferida, filtroEstado, proveedores])
   const totalPaginas = Math.max(1, Math.ceil(proveedoresFiltrados.length / proveedoresPorPagina))
   const paginaActual = Math.min(pagina, totalPaginas)
   const proveedoresPagina = proveedoresFiltrados.slice(
@@ -166,49 +130,6 @@ export function ProveedoresPage() {
     paginaActual * proveedoresPorPagina,
   )
 
-  const activos = proveedores.filter((proveedor) => proveedor.activo)
-  const evaluados = proveedores.filter(
-    (proveedor) => proveedor.calificacionDesempeno !== null,
-  )
-  const promedioDesempeno = evaluados.length
-    ? (
-        evaluados.reduce(
-          (total, proveedor) => total + (proveedor.calificacionDesempeno ?? 0),
-          0,
-        ) / evaluados.length
-      ).toFixed(1)
-    : '—'
-
-  const metricas = [
-    {
-      etiqueta: 'Proveedores activos',
-      valor: activos.length,
-      detalle: `${proveedores.length} registrados`,
-      icono: Building2,
-    },
-    {
-      etiqueta: 'Relación frecuente',
-      valor: activos.filter((proveedor) =>
-        ['frecuente', 'estrategico'].includes(proveedor.categoria),
-      ).length,
-      detalle: 'Frecuentes y estratégicos',
-      icono: PackageCheck,
-    },
-    {
-      etiqueta: 'Compra a crédito',
-      valor: activos.filter(
-        (proveedor) => proveedor.condicionCredito === 'credito',
-      ).length,
-      detalle: 'Con plazo comercial',
-      icono: CircleDollarSign,
-    },
-    {
-      etiqueta: 'Desempeño medio',
-      valor: promedioDesempeno,
-      detalle: evaluados.length ? `${evaluados.length} evaluados` : 'Sin evaluaciones',
-      icono: Star,
-    },
-  ]
 
   function abrirFormulario(
     evento: ReactMouseEvent<HTMLButtonElement>,
@@ -242,7 +163,7 @@ export function ProveedoresPage() {
             Proveedores
           </h1>
           <p className="mt-3 max-w-[70ch] text-base leading-7 text-muted-foreground">
-            Centraliza identidad fiscal, contactos, condiciones de pago y desempeño antes de comprar.
+            Maestro fiscal y comercial para órdenes y compras.
           </p>
         </div>
         {puedeAdministrar ? (
@@ -258,35 +179,8 @@ export function ProveedoresPage() {
         </p>
       ) : null}
 
-      <section aria-label="Relación comercial de proveedores" className="ledger-sheet">
-        <div className="grid sm:grid-cols-2 xl:grid-cols-4">
-          {metricas.map((metrica) => {
-            const Icono = metrica.icono
-            return (
-              <article
-                key={metrica.etiqueta}
-                className="border-b px-5 py-5 last:border-b-0 sm:border-e sm:[&:nth-child(2)]:border-e-0 xl:border-b-0 xl:[&:nth-child(2)]:border-e xl:last:border-e-0"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
-                    {metrica.etiqueta}
-                  </p>
-                  <Icono aria-hidden="true" className="size-4 text-primary" />
-                </div>
-                <p className="mt-3 font-mono text-2xl font-semibold tabular-nums">
-                  {metrica.valor}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">{metrica.detalle}</p>
-              </article>
-            )
-          })}
-        </div>
-      </section>
-
-      <ComparativoProveedores organizationId={organizationId} proveedores={proveedores} />
-
       <section aria-labelledby="proveedores-title" className="ledger-sheet">
-        <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(12rem,1fr)_minmax(16rem,28rem)_11rem_12rem] lg:items-end">
+        <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(12rem,1fr)_minmax(16rem,32rem)_12rem] lg:items-end">
           <div>
             <h2 id="proveedores-title" className="text-lg font-semibold">
               Directorio de proveedores
@@ -307,27 +201,9 @@ export function ProveedoresPage() {
                 value={busqueda}
                 onChange={(evento) => { setBusqueda(evento.target.value); setPagina(1) }}
                 className="field-control ps-9"
-                placeholder="RUC, razón social, producto o zona"
+                placeholder="RUC, DNI, razón social o contacto"
               />
             </div>
-          </div>
-          <div>
-            <label htmlFor="categoria-proveedor-filtro" className="field-label">
-              Categoría
-            </label>
-            <select
-              id="categoria-proveedor-filtro"
-              value={filtroCategoria}
-              onChange={(evento) => { setFiltroCategoria(evento.target.value as FiltroCategoria); setPagina(1) }}
-              className="field-control"
-            >
-              <option value="todas">Todas</option>
-              {categoriasProveedor.map((categoria) => (
-                <option key={categoria.valor} value={categoria.valor}>
-                  {categoria.etiqueta}
-                </option>
-              ))}
-            </select>
           </div>
           <div>
             <label htmlFor="estado-proveedor-filtro" className="field-label">
@@ -387,9 +263,7 @@ export function ProveedoresPage() {
                         {etiquetasDocumento.get(proveedor.tipoDocumento)} {proveedor.numeroDocumento}
                       </p>
                       <h3 className="mt-1 font-semibold">{proveedor.razonSocial}</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {etiquetasCategoria.get(proveedor.categoria)} · {etiquetasFrecuencia.get(proveedor.frecuenciaEntrega)}
-                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">{proveedor.nombreComercial || 'Sin nombre comercial'}</p>
                     </div>
                     <span className="status-label" data-tone={proveedor.activo ? 'listo' : 'revision'}>
                       {proveedor.activo ? 'Activo' : 'Inactivo'}
@@ -400,10 +274,7 @@ export function ProveedoresPage() {
                       <p className="text-xs text-muted-foreground">Condición</p>
                       <p className="mt-1">{etiquetaCondicion(proveedor)}</p>
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Desempeño</p>
-                      <p className="mt-1"><Calificacion valor={proveedor.calificacionDesempeno} /></p>
-                    </div>
+                    <div><p className="text-xs text-muted-foreground">Contacto</p><p className="mt-1">{proveedor.contacto || proveedor.telefono || 'Sin contacto'}</p></div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button type="button" variant="outline" onClick={(evento) => abrirDetalle(evento, proveedor)}><Eye aria-hidden="true" /> Ver expediente</Button>
@@ -418,7 +289,7 @@ export function ProveedoresPage() {
                   <tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
                     <th className="px-6 py-3 font-medium">Documento</th>
                     <th className="px-4 py-3 font-medium">Proveedor</th>
-                    <th className="px-4 py-3 font-medium">Relación comercial</th>
+                    <th className="px-4 py-3 font-medium">Dirección fiscal</th>
                     <th className="px-4 py-3 font-medium">Contacto</th>
                     <th className="px-4 py-3 font-medium">Condición</th>
                     <th className="px-4 py-3 font-medium">Estado</th>
@@ -439,18 +310,16 @@ export function ProveedoresPage() {
                         </p>
                       </td>
                       <td className="px-4 py-4">
-                        <p>{etiquetasCategoria.get(proveedor.categoria)}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {etiquetasFrecuencia.get(proveedor.frecuenciaEntrega)}
-                        </p>
+                        <p className="max-w-56 truncate">{proveedor.direccion || 'Sin registrar'}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{proveedor.ubigeo || 'Sin ubigeo'}</p>
                       </td>
                       <td className="px-4 py-4 text-muted-foreground">
                         <p>{proveedor.contacto || 'Sin contacto'}</p>
                         <p className="mt-1 text-xs">{proveedor.email || proveedor.telefono || 'Sin datos adicionales'}</p>
                       </td>
                       <td className="px-4 py-4">
-                        <p>{etiquetaCondicion(proveedor)} · {proveedor.moneda}</p>
-                        <p className="mt-1"><Calificacion valor={proveedor.calificacionDesempeno} /></p>
+                        <p>{etiquetaCondicion(proveedor)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{proveedor.estadoContribuyente || 'SUNAT sin verificar'}</p>
                       </td>
                       <td className="px-4 py-4">
                         <span className="status-label" data-tone={proveedor.activo ? 'listo' : 'revision'}>
@@ -509,6 +378,7 @@ export function ProveedoresPage() {
           proveedor={proveedorSeleccionado}
           alCambiarApertura={setDialogoAbierto}
           alGuardar={guardar}
+          alConsultarRuc={consultarRuc}
           alRestaurarFoco={() => disparador.current?.focus()}
         />
       ) : null}

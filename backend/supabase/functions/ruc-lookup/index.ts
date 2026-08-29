@@ -15,6 +15,22 @@ const requestSchema = z.object({
   ruc: z.string().trim().regex(/^\d{11}$/),
 }).strict();
 
+const lookupPermissions = ["CUSTOMERS_MANAGE", "SUPPLIERS_MANAGE"] as const;
+
+async function resolveLookupOrganization(
+  adminClient: SupabaseClient,
+  userId: string,
+) {
+  for (const permission of lookupPermissions) {
+    const { data, error } = await adminClient.rpc(
+      "resolve_edge_user_organization_permission",
+      { requested_user_id: userId, requested_permission: permission },
+    );
+    if (!error && typeof data === "string") return data;
+  }
+  return null;
+}
+
 function integerEnvironmentValue(
   name: string,
   fallback: number,
@@ -90,15 +106,11 @@ Deno.serve(async (request) => {
     }
     requestedRuc = parsed.data.ruc;
 
-    const { data: resolvedOrganization, error: organizationError } =
-      await authorization.adminClient.rpc(
-        "resolve_edge_user_organization_permission",
-        {
-          requested_user_id: actorId,
-          requested_permission: "CUSTOMERS_MANAGE",
-        },
-      );
-    if (organizationError || typeof resolvedOrganization !== "string") {
+    const resolvedOrganization = await resolveLookupOrganization(
+      authorization.adminClient,
+      actorId,
+    );
+    if (!resolvedOrganization) {
       return errorResponse(
         {
           code: "FORBIDDEN",

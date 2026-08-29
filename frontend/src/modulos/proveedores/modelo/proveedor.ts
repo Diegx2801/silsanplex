@@ -81,6 +81,14 @@ export const esquemaDatosProveedor = z
       ),
     telefono: textoOpcional(30),
     direccion: textoOpcional(250),
+    ubigeo: z.string().trim().refine(
+      (valor) => valor === '' || /^\d{6}$/.test(valor),
+      'El ubigeo debe contener 6 dígitos',
+    ),
+    estadoContribuyente: textoOpcional(40),
+    condicionDomicilio: textoOpcional(40),
+    fuenteDatosFiscales: textoOpcional(40),
+    fechaConsultaSunat: z.string().datetime().nullable(),
     zonaGeografica: textoOpcional(120),
     tiposProducto: textoOpcional(250),
     categoria: z.enum([
@@ -167,6 +175,11 @@ export interface Proveedor {
   email: string
   telefono: string
   direccion: string
+  ubigeo: string
+  estadoContribuyente: string
+  condicionDomicilio: string
+  fuenteDatosFiscales: string
+  fechaConsultaSunat: string | null
   zonaGeografica: string
   tiposProducto: string
   categoria: CategoriaProveedor
@@ -196,6 +209,11 @@ export const proveedorInicial: DatosProveedor = {
   email: '',
   telefono: '',
   direccion: '',
+  ubigeo: '',
+  estadoContribuyente: '',
+  condicionDomicilio: '',
+  fuenteDatosFiscales: '',
+  fechaConsultaSunat: null,
   zonaGeografica: '',
   tiposProducto: '',
   categoria: 'por-clasificar',
@@ -224,6 +242,11 @@ export function proveedorAFormulario(proveedor: Proveedor): DatosProveedor {
     email: proveedor.email,
     telefono: proveedor.telefono,
     direccion: proveedor.direccion,
+    ubigeo: proveedor.ubigeo,
+    estadoContribuyente: proveedor.estadoContribuyente,
+    condicionDomicilio: proveedor.condicionDomicilio,
+    fuenteDatosFiscales: proveedor.fuenteDatosFiscales,
+    fechaConsultaSunat: proveedor.fechaConsultaSunat,
     zonaGeografica: proveedor.zonaGeografica,
     tiposProducto: proveedor.tiposProducto,
     categoria: proveedor.categoria,
