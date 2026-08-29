@@ -8,9 +8,7 @@ import type {
 import {
   actualizarDescripcionArchivoProducto,
   listarArchivosProducto,
-  listarVersionesProducto,
   organizarImagenesProducto,
-  restaurarVersionProducto,
   retirarArchivoProducto,
   subirArchivoProducto,
 } from '@/modulos/productos/servicios/productosService'
@@ -27,7 +25,6 @@ export function useProductoDetalle(productoId: string, habilitado: boolean) {
   const organizationId = access?.organizationId ?? ''
   const detalleKey = ['product-detail', organizationId, productoId] as const
   const archivosKey = [...detalleKey, 'files'] as const
-  const versionesKey = [...detalleKey, 'versions'] as const
 
   const archivosQuery = useQuery({
     queryKey: archivosKey,
@@ -35,32 +32,20 @@ export function useProductoDetalle(productoId: string, habilitado: boolean) {
     enabled: habilitado && Boolean(organizationId && productoId),
     staleTime: 60_000,
   })
-  const versionesQuery = useQuery({
-    queryKey: versionesKey,
-    queryFn: () => listarVersionesProducto(organizationId, productoId),
-    enabled: habilitado && Boolean(organizationId && productoId),
-    staleTime: 30_000,
-  })
   const cargaMutation = useMutation({
     mutationFn: (datos: DatosCargaArchivo) => {
       if (!user) throw new Error('La sesión ya no está disponible')
       return subirArchivoProducto(organizationId, productoId, user.id, datos)
     },
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: archivosKey }),
-        queryClient.invalidateQueries({ queryKey: versionesKey }),
-      ])
+      await queryClient.invalidateQueries({ queryKey: archivosKey })
     },
   })
   const retiroMutation = useMutation({
     mutationFn: (archivo: ArchivoProducto) =>
       retirarArchivoProducto(organizationId, productoId, archivo),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: archivosKey }),
-        queryClient.invalidateQueries({ queryKey: versionesKey }),
-      ])
+      await queryClient.invalidateQueries({ queryKey: archivosKey })
     },
   })
   const descripcionMutation = useMutation({
@@ -72,10 +57,7 @@ export function useProductoDetalle(productoId: string, habilitado: boolean) {
         descripcion,
       ),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: archivosKey }),
-        queryClient.invalidateQueries({ queryKey: versionesKey }),
-      ])
+      await queryClient.invalidateQueries({ queryKey: archivosKey })
     },
   })
   const organizacionMutation = useMutation({
@@ -89,17 +71,6 @@ export function useProductoDetalle(productoId: string, habilitado: boolean) {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: archivosKey }),
-        queryClient.invalidateQueries({ queryKey: versionesKey }),
-        queryClient.invalidateQueries({ queryKey: ['products', organizationId] }),
-      ])
-    },
-  })
-  const restauracionMutation = useMutation({
-    mutationFn: (versionNumero: number) =>
-      restaurarVersionProducto(organizationId, productoId, versionNumero),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: versionesKey }),
         queryClient.invalidateQueries({ queryKey: ['products', organizationId] }),
       ])
     },
@@ -107,21 +78,17 @@ export function useProductoDetalle(productoId: string, habilitado: boolean) {
 
   return {
     archivos: archivosQuery.data ?? [],
-    versiones: versionesQuery.data ?? [],
-    cargandoDetalle: archivosQuery.isLoading || versionesQuery.isLoading,
-    errorDetalle: archivosQuery.error ?? versionesQuery.error,
+    cargandoDetalle: archivosQuery.isLoading,
+    errorDetalle: archivosQuery.error,
     subiendoArchivo: cargaMutation.isPending,
     retirandoArchivo: retiroMutation.isPending,
     guardandoArchivo:
       descripcionMutation.isPending || organizacionMutation.isPending,
-    restaurandoVersion: restauracionMutation.isPending,
     subirArchivo: (datos: DatosCargaArchivo) => cargaMutation.mutateAsync(datos),
     retirarArchivo: (archivo: ArchivoProducto) => retiroMutation.mutateAsync(archivo),
     actualizarDescripcion: (archivoId: string, descripcion: string) =>
       descripcionMutation.mutateAsync({ archivoId, descripcion }),
     organizarImagenes: (imagenes: ArchivoProducto[], principalId: string) =>
       organizacionMutation.mutateAsync({ imagenes, principalId }),
-    restaurarVersion: (versionNumero: number) =>
-      restauracionMutation.mutateAsync(versionNumero),
   }
 }

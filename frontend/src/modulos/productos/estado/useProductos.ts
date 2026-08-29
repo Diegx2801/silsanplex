@@ -12,14 +12,14 @@ import {
   contarProductos,
   crearProducto,
   editarProducto,
-  listarOpcionesProductos,
+  listarUnidadesMedida,
   listarProductosFiltrados,
   listarProductosPaginados,
   listarProductos,
+  subirArchivoProducto,
 } from '@/modulos/productos/servicios/productosService'
 
 const productosVacios: Producto[] = []
-const opcionesVacias = { categorias: [], laboratorios: [] }
 
 interface ConfiguracionConsultaProductos {
   consulta?: ConsultaProductos
@@ -65,11 +65,11 @@ export function useProductos(
     enabled: Boolean(organizationId) && Boolean(consultaPaginada),
     staleTime: 30_000,
   })
-  const opcionesQuery = useQuery({
-    queryKey: [...productosQueryKey, 'opciones'],
-    queryFn: () => listarOpcionesProductos(organizationId),
+  const unidadesQuery = useQuery({
+    queryKey: [...productosQueryKey, 'unidades-medida'],
+    queryFn: () => listarUnidadesMedida(organizationId),
     enabled: Boolean(organizationId) && Boolean(consultaPaginada),
-    staleTime: 5 * 60_000,
+    staleTime: 30 * 60_000,
   })
   const guardarMutation = useMutation({
     mutationFn: ({ datos, productoId }: { datos: DatosProducto; productoId?: string }) => {
@@ -100,7 +100,7 @@ export function useProductos(
   const reintentar = async () => {
     await query.refetch()
     if (consultaPaginada) {
-      await Promise.all([totalQuery.refetch(), opcionesQuery.refetch()])
+      await Promise.all([totalQuery.refetch(), unidadesQuery.refetch()])
     }
   }
 
@@ -110,14 +110,12 @@ export function useProductos(
     totalProductos: consultaPaginada
       ? totalQuery.data ?? totalFiltrado
       : productos.length,
-    categorias: opcionesQuery.data?.categorias ?? opcionesVacias.categorias,
-    laboratorios:
-      opcionesQuery.data?.laboratorios ?? opcionesVacias.laboratorios,
+    unidadesMedida: unidadesQuery.data ?? [],
     cargando:
       query.isLoading ||
       (Boolean(consultaPaginada) &&
-        (totalQuery.isLoading || opcionesQuery.isLoading)),
-    error: query.error ?? totalQuery.error ?? opcionesQuery.error,
+        (totalQuery.isLoading || unidadesQuery.isLoading)),
+    error: query.error ?? totalQuery.error ?? unidadesQuery.error,
     reintentar,
     guardando: guardarMutation.isPending,
     cambiandoEstado: estadoMutation.isPending,
@@ -125,12 +123,29 @@ export function useProductos(
       buscarProductosEnSupabase(organizationId, busqueda),
     exportarProductos: (consulta: ConsultaProductos) =>
       listarProductosFiltrados(organizationId, consulta),
-    guardarProducto: async (datos: DatosProducto, productoId?: string) => {
+    guardarProducto: async (datos: DatosProducto, productoId?: string, imagenPrincipal?: File | null) => {
       try {
-        await guardarMutation.mutateAsync({ datos, productoId })
-        return undefined
+        const productoGuardadoId = await guardarMutation.mutateAsync({ datos, productoId })
+        if (imagenPrincipal && user) {
+          try {
+            await subirArchivoProducto(organizationId, productoGuardadoId, user.id, {
+              archivo: imagenPrincipal,
+              tipo: 'image',
+              descripcion: '',
+            })
+            await queryClient.invalidateQueries({ queryKey: productosQueryKey })
+          } catch (errorImagen) {
+            return {
+              productoId: productoGuardadoId,
+              advertencia: errorImagen instanceof Error
+                ? `El producto se guardó, pero la imagen quedó pendiente: ${errorImagen.message}`
+                : 'El producto se guardó, pero la imagen quedó pendiente.',
+            }
+          }
+        }
+        return { productoId: productoGuardadoId }
       } catch (error) {
-        return error instanceof Error ? error.message : 'No se pudo guardar el producto'
+        return { error: error instanceof Error ? error.message : 'No se pudo guardar el producto' }
       }
     },
     cambiarEstado: async (producto: Producto) => {

@@ -169,7 +169,7 @@ export function InicioPage() {
               : 'Revisa los archivos exportados para conocer conflictos antes de importar el catálogo.'}
           </p>
           <Button asChild variant="outline" className="mt-5 w-full">
-            <Link to="/productos/importar">
+            <Link to="/productos?importar=1">
               <FileSpreadsheet aria-hidden="true" />
               Revisar importación
             </Link>
