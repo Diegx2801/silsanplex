@@ -77,6 +77,7 @@ export const esquemaProducto = z.object({
   registroSanitario: textoOpcional(80),
   controlLote: z.boolean(),
   controlVencimiento: z.boolean(),
+  serialControl: z.boolean(),
   ventaReceta: z.boolean(),
   activo: z.boolean(),
   unidadesAlternativas: z.array(esquemaUnidadAlternativa).max(12, 'Máximo 12 unidades alternativas'),
@@ -93,7 +94,7 @@ export const esquemaProducto = z.object({
     })
   }
 
-  if (datos.tipo === 'service' && (datos.controlLote || datos.controlVencimiento)) {
+  if (datos.tipo === 'service' && (datos.controlLote || datos.controlVencimiento || datos.serialControl)) {
     contexto.addIssue({ code: 'custom', path: ['tipo'], message: 'Los servicios no controlan lote ni vencimiento' })
   }
 
@@ -219,6 +220,7 @@ export const productoInicial: DatosProducto = {
   registroSanitario: '',
   controlLote: false,
   controlVencimiento: false,
+  serialControl: false,
   ventaReceta: false,
   activo: true,
   unidadesAlternativas: [],

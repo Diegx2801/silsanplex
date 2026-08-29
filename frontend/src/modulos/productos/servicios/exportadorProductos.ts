@@ -80,6 +80,7 @@ export function crearFilasProductos(
     'Registro sanitario': producto.registroSanitario,
     'Control por lote': producto.controlLote ? 'Sí' : 'No',
     'Control de vencimiento': producto.controlVencimiento ? 'Sí' : 'No',
+    'Control por serie': producto.serialControl ? 'Sí' : 'No',
     'Venta con receta': producto.ventaReceta ? 'Sí' : 'No',
     Estado: producto.activo ? 'Activo' : 'Inactivo',
   }))
