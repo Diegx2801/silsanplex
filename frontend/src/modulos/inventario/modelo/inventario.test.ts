@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { productoInicial, type Producto } from '../../productos/modelo/producto'
 import {
   calcularExistencias,
+  calcularExistenciasDesdeResumen,
   calcularSaldoDisponible,
   crearMovimientoInventario,
   obtenerVariacion,
@@ -82,6 +83,35 @@ describe('inventario', () => {
       productosSinStock: 0,
       stockTotal: 9,
       movimientos: 3,
+    })
+  })
+
+  it('usa el resumen SQL para mostrar fisico, reservado y asignable', () => {
+    const existencias = calcularExistenciasDesdeResumen(
+      [producto],
+      [{
+        productoId: producto.id,
+        almacenId: 'almacen-1',
+        stockFisico: 10,
+        stockDisponibleSanitario: 10,
+        stockReservado: 4,
+        stockAsignable: 6,
+        stockCuarentena: 0,
+        stockDanado: 0,
+        stockVencido: 0,
+        valorInventario: 50,
+        bucketsConStock: 2,
+        lotesConStock: 2,
+      }],
+      [movimiento('entrada', 10)],
+    )
+
+    expect(existencias[0]).toMatchObject({
+      stock: 6,
+      stockFisico: 10,
+      stockReservado: 4,
+      almacenes: 1,
+      lotesConStock: 2,
     })
   })
 

@@ -14,6 +14,7 @@ import type {
 
 function errorAlmacen(error: { code?: string; message?: string }) {
   const mensaje = error.message ?? ''
+  if (mensaje.includes('INVENTORY_FEFO_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock asignable disponible según FEFO.'
   if (mensaje.includes('INVENTORY_INSUFFICIENT_STOCK')) return 'La operacion supera el stock disponible del lote y ubicacion seleccionados.'
   if (mensaje.includes('INVENTORY_MAXIMUM_STOCK_EXCEEDED')) return 'La operación superaría el stock máximo configurado para el producto.'
   if (mensaje.includes('TRANSFER_WAREHOUSES_MUST_DIFFER')) return 'El almacen de destino debe ser diferente al de origen.'
@@ -24,15 +25,16 @@ function errorAlmacen(error: { code?: string; message?: string }) {
 }
 
 export async function cargarGestionAlmacen(organizationId: string) {
-  const [almacenes, ubicaciones, saldos, alertas, kardex, transferencias] = await Promise.all([
+  const [almacenes, ubicaciones, saldos, alertasStock, alertasVencimiento, kardex, transferencias] = await Promise.all([
     supabase.from('warehouses').select('id,code,name,address,is_active').eq('organization_id', organizationId).order('name'),
     supabase.from('warehouse_locations').select('id,warehouse_id,code,name,description,is_active').eq('organization_id', organizationId).order('name'),
     supabase.from('inventory_balances').select('*').eq('organization_id', organizationId).neq('quantity', 0).order('product_description'),
-    supabase.from('inventory_alerts').select('*').eq('organization_id', organizationId).or('has_low_stock_alert.eq.true,has_expiration_alert.eq.true').order('expiration_date'),
-    supabase.from('inventory_kardex').select('*').eq('organization_id', organizationId).order('operation_date', { ascending: false }).order('created_at', { ascending: false }).limit(250),
+    supabase.from('inventory_low_stock_alerts').select('*').eq('organization_id', organizationId).eq('has_low_stock_alert', true).order('product_description'),
+    supabase.from('inventory_expiration_alerts').select('*').eq('organization_id', organizationId).order('expiration_date'),
+    supabase.from('inventory_kardex').select('*').eq('organization_id', organizationId).order('operation_date', { ascending: false }).order('ledger_sequence', { ascending: false }).limit(250),
     supabase.from('warehouse_transfers').select('id,reference,source_warehouse_id,destination_warehouse_id,transferred_at,notes').eq('organization_id', organizationId).order('transferred_at', { ascending: false }).limit(100),
   ])
-  const fallo = [almacenes, ubicaciones, saldos, alertas, kardex, transferencias].find((resultado) => resultado.error)
+  const fallo = [almacenes, ubicaciones, saldos, alertasStock, alertasVencimiento, kardex, transferencias].find((resultado) => resultado.error)
   if (fallo?.error) throw new Error(errorAlmacen(fallo.error))
 
   return {
@@ -43,14 +45,41 @@ export async function cargarGestionAlmacen(organizationId: string) {
       id: fila.id, almacenId: fila.warehouse_id, codigo: fila.code, nombre: fila.name, descripcion: fila.description ?? '', activa: fila.is_active,
     })) as UbicacionAlmacen[],
     saldos: (saldos.data ?? []).map(mapearSaldo) as SaldoInventario[],
-    alertas: (alertas.data ?? []).map((fila) => ({
-      ...mapearSaldo(fila),
+    alertas: [
+      ...(alertasStock.data ?? []).map((fila) => ({
+      productoId: fila.product_id,
+      productoCodigo: fila.product_code,
+      productoDescripcion: fila.product_description,
+      unidadMedida: fila.unit_of_measure ?? '',
+      almacenId: fila.warehouse_id,
+      almacenCodigo: fila.warehouse_code,
+      almacenNombre: fila.warehouse_name,
+      ubicacionId: '',
+      ubicacionCodigo: '',
+      ubicacionNombre: '',
+      estado: 'available' as const,
+      lote: '',
+      fechaVencimiento: '',
+      cantidad: Number(fila.assignable_quantity),
+      valorInventario: 0,
+      costoPromedio: 0,
       stockMinimo: Number(fila.minimum_stock),
-      diasAlertaVencimiento: fila.expiration_alert_days,
-      alertaStockMinimo: fila.has_low_stock_alert,
-      alertaVencimiento: fila.has_expiration_alert,
-      diasParaVencer: fila.days_until_expiration,
-    })) as AlertaInventario[],
+      diasAlertaVencimiento: 0,
+      alertaStockMinimo: true,
+      alertaVencimiento: false,
+      diasParaVencer: null,
+      estadoVencimiento: null,
+      })),
+      ...(alertasVencimiento.data ?? []).map((fila) => ({
+        ...mapearSaldoBucket(fila),
+        stockMinimo: 0,
+        diasAlertaVencimiento: Number(fila.expiration_alert_days),
+        alertaStockMinimo: false,
+        alertaVencimiento: true,
+        diasParaVencer: Number(fila.days_until_expiration),
+        estadoVencimiento: fila.expiration_state as AlertaInventario['estadoVencimiento'],
+      })),
+    ] as AlertaInventario[],
     kardex: (kardex.data ?? []).map((fila) => ({
       id: fila.id,
       productoId: fila.product_id,
@@ -69,6 +98,7 @@ export async function cargarGestionAlmacen(organizationId: string) {
       valorSalida: Number(fila.outbound_value),
       saldoCantidad: Number(fila.running_quantity),
       saldoValor: Number(fila.running_value),
+      secuenciaLedger: Number(fila.ledger_sequence),
     })) as MovimientoKardex[],
     transferencias: (transferencias.data ?? []).map((fila) => ({
       id: fila.id,
@@ -99,6 +129,13 @@ function mapearSaldo(fila: Record<string, unknown>): SaldoInventario {
     cantidad: Number(fila.quantity),
     valorInventario: Number(fila.inventory_value),
     costoPromedio: Number(fila.average_cost),
+  }
+}
+
+function mapearSaldoBucket(fila: Record<string, unknown>): SaldoInventario {
+  return {
+    ...mapearSaldo(fila),
+    cantidad: Number(fila.physical_quantity),
   }
 }
 
@@ -147,7 +184,17 @@ export async function configurarAlertas(organizationId: string, userId: string, 
 }
 
 export async function transferirInventario(organizationId: string, datos: DatosTransferencia) {
-  const { error } = await supabase.rpc('transfer_inventory', { payload: {
+  const transferenciaFefo = datos.estado === 'available'
+  const payload = transferenciaFefo ? {
+    organization_id: organizationId,
+    reference: datos.referencia,
+    source_warehouse_id: datos.almacenOrigenId,
+    destination_warehouse_id: datos.almacenDestinoId,
+    destination_location_id: datos.ubicacionDestinoId,
+    product_id: datos.productoId,
+    quantity: datos.cantidad,
+    notes: datos.notas,
+  } : {
     organization_id: organizationId,
     reference: datos.referencia,
     source_warehouse_id: datos.almacenOrigenId,
@@ -162,7 +209,8 @@ export async function transferirInventario(organizationId: string, datos: DatosT
       expiration_date: datos.fechaVencimiento,
       stock_status: datos.estado,
     }],
-  } })
+  }
+  const { error } = await supabase.rpc(transferenciaFefo ? 'transfer_inventory_fefo' : 'transfer_inventory', { payload })
   if (error) throw new Error(errorAlmacen(error))
 }
 

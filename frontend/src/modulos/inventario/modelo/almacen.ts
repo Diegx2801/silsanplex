@@ -44,10 +44,12 @@ export interface AlertaInventario extends SaldoInventario {
   alertaStockMinimo: boolean
   alertaVencimiento: boolean
   diasParaVencer: number | null
+  estadoVencimiento: 'expired' | 'urgent' | 'upcoming' | null
 }
 
 export interface MovimientoKardex {
   id: string
+  secuenciaLedger: number
   productoId: string
   productoCodigo: string
   productoDescripcion: string

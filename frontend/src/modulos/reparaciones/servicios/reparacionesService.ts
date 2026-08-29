@@ -292,6 +292,8 @@ const mensajesDominio: Array<[string, string]> = [
   ['REPAIR_PART_LOCATION_UNAVAILABLE', 'La ubicación seleccionada no está activa en ese almacén.'],
   ['REPAIR_PART_QUANTITY_INVALID', 'La cantidad a reservar no es válida.'],
   ['REPAIR_INSUFFICIENT_STOCK', 'La cantidad supera el stock disponible en el almacén, ubicación y lote seleccionados.'],
+  ['INVENTORY_FEFO_VIOLATION', 'Debes reservar primero el lote con vencimiento más próximo.'],
+  ['INVENTORY_EXPIRED_STOCK', 'El lote está vencido y no puede reservarse.'],
   ['REPAIR_CONSUMPTION_KEYS_REQUIRED', 'No se pudo generar la clave única del consumo. Inténtalo nuevamente.'],
   ['REPAIR_CONSUMPTION_QUANTITY_INVALID', 'La cantidad a consumir no es válida.'],
   ['REPAIR_OPERATION_KEY_REUSED', 'El consumo ya fue registrado con otra cantidad o repuesto.'],

@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { randomBytes } from 'node:crypto'
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
 import { config } from 'dotenv'
 
@@ -13,7 +14,18 @@ type E2eIdentity = {
   roleCodes: string[]
 }
 
+type InventoryE2eFixture = {
+  productCode: string
+  productDescription: string
+  sourceWarehouseCode: string
+  sourceWarehouseName: string
+  destinationWarehouseCode: string
+  destinationWarehouseName: string
+  transferReference: string
+}
+
 config({ path: '.env.local', quiet: true })
+config({ path: resolve(process.cwd(), '..', 'frontend', '.env.local'), quiet: true })
 
 function assertStrictlyLocalSupabase(url: string) {
   const parsedUrl = new URL(url)
@@ -33,8 +45,13 @@ function loadIdentity(
   fullName: string,
   roleCodes: string[],
 ): E2eIdentity {
-  const email = requiredEnvironment(`${prefix}_EMAIL`).toLowerCase()
-  const password = requiredEnvironment(`${prefix}_PASSWORD`)
+  const defaultEmails = {
+    E2E_ADMIN: 'e2e.admin@silsan.local',
+    E2E_MEMBER: 'e2e.ventas@silsan.local',
+    E2E_RECOVERY: 'e2e.recuperacion@silsan.local',
+  } as const
+  const email = (process.env[`${prefix}_EMAIL`]?.trim() || defaultEmails[prefix]).toLowerCase()
+  const password = process.env[`${prefix}_PASSWORD`]?.trim() || randomBytes(24).toString('base64url')
 
   if (!/^\S+@\S+\.\S+$/.test(email)) {
     throw new Error(`${prefix}_EMAIL no es válido.`)
@@ -129,6 +146,7 @@ function writePlaywrightEnvironment(
   admin: E2eIdentity,
   member: E2eIdentity,
   recovery: E2eIdentity,
+  inventory: InventoryE2eFixture,
 ) {
   const target = resolve(process.cwd(), '..', 'frontend', '.env.e2e.local')
   const contents = [
@@ -139,10 +157,145 @@ function writePlaywrightEnvironment(
     `E2E_MEMBER_PASSWORD=${JSON.stringify(member.password)}`,
     `E2E_RECOVERY_EMAIL=${JSON.stringify(recovery.email)}`,
     `E2E_RECOVERY_PASSWORD=${JSON.stringify(recovery.password)}`,
+    `E2E_INVENTORY_PRODUCT_CODE=${JSON.stringify(inventory.productCode)}`,
+    `E2E_INVENTORY_PRODUCT_DESCRIPTION=${JSON.stringify(inventory.productDescription)}`,
+    `E2E_INVENTORY_SOURCE_WAREHOUSE_CODE=${JSON.stringify(inventory.sourceWarehouseCode)}`,
+    `E2E_INVENTORY_SOURCE_WAREHOUSE_NAME=${JSON.stringify(inventory.sourceWarehouseName)}`,
+    `E2E_INVENTORY_DESTINATION_WAREHOUSE_CODE=${JSON.stringify(inventory.destinationWarehouseCode)}`,
+    `E2E_INVENTORY_DESTINATION_WAREHOUSE_NAME=${JSON.stringify(inventory.destinationWarehouseName)}`,
+    `E2E_INVENTORY_TRANSFER_REFERENCE=${JSON.stringify(inventory.transferReference)}`,
     '',
   ].join('\n')
 
   writeFileSync(target, contents, { encoding: 'utf8', mode: 0o600 })
+}
+
+function futureDate(monthsAhead: number) {
+  const date = new Date()
+  date.setUTCDate(15)
+  date.setUTCMonth(date.getUTCMonth() + monthsAhead)
+  return date.toISOString().slice(0, 10)
+}
+
+async function createInventoryFixture(
+  admin: SupabaseClient,
+  organizationId: string,
+  actorId: string,
+): Promise<InventoryE2eFixture> {
+  const suffix = `${Date.now()}`.slice(-10)
+  const productCode = `E2E-FEFO-${suffix}`
+  const productDescription = `Producto control E2E FEFO ${suffix}`
+  const sourceWarehouseCode = `E2O-${suffix.slice(-8)}`
+  const destinationWarehouseCode = `E2D-${suffix.slice(-8)}`
+  const sourceWarehouseName = `E2E Origen ${suffix}`
+  const destinationWarehouseName = `E2E Destino ${suffix}`
+
+  const { data: product, error: productError } = await admin
+    .from('products')
+    .insert({
+      organization_id: organizationId,
+      code: productCode,
+      description: productDescription,
+      unit_of_measure: 'UND',
+      batch_control: true,
+      expiration_control: true,
+      cost: 10,
+      sale_price: 25,
+      created_by: actorId,
+      updated_by: actorId,
+    })
+    .select('id')
+    .single()
+  if (productError || !product) throw productError ?? new Error('No se creó el producto E2E.')
+
+  const { data: warehouses, error: warehousesError } = await admin
+    .from('warehouses')
+    .insert([
+      {
+        organization_id: organizationId,
+        code: sourceWarehouseCode,
+        name: sourceWarehouseName,
+        address: 'Fixture E2E FEFO',
+        created_by: actorId,
+        updated_by: actorId,
+      },
+      {
+        organization_id: organizationId,
+        code: destinationWarehouseCode,
+        name: destinationWarehouseName,
+        address: 'Fixture E2E FEFO',
+        created_by: actorId,
+        updated_by: actorId,
+      },
+    ])
+    .select('id,code')
+  if (warehousesError || warehouses?.length !== 2) {
+    throw warehousesError ?? new Error('No se crearon los almacenes E2E.')
+  }
+  const sourceWarehouse = warehouses.find((warehouse) => warehouse.code === sourceWarehouseCode)
+  const destinationWarehouse = warehouses.find((warehouse) => warehouse.code === destinationWarehouseCode)
+  if (!sourceWarehouse || !destinationWarehouse) throw new Error('Almacenes E2E incompletos.')
+
+  const { data: locations, error: locationsError } = await admin
+    .from('warehouse_locations')
+    .insert([
+      {
+        organization_id: organizationId,
+        warehouse_id: sourceWarehouse.id,
+        code: 'A-01',
+        name: 'Anaquel origen E2E',
+        created_by: actorId,
+        updated_by: actorId,
+      },
+      {
+        organization_id: organizationId,
+        warehouse_id: destinationWarehouse.id,
+        code: 'B-01',
+        name: 'Anaquel destino E2E',
+        created_by: actorId,
+        updated_by: actorId,
+      },
+    ])
+    .select('id,warehouse_id')
+  if (locationsError || locations?.length !== 2) {
+    throw locationsError ?? new Error('No se crearon las ubicaciones E2E.')
+  }
+  const sourceLocation = locations.find((location) => location.warehouse_id === sourceWarehouse.id)
+  if (!sourceLocation) throw new Error('Ubicación origen E2E incompleta.')
+
+  const operationDate = new Date().toISOString().slice(0, 10)
+  const movementResults = await Promise.all([
+    { lot: 'LOTE-E2E-A', quantity: 3, unit_cost: 10, expiration_date: futureDate(12) },
+    { lot: 'LOTE-E2E-B', quantity: 6, unit_cost: 20, expiration_date: futureDate(13) },
+    { lot: 'LOTE-E2E-C', quantity: 4, unit_cost: 30, expiration_date: futureDate(14) },
+  ].map((lot) => admin.rpc('record_inventory_movement', {
+    payload: {
+      organization_id: organizationId,
+      product_id: product.id,
+      movement_type: 'entrada',
+      quantity: lot.quantity,
+      warehouse_id: sourceWarehouse.id,
+      location_id: sourceLocation.id,
+      stock_status: 'available',
+      unit_cost: lot.unit_cost,
+      lot: lot.lot,
+      expiration_date: lot.expiration_date,
+      operation_date: operationDate,
+      reason: `Preparación E2E FEFO ${lot.lot}`,
+    },
+  })))
+  const failedMovement = movementResults.find((result) => result.error)
+  if (failedMovement?.error) throw failedMovement.error
+
+  return {
+    productCode,
+    productDescription,
+    sourceWarehouseCode,
+    sourceWarehouseName,
+    destinationWarehouseCode,
+    destinationWarehouseName,
+    transferReference: `TR-${suffix}`,
+  }
 }
 
 async function prepareLocalE2e() {
@@ -204,7 +357,27 @@ async function prepareLocalE2e() {
     recoveryUser,
     recoveryIdentity.roleCodes,
   )
-  writePlaywrightEnvironment(adminIdentity, memberIdentity, recoveryIdentity)
+
+  const publishableKey = requiredEnvironment('VITE_SUPABASE_PUBLISHABLE_KEY')
+  const inventoryClient = createClient(url, publishableKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+  const { error: signInError } = await inventoryClient.auth.signInWithPassword({
+    email: adminIdentity.email,
+    password: adminIdentity.password,
+  })
+  if (signInError) throw signInError
+  const inventoryFixture = await createInventoryFixture(
+    inventoryClient,
+    organization.id,
+    adminUser.id,
+  )
+  writePlaywrightEnvironment(
+    adminIdentity,
+    memberIdentity,
+    recoveryIdentity,
+    inventoryFixture,
+  )
 
   console.info('Usuarios E2E locales preparados y frontend/.env.e2e.local actualizado.')
   console.info('No se enviaron correos ni se mostraron contraseñas.')

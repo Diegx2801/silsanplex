@@ -12,7 +12,7 @@ select has_view('public', 'inventory_alerts', 'existe vista de alertas');
 select has_view('public', 'inventory_kardex', 'existe kardex valorizado');
 select has_function('public', 'transfer_inventory', array['jsonb'], 'existe transferencia atomica');
 select has_function('public', 'reclassify_inventory', array['jsonb'], 'existe reclasificacion atomica');
-select ok(position('pg_advisory_xact_lock' in pg_get_functiondef('public.transfer_inventory(jsonb)'::regprocedure)) > 0, 'transferencias serializan el bucket de stock');
+select ok(position('lock_inventory_bucket' in pg_get_functiondef('public.transfer_inventory(jsonb)'::regprocedure)) > 0, 'transferencias delegan la serializacion al bucket canonico');
 select has_function(
   'public',
   'inventory_bucket_lock_key',
@@ -136,7 +136,7 @@ select lives_ok($$
 $$, 'registra entrada por almacen, ubicacion y lote');
 
 select throws_ok($$
-  select public.record_inventory_movement('{"organization_id":"81000000-0000-4000-8000-000000000001","product_id":"83000000-0000-4000-8000-000000000001","warehouse_id":"84000000-0000-4000-8000-000000000001","location_id":"85000000-0000-4000-8000-000000000001","movement_type":"salida","quantity":"1","stock_status":"available","lot":"L-2026","expiration_date":"2026-10-15","operation_date":"2026-08-21","reason":"Vencimiento sin saldo"}'::jsonb)
+  select public.record_inventory_movement('{"organization_id":"81000000-0000-4000-8000-000000000001","product_id":"83000000-0000-4000-8000-000000000001","warehouse_id":"84000000-0000-4000-8000-000000000001","location_id":"85000000-0000-4000-8000-000000000001","movement_type":"ajuste-negativo","quantity":"1","stock_status":"available","lot":"L-2026","expiration_date":"2026-10-15","operation_date":"2026-08-21","reason":"Vencimiento sin saldo"}'::jsonb)
 $$, 'P0001', 'INVENTORY_INSUFFICIENT_STOCK', 'no usa el saldo de otro vencimiento del mismo lote');
 
 select results_eq(

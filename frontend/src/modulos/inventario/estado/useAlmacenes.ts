@@ -30,7 +30,8 @@ export function useAlmacenes() {
   const invalidar = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey }),
-      queryClient.invalidateQueries({ queryKey: ['inventory-movements', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory-fefo', organizationId] }),
     ])
   }
   const ejecutar = async (operacion: () => Promise<void>) => {

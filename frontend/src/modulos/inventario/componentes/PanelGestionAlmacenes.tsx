@@ -144,9 +144,9 @@ export function PanelGestionAlmacenes(props: Props) {
 
     <section aria-labelledby="alertas-almacen" className="ledger-sheet">
       <div className="border-b px-5 py-5 sm:px-6"><h2 id="alertas-almacen" className="flex items-center gap-2 text-lg font-semibold"><AlertTriangle className="size-5 text-[#9a6700]" />Alertas operativas</h2><p className="mt-1 text-sm text-muted-foreground">Stock mínimo y lotes próximos a vencer.</p></div>
-      {alertas.length ? <div className="grid gap-px bg-border md:grid-cols-2">{alertas.map((alerta) => <article key={`${alerta.productoId}-${alerta.almacenId}-${alerta.lote}`} className="bg-background px-5 py-5">
+      {alertas.length ? <div className="grid gap-px bg-border md:grid-cols-2">{alertas.map((alerta) => <article key={`${alerta.productoId}-${alerta.almacenId}-${alerta.lote}-${alerta.alertaStockMinimo ? 'stock' : alerta.fechaVencimiento}`} className="bg-background px-5 py-5">
         <p className="font-medium">{alerta.productoDescripcion}</p><p className="mt-1 text-sm text-muted-foreground">{alerta.almacenNombre} · {alerta.lote || 'Sin lote'}</p>
-        <div className="mt-3 flex flex-wrap gap-2">{alerta.alertaStockMinimo ? <span className="status-label" data-tone="revision">Stock {formatoCantidad.format(alerta.cantidad)} / mínimo {formatoCantidad.format(alerta.stockMinimo)}</span> : null}{alerta.alertaVencimiento ? <span className="status-label" data-tone="revision">Vence en {alerta.diasParaVencer} días</span> : null}</div>
+        <div className="mt-3 flex flex-wrap gap-2">{alerta.alertaStockMinimo ? <span className="status-label" data-tone="revision">Asignable {formatoCantidad.format(alerta.cantidad)} / mínimo {formatoCantidad.format(alerta.stockMinimo)}</span> : null}{alerta.alertaVencimiento ? <span className="status-label" data-tone="revision">{alerta.estadoVencimiento === 'expired' ? 'Vencido' : alerta.estadoVencimiento === 'urgent' ? `Urgente · ${alerta.diasParaVencer} días` : `Próximo · ${alerta.diasParaVencer} días`}</span> : null}</div>
       </article>)}</div> : <p className="px-5 py-8 text-sm text-muted-foreground">No hay alertas activas.</p>}
     </section>
 
