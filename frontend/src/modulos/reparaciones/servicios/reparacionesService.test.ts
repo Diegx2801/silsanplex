@@ -12,6 +12,7 @@ import {
   crearReparacion,
   listarOpcionesProductosReparacion,
   listarReparacionesPaginadas,
+  obtenerMensajeErrorReparacion,
   reservarParteReparacion,
 } from './reparacionesService'
 
@@ -206,5 +207,16 @@ describe('reparacionesService', () => {
         stock_status: 'available',
       }),
     })
+  })
+
+  it('explica los rechazos del gate sobre el ciclo de pruebas vigente', () => {
+    expect(obtenerMensajeErrorReparacion(
+      { message: 'REPAIR_FAILED_TEST_PRESENT' },
+      'estado',
+    )).toBe('El ciclo de pruebas vigente contiene una prueba fallida.')
+    expect(obtenerMensajeErrorReparacion(
+      { message: 'REPAIR_APPROVED_TEST_REQUIRED' },
+      'estado',
+    )).toBe('Registra al menos una prueba aprobada en el ciclo vigente.')
   })
 })

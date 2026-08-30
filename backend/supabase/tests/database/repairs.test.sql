@@ -1,6 +1,6 @@
 begin;
 
-select plan(142);
+select plan(143);
 
 -- ------------------------------------------------------------
 -- Estructura, seguridad y matriz de permisos
@@ -31,6 +31,14 @@ select has_table('public', 'repair_part_consumptions', 'existen consumos de repu
 select has_table('public', 'repair_tests', 'existen pruebas de reparacion');
 select has_table('public', 'repair_events', 'existe la linea de tiempo de reparaciones');
 select has_view('public', 'repair_list', 'existe la vista paginable de reparaciones');
+select has_column(
+  'public', 'repairs', 'current_test_cycle_number',
+  'repairs conserva el ciclo de pruebas vigente'
+);
+select has_column(
+  'public', 'repair_tests', 'test_cycle_number',
+  'cada prueba puede asociarse a un ciclo explicito'
+);
 
 select is(
   (
@@ -47,10 +55,10 @@ select is(
         'assigned_technician_id', 'customer_name_snapshot',
         'customer_document_snapshot', 'product_code_snapshot',
         'product_description_snapshot', 'created_by', 'updated_by', 'created_at',
-        'updated_at'
-      ])
+         'updated_at', 'current_test_cycle_number'
+       ])
   ),
-   28::bigint,
+   29::bigint,
   'repairs conserva exactamente sus columnas del contrato'
 );
 select is(
@@ -717,14 +725,13 @@ select lives_ok($$
   */
   */
 $$, 'registra prueba aprobada para gate');
-select lives_ok($$ select public.change_repair_status('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'GATES'), 'ready_for_delivery', null) $$, 'gates queda listo');
 select throws_ok($$
-  select public.deliver_repair('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'GATES'), null)
-$$, 'P0001', 'REPAIR_ASSIGNED_TECHNICIAN_REQUIRED', 'entrega exige tecnico asignado');
+  select public.change_repair_status('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'GATES'), 'ready_for_delivery', null)
+$$, 'P0001', 'REPAIR_ASSIGNED_TECHNICIAN_REQUIRED', 'ready exige tecnico asignado');
 select lives_ok($$ select public.assign_repair('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'GATES'), 'f2000000-0000-4000-8000-000000000004') $$, 'asigna tecnico al gate');
 select throws_ok($$
-  select public.deliver_repair('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'GATES'), null)
-$$, 'P0001', 'REPAIR_FAILED_TEST_PRESENT', 'entrega rechaza cualquier prueba fallida');
+  select public.change_repair_status('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'GATES'), 'ready_for_delivery', null)
+$$, 'P0001', 'REPAIR_FAILED_TEST_PRESENT', 'ready rechaza una prueba fallida del ciclo vigente');
 
 select lives_ok($$
   select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","customer_id":"f4000000-0000-4000-8000-000000000002","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"Parte pendiente","customer_reference":"PENDING_PART"}'::jsonb)
@@ -759,11 +766,11 @@ select lives_ok($$
   select public.record_repair_test('{"organization_id":"f1000000-0000-4000-8000-000000000001","repair_id":"' || (select id::text from public.repairs where customer_reference = 'PENDING_PART') || '","test_type":"Operacion","result":"Correcta","passed":true,"performed_by":"f2000000-0000-4000-8000-000000000004"}'::jsonb)
   */
 $$, 'parte pendiente prueba aprobada');
-select lives_ok($$ select public.change_repair_status('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'PENDING_PART'), 'ready_for_delivery', null) $$, 'parte pendiente ready');
 select throws_ok($$
-  select public.deliver_repair('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'PENDING_PART'), null)
-$$, 'P0001', 'REPAIR_PENDING_PARTS', 'entrega rechaza partes reservadas restantes');
+  select public.change_repair_status('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'PENDING_PART'), 'ready_for_delivery', null)
+$$, 'P0001', 'REPAIR_PENDING_PARTS', 'ready rechaza partes reservadas restantes');
 select lives_ok($$ select public.cancel_repair_part('f1000000-0000-4000-8000-000000000001', (select id from public.repair_parts where repair_id = (select id from public.repairs where customer_reference = 'PENDING_PART')), 'No requerido') $$, 'cancela la reserva pendiente');
+select lives_ok($$ select public.change_repair_status('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'PENDING_PART'), 'ready_for_delivery', null) $$, 'parte liberada queda ready');
 select lives_ok($$ select public.deliver_repair('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'PENDING_PART'), 'Entregado') $$, 'entrega luego de liberar la reserva');
 
 -- ------------------------------------------------------------
