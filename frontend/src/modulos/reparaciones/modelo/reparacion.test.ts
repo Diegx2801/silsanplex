@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   datosReparacionInicial,
   esquemaDatosReparacion,
+  esquemaDatosReservaParte,
+  estadoStockReparacionEsConsumible,
   limitarEnteroSeguro,
   normalizarBusquedaReparaciones,
   normalizarTextoOpcional,
@@ -44,5 +46,25 @@ describe('modelo de reparaciones', () => {
   it('expone solo transiciones comunes del estado actual', () => {
     expect(obtenerTransicionesGenericas('waiting_customer_approval')).toEqual([])
     expect(obtenerTransicionesGenericas('testing')).toEqual(['in_repair', 'ready_for_delivery'])
+  })
+
+  it('limita nuevas reservas y consumos de Reparaciones a stock available', () => {
+    const reserva = {
+      productoId: '00000000-0000-0000-0000-000000000001',
+      almacenId: '00000000-0000-0000-0000-000000000002',
+      ubicacionId: '00000000-0000-0000-0000-000000000003',
+      estadoStock: 'available',
+      lote: '',
+      fechaVencimiento: '',
+      cantidadSolicitada: '1',
+      notas: '',
+    }
+
+    expect(esquemaDatosReservaParte.safeParse(reserva).success).toBe(true)
+    expect(esquemaDatosReservaParte.safeParse({ ...reserva, estadoStock: 'damaged' }).success).toBe(false)
+    expect(esquemaDatosReservaParte.safeParse({ ...reserva, estadoStock: 'quarantine' }).success).toBe(false)
+    expect(estadoStockReparacionEsConsumible('available')).toBe(true)
+    expect(estadoStockReparacionEsConsumible('damaged')).toBe(false)
+    expect(estadoStockReparacionEsConsumible('quarantine')).toBe(false)
   })
 })
