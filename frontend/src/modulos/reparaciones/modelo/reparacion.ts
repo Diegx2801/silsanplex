@@ -91,6 +91,10 @@ export const etiquetasEstadoStockReparacion: Record<EstadoStockReparacion, strin
   damaged: 'Dañado / inmovilizado',
 }
 
+export function estadoStockReparacionEsConsumible(estado: EstadoStockReparacion) {
+  return estado === 'available'
+}
+
 export interface OpcionClienteReparacion {
   id: string
   nombre: string
@@ -406,7 +410,7 @@ export const esquemaDatosReservaParte = z.object({
   productoId: z.string().uuid('Selecciona un producto'),
   almacenId: z.string().uuid('Selecciona un almacén'),
   ubicacionId: z.string().uuid('Selecciona una ubicación'),
-  estadoStock: z.enum(['available', 'quarantine', 'damaged']),
+  estadoStock: z.literal('available'),
   lote: textoOpcional(60),
   fechaVencimiento: fechaOpcional,
   cantidadSolicitada: cantidadTexto,

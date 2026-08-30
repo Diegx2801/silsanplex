@@ -12,6 +12,7 @@ import {
   crearReparacion,
   listarOpcionesProductosReparacion,
   listarReparacionesPaginadas,
+  reservarParteReparacion,
 } from './reparacionesService'
 
 interface RespuestaSupabase {
@@ -181,6 +182,29 @@ describe('reparacionesService', () => {
         quantity: 2,
         operation_key: '00000000-0000-0000-0000-000000000003',
       },
+    })
+  })
+
+  it('reserva repuestos únicamente como stock available', async () => {
+    supabaseMock.rpc.mockResolvedValue({ data: 'part-1', error: null })
+
+    await reservarParteReparacion('org-1', 'repair-1', {
+      productoId: '00000000-0000-0000-0000-000000000001',
+      almacenId: '00000000-0000-0000-0000-000000000002',
+      ubicacionId: '00000000-0000-0000-0000-000000000003',
+      estadoStock: 'available',
+      lote: '',
+      fechaVencimiento: '',
+      cantidadSolicitada: '2',
+      notas: '',
+    })
+
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('reserve_repair_part', {
+      payload: expect.objectContaining({
+        organization_id: 'org-1',
+        repair_id: 'repair-1',
+        stock_status: 'available',
+      }),
     })
   })
 })

@@ -36,6 +36,7 @@ import {
   etiquetasEstadoParte,
   etiquetasEstadoReparacion,
   etiquetasEstadoStockReparacion,
+  estadoStockReparacionEsConsumible,
   estadoEsEditable,
   estadoEsTerminal,
   obtenerTransicionesGenericas,
@@ -216,6 +217,10 @@ export function DetalleReparacion({
   }
 
   const abrirParte = (siguienteDialogo: 'consumo' | 'cancelarParte', parte: ParteReparacion) => {
+    if (siguienteDialogo === 'consumo' && !estadoStockReparacionEsConsumible(parte.estadoStock)) {
+      setMensaje('El stock dañado o en cuarentena no puede consumirse en Reparaciones.')
+      return
+    }
     setParteSeleccionada(parte)
     setDialogo(siguienteDialogo)
   }
