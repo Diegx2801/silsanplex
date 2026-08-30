@@ -94,7 +94,7 @@ export function DialogoPrueba({
             </div>
             <label htmlFor="prueba-aprobada" className="flex cursor-pointer items-start gap-3 border-t py-4 sm:col-span-2">
               <input id="prueba-aprobada" type="checkbox" className="mt-0.5 size-4 shrink-0 accent-primary" {...register('aprobada')} />
-              <span><span className="block text-sm font-medium">Prueba aprobada</span><span className="mt-1 block text-sm leading-5 text-muted-foreground">Solo una prueba aprobada y sin fallos permite entregar la reparación.</span></span>
+              <span><span className="block text-sm font-medium">Prueba aprobada</span><span className="mt-1 block text-sm leading-5 text-muted-foreground">El ciclo vigente necesita una prueba aprobada y ningún fallo.</span></span>
             </label>
             <input type="hidden" {...register('realizadaPor')} />
           </form>
