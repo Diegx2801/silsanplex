@@ -10,7 +10,7 @@ const resultado = {
   domicileCondition: 'HABIDO',
   ubigeoCode: '150140',
   fiscalAddress: 'AV. PRUEBA 123',
-  source: 'APISPERU',
+  source: 'DECOLECTA',
   checkedAt: '2026-08-21T12:00:00.000Z',
   cacheHit: false,
 }
@@ -48,7 +48,7 @@ describe('DialogoCliente', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Registrar cliente' }))
     await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(
       expect.objectContaining({
-        fuenteDatosFiscales: 'APISPERU',
+        fuenteDatosFiscales: 'DECOLECTA',
         fechaConsultaSunat: resultado.checkedAt,
       }),
       undefined,

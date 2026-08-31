@@ -17,7 +17,7 @@ describe('consultarRuc', () => {
       domicileCondition: 'HABIDO',
       ubigeoCode: '150140',
       fiscalAddress: 'AV. PRUEBA 123',
-      source: 'APISPERU',
+      source: 'DECOLECTA',
       checkedAt: '2026-08-21T12:00:00.000Z',
       cacheHit: false,
     })
@@ -30,6 +30,17 @@ describe('consultarRuc', () => {
 
   it('rechaza respuestas incompletas del backend', async () => {
     mocks.invokeEdgeFunction.mockResolvedValue({ ruc: '20550154065' })
-    await expect(consultarRuc('20550154065')).rejects.toThrow()
+    await expect(consultarRuc('20550154065')).rejects.toThrow(
+      'El servicio tributario devolvió datos incompletos',
+    )
+  })
+
+  it('acepta fechas PostgreSQL con desfase horario', async () => {
+    mocks.invokeEdgeFunction.mockResolvedValue({
+      lookupId: null, ruc: '20550154065', legalName: 'EMPRESA DE PRUEBA S.A.C.',
+      taxpayerStatus: 'ACTIVO', domicileCondition: 'HABIDO', ubigeoCode: '150140',
+      fiscalAddress: '', source: 'DECOLECTA', checkedAt: '2026-08-29T20:52:00+00:00', cacheHit: true,
+    })
+    await expect(consultarRuc('20550154065')).resolves.toMatchObject({ cacheHit: true })
   })
 })

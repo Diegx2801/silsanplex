@@ -15,6 +15,7 @@ export interface RucLookupResult extends RucData {
 }
 
 export interface RucProvider {
+  readonly source: string
   lookup(ruc: string): Promise<RucData>
 }
 

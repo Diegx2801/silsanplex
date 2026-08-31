@@ -19,16 +19,13 @@ interface ProveedorFila {
   email: string | null
   phone: string | null
   fiscal_address: string | null
-  geographic_zone: string | null
-  product_types: string | null
-  category: Proveedor['categoria']
-  delivery_frequency: Proveedor['frecuenciaEntrega']
-  performance_rating: number | null
+  ubigeo_code: string | null
+  taxpayer_status: string | null
+  domicile_condition: string | null
+  tax_data_source: string | null
+  tax_checked_at: string | null
   credit_condition: Proveedor['condicionCredito']
   credit_days: number
-  currency: Proveedor['moneda']
-  bank_name: string | null
-  sunat_status: Proveedor['estadoSunat']
   notes: string | null
   is_active: boolean
   created_at: string
@@ -36,7 +33,7 @@ interface ProveedorFila {
 }
 
 const columnasProveedor =
-  'id,organization_id,code,document_type,document_number,business_name,trade_name,contact_name,contact_position,email,phone,fiscal_address,geographic_zone,product_types,category,delivery_frequency,performance_rating,credit_condition,credit_days,currency,bank_name,sunat_status,notes,is_active,created_at,updated_at' as const
+  'id,organization_id,code,document_type,document_number,business_name,trade_name,contact_name,contact_position,email,phone,fiscal_address,ubigeo_code,taxpayer_status,domicile_condition,tax_data_source,tax_checked_at,credit_condition,credit_days,notes,is_active,created_at,updated_at' as const
 
 function textoONulo(valor: string) {
   const normalizado = valor.trim()
@@ -57,18 +54,13 @@ function mapearProveedor(fila: ProveedorFila): Proveedor {
     email: fila.email ?? '',
     telefono: fila.phone ?? '',
     direccion: fila.fiscal_address ?? '',
-    zonaGeografica: fila.geographic_zone ?? '',
-    tiposProducto: fila.product_types ?? '',
-    categoria: fila.category,
-    frecuenciaEntrega: fila.delivery_frequency,
-    calificacionDesempeno: fila.performance_rating,
+    ubigeo: fila.ubigeo_code ?? '',
+    estadoContribuyente: fila.taxpayer_status ?? '',
+    condicionDomicilio: fila.domicile_condition ?? '',
+    fuenteDatosFiscales: fila.tax_data_source ?? '',
+    fechaConsultaSunat: fila.tax_checked_at,
     condicionCredito: fila.credit_condition,
     diasCredito: fila.credit_days,
-    moneda: fila.currency,
-    banco: fila.bank_name ?? '',
-    cuentaBancaria: '',
-    cuentaDetraccion: '',
-    estadoSunat: fila.sunat_status,
     observaciones: fila.notes ?? '',
     activo: fila.is_active,
     fechaRegistro: fila.created_at,
@@ -98,17 +90,7 @@ function prepararFila(
   organizationId: string,
   userId: string,
   datos: DatosProveedor,
-  esNuevo: boolean,
 ) {
-  const cuentas = {
-    ...(esNuevo || datos.cuentaBancaria.trim()
-      ? { bank_account: textoONulo(datos.cuentaBancaria) }
-      : {}),
-    ...(esNuevo || datos.cuentaDetraccion.trim()
-      ? { detraccion_account: textoONulo(datos.cuentaDetraccion) }
-      : {}),
-  }
-
   return {
     organization_id: organizationId,
     code: textoONulo(datos.codigo.toUpperCase()),
@@ -121,20 +103,13 @@ function prepararFila(
     email: textoONulo(datos.email.toLowerCase()),
     phone: textoONulo(datos.telefono),
     fiscal_address: textoONulo(datos.direccion),
-    geographic_zone: textoONulo(datos.zonaGeografica),
-    product_types: textoONulo(datos.tiposProducto),
-    category: datos.categoria,
-    delivery_frequency: datos.frecuenciaEntrega,
-    performance_rating:
-      datos.calificacionDesempeno === ''
-        ? null
-        : Number(datos.calificacionDesempeno),
+    ubigeo_code: textoONulo(datos.ubigeo),
+    taxpayer_status: textoONulo(datos.estadoContribuyente.toUpperCase()),
+    domicile_condition: textoONulo(datos.condicionDomicilio.toUpperCase()),
+    tax_data_source: textoONulo(datos.fuenteDatosFiscales.toUpperCase()),
+    tax_checked_at: datos.fechaConsultaSunat,
     credit_condition: datos.condicionCredito,
     credit_days: Number(datos.diasCredito),
-    currency: datos.moneda,
-    bank_name: textoONulo(datos.banco),
-    ...cuentas,
-    sunat_status: datos.estadoSunat,
     notes: textoONulo(datos.observaciones),
     is_active: datos.activo,
     updated_by: userId,
@@ -161,7 +136,7 @@ export async function guardarProveedor(
   datos: DatosProveedor,
   proveedorId?: string,
 ): Promise<Proveedor> {
-  const fila = prepararFila(organizationId, userId, datos, !proveedorId)
+  const fila = prepararFila(organizationId, userId, datos)
 
   if (proveedorId) {
     const { data, error } = await supabase
@@ -184,4 +159,16 @@ export async function guardarProveedor(
 
   if (error) throw new Error(mensajeError(error))
   return mapearProveedor(data as ProveedorFila)
+}
+
+export async function cambiarEstadoProveedor(proveedorId: string, activo: boolean) {
+  const { error } = await supabase.rpc('set_supplier_status', {
+    requested_supplier_id: proveedorId,
+    requested_active: activo,
+  })
+  if (error) {
+    if (error.code === '42501') throw new Error('No tienes permiso para gestionar proveedores.')
+    if (error.message.includes('SUPPLIER_NOT_FOUND')) throw new Error('El proveedor ya no está disponible.')
+    throw new Error('No se pudo cambiar el estado del proveedor.')
+  }
 }

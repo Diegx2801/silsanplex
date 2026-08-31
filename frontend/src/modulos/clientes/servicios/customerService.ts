@@ -64,11 +64,13 @@ export async function guardarCliente(datos: DatosCliente, id?: string) {
   ]
   const contacts = datos.contacto || datos.email || datos.telefono ? [{ id: datos.contactoPrincipalId, fullName: datos.contacto, email: datos.email, phone: datos.telefono, isPrimary: true }] : []
   const fuenteFiscal = datos.fuenteDatosFiscales || (datos.estadoSunat || datos.condicionDomicilio ? 'MANUAL' : null)
-  const { data, error } = await supabase.rpc('save_customer', { payload: { id, documentType: datos.tipoDocumento.toUpperCase(), documentNumber: datos.numeroDocumento, legalName: datos.nombreRazonSocial, tradeName: datos.nombreComercial, taxpayerStatus: datos.estadoSunat, domicileCondition: datos.condicionDomicilio, taxDataSource: fuenteFiscal, taxCheckedAt: fuenteFiscal === 'APISPERU' ? datos.fechaConsultaSunat : null, isActive: datos.activo, addresses, contacts } })
+  const { data, error } = await supabase.rpc('save_customer', { payload: { id, documentType: datos.tipoDocumento.toUpperCase(), documentNumber: datos.numeroDocumento, legalName: datos.nombreRazonSocial, tradeName: datos.nombreComercial, taxpayerStatus: datos.estadoSunat, domicileCondition: datos.condicionDomicilio, taxDataSource: fuenteFiscal, taxCheckedAt: fuenteFiscal && fuenteFiscal !== 'MANUAL' ? datos.fechaConsultaSunat : null, isActive: datos.activo, addresses, contacts } })
   if (error) {
     if (error.message.includes('CUSTOMER_DOCUMENT_ALREADY_EXISTS')) throw new Error('Ya existe un cliente con este documento.')
     if (error.message.includes('CUSTOMER_FISCAL_IDENTITY_IMMUTABLE')) throw new Error('El tipo y número de documento no pueden modificarse.')
-    throw new Error(error.message)
+    if (error.message.includes('customer_addresses_line_not_blank')) throw new Error('La dirección debe tener al menos 3 caracteres.')
+    if (error.code === '42501') throw new Error('No tienes permiso para gestionar clientes.')
+    throw new Error('No se pudo guardar el cliente. Revisa los datos e inténtalo nuevamente.')
   }
   return data as string
 }

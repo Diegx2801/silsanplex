@@ -3,13 +3,13 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
-  CircleDollarSign,
+  Download,
   Eye,
-  PackageCheck,
   Pencil,
   Plus,
+  Power,
   Search,
-  Star,
+  Upload,
 } from 'lucide-react'
 import {
   type MouseEvent as ReactMouseEvent,
@@ -23,35 +23,26 @@ import { Button } from '@/components/ui/button'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
 import { DialogoProveedor } from '@/modulos/proveedores/componentes/DialogoProveedor'
-import { ComparativoProveedores } from '@/modulos/proveedores/componentes/ComparativoProveedores'
+import { DialogoEstadoProveedor } from '@/modulos/proveedores/componentes/DialogoEstadoProveedor'
+import { DialogoImportarProveedores } from '@/modulos/proveedores/componentes/DialogoImportarProveedores'
+import { consultarRuc } from '@/modulos/clientes/servicios/rucLookupService'
 import { DetalleProveedor } from '@/modulos/proveedores/componentes/DetalleProveedor'
 import {
-  categoriasProveedor,
-  frecuenciasEntregaProveedor,
   tiposDocumentoProveedor,
-  type CategoriaProveedor,
   type DatosProveedor,
   type Proveedor,
 } from '@/modulos/proveedores/modelo/proveedor'
 import {
+  cambiarEstadoProveedor,
   guardarProveedor,
   listarProveedores,
 } from '@/modulos/proveedores/servicios/proveedorService'
+import { exportarProveedores } from '@/modulos/proveedores/servicios/exportarProveedores'
 
 type FiltroEstado = 'todos' | 'activos' | 'inactivos'
-type FiltroCategoria = 'todas' | CategoriaProveedor
 const proveedoresVacios: Proveedor[] = []
 const proveedoresPorPagina = 10
 
-const etiquetasCategoria = new Map(
-  categoriasProveedor.map((categoria) => [categoria.valor, categoria.etiqueta]),
-)
-const etiquetasFrecuencia = new Map(
-  frecuenciasEntregaProveedor.map((frecuencia) => [
-    frecuencia.valor,
-    frecuencia.etiqueta,
-  ]),
-)
 const etiquetasDocumento = new Map(
   tiposDocumentoProveedor.map((tipo) => [tipo.valor, tipo.etiqueta]),
 )
@@ -69,19 +60,6 @@ function etiquetaCondicion(proveedor: Proveedor) {
     : `${proveedor.diasCredito} días`
 }
 
-function Calificacion({ valor }: { valor: number | null }) {
-  if (valor === null) {
-    return <span className="text-xs text-muted-foreground">Sin evaluar</span>
-  }
-
-  return (
-    <span className="inline-flex items-center gap-1 font-mono text-xs">
-      <Star aria-hidden="true" className="size-3.5 fill-primary text-primary" />
-      {valor}/5
-    </span>
-  )
-}
-
 export function ProveedoresPage() {
   const { access, user, hasPermission } = useAuth()
   const queryClient = useQueryClient()
@@ -90,17 +68,18 @@ export function ProveedoresPage() {
   const queryKey = ['suppliers', organizationId] as const
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('activos')
-  const [filtroCategoria, setFiltroCategoria] =
-    useState<FiltroCategoria>('todas')
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
   const [detalleAbierto, setDetalleAbierto] = useState(false)
   const [proveedorDetalle, setProveedorDetalle] = useState<Proveedor | null>(null)
+  const [proveedorEstado, setProveedorEstado] = useState<Proveedor | null>(null)
+  const [importacionAbierta, setImportacionAbierta] = useState(false)
   const [pagina, setPagina] = useState(1)
   const [proveedorSeleccionado, setProveedorSeleccionado] =
     useState<Proveedor | null>(null)
   const [mensaje, setMensaje] = useState<string | null>(null)
   const disparador = useRef<HTMLButtonElement | null>(null)
   const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
+  const disparadorImportacion = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
 
   const proveedoresQuery = useQuery({
@@ -129,6 +108,15 @@ export function ProveedoresPage() {
       )
     },
   })
+  const estadoMutation = useMutation({
+    mutationFn: ({ proveedorId, activo }: { proveedorId: string; activo: boolean }) =>
+      cambiarEstadoProveedor(proveedorId, activo),
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey })
+      setProveedorEstado(null)
+      setMensaje(variables.activo ? 'Proveedor activado correctamente.' : 'Proveedor desactivado correctamente.')
+    },
+  })
 
   const proveedores = proveedoresQuery.data ?? proveedoresVacios
   const proveedoresFiltrados = useMemo(() => {
@@ -138,8 +126,6 @@ export function ProveedoresPage() {
       const coincideEstado =
         filtroEstado === 'todos' ||
         (filtroEstado === 'activos' ? proveedor.activo : !proveedor.activo)
-      const coincideCategoria =
-        filtroCategoria === 'todas' || proveedor.categoria === filtroCategoria
       const texto = normalizar(
         [
           proveedor.codigo,
@@ -147,18 +133,15 @@ export function ProveedoresPage() {
           proveedor.razonSocial,
           proveedor.nombreComercial,
           proveedor.contacto,
-          proveedor.tiposProducto,
-          proveedor.zonaGeografica,
         ].join(' '),
       )
 
       return (
         coincideEstado &&
-        coincideCategoria &&
         (!termino || texto.includes(termino))
       )
     })
-  }, [busquedaDiferida, filtroCategoria, filtroEstado, proveedores])
+  }, [busquedaDiferida, filtroEstado, proveedores])
   const totalPaginas = Math.max(1, Math.ceil(proveedoresFiltrados.length / proveedoresPorPagina))
   const paginaActual = Math.min(pagina, totalPaginas)
   const proveedoresPagina = proveedoresFiltrados.slice(
@@ -166,49 +149,6 @@ export function ProveedoresPage() {
     paginaActual * proveedoresPorPagina,
   )
 
-  const activos = proveedores.filter((proveedor) => proveedor.activo)
-  const evaluados = proveedores.filter(
-    (proveedor) => proveedor.calificacionDesempeno !== null,
-  )
-  const promedioDesempeno = evaluados.length
-    ? (
-        evaluados.reduce(
-          (total, proveedor) => total + (proveedor.calificacionDesempeno ?? 0),
-          0,
-        ) / evaluados.length
-      ).toFixed(1)
-    : '—'
-
-  const metricas = [
-    {
-      etiqueta: 'Proveedores activos',
-      valor: activos.length,
-      detalle: `${proveedores.length} registrados`,
-      icono: Building2,
-    },
-    {
-      etiqueta: 'Relación frecuente',
-      valor: activos.filter((proveedor) =>
-        ['frecuente', 'estrategico'].includes(proveedor.categoria),
-      ).length,
-      detalle: 'Frecuentes y estratégicos',
-      icono: PackageCheck,
-    },
-    {
-      etiqueta: 'Compra a crédito',
-      valor: activos.filter(
-        (proveedor) => proveedor.condicionCredito === 'credito',
-      ).length,
-      detalle: 'Con plazo comercial',
-      icono: CircleDollarSign,
-    },
-    {
-      etiqueta: 'Desempeño medio',
-      valor: promedioDesempeno,
-      detalle: evaluados.length ? `${evaluados.length} evaluados` : 'Sin evaluaciones',
-      icono: Star,
-    },
-  ]
 
   function abrirFormulario(
     evento: ReactMouseEvent<HTMLButtonElement>,
@@ -242,14 +182,14 @@ export function ProveedoresPage() {
             Proveedores
           </h1>
           <p className="mt-3 max-w-[70ch] text-base leading-7 text-muted-foreground">
-            Centraliza identidad fiscal, contactos, condiciones de pago y desempeño antes de comprar.
+            Maestro fiscal y comercial para órdenes y compras.
           </p>
         </div>
-        {puedeAdministrar ? (
-          <Button type="button" size="lg" onClick={(evento) => abrirFormulario(evento)}>
-            <Plus aria-hidden="true" /> Registrar proveedor
-          </Button>
-        ) : null}
+        {puedeAdministrar ? <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={(evento) => { disparadorImportacion.current = evento.currentTarget; setImportacionAbierta(true) }}><Upload aria-hidden="true" /> Importar</Button>
+          <Button type="button" variant="outline" disabled={!proveedores.length} onClick={() => void exportarProveedores(proveedores)}><Download aria-hidden="true" /> Exportar</Button>
+          <Button type="button" size="lg" onClick={(evento) => abrirFormulario(evento)}><Plus aria-hidden="true" /> Registrar proveedor</Button>
+        </div> : null}
       </header>
 
       {mensaje ? (
@@ -258,35 +198,8 @@ export function ProveedoresPage() {
         </p>
       ) : null}
 
-      <section aria-label="Relación comercial de proveedores" className="ledger-sheet">
-        <div className="grid sm:grid-cols-2 xl:grid-cols-4">
-          {metricas.map((metrica) => {
-            const Icono = metrica.icono
-            return (
-              <article
-                key={metrica.etiqueta}
-                className="border-b px-5 py-5 last:border-b-0 sm:border-e sm:[&:nth-child(2)]:border-e-0 xl:border-b-0 xl:[&:nth-child(2)]:border-e xl:last:border-e-0"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
-                    {metrica.etiqueta}
-                  </p>
-                  <Icono aria-hidden="true" className="size-4 text-primary" />
-                </div>
-                <p className="mt-3 font-mono text-2xl font-semibold tabular-nums">
-                  {metrica.valor}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">{metrica.detalle}</p>
-              </article>
-            )
-          })}
-        </div>
-      </section>
-
-      <ComparativoProveedores organizationId={organizationId} proveedores={proveedores} />
-
       <section aria-labelledby="proveedores-title" className="ledger-sheet">
-        <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(12rem,1fr)_minmax(16rem,28rem)_11rem_12rem] lg:items-end">
+        <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(12rem,1fr)_minmax(16rem,32rem)_12rem] lg:items-end">
           <div>
             <h2 id="proveedores-title" className="text-lg font-semibold">
               Directorio de proveedores
@@ -307,27 +220,9 @@ export function ProveedoresPage() {
                 value={busqueda}
                 onChange={(evento) => { setBusqueda(evento.target.value); setPagina(1) }}
                 className="field-control ps-9"
-                placeholder="RUC, razón social, producto o zona"
+                placeholder="RUC, DNI, razón social o contacto"
               />
             </div>
-          </div>
-          <div>
-            <label htmlFor="categoria-proveedor-filtro" className="field-label">
-              Categoría
-            </label>
-            <select
-              id="categoria-proveedor-filtro"
-              value={filtroCategoria}
-              onChange={(evento) => { setFiltroCategoria(evento.target.value as FiltroCategoria); setPagina(1) }}
-              className="field-control"
-            >
-              <option value="todas">Todas</option>
-              {categoriasProveedor.map((categoria) => (
-                <option key={categoria.valor} value={categoria.valor}>
-                  {categoria.etiqueta}
-                </option>
-              ))}
-            </select>
           </div>
           <div>
             <label htmlFor="estado-proveedor-filtro" className="field-label">
@@ -387,9 +282,7 @@ export function ProveedoresPage() {
                         {etiquetasDocumento.get(proveedor.tipoDocumento)} {proveedor.numeroDocumento}
                       </p>
                       <h3 className="mt-1 font-semibold">{proveedor.razonSocial}</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {etiquetasCategoria.get(proveedor.categoria)} · {etiquetasFrecuencia.get(proveedor.frecuenciaEntrega)}
-                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">{proveedor.nombreComercial || 'Sin nombre comercial'}</p>
                     </div>
                     <span className="status-label" data-tone={proveedor.activo ? 'listo' : 'revision'}>
                       {proveedor.activo ? 'Activo' : 'Inactivo'}
@@ -400,10 +293,7 @@ export function ProveedoresPage() {
                       <p className="text-xs text-muted-foreground">Condición</p>
                       <p className="mt-1">{etiquetaCondicion(proveedor)}</p>
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Desempeño</p>
-                      <p className="mt-1"><Calificacion valor={proveedor.calificacionDesempeno} /></p>
-                    </div>
+                    <div><p className="text-xs text-muted-foreground">Contacto</p><p className="mt-1">{proveedor.contacto || proveedor.telefono || 'Sin contacto'}</p></div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button type="button" variant="outline" onClick={(evento) => abrirDetalle(evento, proveedor)}><Eye aria-hidden="true" /> Ver expediente</Button>
@@ -418,7 +308,7 @@ export function ProveedoresPage() {
                   <tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
                     <th className="px-6 py-3 font-medium">Documento</th>
                     <th className="px-4 py-3 font-medium">Proveedor</th>
-                    <th className="px-4 py-3 font-medium">Relación comercial</th>
+                    <th className="px-4 py-3 font-medium">Dirección fiscal</th>
                     <th className="px-4 py-3 font-medium">Contacto</th>
                     <th className="px-4 py-3 font-medium">Condición</th>
                     <th className="px-4 py-3 font-medium">Estado</th>
@@ -435,22 +325,20 @@ export function ProveedoresPage() {
                       <td className="px-4 py-4">
                         <p className="font-medium">{proveedor.razonSocial}</p>
                         <p className="mt-1 max-w-64 truncate text-xs text-muted-foreground">
-                          {proveedor.tiposProducto || proveedor.nombreComercial || 'Sin productos clasificados'}
+                          {proveedor.nombreComercial || 'Sin nombre comercial'}
                         </p>
                       </td>
                       <td className="px-4 py-4">
-                        <p>{etiquetasCategoria.get(proveedor.categoria)}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {etiquetasFrecuencia.get(proveedor.frecuenciaEntrega)}
-                        </p>
+                        <p className="max-w-56 truncate">{proveedor.direccion || 'Sin registrar'}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{proveedor.ubigeo || 'Sin ubigeo'}</p>
                       </td>
                       <td className="px-4 py-4 text-muted-foreground">
                         <p>{proveedor.contacto || 'Sin contacto'}</p>
                         <p className="mt-1 text-xs">{proveedor.email || proveedor.telefono || 'Sin datos adicionales'}</p>
                       </td>
                       <td className="px-4 py-4">
-                        <p>{etiquetaCondicion(proveedor)} · {proveedor.moneda}</p>
-                        <p className="mt-1"><Calificacion valor={proveedor.calificacionDesempeno} /></p>
+                        <p>{etiquetaCondicion(proveedor)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{proveedor.estadoContribuyente || 'SUNAT sin verificar'}</p>
                       </td>
                       <td className="px-4 py-4">
                         <span className="status-label" data-tone={proveedor.activo ? 'listo' : 'revision'}>
@@ -469,16 +357,31 @@ export function ProveedoresPage() {
                           <Eye aria-hidden="true" />
                         </Button>
                         {puedeAdministrar ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            title="Editar proveedor"
-                            aria-label={`Editar ${proveedor.razonSocial}`}
-                            onClick={(evento) => abrirFormulario(evento, proveedor)}
-                          >
-                            <Pencil aria-hidden="true" />
-                          </Button>
+                          <>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              title="Editar proveedor"
+                              aria-label={`Editar ${proveedor.razonSocial}`}
+                              onClick={(evento) => abrirFormulario(evento, proveedor)}
+                            >
+                              <Pencil aria-hidden="true" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              title={proveedor.activo ? 'Desactivar proveedor' : 'Activar proveedor'}
+                              aria-label={`${proveedor.activo ? 'Desactivar' : 'Activar'} ${proveedor.razonSocial}`}
+                              onClick={() => {
+                                estadoMutation.reset()
+                                setProveedorEstado(proveedor)
+                              }}
+                            >
+                              <Power aria-hidden="true" />
+                            </Button>
+                          </>
                         ) : null}
                       </td>
                     </tr>
@@ -509,6 +412,7 @@ export function ProveedoresPage() {
           proveedor={proveedorSeleccionado}
           alCambiarApertura={setDialogoAbierto}
           alGuardar={guardar}
+          alConsultarRuc={consultarRuc}
           alRestaurarFoco={() => disparador.current?.focus()}
         />
       ) : null}
@@ -518,11 +422,21 @@ export function ProveedoresPage() {
           abierto={detalleAbierto}
           proveedor={proveedorDetalle}
           puedeGestionar={puedeAdministrar}
-          puedeCompletarDevolucion={hasPermission(PERMISSIONS.INVENTORY_MANAGE)}
+          alEditar={() => {
+            setDetalleAbierto(false)
+            setProveedorSeleccionado(proveedorDetalle)
+            setDialogoAbierto(true)
+          }}
+          alCambiarEstado={() => {
+            setDetalleAbierto(false)
+            setProveedorEstado(proveedorDetalle)
+          }}
           alCambiarApertura={setDetalleAbierto}
           alRestaurarFoco={() => disparadorDetalle.current?.focus()}
         />
       ) : null}
+      {proveedorEstado ? <DialogoEstadoProveedor proveedor={proveedorEstado} procesando={estadoMutation.isPending} error={estadoMutation.error?.message} alCancelar={() => { estadoMutation.reset(); setProveedorEstado(null) }} alConfirmar={async () => { try { await estadoMutation.mutateAsync({ proveedorId: proveedorEstado.id, activo: !proveedorEstado.activo }) } catch { /* El diálogo conserva y muestra el error controlado. */ } }} /> : null}
+      {importacionAbierta ? <DialogoImportarProveedores abierto={importacionAbierta} alCambiarApertura={setImportacionAbierta} alCompletar={(resultado) => { void queryClient.invalidateQueries({ queryKey }); setMensaje(`Importación finalizada: ${resultado.created} creados, ${resultado.updated} actualizados, ${resultado.skipped} omitidos y ${resultado.failed} fallidos.`) }} alRestaurarFoco={() => disparadorImportacion.current?.focus()} /> : null}
     </div>
   )
 }

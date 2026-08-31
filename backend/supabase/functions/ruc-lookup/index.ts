@@ -7,13 +7,29 @@ import {
 } from "../_shared/authorization.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { errorResponse, jsonResponse } from "../_shared/responses.ts";
-import { ApisPeruRucProvider } from "../_shared/ruc/apisperu-provider.ts";
+import { DecolectaRucProvider } from "../_shared/ruc/decolecta-provider.ts";
 import { RucLookupService } from "../_shared/ruc/service.ts";
 import { RucLookupError } from "../_shared/ruc/types.ts";
 
 const requestSchema = z.object({
   ruc: z.string().trim().regex(/^\d{11}$/),
 }).strict();
+
+const lookupPermissions = ["CUSTOMERS_MANAGE", "SUPPLIERS_MANAGE"] as const;
+
+async function resolveLookupOrganization(
+  adminClient: SupabaseClient,
+  userId: string,
+) {
+  for (const permission of lookupPermissions) {
+    const { data, error } = await adminClient.rpc(
+      "resolve_edge_user_organization_permission",
+      { requested_user_id: userId, requested_permission: permission },
+    );
+    if (!error && typeof data === "string") return data;
+  }
+  return null;
+}
 
 function integerEnvironmentValue(
   name: string,
@@ -90,15 +106,11 @@ Deno.serve(async (request) => {
     }
     requestedRuc = parsed.data.ruc;
 
-    const { data: resolvedOrganization, error: organizationError } =
-      await authorization.adminClient.rpc(
-        "resolve_edge_user_organization_permission",
-        {
-          requested_user_id: actorId,
-          requested_permission: "CUSTOMERS_MANAGE",
-        },
-      );
-    if (organizationError || typeof resolvedOrganization !== "string") {
+    const resolvedOrganization = await resolveLookupOrganization(
+      authorization.adminClient,
+      actorId,
+    );
+    if (!resolvedOrganization) {
       return errorResponse(
         {
           code: "FORBIDDEN",
@@ -139,9 +151,9 @@ Deno.serve(async (request) => {
       );
     }
 
-    const provider = new ApisPeruRucProvider({
-      token: Deno.env.get("APISPERU_API_TOKEN") ?? "",
-      baseUrl: Deno.env.get("APISPERU_API_URL"),
+    const provider = new DecolectaRucProvider({
+      token: Deno.env.get("DECOLECTA_API_TOKEN") ?? "",
+      baseUrl: Deno.env.get("DECOLECTA_API_URL"),
       timeoutMs: integerEnvironmentValue(
         "RUC_LOOKUP_TIMEOUT_MS",
         5_000,
@@ -192,7 +204,7 @@ Deno.serve(async (request) => {
             organizationId,
             actorId,
             requestedRuc,
-            "APISPERU",
+            "DECOLECTA",
             false,
             false,
           );

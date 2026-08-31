@@ -153,6 +153,7 @@ function renderProvider() {
 
 describe('AuthProvider', () => {
   beforeEach(() => {
+    window.history.replaceState(null, '', '/')
     window.sessionStorage.clear()
     mocks.getSession.mockReset()
     mocks.onAuthStateChange.mockClear()
@@ -245,6 +246,23 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('protected-content')).toHaveTextContent(
         'Contenido protegido',
       )
+    })
+  })
+
+  it('redirige una sesión de recuperación al formulario de contraseña', async () => {
+    configureActiveAccess()
+    mocks.getSession.mockResolvedValue({ data: { session: null }, error: null })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading-state')).toHaveTextContent('lista')
+    })
+
+    mocks.emitSessionEvent('PASSWORD_RECOVERY', session)
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/establecer-contrasena')
+      expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
     })
   })
 

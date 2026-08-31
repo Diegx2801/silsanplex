@@ -1,6 +1,6 @@
 begin;
 
-select plan(32);
+select plan(38);
 
 -- -------------------------------------------------------------------------
 -- Estructura, capacidades y privilegios
@@ -13,6 +13,12 @@ select has_function(
   array['uuid', 'text'],
   'existe la comprobación de capacidades por organización'
 );
+select has_function('public', 'set_supplier_status', array['uuid', 'boolean'], 'existe la operación controlada de estado');
+select has_function('public', 'import_suppliers', array['jsonb'], 'existe la importación transaccional por fila');
+select is(has_function_privilege('anon', 'public.set_supplier_status(uuid, boolean)', 'EXECUTE'), false, 'anon no cambia el estado de proveedores');
+select is(has_function_privilege('authenticated', 'public.set_supplier_status(uuid, boolean)', 'EXECUTE'), true, 'authenticated accede bajo autorización interna');
+select is(has_function_privilege('anon', 'public.import_suppliers(jsonb)', 'EXECUTE'), false, 'anon no importa proveedores');
+select is(has_function_privilege('authenticated', 'public.import_suppliers(jsonb)', 'EXECUTE'), true, 'authenticated accede a importación bajo autorización interna');
 
 select is(
   (

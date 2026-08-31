@@ -61,7 +61,7 @@ describe('esquemaDatosProveedor', () => {
 })
 
 describe('proveedorAFormulario', () => {
-  it('convierte valores numéricos a controles editables', () => {
+  it('convierte los días de crédito a un control editable', () => {
     const proveedor = {
       id: 'proveedor-1',
       organizationId: 'organizacion-1',
@@ -75,18 +75,13 @@ describe('proveedorAFormulario', () => {
       email: '',
       telefono: '',
       direccion: '',
-      zonaGeografica: '',
-      tiposProducto: '',
-      categoria: 'frecuente',
-      frecuenciaEntrega: 'mensual',
-      calificacionDesempeno: 5,
+      ubigeo: '',
+      estadoContribuyente: '',
+      condicionDomicilio: '',
+      fuenteDatosFiscales: '',
+      fechaConsultaSunat: null,
       condicionCredito: 'credito',
       diasCredito: 45,
-      moneda: 'PEN',
-      banco: '',
-      cuentaBancaria: '',
-      cuentaDetraccion: '',
-      estadoSunat: 'habido',
       observaciones: '',
       activo: true,
       fechaRegistro: '2026-08-21T10:00:00.000Z',
@@ -94,9 +89,8 @@ describe('proveedorAFormulario', () => {
     } satisfies Proveedor
 
     expect(proveedorAFormulario(proveedor)).toMatchObject({
-      calificacionDesempeno: '5',
       diasCredito: '45',
-      categoria: 'frecuente',
+      condicionCredito: 'credito',
     })
   })
 })

@@ -168,6 +168,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (event, nextSession) => {
+        if (
+          event === 'PASSWORD_RECOVERY' &&
+          window.location.pathname !== '/establecer-contrasena'
+        ) {
+          window.history.replaceState(null, '', '/establecer-contrasena')
+          window.dispatchEvent(new PopStateEvent('popstate'))
+        }
+
         actualizarSesion(nextSession, event)
       },
     )
