@@ -34,6 +34,8 @@ describe('modelo de reparaciones', () => {
   it('valida los datos mínimos y conserva el estado inicial de garantía', () => {
     const datos = datosReparacionInicial()
     expect(datos.esGarantia).toBe(false)
+    expect(datos).not.toHaveProperty('diagnostico')
+    expect(datos).not.toHaveProperty('solucionAplicada')
 
     expect(esquemaDatosReparacion.safeParse({
       ...datos,

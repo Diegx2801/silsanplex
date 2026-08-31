@@ -17,6 +17,7 @@ import {
   type DatosPrueba,
   type DatosReparacion,
   type DatosReservaParte,
+  type DatosSolucionReparacion,
   type DetalleReparacion,
   type DiagnosticoReparacion,
   type EventoReparacion,
@@ -239,6 +240,7 @@ type ContextoError =
   | 'asignar'
   | 'estado'
   | 'diagnostico'
+  | 'solucion'
   | 'cotizacion'
   | 'aprobacion'
   | 'repuesto'
@@ -266,6 +268,8 @@ const mensajesDominio: Array<[string, string]> = [
   ['REPAIR_NOT_FOUND', 'No se encontró la reparación solicitada.'],
   ['REPAIR_NOT_EDITABLE', 'La reparación ya no admite cambios.'],
   ['REPAIR_ASSIGN_USE_ASSIGN_RPC', 'La asignación debe realizarse desde la acción de asignar técnico.'],
+  ['REPAIR_DIAGNOSIS_USE_DIAGNOSIS_RPC', 'El diagnóstico debe registrarse desde la acción especializada.'],
+  ['REPAIR_APPLIED_SOLUTION_USE_SOLUTION_RPC', 'La solución aplicada debe registrarse desde la acción especializada.'],
   ['REPAIR_RECEIVED_AT_IMMUTABLE', 'La fecha de recepción no puede modificarse.'],
   ['REPAIR_TECHNICIAN_UNAVAILABLE', 'El técnico seleccionado no está activo en la organización.'],
   ['REPAIR_NOT_ASSIGNABLE', 'La reparación ya no admite asignación.'],
@@ -275,6 +279,7 @@ const mensajesDominio: Array<[string, string]> = [
   ['REPAIR_PENDING_QUOTE_REQUIRED', 'Primero debes enviar una cotización pendiente de aprobación.'],
   ['REPAIR_DIAGNOSIS_STATE_REQUIRED', 'La reparación debe estar en diagnóstico para registrar este dato.'],
   ['REPAIR_DIAGNOSIS_SYMPTOMS_REQUIRED', 'Describe los síntomas antes de guardar el diagnóstico.'],
+  ['REPAIR_APPLIED_SOLUTION_REQUIRED', 'Describe la solución aplicada antes de guardar.'],
   ['REPAIR_QUOTE_ITEMS_REQUIRED', 'Agrega al menos una línea a la cotización.'],
   ['REPAIR_QUOTE_STATE_INVALID', 'La reparación no está en un estado que permita cotizar.'],
   ['REPAIR_QUOTE_NOT_FOUND', 'No se encontró la cotización indicada.'],
@@ -334,6 +339,7 @@ export function obtenerMensajeErrorReparacion(
     asignar: 'No se pudo asignar el técnico.',
     estado: 'No se pudo cambiar el estado de la reparación.',
     diagnostico: 'No se pudo registrar el diagnóstico.',
+    solucion: 'No se pudo guardar la solución aplicada.',
     cotizacion: 'No se pudo guardar la cotización.',
     aprobacion: 'No se pudo actualizar la aprobación de la cotización.',
     repuesto: 'No se pudo actualizar el repuesto.',
@@ -847,8 +853,6 @@ function payloadBaseReparacion(
     estimated_delivery_date: normalizarTextoOpcional(datos.fechaEstimadaEntrega),
     priority: datos.prioridad,
     problem_description: datos.problema.trim(),
-    diagnosis: normalizarTextoOpcional(datos.diagnostico),
-    applied_solution: normalizarTextoOpcional(datos.solucionAplicada),
     notes: normalizarTextoOpcional(datos.notas),
     customer_reference: normalizarTextoOpcional(datos.referenciaCliente),
     sale_document_id: normalizarTextoOpcional(datos.documentoVentaId),
@@ -930,6 +934,21 @@ export async function registrarDiagnosticoReparacion(
   })
   if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'diagnostico'))
   return data as string
+}
+
+export async function registrarSolucionReparacion(
+  organizationId: string,
+  reparacionId: string,
+  datos: DatosSolucionReparacion,
+) {
+  const { error } = await supabase.rpc('record_repair_solution', {
+    payload: {
+      organization_id: organizationId,
+      repair_id: reparacionId,
+      applied_solution: datos.solucionAplicada.trim(),
+    },
+  })
+  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'solucion'))
 }
 
 export async function guardarCotizacionReparacion(

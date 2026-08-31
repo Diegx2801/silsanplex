@@ -13,6 +13,7 @@ import type {
   DatosPrueba,
   DatosReparacion,
   DatosReservaParte,
+  DatosSolucionReparacion,
   Reparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
 import {
@@ -30,6 +31,7 @@ import {
   obtenerResumenReparaciones,
   rechazarCotizacionReparacion,
   registrarDiagnosticoReparacion,
+  registrarSolucionReparacion,
   registrarPruebaReparacion,
   reservarParteReparacion,
 } from '@/modulos/reparaciones/servicios/reparacionesService'
@@ -127,6 +129,11 @@ export function useReparaciones(
   const diagnosticoMutation = useMutation({
     mutationFn: ({ id, datos }: { id: string; datos: DatosDiagnostico }) =>
       registrarDiagnosticoReparacion(organizationId, id, datos),
+    onSuccess: invalidar,
+  })
+  const solucionMutation = useMutation({
+    mutationFn: ({ id, datos }: { id: string; datos: DatosSolucionReparacion }) =>
+      registrarSolucionReparacion(organizationId, id, datos),
     onSuccess: invalidar,
   })
   const cotizacionMutation = useMutation({
@@ -227,6 +234,7 @@ export function useReparaciones(
     asignando: asignarMutation.isPending,
     cambiandoEstado: estadoMutation.isPending,
     registrandoDiagnostico: diagnosticoMutation.isPending,
+    guardandoSolucion: solucionMutation.isPending,
     guardandoCotizacion: cotizacionMutation.isPending,
     aprobandoCotizacion: aprobarCotizacionMutation.isPending,
     rechazandoCotizacion: rechazarCotizacionMutation.isPending,
@@ -274,6 +282,14 @@ export function useReparaciones(
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo registrar el diagnóstico.')
+      }
+    },
+    registrarSolucion: async (id: string, datos: DatosSolucionReparacion) => {
+      try {
+        await solucionMutation.mutateAsync({ id, datos })
+        return undefined
+      } catch (error) {
+        return mensajeDeError(error, 'No se pudo guardar la solución aplicada.')
       }
     },
     guardarCotizacion: async (id: string, datos: DatosCotizacion, enviar: boolean) => {
