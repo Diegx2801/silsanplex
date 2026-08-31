@@ -115,7 +115,9 @@ describe('reparacionesService', () => {
         id: 'repair-1',
         numeroSerie: 'SER-1',
         diagnostico: 'Fuente dañada',
+        diagnosticoRegistrado: true,
         solucionAplicada: 'Fuente reemplazada',
+        solucionAplicadaRegistrada: true,
       }],
     })
   })
@@ -164,7 +166,7 @@ describe('reparacionesService', () => {
     } as const
 
     await crearReparacion('org-1', datos)
-    await actualizarReparacion('org-1', 'repair-1', datos)
+    await actualizarReparacion('org-1', 'repair-1', datos, true)
 
     for (const [, llamada] of supabaseMock.rpc.mock.calls) {
       expect(llamada.payload).not.toHaveProperty('diagnosis')
@@ -180,6 +182,37 @@ describe('reparacionesService', () => {
     expect(supabaseMock.rpc).toHaveBeenNthCalledWith(2, 'update_repair', {
       payload: expect.objectContaining({ id: 'repair-1', organization_id: 'org-1' }),
     })
+  })
+
+  it('omite identidad en una actualización tardía y conserva los campos generales', async () => {
+    supabaseMock.rpc.mockResolvedValue({ data: null, error: null })
+    const datos = {
+      clienteId: '00000000-0000-0000-0000-000000000001',
+      productoId: '00000000-0000-0000-0000-000000000002',
+      numeroSerie: 'SER-1',
+      prioridad: 'high',
+      fechaEstimadaEntrega: '2026-09-15',
+      problema: 'No enciende al conectar',
+      notas: 'Incluye cargador',
+      referenciaCliente: 'VENTAS-10',
+      documentoVentaId: '',
+      referenciaGarantia: '',
+      esGarantia: false,
+    } as const
+
+    await actualizarReparacion('org-1', 'repair-1', datos, false)
+
+    const payload = supabaseMock.rpc.mock.calls[0][1].payload
+    expect(payload).not.toHaveProperty('customer_id')
+    expect(payload).not.toHaveProperty('product_id')
+    expect(payload).not.toHaveProperty('serial_number')
+    expect(payload).toEqual(expect.objectContaining({
+      id: 'repair-1',
+      organization_id: 'org-1',
+      priority: 'high',
+      problem_description: 'No enciende al conectar',
+      notes: 'Incluye cargador',
+    }))
   })
 
   it('mantiene diagnóstico y solución aplicada en RPC especializadas', async () => {
@@ -271,6 +304,10 @@ describe('reparacionesService', () => {
   })
 
   it('traduce los gates de escritura técnica y los errores de solución', () => {
+    expect(obtenerMensajeErrorReparacion(
+      { message: 'REPAIR_IDENTITY_LOCKED' },
+      'editar',
+    )).toBe('La identidad de la reparación ya no puede modificarse porque la atención ya avanzó.')
     expect(obtenerMensajeErrorReparacion(
       { message: 'REPAIR_DIAGNOSIS_USE_DIAGNOSIS_RPC' },
       'editar',

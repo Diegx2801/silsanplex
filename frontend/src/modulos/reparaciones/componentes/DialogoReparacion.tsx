@@ -107,17 +107,23 @@ function OpcionBinaria({ etiqueta, descripcion, id: idRecibido, ...props }: Opci
 interface DialogoReparacionProps {
   abierto: boolean
   reparacion: Reparacion | null
+  identidadEditable: boolean
   clientes: readonly OpcionClienteReparacion[]
   productos: readonly OpcionProductoReparacion[]
   cargandoOpciones?: boolean
   alCambiarApertura: (abierto: boolean) => void
-  alGuardar: (datos: DatosReparacion, reparacionId?: string) => Promise<string | undefined>
+  alGuardar: (
+    datos: DatosReparacion,
+    reparacionId: string | undefined,
+    identidadEditable: boolean,
+  ) => Promise<string | undefined>
   alRestaurarFoco: () => void
 }
 
 export function DialogoReparacion({
   abierto,
   reparacion,
+  identidadEditable,
   clientes,
   productos,
   cargandoOpciones = false,
@@ -142,13 +148,15 @@ export function DialogoReparacion({
   const producto = productos.find((item) => item.id === productoId)
 
   useEffect(() => {
-    if (producto && !producto.serialControl && numeroSerie) {
+    if (identidadEditable && producto && !producto.serialControl && numeroSerie) {
       setValue('numeroSerie', '')
     }
-  }, [numeroSerie, producto, setValue])
+  }, [identidadEditable, numeroSerie, producto, setValue])
 
   const guardar = async (datos: DatosReparacion) => {
-    const errorSerie = validarNumeroSerie(datos.numeroSerie, producto?.serialControl ?? false)
+    const errorSerie = identidadEditable
+      ? validarNumeroSerie(datos.numeroSerie, producto?.serialControl ?? false)
+      : undefined
     if (errorSerie) {
       setError('numeroSerie', { message: errorSerie })
       return
@@ -157,9 +165,9 @@ export function DialogoReparacion({
     setMensaje('')
     const datosNormalizados = {
       ...datos,
-      numeroSerie: producto?.serialControl ? datos.numeroSerie : '',
+      numeroSerie: identidadEditable && !producto?.serialControl ? '' : datos.numeroSerie,
     }
-    const error = await alGuardar(datosNormalizados, reparacion?.id)
+    const error = await alGuardar(datosNormalizados, reparacion?.id, identidadEditable)
     if (error) {
       if (error.toLocaleLowerCase('es-PE').includes('serie')) {
         setError('numeroSerie', { message: error })
@@ -211,9 +219,39 @@ export function DialogoReparacion({
             <section aria-labelledby="reparacion-identificacion" className="px-5 py-6 sm:px-7">
               <div className="mb-5 border-b pb-3">
                 <h2 id="reparacion-identificacion" className="font-semibold">Identificación del servicio</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Cliente y producto deben estar activos en la organización.</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {identidadEditable
+                    ? 'Cliente y producto deben estar activos en la organización.'
+                    : 'Información conservada de la recepción de la orden.'}
+                </p>
               </div>
-              <div className="grid gap-5 sm:grid-cols-2">
+              {!identidadEditable && reparacion ? (
+                <>
+                  <p className="mb-5 border border-primary/25 bg-primary/5 px-4 py-3 text-sm leading-6 text-muted-foreground sm:col-span-2">
+                    El cliente, el producto y la serie ya no pueden modificarse porque la atención tiene historial operativo.
+                  </p>
+                  <input type="hidden" {...register('clienteId')} />
+                  <input type="hidden" {...register('productoId')} />
+                  <input type="hidden" {...register('numeroSerie')} />
+                  <dl className="grid gap-4 sm:grid-cols-2">
+                    <div className="border bg-muted/20 px-4 py-3">
+                      <dt className="field-label">Cliente</dt>
+                      <dd className="text-sm font-medium">{reparacion.clienteNombreSnapshot}</dd>
+                      <dd className="mt-1 text-xs text-muted-foreground">{reparacion.clienteDocumentoSnapshot}</dd>
+                    </div>
+                    <div className="border bg-muted/20 px-4 py-3">
+                      <dt className="field-label">Producto o equipo</dt>
+                      <dd className="text-sm font-medium">{reparacion.productoDescripcionSnapshot}</dd>
+                      <dd className="mt-1 font-mono text-xs text-muted-foreground">{reparacion.productoCodigoSnapshot}</dd>
+                    </div>
+                    <div className="border bg-muted/20 px-4 py-3 sm:col-span-2">
+                      <dt className="field-label">Número de serie</dt>
+                      <dd className="font-mono text-sm">{reparacion.numeroSerie || 'No aplica'}</dd>
+                    </div>
+                  </dl>
+                </>
+              ) : (
+                <div className="grid gap-5 sm:grid-cols-2">
                 <div>
                   <label htmlFor="reparacion-cliente" className="field-label">Cliente *</label>
                   <select id="reparacion-cliente" className="field-control" aria-invalid={Boolean(errors.clienteId)} {...register('clienteId')}>
@@ -256,7 +294,8 @@ export function DialogoReparacion({
                     </p>
                   </div>
                 )}
-              </div>
+                </div>
+              )}
             </section>
 
             <section aria-labelledby="reparacion-recepcion" className="border-t px-5 py-6 sm:px-7">

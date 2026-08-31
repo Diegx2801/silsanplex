@@ -5,11 +5,13 @@ import {
   esquemaDatosReparacion,
   esquemaDatosReservaParte,
   estadoStockReparacionEsConsumible,
+  identidadReparacionEsEditable,
   limitarEnteroSeguro,
   normalizarBusquedaReparaciones,
   normalizarTextoOpcional,
   obtenerTransicionesGenericas,
   validarNumeroSerie,
+  type DetalleReparacion,
 } from './reparacion'
 
 describe('modelo de reparaciones', () => {
@@ -48,6 +50,131 @@ describe('modelo de reparaciones', () => {
   it('expone solo transiciones comunes del estado actual', () => {
     expect(obtenerTransicionesGenericas('waiting_customer_approval')).toEqual([])
     expect(obtenerTransicionesGenericas('testing')).toEqual(['in_repair', 'ready_for_delivery'])
+  })
+
+  it('mantiene editable la identidad al crear y en recepción o garantía inicial', () => {
+    const detalleInicial = {
+      reparacion: {
+        estado: 'received',
+        diagnostico: '',
+        diagnosticoRegistrado: false,
+        solucionAplicada: '',
+        solucionAplicadaRegistrada: false,
+      },
+      diagnosticos: [],
+      cotizaciones: [],
+      partes: [],
+      pruebas: [],
+      eventos: [
+        { id: 1, tipo: 'CREATED', estadoAnterior: null, estadoNuevo: 'received' },
+        {
+          id: 2,
+          tipo: 'UPDATED',
+          estadoAnterior: 'received',
+          estadoNuevo: 'received',
+          metadata: { assigned_technician_after: 'tecnico-1' },
+        },
+      ],
+    } as unknown as DetalleReparacion
+
+    expect(identidadReparacionEsEditable()).toBe(true)
+    expect(identidadReparacionEsEditable(detalleInicial)).toBe(true)
+    expect(identidadReparacionEsEditable({
+      ...detalleInicial,
+      reparacion: { ...detalleInicial.reparacion, estado: 'warranty' },
+      eventos: [{
+        ...detalleInicial.eventos[0],
+        estadoNuevo: 'warranty',
+      }],
+    })).toBe(true)
+  })
+
+  it('bloquea la identidad ante progreso o historial técnico especializado', () => {
+    const detalleInicial = {
+      reparacion: {
+        estado: 'received',
+        diagnostico: '',
+        diagnosticoRegistrado: false,
+        solucionAplicada: '',
+        solucionAplicadaRegistrada: false,
+      },
+      diagnosticos: [],
+      cotizaciones: [],
+      partes: [],
+      pruebas: [],
+      eventos: [{
+        id: 1,
+        tipo: 'CREATED',
+        estadoAnterior: null,
+        estadoNuevo: 'received',
+      }],
+    } as unknown as DetalleReparacion
+
+    expect(identidadReparacionEsEditable({
+      ...detalleInicial,
+      reparacion: { ...detalleInicial.reparacion, estado: 'diagnosis' },
+    })).toBe(false)
+    expect(identidadReparacionEsEditable({
+      ...detalleInicial,
+      eventos: [
+        ...detalleInicial.eventos,
+        {
+          ...detalleInicial.eventos[0],
+          id: 2,
+          tipo: 'DIAGNOSIS_CREATED',
+          estadoAnterior: 'received',
+          estadoNuevo: 'received',
+        },
+      ],
+    })).toBe(false)
+    expect(identidadReparacionEsEditable({
+      ...detalleInicial,
+      reparacion: {
+        ...detalleInicial.reparacion,
+        diagnostico: 'Fuente dañada',
+        diagnosticoRegistrado: true,
+      },
+    })).toBe(false)
+    expect(identidadReparacionEsEditable({
+      ...detalleInicial,
+      reparacion: {
+        ...detalleInicial.reparacion,
+        solucionAplicada: '',
+        solucionAplicadaRegistrada: true,
+      },
+    })).toBe(false)
+    expect(identidadReparacionEsEditable({
+      ...detalleInicial,
+      eventos: [{
+        ...detalleInicial.eventos[0],
+        id: 2,
+        tipo: 'UPDATED',
+        estadoAnterior: 'received',
+        estadoNuevo: 'warranty',
+      }],
+    })).toBe(false)
+    expect(identidadReparacionEsEditable({
+      ...detalleInicial,
+      eventos: [
+        ...detalleInicial.eventos,
+        {
+          ...detalleInicial.eventos[0],
+          id: 2,
+          tipo: 'UPDATED',
+          estadoAnterior: 'diagnosis',
+          estadoNuevo: 'diagnosis',
+        },
+      ],
+    })).toBe(false)
+    expect(identidadReparacionEsEditable({
+      ...detalleInicial,
+      reparacion: { ...detalleInicial.reparacion, estado: 'warranty' },
+      eventos: [],
+    })).toBe(false)
+    expect(identidadReparacionEsEditable({
+      ...detalleInicial,
+      eventosCompletos: false,
+    })).toBe(false)
   })
 
   it('limita nuevas reservas y consumos de Reparaciones a stock available', () => {
