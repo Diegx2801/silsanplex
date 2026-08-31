@@ -267,6 +267,7 @@ const mensajesDominio: Array<[string, string]> = [
   ['REPAIR_PROBLEM_REQUIRED', 'Describe el problema de la reparación.'],
   ['REPAIR_NOT_FOUND', 'No se encontró la reparación solicitada.'],
   ['REPAIR_NOT_EDITABLE', 'La reparación ya no admite cambios.'],
+  ['REPAIR_IDENTITY_LOCKED', 'La identidad de la reparación ya no puede modificarse porque la atención ya avanzó.'],
   ['REPAIR_ASSIGN_USE_ASSIGN_RPC', 'La asignación debe realizarse desde la acción de asignar técnico.'],
   ['REPAIR_DIAGNOSIS_USE_DIAGNOSIS_RPC', 'El diagnóstico debe registrarse desde la acción especializada.'],
   ['REPAIR_APPLIED_SOLUTION_USE_SOLUTION_RPC', 'La solución aplicada debe registrarse desde la acción especializada.'],
@@ -366,7 +367,9 @@ function mapearReparacion(fila: FilaReparacion): Reparacion {
     prioridad: fila.priority as Reparacion['prioridad'],
     problema: fila.problem_description,
     diagnostico: fila.diagnosis ?? '',
+    diagnosticoRegistrado: fila.diagnosis !== null,
     solucionAplicada: fila.applied_solution ?? '',
+    solucionAplicadaRegistrada: fila.applied_solution !== null,
     notas: fila.notes ?? '',
     referenciaCliente: fila.customer_reference ?? '',
     documentoVentaId: fila.sale_document_id ?? '',
@@ -656,7 +659,7 @@ export async function obtenerDetalleReparacion(
         .order('id', { ascending: false }),
       supabase
         .from('repair_events')
-        .select('id,organization_id,repair_id,event_type,from_status,to_status,actor_user_id,observation,metadata,created_at')
+        .select('id,organization_id,repair_id,event_type,from_status,to_status,actor_user_id,observation,metadata,created_at', { count: 'exact' })
         .eq('organization_id', organizationId)
         .eq('repair_id', repairId)
         .order('created_at', { ascending: false })
@@ -725,6 +728,7 @@ export async function obtenerDetalleReparacion(
   }
 
   const cotizacionActiva = cotizaciones[0] ?? null
+  const eventos = ((eventsResult.data ?? []) as FilaEvento[]).map(mapearEvento)
   return {
     reparacion: mapearReparacion(repairResult.data as FilaReparacion),
     diagnosticos: (diagnosticsResult.data as FilaDiagnostico[]).map(mapearDiagnostico),
@@ -734,7 +738,8 @@ export async function obtenerDetalleReparacion(
       mapearParte(parte, consumosPorParte.get(parte.id) ?? []),
     ),
     pruebas: (testsResult.data as FilaPrueba[]).map(mapearPrueba),
-    eventos: (eventsResult.data as FilaEvento[]).map(mapearEvento),
+    eventos,
+    eventosCompletos: eventsResult.count === eventos.length,
   }
 }
 
@@ -841,15 +846,12 @@ export async function listarTecnicosReparacion(
   }))
 }
 
-function payloadBaseReparacion(
+function payloadGeneralReparacion(
   organizationId: string,
   datos: DatosReparacion,
 ) {
   return {
     organization_id: organizationId,
-    customer_id: datos.clienteId,
-    product_id: datos.productoId,
-    serial_number: normalizarTextoOpcional(datos.numeroSerie),
     estimated_delivery_date: normalizarTextoOpcional(datos.fechaEstimadaEntrega),
     priority: datos.prioridad,
     problem_description: datos.problema.trim(),
@@ -860,13 +862,22 @@ function payloadBaseReparacion(
   }
 }
 
+function payloadIdentidadReparacion(datos: DatosReparacion) {
+  return {
+    customer_id: datos.clienteId,
+    product_id: datos.productoId,
+    serial_number: normalizarTextoOpcional(datos.numeroSerie),
+  }
+}
+
 export async function crearReparacion(
   organizationId: string,
   datos: DatosReparacion,
 ) {
   const { data, error } = await supabase.rpc('create_repair', {
     payload: {
-      ...payloadBaseReparacion(organizationId, datos),
+      ...payloadGeneralReparacion(organizationId, datos),
+      ...payloadIdentidadReparacion(datos),
       status: datos.esGarantia ? 'warranty' : 'received',
     },
   })
@@ -878,11 +889,13 @@ export async function actualizarReparacion(
   organizationId: string,
   reparacionId: string,
   datos: DatosReparacion,
+  identidadEditable: boolean,
 ) {
   const { error } = await supabase.rpc('update_repair', {
     payload: {
       id: reparacionId,
-      ...payloadBaseReparacion(organizationId, datos),
+      ...payloadGeneralReparacion(organizationId, datos),
+      ...(identidadEditable ? payloadIdentidadReparacion(datos) : {}),
     },
   })
   if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'editar'))

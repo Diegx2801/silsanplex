@@ -30,7 +30,9 @@ const reparacionBase: Reparacion = {
   prioridad: 'normal',
   problema: 'No enciende',
   diagnostico: 'Fuente dañada',
+  diagnosticoRegistrado: true,
   solucionAplicada: '',
+  solucionAplicadaRegistrada: false,
   notas: '',
   referenciaCliente: '',
   documentoVentaId: '',
@@ -63,16 +65,19 @@ function crearDetalle(
 
 function renderizarDetalle({
   estado = 'diagnosis',
+  puedeEditar = false,
   puedeCambiarEstado = true,
   solucionAplicada = '',
   resultadoSolucion,
 }: {
   estado?: EstadoReparacion
+  puedeEditar?: boolean
   puedeCambiarEstado?: boolean
   solucionAplicada?: string
   resultadoSolucion?: string
 } = {}) {
   const operacion = vi.fn().mockResolvedValue(undefined)
+  const editar = vi.fn()
   const registrarSolucion = vi.fn().mockResolvedValue(resultadoSolucion)
   render(
     <DetalleReparacion
@@ -83,7 +88,7 @@ function renderizarDetalle({
       productos={[]}
       almacenes={[]}
       ubicaciones={[]}
-      puedeEditar={false}
+      puedeEditar={puedeEditar}
       puedeAsignar={false}
       puedeCambiarEstado={puedeCambiarEstado}
       puedeAprobarCotizacion={false}
@@ -91,7 +96,7 @@ function renderizarDetalle({
       puedeEntregar={false}
       alCambiarApertura={vi.fn()}
       alRestaurarFoco={vi.fn()}
-      alEditar={vi.fn()}
+      alEditar={editar}
       alAsignar={operacion}
       alCambiarEstado={operacion}
       alRegistrarDiagnostico={operacion}
@@ -107,7 +112,7 @@ function renderizarDetalle({
       alCancelar={operacion}
     />,
   )
-  return { registrarSolucion }
+  return { editar, registrarSolucion }
 }
 
 describe('DetalleReparacion acciones técnicas', () => {
@@ -150,6 +155,15 @@ describe('DetalleReparacion acciones técnicas', () => {
 
     expect(screen.queryByRole('button', { name: 'Registrar diagnóstico' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Registrar solución' })).not.toBeInTheDocument()
+  })
+
+  it('permite a VENTAS abrir la edición general sin permisos técnicos', () => {
+    const { editar } = renderizarDetalle({ puedeEditar: true, puedeCambiarEstado: false })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+
+    expect(editar).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Registrar diagnóstico' })).not.toBeInTheDocument()
   })
 
   it('no permite modificar la solución en estados terminales', () => {

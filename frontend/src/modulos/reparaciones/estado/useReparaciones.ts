@@ -105,8 +105,8 @@ export function useReparaciones(
     onSuccess: invalidar,
   })
   const actualizarMutation = useMutation({
-    mutationFn: ({ id, datos }: { id: string; datos: DatosReparacion }) =>
-      actualizarReparacion(organizationId, id, datos),
+    mutationFn: ({ id, datos, identidadEditable }: { id: string; datos: DatosReparacion; identidadEditable: boolean }) =>
+      actualizarReparacion(organizationId, id, datos, identidadEditable),
     onSuccess: invalidar,
   })
   const asignarMutation = useMutation({
@@ -252,9 +252,9 @@ export function useReparaciones(
         return mensajeDeError(error, 'No se pudo registrar la reparación.')
       }
     },
-    actualizar: async (id: string, datos: DatosReparacion) => {
+    actualizar: async (id: string, datos: DatosReparacion, identidadEditable: boolean) => {
       try {
-        await actualizarMutation.mutateAsync({ id, datos })
+        await actualizarMutation.mutateAsync({ id, datos, identidadEditable })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo actualizar la reparación.')

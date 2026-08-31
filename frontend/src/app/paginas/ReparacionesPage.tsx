@@ -32,6 +32,7 @@ import type {
 } from '@/modulos/reparaciones/modelo/consultaReparaciones'
 import {
   etiquetasEstadoReparacion,
+  identidadReparacionEsEditable,
   prioridadesReparacion,
   tonosEstadoReparacion,
   type DatosCotizacion,
@@ -172,6 +173,7 @@ export function ReparacionesPage() {
   const [reparacionId, setReparacionId] = useState<string | null>(null)
   const [formularioAbierto, setFormularioAbierto] = useState(false)
   const [reparacionEnEdicion, setReparacionEnEdicion] = useState<Reparacion | null>(null)
+  const [identidadEditableEnEdicion, setIdentidadEditableEnEdicion] = useState(true)
   const [mensaje, setMensaje] = useState('')
   const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
   const disparadorFormulario = useRef<HTMLButtonElement | null>(null)
@@ -208,6 +210,7 @@ export function ReparacionesPage() {
   const abrirRegistro = (evento: ReactMouseEvent<HTMLButtonElement>) => {
     disparadorFormulario.current = evento.currentTarget
     setReparacionEnEdicion(null)
+    setIdentidadEditableEnEdicion(true)
     setFormularioAbierto(true)
   }
 
@@ -221,12 +224,19 @@ export function ReparacionesPage() {
     if (!reparacion) return
     disparadorFormulario.current = disparadorDetalle.current
     setReparacionEnEdicion(reparacion)
+    setIdentidadEditableEnEdicion(identidadReparacionEsEditable(detalleConsulta.detalle))
     setReparacionId(null)
     setFormularioAbierto(true)
   }
 
-  const guardarReparacion = async (datos: DatosReparacion, id?: string) => {
-    const error = id ? await operaciones.actualizar(id, datos) : await operaciones.crear(datos)
+  const guardarReparacion = async (
+    datos: DatosReparacion,
+    id: string | undefined,
+    identidadEditable: boolean,
+  ) => {
+    const error = id
+      ? await operaciones.actualizar(id, datos, identidadEditable)
+      : await operaciones.crear(datos)
     if (!error) setMensaje(id ? 'La reparación se actualizó correctamente.' : 'La reparación se registró correctamente.')
     return error
   }
@@ -271,7 +281,7 @@ export function ReparacionesPage() {
         {!operaciones.cargando && !operaciones.error ? <PaginacionReparaciones inicio={operaciones.reparaciones.length ? (paginaActual - 1) * tamanioPagina + 1 : 0} fin={operaciones.reparaciones.length ? (paginaActual - 1) * tamanioPagina + operaciones.reparaciones.length : 0} total={operaciones.totalFiltrado} pagina={paginaActual} totalPaginas={totalPaginas} alCambiarPagina={setPagina} /> : null}
       </section>
 
-      {formularioAbierto && (puedeCrear || (puedeEditar && reparacionEnEdicion)) ? <DialogoReparacion key={reparacionEnEdicion?.id ?? 'nueva-reparacion'} abierto={formularioAbierto} reparacion={reparacionEnEdicion} clientes={opciones.clientes} productos={opciones.productos} cargandoOpciones={opciones.cargando} alCambiarApertura={setFormularioAbierto} alGuardar={guardarReparacion} alRestaurarFoco={() => disparadorFormulario.current?.focus()} /> : null}
+      {formularioAbierto && (puedeCrear || (puedeEditar && reparacionEnEdicion)) ? <DialogoReparacion key={reparacionEnEdicion?.id ?? 'nueva-reparacion'} abierto={formularioAbierto} reparacion={reparacionEnEdicion} identidadEditable={identidadEditableEnEdicion} clientes={opciones.clientes} productos={opciones.productos} cargandoOpciones={opciones.cargando} alCambiarApertura={setFormularioAbierto} alGuardar={guardarReparacion} alRestaurarFoco={() => disparadorFormulario.current?.focus()} /> : null}
 
       {reparacionId ? <DetalleReparacion
         key={reparacionId}

@@ -126,7 +126,9 @@ export interface Reparacion {
   prioridad: PrioridadReparacion
   problema: string
   diagnostico: string
+  diagnosticoRegistrado: boolean
   solucionAplicada: string
+  solucionAplicadaRegistrada: boolean
   notas: string
   referenciaCliente: string
   documentoVentaId: string
@@ -271,6 +273,7 @@ export interface DetalleReparacion {
   partes: ParteReparacion[]
   pruebas: PruebaReparacion[]
   eventos: EventoReparacion[]
+  eventosCompletos?: boolean
 }
 
 export interface ResumenReparaciones {
@@ -472,6 +475,67 @@ export function estadoEsTerminal(estado: EstadoReparacion) {
 
 export function estadoEsEditable(estado: EstadoReparacion) {
   return !estadoEsTerminal(estado)
+}
+
+const eventosSustantivosIdentidadReparacion = new Set([
+  'DIAGNOSIS_CREATED',
+  'SOLUTION_RECORDED',
+  'QUOTE_CREATED',
+  'QUOTE_SUBMITTED',
+  'QUOTE_APPROVED',
+  'QUOTE_REJECTED',
+  'PART_RESERVED',
+  'PART_CONSUMED',
+  'PART_CANCELLED',
+  'TEST_COMPLETED',
+  'DELIVERED',
+  'CANCELLED',
+])
+
+export function identidadReparacionEsEditable(
+  detalle?: DetalleReparacion | null,
+) {
+  if (!detalle) return true
+
+  const { reparacion } = detalle
+  let eventoCreacion: EventoReparacion | undefined
+  for (const evento of detalle.eventos) {
+    if (
+      evento.tipo === 'CREATED'
+      && (!eventoCreacion || evento.id < eventoCreacion.id)
+    ) {
+      eventoCreacion = evento
+    }
+  }
+
+  const estadoInicialValido = reparacion.estado === 'received'
+    ? !eventoCreacion || eventoCreacion.estadoNuevo === 'received'
+    : reparacion.estado === 'warranty'
+      && eventoCreacion?.estadoNuevo === 'warranty'
+  if (!estadoInicialValido) return false
+
+  if (
+    reparacion.diagnosticoRegistrado
+    || reparacion.solucionAplicadaRegistrada
+    || detalle.diagnosticos.length
+    || detalle.cotizaciones.length
+    || detalle.partes.length
+    || detalle.pruebas.length
+  ) {
+    return false
+  }
+
+  if (detalle.eventosCompletos === false) return false
+
+  return !detalle.eventos.some((evento) => {
+    if (eventosSustantivosIdentidadReparacion.has(evento.tipo)) return true
+    if (evento.tipo === 'CREATED') {
+      return evento.estadoAnterior !== null || evento.estadoNuevo !== reparacion.estado
+    }
+    return evento.estadoAnterior !== evento.estadoNuevo
+      || (evento.estadoAnterior !== null && evento.estadoAnterior !== reparacion.estado)
+      || (evento.estadoNuevo !== null && evento.estadoNuevo !== reparacion.estado)
+  })
 }
 
 export function validarNumeroSerie(numeroSerie: string, requiereSerie: boolean) {
