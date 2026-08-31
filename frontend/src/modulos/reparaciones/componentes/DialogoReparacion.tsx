@@ -335,30 +335,6 @@ export function DialogoReparacion({
               </div>
             </section>
 
-            {reparacion ? (
-              <section aria-labelledby="reparacion-seguimiento" className="border-t px-5 py-6 sm:px-7">
-                <div className="mb-5">
-                  <h2 id="reparacion-seguimiento" className="font-semibold">Seguimiento técnico</h2>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">Los registros detallados de diagnóstico y pruebas se agregan desde la ficha de la reparación.</p>
-                </div>
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <CampoArea
-                    etiqueta="Diagnóstico resumido"
-                    rows={4}
-                    placeholder="Resumen visible en la orden"
-                    error={errors.diagnostico?.message}
-                    {...register('diagnostico')}
-                  />
-                  <CampoArea
-                    etiqueta="Solución aplicada"
-                    rows={4}
-                    placeholder="Trabajo realizado, si ya corresponde"
-                    error={errors.solucionAplicada?.message}
-                    {...register('solucionAplicada')}
-                  />
-                </div>
-              </section>
-            ) : null}
           </form>
 
           {mensaje ? <p role="alert" className="border-t bg-destructive/10 px-5 py-3 text-sm text-destructive sm:px-7">{mensaje}</p> : null}

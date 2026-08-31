@@ -310,8 +310,6 @@ export const esquemaDatosReparacion = z.object({
     .trim()
     .min(3, 'Describe el problema de la reparación')
     .max(2000, 'Máximo 2000 caracteres'),
-  diagnostico: textoOpcional(4000),
-  solucionAplicada: textoOpcional(4000),
   notas: textoOpcional(4000),
   referenciaCliente: textoOpcional(160),
   documentoVentaId: uuidOpcional,
@@ -395,6 +393,16 @@ export const esquemaDatosDiagnostico = z.object({
 })
 
 export type DatosDiagnostico = z.infer<typeof esquemaDatosDiagnostico>
+
+export const esquemaDatosSolucionReparacion = z.object({
+  solucionAplicada: z
+    .string()
+    .trim()
+    .min(1, 'Describe la solución aplicada')
+    .max(4000, 'Máximo 4000 caracteres'),
+})
+
+export type DatosSolucionReparacion = z.infer<typeof esquemaDatosSolucionReparacion>
 
 export const esquemaDatosPrueba = z.object({
   realizadaPor: uuidOpcional,
@@ -502,8 +510,6 @@ export function datosReparacionInicial(
       prioridad: 'normal',
       fechaEstimadaEntrega: '',
       problema: '',
-      diagnostico: '',
-      solucionAplicada: '',
       notas: '',
       referenciaCliente: '',
       documentoVentaId: '',
@@ -519,8 +525,6 @@ export function datosReparacionInicial(
     prioridad: reparacion.prioridad,
     fechaEstimadaEntrega: reparacion.fechaEntregaEstimada,
     problema: reparacion.problema,
-    diagnostico: reparacion.diagnostico,
-    solucionAplicada: reparacion.solucionAplicada,
     notas: reparacion.notas,
     referenciaCliente: reparacion.referenciaCliente,
     documentoVentaId: reparacion.documentoVentaId,

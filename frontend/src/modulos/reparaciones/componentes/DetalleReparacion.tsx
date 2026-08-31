@@ -27,6 +27,7 @@ import {
   DialogoObservacion,
 } from '@/modulos/reparaciones/componentes/DialogosAccionReparacion'
 import { DialogoPrueba } from '@/modulos/reparaciones/componentes/DialogoPrueba'
+import { DialogoSolucionReparacion } from '@/modulos/reparaciones/componentes/DialogoSolucionReparacion'
 import {
   DialogoConsumoParte,
   DialogoReservaParte,
@@ -47,6 +48,7 @@ import {
   type DatosObservacionReparacion,
   type DatosPrueba,
   type DatosReservaParte,
+  type DatosSolucionReparacion,
   type DetalleReparacion as DatosDetalleReparacion,
   type EstadoReparacion,
   type OpcionProductoReparacion,
@@ -93,6 +95,7 @@ function etiquetaEvento(tipo: string) {
     UPDATED: 'Datos actualizados',
     STATUS_CHANGED: 'Estado cambiado',
     DIAGNOSIS_CREATED: 'Diagnóstico registrado',
+    SOLUTION_RECORDED: 'Solución aplicada registrada',
     QUOTE_CREATED: 'Cotización guardada',
     QUOTE_SUBMITTED: 'Cotización enviada',
     QUOTE_APPROVED: 'Cotización aprobada',
@@ -141,6 +144,7 @@ interface DetalleReparacionProps {
   alAsignar: (tecnicoId: string) => Promise<string | undefined>
   alCambiarEstado: (estado: EstadoReparacion, observacion: string) => Promise<string | undefined>
   alRegistrarDiagnostico: (datos: DatosDiagnostico) => Promise<string | undefined>
+  alRegistrarSolucion: (datos: DatosSolucionReparacion) => Promise<string | undefined>
   alGuardarCotizacion: (datos: DatosCotizacion, enviar: boolean) => Promise<string | undefined>
   alAprobarCotizacion: (cotizacionId: string, datos: DatosObservacionReparacion) => Promise<string | undefined>
   alRechazarCotizacion: (cotizacionId: string, datos: DatosObservacionReparacion) => Promise<string | undefined>
@@ -156,6 +160,7 @@ type DialogoActivo =
   | 'estado'
   | 'asignacion'
   | 'diagnostico'
+  | 'solucion'
   | 'cotizacion'
   | 'aprobar'
   | 'rechazar'
@@ -187,6 +192,7 @@ export function DetalleReparacion({
   alAsignar,
   alCambiarEstado,
   alRegistrarDiagnostico,
+  alRegistrarSolucion,
   alGuardarCotizacion,
   alAprobarCotizacion,
   alRechazarCotizacion,
@@ -291,6 +297,12 @@ export function DetalleReparacion({
             reparacion={detalle.reparacion}
             alCambiarApertura={cerrarDialogo}
             alGuardar={(datos) => ejecutar(() => alRegistrarDiagnostico(datos), 'Diagnóstico registrado.')}
+          />
+          <DialogoSolucionReparacion
+            abierto={dialogo === 'solucion'}
+            reparacion={detalle.reparacion}
+            alCambiarApertura={cerrarDialogo}
+            alGuardar={(datos) => ejecutar(() => alRegistrarSolucion(datos), 'Solución aplicada guardada.')}
           />
           <DialogoCotizacion
             abierto={dialogo === 'cotizacion'}
@@ -423,6 +435,7 @@ function DetalleContenido({
   const puedeAprobar = puedeAprobarCotizacion && reparacion.estado === 'waiting_customer_approval' && cotizacion?.estado === 'pending'
   const puedeReservar = puedeUsarPartes && ['quote_approved', 'warranty', 'in_repair', 'awaiting_parts'].includes(reparacion.estado)
   const puedeRegistrarDiagnostico = puedeCambiarEstado && reparacion.estado === 'diagnosis'
+  const puedeRegistrarSolucion = puedeCambiarEstado && !estadoEsTerminal(reparacion.estado)
   const puedeRegistrarPrueba = puedeCambiarEstado && reparacion.estado === 'testing'
   const puedeEntregarAhora = puedeEntregar && reparacion.estado === 'ready_for_delivery'
 
@@ -469,6 +482,14 @@ function DetalleContenido({
       <section aria-labelledby="reparacion-diagnosticos" className="border-b px-5 py-6 sm:px-7">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-diagnosticos" className="flex items-center gap-2 font-semibold"><Wrench aria-hidden="true" className="size-4 text-primary" /> Diagnóstico</h2><p className="mt-1 text-sm text-muted-foreground">Historial técnico de revisiones</p></div>{puedeRegistrarDiagnostico ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('diagnostico')}><Plus aria-hidden="true" /> Registrar diagnóstico</Button> : null}</div>
         {detalle.diagnosticos.length ? <div className="mt-5 space-y-3">{detalle.diagnosticos.map((diagnostico) => <article key={diagnostico.id} className="border bg-muted/20 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><p className="font-medium">{diagnostico.sintomas}</p><time className="text-xs text-muted-foreground" dateTime={diagnostico.diagnosticadoEn}>{formatoFecha.format(new Date(diagnostico.diagnosticadoEn))}</time></div><dl className="mt-3 grid gap-x-5 sm:grid-cols-2"><Dato etiqueta="Causa encontrada" valor={mostrar(diagnostico.causaEncontrada)} /><Dato etiqueta="Solución recomendada" valor={mostrar(diagnostico.solucionRecomendada)} /></dl>{diagnostico.notas ? <p className="mt-2 border-t pt-3 text-sm leading-6 text-muted-foreground">{diagnostico.notas}</p> : null}</article>)}</div> : <p className="mt-5 border border-dashed px-4 py-5 text-sm text-muted-foreground">Todavía no hay diagnósticos registrados.</p>}
+      </section>
+
+      <section aria-labelledby="reparacion-solucion" className="border-b px-5 py-6 sm:px-7">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div><h2 id="reparacion-solucion" className="flex items-center gap-2 font-semibold"><Wrench aria-hidden="true" className="size-4 text-primary" /> Solución aplicada</h2><p className="mt-1 text-sm text-muted-foreground">Trabajo técnico realizado en el equipo</p></div>
+          {puedeRegistrarSolucion ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('solucion')}><Pencil aria-hidden="true" /> {reparacion.solucionAplicada ? 'Modificar solución' : 'Registrar solución'}</Button> : null}
+        </div>
+        <p className={`mt-5 whitespace-pre-wrap text-sm leading-6 ${reparacion.solucionAplicada ? '' : 'border border-dashed px-4 py-5 text-muted-foreground'}`}>{mostrar(reparacion.solucionAplicada, 'Todavía no hay una solución aplicada registrada.')}</p>
       </section>
 
       <section aria-labelledby="reparacion-cotizaciones" className="border-b px-5 py-6 sm:px-7">

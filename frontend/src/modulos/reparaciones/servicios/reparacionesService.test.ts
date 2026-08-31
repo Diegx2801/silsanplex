@@ -8,11 +8,14 @@ const supabaseMock = vi.hoisted(() => ({
 vi.mock('@/lib/supabase', () => ({ supabase: supabaseMock }))
 
 import {
+  actualizarReparacion,
   consumirParteReparacion,
   crearReparacion,
   listarOpcionesProductosReparacion,
   listarReparacionesPaginadas,
   obtenerMensajeErrorReparacion,
+  registrarDiagnosticoReparacion,
+  registrarSolucionReparacion,
   reservarParteReparacion,
 } from './reparacionesService'
 
@@ -73,8 +76,8 @@ describe('reparacionesService', () => {
         status: 'received',
         priority: 'high',
         problem_description: 'No enciende',
-        diagnosis: null,
-        applied_solution: null,
+        diagnosis: 'Fuente dañada',
+        applied_solution: 'Fuente reemplazada',
         notes: null,
         customer_reference: null,
         sale_document_id: null,
@@ -108,7 +111,12 @@ describe('reparacionesService', () => {
     expect(cadena.range).toHaveBeenCalledWith(5, 9)
     expect(resultado).toMatchObject({
       totalFiltrado: 7,
-      elementos: [{ id: 'repair-1', numeroSerie: 'SER-1' }],
+      elementos: [{
+        id: 'repair-1',
+        numeroSerie: 'SER-1',
+        diagnostico: 'Fuente dañada',
+        solucionAplicada: 'Fuente reemplazada',
+      }],
     })
   })
 
@@ -138,31 +146,73 @@ describe('reparacionesService', () => {
     expect(cadena.eq).toHaveBeenCalledWith('is_active', true)
   })
 
-  it('crea una reparación con estado inicial controlado por garantía', async () => {
+  it('crea y actualiza una reparación sin campos técnicos en el payload general', async () => {
     supabaseMock.rpc.mockResolvedValue({ data: 'repair-1', error: null })
 
-    await crearReparacion('org-1', {
+    const datos = {
       clienteId: '00000000-0000-0000-0000-000000000001',
       productoId: '00000000-0000-0000-0000-000000000002',
       numeroSerie: 'SER-1',
       prioridad: 'normal',
       fechaEstimadaEntrega: '',
       problema: 'No enciende',
-      diagnostico: '',
-      solucionAplicada: '',
       notas: '',
       referenciaCliente: '',
       documentoVentaId: '',
       referenciaGarantia: 'GAR-1',
       esGarantia: true,
-    })
+    } as const
 
-    expect(supabaseMock.rpc).toHaveBeenCalledWith('create_repair', {
+    await crearReparacion('org-1', datos)
+    await actualizarReparacion('org-1', 'repair-1', datos)
+
+    for (const [, llamada] of supabaseMock.rpc.mock.calls) {
+      expect(llamada.payload).not.toHaveProperty('diagnosis')
+      expect(llamada.payload).not.toHaveProperty('applied_solution')
+    }
+    expect(supabaseMock.rpc).toHaveBeenNthCalledWith(1, 'create_repair', {
       payload: expect.objectContaining({
         organization_id: 'org-1',
         status: 'warranty',
         serial_number: 'SER-1',
       }),
+    })
+    expect(supabaseMock.rpc).toHaveBeenNthCalledWith(2, 'update_repair', {
+      payload: expect.objectContaining({ id: 'repair-1', organization_id: 'org-1' }),
+    })
+  })
+
+  it('mantiene diagnóstico y solución aplicada en RPC especializadas', async () => {
+    supabaseMock.rpc.mockResolvedValue({ data: 'technical-record-1', error: null })
+
+    await registrarDiagnosticoReparacion('org-1', 'repair-1', {
+      tecnicoId: '',
+      sintomas: 'No enciende',
+      causaEncontrada: 'Fuente dañada',
+      solucionRecomendada: 'Cambiar fuente',
+      notas: '',
+    })
+    await registrarSolucionReparacion('org-1', 'repair-1', {
+      solucionAplicada: '  Se reemplazó la fuente  ',
+    })
+
+    expect(supabaseMock.rpc).toHaveBeenNthCalledWith(1, 'record_repair_diagnosis', {
+      payload: {
+        organization_id: 'org-1',
+        repair_id: 'repair-1',
+        technician_id: null,
+        symptoms: 'No enciende',
+        cause_found: 'Fuente dañada',
+        recommended_solution: 'Cambiar fuente',
+        notes: null,
+      },
+    })
+    expect(supabaseMock.rpc).toHaveBeenNthCalledWith(2, 'record_repair_solution', {
+      payload: {
+        organization_id: 'org-1',
+        repair_id: 'repair-1',
+        applied_solution: 'Se reemplazó la fuente',
+      },
     })
   })
 
@@ -218,5 +268,23 @@ describe('reparacionesService', () => {
       { message: 'REPAIR_APPROVED_TEST_REQUIRED' },
       'estado',
     )).toBe('Registra al menos una prueba aprobada en el ciclo vigente.')
+  })
+
+  it('traduce los gates de escritura técnica y los errores de solución', () => {
+    expect(obtenerMensajeErrorReparacion(
+      { message: 'REPAIR_DIAGNOSIS_USE_DIAGNOSIS_RPC' },
+      'editar',
+    )).toBe('El diagnóstico debe registrarse desde la acción especializada.')
+    expect(obtenerMensajeErrorReparacion(
+      { message: 'REPAIR_APPLIED_SOLUTION_USE_SOLUTION_RPC' },
+      'editar',
+    )).toBe('La solución aplicada debe registrarse desde la acción especializada.')
+    expect(obtenerMensajeErrorReparacion(
+      { message: 'REPAIR_APPLIED_SOLUTION_REQUIRED' },
+      'solucion',
+    )).toBe('Describe la solución aplicada antes de guardar.')
+    expect(obtenerMensajeErrorReparacion({}, 'solucion')).toBe(
+      'No se pudo guardar la solución aplicada.',
+    )
   })
 })
