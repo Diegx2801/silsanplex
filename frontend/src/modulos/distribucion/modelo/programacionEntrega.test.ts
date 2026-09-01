@@ -5,6 +5,7 @@ import {
   esquemaDatosProgramacionEntrega,
   esquemaProgramacionEntrega,
   filtrarProgramacionesEntrega,
+  resumirEntregas,
   type DatosProgramacionEntrega,
 } from './programacionEntrega'
 import { mapearEntrega, prepararPayloadEntrega } from '../servicios/distribucionService'
@@ -264,5 +265,71 @@ describe('programación de entrega', () => {
     expect(porEstado).toHaveLength(1)
     expect(porFecha).toHaveLength(1)
     expect(combinado).toHaveLength(1)
+  })
+
+  it('resume entregas por estado, incidencia y retraso', () => {
+    const hoy = '2026-09-01'
+    const entregas = [
+      crearProgramacionEntrega({
+        pedidoId: 'pedido-1',
+        pedidoNumero: 'PED-001',
+        clienteNombre: 'Cliente A',
+        direccionEntrega: 'Av. A',
+        numeroDespacho: 'DES-001',
+        numeroGuiaRemision: 'G-001',
+        fechaProgramada: '2026-08-30',
+        fechaEntrega: '2026-08-31',
+        tipoTransporte: 'externo',
+        modalidad: 'movilidad_externa',
+        estado: 'en_curso',
+        observaciones: 'Retraso',
+        evidencia: '',
+        incidencias: ['Sin documento'],
+        lineas: [],
+      } as unknown as DatosProgramacionEntrega),
+      crearProgramacionEntrega({
+        pedidoId: 'pedido-2',
+        pedidoNumero: 'PED-002',
+        clienteNombre: 'Cliente B',
+        direccionEntrega: 'Av. B',
+        numeroDespacho: 'DES-002',
+        numeroGuiaRemision: 'G-002',
+        fechaProgramada: '2026-09-01',
+        fechaEntrega: '2026-09-01',
+        tipoTransporte: 'interno',
+        modalidad: 'movilidad_propia',
+        estado: 'programado',
+        observaciones: '',
+        evidencia: '',
+        incidencias: [],
+        lineas: [],
+      } as unknown as DatosProgramacionEntrega),
+      crearProgramacionEntrega({
+        pedidoId: 'pedido-3',
+        pedidoNumero: 'PED-003',
+        clienteNombre: 'Cliente C',
+        direccionEntrega: 'Av. C',
+        numeroDespacho: 'DES-003',
+        numeroGuiaRemision: 'G-003',
+        fechaProgramada: '2026-09-02',
+        fechaEntrega: '2026-09-02',
+        tipoTransporte: 'interno',
+        modalidad: 'movilidad_propia',
+        estado: 'entregado',
+        observaciones: '',
+        evidencia: '',
+        incidencias: [],
+        lineas: [],
+      } as unknown as DatosProgramacionEntrega),
+    ]
+
+    const resumen = resumirEntregas(entregas, hoy)
+
+    expect(resumen.total).toBe(3)
+    expect(resumen.programados).toBe(1)
+    expect(resumen.enCurso).toBe(1)
+    expect(resumen.entregados).toBe(1)
+    expect(resumen.atrasadas).toBe(1)
+    expect(resumen.conIncidencias).toBe(1)
   })
 })

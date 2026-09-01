@@ -7,6 +7,7 @@ import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgr
 import {
   esquemaDatosProgramacionEntrega,
   filtrarProgramacionesEntrega,
+  resumirEntregas,
   type DatosProgramacionEntrega,
   type ProgramacionEntrega,
 } from '@/modulos/distribucion/modelo/programacionEntrega'
@@ -81,6 +82,7 @@ export function DistribucionPage() {
     estado: filtroEstado,
     fecha: filtroFecha,
   })
+  const resumen = resumirEntregas(programaciones, hoy)
 
   const pedidoPorId = (pedidoId: string) => pedidos.find((pedido) => pedido.id === pedidoId)
 
@@ -328,9 +330,12 @@ export function DistribucionPage() {
         <div className="grid sm:grid-cols-3">
           {[
             ['Por programar', pedidosPorProgramar.length],
-            ['Programadas', programaciones.filter((item) => item.estado === 'programado').length],
-            ['En curso', programaciones.filter((item) => item.estado === 'en_curso').length],
-            ['Entregadas', programaciones.filter((item) => item.estado === 'entregado').length],
+            ['Programadas', resumen.programados],
+            ['En curso', resumen.enCurso],
+            ['En destino', resumen.enDestino],
+            ['Entregadas', resumen.entregados],
+            ['Atrasadas', resumen.atrasadas],
+            ['Con incidencias', resumen.conIncidencias],
           ].map(([etiqueta, valor]) => (
             <article key={etiqueta} className="border-b px-5 py-5 last:border-b-0 sm:border-e sm:last:border-e-0 sm:border-b-0">
               <div className="flex justify-between"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">{etiqueta}</p><Truck aria-hidden="true" className="size-4 text-primary" /></div>

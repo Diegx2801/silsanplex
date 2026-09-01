@@ -116,3 +116,37 @@ export function filtrarProgramacionesEntrega(
     return coincideBusqueda && coincideEstado && coincideFecha
   })
 }
+
+export type ResumenEntregas = {
+  total: number
+  programados: number
+  enCurso: number
+  enDestino: number
+  entregados: number
+  atrasadas: number
+  conIncidencias: number
+}
+
+export function resumirEntregas(
+  programaciones: readonly ProgramacionEntrega[],
+  fechaReferencia: string,
+): ResumenEntregas {
+  const hoy = new Date(`${fechaReferencia}T12:00:00`)
+
+  return programaciones.reduce<ResumenEntregas>(
+    (resumen, entrega) => {
+      const fechaProgramada = entrega.fechaProgramada ? new Date(`${entrega.fechaProgramada}T12:00:00`) : null
+      const retrasada = fechaProgramada ? fechaProgramada < hoy && entrega.estado !== 'entregado' && entrega.estado !== 'cancelado' : false
+
+      resumen.total += 1
+      if (entrega.estado === 'programado') resumen.programados += 1
+      if (entrega.estado === 'en_curso') resumen.enCurso += 1
+      if (entrega.estado === 'en_destino') resumen.enDestino += 1
+      if (entrega.estado === 'entregado') resumen.entregados += 1
+      if (retrasada) resumen.atrasadas += 1
+      if (entrega.incidencias.length > 0) resumen.conIncidencias += 1
+      return resumen
+    },
+    { total: 0, programados: 0, enCurso: 0, enDestino: 0, entregados: 0, atrasadas: 0, conIncidencias: 0 },
+  )
+}
