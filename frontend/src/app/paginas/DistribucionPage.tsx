@@ -13,6 +13,23 @@ import { crearRepositorioOperacionesVentaSesion } from '@/modulos/ventas/servici
 
 const hoy = new Date().toISOString().slice(0, 10)
 const formatoFecha = new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
+const etiquetasEstado: Record<string, string> = {
+  programado: 'Programado',
+  preparando: 'Preparando',
+  en_curso: 'En curso',
+  en_destino: 'En destino',
+  entregado: 'Entregado',
+  entrega_parcial: 'Entrega parcial',
+  reprogramado: 'Reprogramado',
+  rechazado: 'Rechazado',
+  devuelto: 'Devuelto',
+  cancelado: 'Cancelado',
+}
+const etiquetasModalidad: Record<string, string> = {
+  movilidad_propia: 'Movilidad propia',
+  movilidad_externa: 'Movilidad externa',
+  recojo_cliente: 'Recojo del cliente',
+}
 
 function normalizar(valor: string) {
   return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-PE')
@@ -23,14 +40,35 @@ export function DistribucionPage() {
     () => crearRepositorioOperacionesVentaSesion(window.sessionStorage).listar(),
     [],
   )
-  const { programaciones, guardar, actualizarSeguimiento } = useProgramacionesEntrega()
+  const { programaciones, guardar, actualizarEstado } = useProgramacionesEntrega()
   const [busqueda, setBusqueda] = useState('')
   const [formularioAbierto, setFormularioAbierto] = useState(false)
   const [edicion, setEdicion] = useState<ProgramacionEntrega | null>(null)
   const [mensaje, setMensaje] = useState('')
   const [datos, setDatos] = useState<DatosProgramacionEntrega>({
-    pedidoId: '', pedidoNumero: '', clienteNombre: '', fechaEntrega: hoy,
-    numeroGuiaRemision: '', tipoTransporte: 'interno', observaciones: '', seguimiento: 'en_curso',
+    pedidoId: '',
+    pedidoNumero: '',
+    ventaId: '',
+    ventaNumero: '',
+    clienteNombre: '',
+    direccionEntrega: '',
+    numeroDespacho: '',
+    numeroGuiaRemision: '',
+    fechaEmision: hoy,
+    fechaProgramada: hoy,
+    fechaEntrega: '',
+    tipoTransporte: 'interno',
+    modalidad: 'movilidad_propia',
+    transportista: '',
+    conductor: '',
+    vehiculo: '',
+    placa: '',
+    observaciones: '',
+    evidencia: '',
+    estado: 'programado',
+    seguimiento: 'en_curso',
+    incidencias: [],
+    lineas: [],
   })
   const busquedaDiferida = useDeferredValue(busqueda)
   const pedidosDisponibles = pedidos.filter((pedido) =>
@@ -48,8 +86,56 @@ export function DistribucionPage() {
   const abrirFormulario = (programacion?: ProgramacionEntrega) => {
     setEdicion(programacion ?? null)
     setDatos(programacion
-      ? { pedidoId: programacion.pedidoId, pedidoNumero: programacion.pedidoNumero, clienteNombre: programacion.clienteNombre, fechaEntrega: programacion.fechaEntrega, numeroGuiaRemision: programacion.numeroGuiaRemision, tipoTransporte: programacion.tipoTransporte, observaciones: programacion.observaciones, seguimiento: programacion.seguimiento }
-      : { pedidoId: '', pedidoNumero: '', clienteNombre: '', fechaEntrega: hoy, numeroGuiaRemision: '', tipoTransporte: 'interno', observaciones: '', seguimiento: 'en_curso' })
+      ? {
+          pedidoId: programacion.pedidoId,
+          pedidoNumero: programacion.pedidoNumero,
+          ventaId: programacion.ventaId ?? '',
+          ventaNumero: programacion.ventaNumero ?? '',
+          clienteNombre: programacion.clienteNombre,
+          direccionEntrega: programacion.direccionEntrega ?? '',
+          numeroDespacho: programacion.numeroDespacho ?? '',
+          numeroGuiaRemision: programacion.numeroGuiaRemision ?? '',
+          fechaEmision: programacion.fechaEmision ?? hoy,
+          fechaProgramada: programacion.fechaProgramada ?? hoy,
+          fechaEntrega: programacion.fechaEntrega ?? '',
+          tipoTransporte: programacion.tipoTransporte ?? 'interno',
+          modalidad: programacion.modalidad ?? 'movilidad_propia',
+          transportista: programacion.transportista ?? '',
+          conductor: programacion.conductor ?? '',
+          vehiculo: programacion.vehiculo ?? '',
+          placa: programacion.placa ?? '',
+          observaciones: programacion.observaciones ?? '',
+          evidencia: programacion.evidencia ?? '',
+          estado: programacion.estado ?? 'programado',
+          seguimiento: programacion.seguimiento ?? (programacion.estado === 'en_curso' || programacion.estado === 'en_destino' ? programacion.estado : 'en_curso'),
+          incidencias: programacion.incidencias ?? [],
+          lineas: programacion.lineas ?? [],
+        }
+      : {
+          pedidoId: '',
+          pedidoNumero: '',
+          ventaId: '',
+          ventaNumero: '',
+          clienteNombre: '',
+          direccionEntrega: '',
+          numeroDespacho: '',
+          numeroGuiaRemision: '',
+          fechaEmision: hoy,
+          fechaProgramada: hoy,
+          fechaEntrega: '',
+          tipoTransporte: 'interno',
+          modalidad: 'movilidad_propia',
+          transportista: '',
+          conductor: '',
+          vehiculo: '',
+          placa: '',
+          observaciones: '',
+          evidencia: '',
+          estado: 'programado',
+          seguimiento: 'en_curso',
+          incidencias: [],
+          lineas: [],
+        })
     setFormularioAbierto(true)
   }
 
@@ -60,12 +146,27 @@ export function DistribucionPage() {
     setDatos({
       pedidoId: pedido.id,
       pedidoNumero: pedido.numero,
+      ventaId: '',
+      ventaNumero: '',
       clienteNombre: pedido.clienteNombre,
-      fechaEntrega: hoy,
+      direccionEntrega: '',
+      numeroDespacho: '',
       numeroGuiaRemision: '',
+      fechaEmision: hoy,
+      fechaProgramada: hoy,
+      fechaEntrega: '',
       tipoTransporte: 'interno',
+      modalidad: 'movilidad_propia',
+      transportista: '',
+      conductor: '',
+      vehiculo: '',
+      placa: '',
       observaciones: '',
+      evidencia: '',
+      estado: 'programado',
       seguimiento: 'en_curso',
+      incidencias: [],
+      lineas: [],
     })
     setFormularioAbierto(true)
   }
@@ -83,7 +184,7 @@ export function DistribucionPage() {
       return
     }
     const error = await guardar(resultado.data, edicion?.id, pedidoPorId(resultado.data.pedidoId)?.lineas ?? edicion?.lineas ?? [])
-    setMensaje(error ?? (edicion ? 'Entrega actualizada.' : 'Entrega programada.'))
+    setMensaje(error ?? (edicion ? 'Distribución actualizada.' : 'Distribución programada.'))
     if (!error) setFormularioAbierto(false)
   }
 
@@ -226,9 +327,9 @@ export function DistribucionPage() {
         <div className="grid sm:grid-cols-3">
           {[
             ['Por programar', pedidosPorProgramar.length],
-            ['Programadas', programaciones.length],
-            ['En curso', programaciones.filter((item) => item.seguimiento === 'en_curso').length],
-            ['En destino', programaciones.filter((item) => item.seguimiento === 'en_destino').length],
+            ['Programadas', programaciones.filter((item) => item.estado === 'programado').length],
+            ['En curso', programaciones.filter((item) => item.estado === 'en_curso').length],
+            ['Entregadas', programaciones.filter((item) => item.estado === 'entregado').length],
           ].map(([etiqueta, valor]) => (
             <article key={etiqueta} className="border-b px-5 py-5 last:border-b-0 sm:border-e sm:last:border-e-0 sm:border-b-0">
               <div className="flex justify-between"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">{etiqueta}</p><Truck aria-hidden="true" className="size-4 text-primary" /></div>
@@ -268,7 +369,15 @@ export function DistribucionPage() {
               <div className="print-delivery-header"><p className="font-mono text-xs text-primary">SILSANPLEX · CONSTANCIA DE ENTREGA</p><p className="font-mono text-xs text-muted-foreground">Emisión: {formatoFecha.format(new Date(`${item.fechaEmision}T12:00:00`))}</p></div>
               <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{pedidoPorId(item.pedidoId)?.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · <span className="font-mono font-semibold">{linea.cantidad}</span> {linea.unidadMedida}</p>) ?? <p>Detalle del pedido no disponible</p>}</div></div>
               <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted-foreground">Emisión</dt><dd className="mt-1">{formatoFecha.format(new Date(`${item.fechaEmision}T12:00:00`))}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega</dt><dd className="mt-1">{formatoFecha.format(new Date(`${item.fechaEntrega}T12:00:00`))}</dd></div></dl>
-              <div><p className="text-sm">Transporte {item.tipoTransporte === 'interno' ? 'interno · Movilidad SILSAN' : 'externo · Movilidad externa'}</p><select aria-label={`Seguimiento de ${item.pedidoNumero}`} value={item.seguimiento} onChange={(evento) => void actualizarSeguimiento(item, evento.target.value as ProgramacionEntrega['seguimiento'])} className="field-control mt-2"><option value="en_curso">En curso</option><option value="en_destino">En destino</option></select>{item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}</div>
+              <div>
+                <p className="text-sm">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : item.tipoTransporte === 'externo' ? 'Externo' : 'Recojo cliente'}</p>
+                <select aria-label={`Estado de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado'])} className="field-control mt-2">
+                  {Object.entries(etiquetasEstado).map(([valor, etiqueta]) => (
+                    <option key={valor} value={valor}>{etiqueta}</option>
+                  ))}
+                </select>
+                {item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}
+              </div>
               <div className="flex gap-2 print:hidden"><Button type="button" variant="outline" onClick={() => abrirFormulario(item)}><Pencil aria-hidden="true" /> Editar</Button><Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
             </article>
           ))}</div>
@@ -281,10 +390,22 @@ export function DistribucionPage() {
             <div className="flex items-start justify-between gap-4"><div><h2 id="programar-title" className="text-xl font-semibold">{edicion ? 'Editar entrega' : 'Programar entrega'}</h2><p className="mt-1 text-sm text-muted-foreground">Vincula el pedido con su guía y fecha de entrega.</p></div><Button type="button" variant="ghost" onClick={() => setFormularioAbierto(false)}>Cerrar</Button></div>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2"><label htmlFor="pedido-entrega" className="field-label">Pedido</label><select id="pedido-entrega" required disabled={Boolean(edicion)} value={datos.pedidoId} onChange={(evento) => seleccionarPedido(evento.target.value)} className="field-control"><option value="">Selecciona un pedido</option>{pedidosDisponibles.filter((pedido) => pedido.estado !== 'cancelado').map((pedido) => <option key={pedido.id} value={pedido.id}>{pedido.numero} · {pedido.clienteNombre}</option>)}</select></div>
-              <div><label htmlFor="guia-remision" className="field-label">Número de guía de remisión</label><input id="guia-remision" required value={datos.numeroGuiaRemision} onChange={(evento) => setDatos({ ...datos, numeroGuiaRemision: evento.target.value })} className="field-control" /></div>
-              <div><label htmlFor="fecha-entrega" className="field-label">Fecha de entrega</label><input id="fecha-entrega" required type="date" value={datos.fechaEntrega} onChange={(evento) => setDatos({ ...datos, fechaEntrega: evento.target.value })} className="field-control" /></div>
-              <div><label htmlFor="tipo-transporte" className="field-label">Tipo de transporte</label><select id="tipo-transporte" value={datos.tipoTransporte} onChange={(evento) => setDatos({ ...datos, tipoTransporte: evento.target.value as DatosProgramacionEntrega['tipoTransporte'] })} className="field-control"><option value="interno">Interno · Movilidad SILSAN</option><option value="externo">Externo · Movilidad externa</option></select></div>
-              <div><label htmlFor="seguimiento" className="field-label">Seguimiento</label><select id="seguimiento" value={datos.seguimiento} onChange={(evento) => setDatos({ ...datos, seguimiento: evento.target.value as DatosProgramacionEntrega['seguimiento'] })} className="field-control"><option value="en_curso">En curso</option><option value="en_destino">En destino</option></select></div>
+              <div><label htmlFor="numero-despacho" className="field-label">Número de despacho</label><input id="numero-despacho" value={datos.numeroDespacho} onChange={(evento) => setDatos({ ...datos, numeroDespacho: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="guia-remision" className="field-label">Número de guía de remisión</label><input id="guia-remision" value={datos.numeroGuiaRemision} onChange={(evento) => setDatos({ ...datos, numeroGuiaRemision: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="fecha-emision" className="field-label">Fecha de emisión</label><input id="fecha-emision" type="date" value={datos.fechaEmision} onChange={(evento) => setDatos({ ...datos, fechaEmision: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="cliente-entrega" className="field-label">Cliente</label><input id="cliente-entrega" value={datos.clienteNombre} onChange={(evento) => setDatos({ ...datos, clienteNombre: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="direccion-entrega" className="field-label">Dirección de entrega</label><input id="direccion-entrega" value={datos.direccionEntrega} onChange={(evento) => setDatos({ ...datos, direccionEntrega: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="fecha-programada" className="field-label">Fecha programada</label><input id="fecha-programada" required type="date" value={datos.fechaProgramada} onChange={(evento) => setDatos({ ...datos, fechaProgramada: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="fecha-entrega" className="field-label">Fecha de entrega real</label><input id="fecha-entrega" type="date" value={datos.fechaEntrega} onChange={(evento) => setDatos({ ...datos, fechaEntrega: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="tipo-transporte" className="field-label">Tipo de transporte</label><select id="tipo-transporte" value={datos.tipoTransporte} onChange={(evento) => setDatos({ ...datos, tipoTransporte: evento.target.value as DatosProgramacionEntrega['tipoTransporte'] })} className="field-control"><option value="interno">Interno</option><option value="externo">Externo</option><option value="cliente">Recojo del cliente</option></select></div>
+              <div><label htmlFor="modalidad" className="field-label">Modalidad</label><select id="modalidad" value={datos.modalidad} onChange={(evento) => setDatos({ ...datos, modalidad: evento.target.value as DatosProgramacionEntrega['modalidad'] })} className="field-control"><option value="movilidad_propia">Movilidad propia</option><option value="movilidad_externa">Movilidad externa</option><option value="recojo_cliente">Recojo del cliente</option></select></div>
+              <div><label htmlFor="transportista" className="field-label">Transportista</label><input id="transportista" value={datos.transportista} onChange={(evento) => setDatos({ ...datos, transportista: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="conductor" className="field-label">Conductor</label><input id="conductor" value={datos.conductor} onChange={(evento) => setDatos({ ...datos, conductor: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="vehiculo" className="field-label">Vehículo</label><input id="vehiculo" value={datos.vehiculo} onChange={(evento) => setDatos({ ...datos, vehiculo: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="placa" className="field-label">Placa</label><input id="placa" value={datos.placa} onChange={(evento) => setDatos({ ...datos, placa: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="estado-distribucion" className="field-label">Estado</label><select id="estado-distribucion" value={datos.estado} onChange={(evento) => setDatos({ ...datos, estado: evento.target.value as DatosProgramacionEntrega['estado'] })} className="field-control">{Object.entries(etiquetasEstado).map(([valor, etiqueta]) => <option key={valor} value={valor}>{etiqueta}</option>)}</select></div>
+              <div><label htmlFor="evidencia" className="field-label">Evidencia</label><input id="evidencia" value={datos.evidencia} onChange={(evento) => setDatos({ ...datos, evidencia: evento.target.value })} className="field-control" placeholder="Ej. foto entrega, nombre de archivo o URL" /></div>
+              <div className="sm:col-span-2"><label htmlFor="incidencias" className="field-label">Incidencias</label><textarea id="incidencias" rows={2} value={datos.incidencias.join('; ')} onChange={(evento) => setDatos({ ...datos, incidencias: evento.target.value ? evento.target.value.split(';').map((valor) => valor.trim()).filter(Boolean) : [] })} className="field-control" placeholder="Separadas por punto y coma" /></div>
               <div className="sm:col-span-2"><label htmlFor="observaciones-entrega" className="field-label">Observaciones</label><textarea id="observaciones-entrega" rows={3} value={datos.observaciones} onChange={(evento) => setDatos({ ...datos, observaciones: evento.target.value })} className="field-control" /></div>
             </div>
             <div className="mt-6 flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setFormularioAbierto(false)}>Cancelar</Button><Button type="submit">{edicion ? 'Guardar cambios' : 'Programar entrega'}</Button></div>

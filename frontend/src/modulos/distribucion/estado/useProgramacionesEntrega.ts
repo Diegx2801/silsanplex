@@ -22,12 +22,21 @@ export function useProgramacionesEntrega() {
   }
 
   const programaciones = query.data ?? []
+
   const guardar = (datos: DatosProgramacionEntrega, id?: string, lineas: ProgramacionEntrega['lineas'] = []) => {
     if (programaciones.some((item) => item.pedidoId === datos.pedidoId && item.id !== id)) return Promise.resolve('Este pedido ya tiene una entrega programada')
     return ejecutar(() => guardarMutation.mutateAsync({ datos, lineas, id }))
   }
 
-  const actualizarSeguimiento = (entrega: ProgramacionEntrega, seguimiento: ProgramacionEntrega['seguimiento']) => guardar({ ...entrega, seguimiento }, entrega.id, entrega.lineas)
+  const actualizarEstado = (entrega: ProgramacionEntrega, estado: ProgramacionEntrega['estado']) => {
+    const siguiente = { ...entrega, estado, seguimiento: estado === 'en_curso' || estado === 'en_destino' ? estado : undefined }
+    return guardar({ ...siguiente, estado, incidencias: entrega.incidencias }, entrega.id, entrega.lineas)
+  }
 
-  return { programaciones, guardar, actualizarSeguimiento, cargando: query.isLoading, error: query.error }
+  const actualizarSeguimiento = (entrega: ProgramacionEntrega, seguimiento: ProgramacionEntrega['seguimiento']) => {
+    const estado = seguimiento === 'en_curso' ? 'en_curso' : 'en_destino'
+    return guardar({ ...entrega, estado, seguimiento }, entrega.id, entrega.lineas)
+  }
+
+  return { programaciones, guardar, actualizarEstado, actualizarSeguimiento, cargando: query.isLoading, error: query.error }
 }
