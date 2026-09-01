@@ -14,8 +14,10 @@ select plan(10);
 -- transaccion para no dejar deshabilitada la inmutabilidad de movimientos.
 begin;
 drop schema if exists inventory_concurrency_test cascade;
+alter table public.audit_events disable trigger audit_events_immutable;
 delete from public.audit_events
 where organization_id = 'c1000000-0000-4000-8000-000000000001';
+alter table public.audit_events enable trigger audit_events_immutable;
 alter table public.inventory_movements disable trigger inventory_movements_immutable;
 delete from public.inventory_movements
 where organization_id = 'c1000000-0000-4000-8000-000000000001';
@@ -401,8 +403,10 @@ select extensions.dblink_disconnect('inventory_worker_b');
 
 begin;
 drop schema inventory_concurrency_test cascade;
+alter table public.audit_events disable trigger audit_events_immutable;
 delete from public.audit_events
 where organization_id = 'c1000000-0000-4000-8000-000000000001';
+alter table public.audit_events enable trigger audit_events_immutable;
 alter table public.inventory_movements disable trigger inventory_movements_immutable;
 delete from public.inventory_movements
 where organization_id = 'c1000000-0000-4000-8000-000000000001';
