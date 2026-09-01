@@ -97,6 +97,8 @@ function etiquetaEvento(tipo: string) {
     DIAGNOSIS_CREATED: 'Diagnóstico registrado',
     SOLUTION_RECORDED: 'Solución aplicada registrada',
     QUOTE_CREATED: 'Cotización guardada',
+    QUOTE_UPDATED: 'Cotización actualizada',
+    QUOTE_REVISION_CREATED: 'Revisión de cotización creada',
     QUOTE_SUBMITTED: 'Cotización enviada',
     QUOTE_APPROVED: 'Cotización aprobada',
     QUOTE_REJECTED: 'Cotización rechazada',
@@ -146,6 +148,7 @@ interface DetalleReparacionProps {
   alRegistrarDiagnostico: (datos: DatosDiagnostico) => Promise<string | undefined>
   alRegistrarSolucion: (datos: DatosSolucionReparacion) => Promise<string | undefined>
   alGuardarCotizacion: (datos: DatosCotizacion, enviar: boolean) => Promise<string | undefined>
+  alRevisarCotizacion: (cotizacionId: string, datos: DatosCotizacion, enviar: boolean) => Promise<string | undefined>
   alAprobarCotizacion: (cotizacionId: string, datos: DatosObservacionReparacion) => Promise<string | undefined>
   alRechazarCotizacion: (cotizacionId: string, datos: DatosObservacionReparacion) => Promise<string | undefined>
   alReservarParte: (datos: DatosReservaParte) => Promise<string | undefined>
@@ -194,6 +197,7 @@ export function DetalleReparacion({
   alRegistrarDiagnostico,
   alRegistrarSolucion,
   alGuardarCotizacion,
+  alRevisarCotizacion,
   alAprobarCotizacion,
   alRechazarCotizacion,
   alReservarParte,
@@ -307,10 +311,13 @@ export function DetalleReparacion({
           <DialogoCotizacion
             abierto={dialogo === 'cotizacion'}
             reparacion={detalle.reparacion}
-            cotizacion={detalle.cotizacionActiva?.estado === 'draft' ? detalle.cotizacionActiva : null}
+            cotizacion={detalle.cotizacionActiva?.estado === 'draft' || detalle.reparacion.estado === 'rejected' ? detalle.cotizacionActiva : null}
+            esRevision={detalle.reparacion.estado === 'rejected'}
             productos={productos}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(datos, enviar) => ejecutar(() => alGuardarCotizacion(datos, enviar), enviar ? 'Cotización enviada a aprobación.' : 'Borrador de cotización guardado.')}
+            alGuardar={(datos, enviar) => detalle.reparacion.estado === 'rejected' && detalle.cotizacionActiva
+              ? ejecutar(() => alRevisarCotizacion(detalle.cotizacionActiva!.id, datos, enviar), enviar ? 'Revisión enviada a aprobación.' : 'Revisión guardada como borrador.')
+              : ejecutar(() => alGuardarCotizacion(datos, enviar), enviar ? 'Cotización enviada a aprobación.' : 'Borrador de cotización guardado.')}
           />
           {detalle.cotizacionActiva ? (
             <>
@@ -325,7 +332,7 @@ export function DetalleReparacion({
               <DialogoObservacion
                 abierto={dialogo === 'rechazar'}
                 titulo="Rechazar cotización"
-                descripcion="La cotización quedará rechazada y la reparación no podrá continuar por este flujo."
+                descripcion="La cotización quedará rechazada. Si el cliente solicita cambios, podrás crear una revisión explícita."
                 etiquetaAccion="Rechazar cotización"
                 variante="destructive"
                 observacionObligatoria
@@ -432,6 +439,7 @@ function DetalleContenido({
     : []
   const puedeCancelar = puedeCambiarEstado && !estadoEsTerminal(reparacion.estado)
   const puedeCotizar = puedeEditar && (reparacion.estado === 'diagnosis' || reparacion.estado === 'quote_pending')
+  const puedeRevisar = puedeEditar && reparacion.estado === 'rejected' && cotizacion?.estado === 'rejected'
   const puedeAprobar = puedeAprobarCotizacion && reparacion.estado === 'waiting_customer_approval' && cotizacion?.estado === 'pending'
   const puedeReservar = puedeUsarPartes && ['quote_approved', 'warranty', 'in_repair', 'awaiting_parts'].includes(reparacion.estado)
   const puedeRegistrarDiagnostico = puedeCambiarEstado && reparacion.estado === 'diagnosis'
@@ -495,9 +503,9 @@ function DetalleContenido({
       </section>
 
       <section aria-labelledby="reparacion-cotizaciones" className="border-b px-5 py-6 sm:px-7">
-        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-cotizaciones" className="flex items-center gap-2 font-semibold"><ReceiptText aria-hidden="true" className="size-4 text-primary" /> Cotización</h2><p className="mt-1 text-sm text-muted-foreground">{detalle.cotizaciones.length ? `${detalle.cotizaciones.length} versión${detalle.cotizaciones.length === 1 ? '' : 'es'} registrada${detalle.cotizaciones.length === 1 ? '' : 's'}` : 'Aún no hay cotizaciones'}</p></div>{puedeCotizar ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('cotizacion')}><Plus aria-hidden="true" /> {cotizacion?.estado === 'draft' ? 'Editar borrador' : 'Crear cotización'}</Button> : null}</div>
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-cotizaciones" className="flex items-center gap-2 font-semibold"><ReceiptText aria-hidden="true" className="size-4 text-primary" /> Cotización</h2><p className="mt-1 text-sm text-muted-foreground">{detalle.cotizaciones.length ? `${detalle.cotizaciones.length} versión${detalle.cotizaciones.length === 1 ? '' : 'es'} registrada${detalle.cotizaciones.length === 1 ? '' : 's'}` : 'Aún no hay cotizaciones'}</p></div>{puedeCotizar || puedeRevisar ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('cotizacion')}><Plus aria-hidden="true" /> {puedeRevisar ? 'Crear revisión' : cotizacion?.estado === 'draft' ? 'Editar borrador' : 'Crear cotización'}</Button> : null}</div>
         {cotizacion ? <article className="mt-5 border bg-muted/20 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-medium">Versión {cotizacion.version}</p><p className="mt-1 text-xs text-muted-foreground">{etiquetasEstadoCotizacion[cotizacion.estado]} · {cotizacion.preciosIncluyenImpuesto ? 'Precios con impuesto incluido' : 'Precios sin impuesto incluido'} · Tasa {cotizacion.tasaImpuesto}%</p></div><span className="status-label" data-tone={cotizacion.estado === 'approved' ? 'listo' : cotizacion.estado === 'pending' ? 'pendiente' : 'revision'}>{etiquetasEstadoCotizacion[cotizacion.estado]}</span></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[34rem] text-left text-sm"><thead className="border-b font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase"><tr><th className="py-2 pe-3">Concepto</th><th className="px-3 py-2 text-end">Cant.</th><th className="px-3 py-2 text-end">Precio</th><th className="ps-3 py-2 text-end">Subtotal</th></tr></thead><tbody className="divide-y">{cotizacion.lineas.map((linea) => <tr key={linea.id}><td className="py-3 pe-3"><span className="font-medium">{linea.descripcion}</span><span className="mt-1 block text-xs text-muted-foreground">{linea.tipo === 'part' ? 'Repuesto' : linea.tipo === 'labor' ? 'Mano de obra' : 'Servicio externo'}{linea.gravable ? ' · Gravable' : ''}</span></td><td className="px-3 py-3 text-end font-mono text-xs tabular-nums">{linea.cantidad}</td><td className="px-3 py-3 text-end font-mono text-xs tabular-nums">{importe(linea.precioUnitario, cotizacion.moneda)}</td><td className="ps-3 py-3 text-end font-mono text-xs tabular-nums">{importe(linea.subtotalLinea, cotizacion.moneda)}</td></tr>)}</tbody></table></div><dl className="mt-4 grid grid-cols-3 gap-3 border-t pt-4 text-sm"><div><dt className="text-xs text-muted-foreground">Subtotal</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{importe(cotizacion.subtotal, cotizacion.moneda)}</dd></div><div><dt className="text-xs text-muted-foreground">Impuesto</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{importe(cotizacion.impuesto, cotizacion.moneda)}</dd></div><div><dt className="text-xs text-muted-foreground">Total</dt><dd className="mt-1 font-mono text-base font-semibold tabular-nums">{importe(cotizacion.total, cotizacion.moneda)}</dd></div></dl>{puedeAprobar ? <div className="mt-4 flex flex-col gap-2 border-t pt-4 sm:flex-row sm:justify-end"><Button type="button" variant="outline" onClick={() => alAbrirDialogo('rechazar')}>Rechazar</Button><Button type="button" onClick={() => alAbrirDialogo('aprobar')}><CheckCircle2 aria-hidden="true" /> Aprobar</Button></div> : null}</article> : <p className="mt-5 border border-dashed px-4 py-5 text-sm text-muted-foreground">La cotización se crea después de registrar el diagnóstico o cuando el flujo lo permita.</p>}
-        {detalle.cotizaciones.length > 1 ? <div className="mt-5 border-t pt-4"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Historial de versiones</p><ul className="mt-3 space-y-2">{detalle.cotizaciones.slice(1).map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 text-sm"><span>Versión {item.version} · {etiquetasEstadoCotizacion[item.estado]}</span><span className="font-mono text-xs tabular-nums">{importe(item.total, item.moneda)}</span></li>)}</ul></div> : null}
+        {detalle.cotizaciones.length > 1 ? <div className="mt-5 border-t pt-4"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Historial de versiones</p><ul className="mt-3 space-y-2">{detalle.cotizaciones.filter((item) => item.id !== cotizacion?.id).map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 text-sm"><span>Versión {item.version} · {etiquetasEstadoCotizacion[item.estado]}</span><span className="font-mono text-xs tabular-nums">{importe(item.total, item.moneda)}</span></li>)}</ul></div> : null}
       </section>
 
       <section aria-labelledby="reparacion-partes" className="border-b px-5 py-6 sm:px-7">

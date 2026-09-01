@@ -177,6 +177,7 @@ export interface CotizacionReparacion {
   organizationId: string
   reparacionId: string
   version: number
+  esActual: boolean
   estado: EstadoCotizacion
   moneda: 'PEN' | 'USD'
   preciosIncluyenImpuesto: boolean

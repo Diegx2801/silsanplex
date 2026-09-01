@@ -9,6 +9,7 @@ vi.mock('@/modulos/inventario/estado/useCandidatosFefo', () => ({
 }))
 
 import type {
+  CotizacionReparacion,
   DetalleReparacion as DatosDetalleReparacion,
   EstadoReparacion,
   ParteReparacion,
@@ -72,16 +73,56 @@ const parteReservada: ParteReparacion = {
   consumos: [],
 }
 
+const cotizacionRechazada: CotizacionReparacion = {
+  id: 'quote-1',
+  organizationId: 'org-1',
+  reparacionId: 'repair-1',
+  version: 1,
+  esActual: true,
+  estado: 'rejected',
+  moneda: 'PEN',
+  preciosIncluyenImpuesto: false,
+  tasaImpuesto: 18,
+  subtotal: 100,
+  impuesto: 18,
+  total: 118,
+  aprobadoPor: null,
+  aprobadoEn: null,
+  observacionAprobacion: '',
+  rechazadoPor: 'user-1',
+  rechazadoEn: '2026-09-01T12:00:00Z',
+  observacionRechazo: 'Ajustar mano de obra',
+  creadoPor: 'user-1',
+  actualizadoPor: 'user-1',
+  creadoEn: '2026-09-01T11:00:00Z',
+  actualizadoEn: '2026-09-01T12:00:00Z',
+  lineas: [{
+    id: 'line-1',
+    organizationId: 'org-1',
+    cotizacionId: 'quote-1',
+    tipo: 'labor',
+    productoId: null,
+    descripcion: 'Mano de obra',
+    cantidad: 1,
+    precioUnitario: 100,
+    gravable: true,
+    subtotalLinea: 100,
+    creadoEn: '2026-09-01T11:00:00Z',
+  }],
+}
+
 function crearDetalle(
   estado: EstadoReparacion = 'diagnosis',
   solucionAplicada = '',
   conParte = false,
+  conCotizacionRechazada = false,
 ): DatosDetalleReparacion {
+  const cotizaciones = conCotizacionRechazada ? [cotizacionRechazada] : []
   return {
     reparacion: { ...reparacionBase, estado, solucionAplicada },
     diagnosticos: [],
-    cotizaciones: [],
-    cotizacionActiva: null,
+    cotizaciones,
+    cotizacionActiva: cotizaciones[0] ?? null,
     partes: conParte ? [parteReservada] : [],
     pruebas: [],
     eventos: [],
@@ -96,6 +137,7 @@ function renderizarDetalle({
   solucionAplicada = '',
   conParte = false,
   resultadoSolucion,
+  conCotizacionRechazada = false,
 }: {
   estado?: EstadoReparacion
   puedeEditar?: boolean
@@ -104,14 +146,16 @@ function renderizarDetalle({
   solucionAplicada?: string
   conParte?: boolean
   resultadoSolucion?: string
+  conCotizacionRechazada?: boolean
 } = {}) {
   const operacion = vi.fn().mockResolvedValue(undefined)
   const editar = vi.fn()
   const registrarSolucion = vi.fn().mockResolvedValue(resultadoSolucion)
+  const revisarCotizacion = vi.fn().mockResolvedValue(undefined)
   render(
     <DetalleReparacion
       abierto
-      detalle={crearDetalle(estado, solucionAplicada, conParte)}
+      detalle={crearDetalle(estado, solucionAplicada, conParte, conCotizacionRechazada)}
       cargando={false}
       error={null}
       productos={[]}
@@ -131,6 +175,7 @@ function renderizarDetalle({
       alRegistrarDiagnostico={operacion}
       alRegistrarSolucion={registrarSolucion}
       alGuardarCotizacion={operacion}
+      alRevisarCotizacion={revisarCotizacion}
       alAprobarCotizacion={operacion}
       alRechazarCotizacion={operacion}
       alReservarParte={operacion}
@@ -141,7 +186,7 @@ function renderizarDetalle({
       alCancelar={operacion}
     />,
   )
-  return { editar, registrarSolucion }
+  return { editar, registrarSolucion, revisarCotizacion }
 }
 
 describe('DetalleReparacion acciones técnicas', () => {
@@ -231,6 +276,28 @@ describe('DetalleReparacion acciones técnicas', () => {
 
     await waitFor(() => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+  })
+
+  it('crea una revisión por la acción especializada desde una cotización rechazada', async () => {
+    const { revisarCotizacion } = renderizarDetalle({
+      estado: 'rejected',
+      puedeEditar: true,
+      conCotizacionRechazada: true,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Crear revisión' }))
+
+    expect(screen.getByRole('heading', { name: 'Crear revisión desde v1' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Descripción *')).toHaveValue('Mano de obra')
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar a aprobación' }))
+
+    await waitFor(() => {
+      expect(revisarCotizacion).toHaveBeenCalledWith(
+        'quote-1',
+        expect.objectContaining({ id: undefined, moneda: 'PEN' }),
+        true,
+      )
     })
   })
 })

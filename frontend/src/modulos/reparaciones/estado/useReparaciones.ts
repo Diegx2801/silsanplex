@@ -30,6 +30,7 @@ import {
   listarReparacionesPaginadas,
   obtenerResumenReparaciones,
   rechazarCotizacionReparacion,
+  revisarCotizacionReparacion,
   registrarDiagnosticoReparacion,
   registrarSolucionReparacion,
   registrarPruebaReparacion,
@@ -160,6 +161,20 @@ export function useReparaciones(
     }) => aprobarCotizacionReparacion(organizationId, repairId, quoteId, datos),
     onSuccess: invalidar,
   })
+  const revisarCotizacionMutation = useMutation({
+    mutationFn: ({
+      repairId,
+      quoteId,
+      datos,
+      enviar,
+    }: {
+      repairId: string
+      quoteId: string
+      datos: DatosCotizacion
+      enviar: boolean
+    }) => revisarCotizacionReparacion(organizationId, repairId, quoteId, datos, enviar),
+    onSuccess: invalidar,
+  })
   const rechazarCotizacionMutation = useMutation({
     mutationFn: ({
       repairId,
@@ -236,6 +251,7 @@ export function useReparaciones(
     registrandoDiagnostico: diagnosticoMutation.isPending,
     guardandoSolucion: solucionMutation.isPending,
     guardandoCotizacion: cotizacionMutation.isPending,
+    revisandoCotizacion: revisarCotizacionMutation.isPending,
     aprobandoCotizacion: aprobarCotizacionMutation.isPending,
     rechazandoCotizacion: rechazarCotizacionMutation.isPending,
     reservandoParte: reservaMutation.isPending,
@@ -298,6 +314,19 @@ export function useReparaciones(
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo guardar la cotización.')
+      }
+    },
+    revisarCotizacion: async (
+      repairId: string,
+      quoteId: string,
+      datos: DatosCotizacion,
+      enviar: boolean,
+    ) => {
+      try {
+        await revisarCotizacionMutation.mutateAsync({ repairId, quoteId, datos, enviar })
+        return undefined
+      } catch (error) {
+        return mensajeDeError(error, 'No se pudo crear la revisión de la cotización.')
       }
     },
     aprobarCotizacion: async (

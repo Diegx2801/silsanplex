@@ -658,12 +658,12 @@ where id = 'b8000000-0000-4000-8000-000000000003';
 alter table public.repairs enable trigger repairs_protect_status_transition;
 
 insert into public.repair_quotes (
-  id, organization_id, repair_id, version_number, status, created_by, updated_by
+  id, organization_id, repair_id, version_number, status, is_current, created_by, updated_by
 ) values (
   'ba000000-0000-4000-8000-000000000001',
   'b1000000-0000-4000-8000-000000000001',
   'b8000000-0000-4000-8000-000000000003',
-  1, 'pending',
+  1, 'pending', true,
   'b2000000-0000-4000-8000-000000000002',
   'b2000000-0000-4000-8000-000000000002'
 );
