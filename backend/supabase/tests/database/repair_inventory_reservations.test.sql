@@ -1,6 +1,6 @@
 begin;
 
-select plan(41);
+select plan(48);
 
 select has_trigger(
   'public', 'repair_parts', 'repair_parts_enforce_inventory_identity',
@@ -15,32 +15,56 @@ insert into public.organizations (id, name, slug)
 values ('b1000000-0000-4000-8000-000000000001', 'Reserva transversal', 'reserva-transversal');
 
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
-values (
-  'b2000000-0000-4000-8000-000000000001',
-  'repair.inventory@test.local',
-  '{"full_name":"Repair Inventory"}',
-  now(), now()
-);
+values
+  (
+    'b2000000-0000-4000-8000-000000000001',
+    'repair.inventory@test.local',
+    '{"full_name":"Repair Inventory"}',
+    now(), now()
+  ),
+  (
+    'b2000000-0000-4000-8000-000000000002',
+    'repair.inventory.sales@test.local',
+    '{"full_name":"Repair Inventory Sales"}',
+    now(), now()
+  );
 
 insert into auth.sessions (id, user_id, created_at, updated_at)
-values (
-  'b3000000-0000-4000-8000-000000000001',
-  'b2000000-0000-4000-8000-000000000001',
-  now(), now()
-);
+values
+  (
+    'b3000000-0000-4000-8000-000000000001',
+    'b2000000-0000-4000-8000-000000000001',
+    now(), now()
+  ),
+  (
+    'b3000000-0000-4000-8000-000000000002',
+    'b2000000-0000-4000-8000-000000000002',
+    now(), now()
+  );
 
 insert into public.organization_memberships (organization_id, user_id)
-values (
-  'b1000000-0000-4000-8000-000000000001',
-  'b2000000-0000-4000-8000-000000000001'
-);
+values
+  (
+    'b1000000-0000-4000-8000-000000000001',
+    'b2000000-0000-4000-8000-000000000001'
+  ),
+  (
+    'b1000000-0000-4000-8000-000000000001',
+    'b2000000-0000-4000-8000-000000000002'
+  );
 
 insert into public.user_roles (organization_id, user_id, role_code)
-values (
-  'b1000000-0000-4000-8000-000000000001',
-  'b2000000-0000-4000-8000-000000000001',
-  'ADMIN'
-);
+values
+  (
+    'b1000000-0000-4000-8000-000000000001',
+    'b2000000-0000-4000-8000-000000000001',
+    'ADMIN'
+  ),
+  (
+    'b1000000-0000-4000-8000-000000000001',
+    'b2000000-0000-4000-8000-000000000002',
+    'VENTAS'
+  );
 
 insert into public.customers (
   id, organization_id, document_type, document_number, legal_name
@@ -622,6 +646,157 @@ select results_eq(
   $$,
   $$ values (3.000::numeric, 3.000::numeric, 0.000::numeric, 6.000::numeric, 3.000::numeric, 'active'::text) $$,
   'el consumo ajusta fisico y reserva sin exigir asignable libre adicional'
+);
+
+-- Simula una cotizacion pendiente historica con una reserva parcialmente
+-- consumida. El flujo publico actual no vuelve desde in_repair a cotizacion.
+reset role;
+alter table public.repairs disable trigger repairs_protect_status_transition;
+update public.repairs
+set status = 'waiting_customer_approval'
+where id = 'b8000000-0000-4000-8000-000000000003';
+alter table public.repairs enable trigger repairs_protect_status_transition;
+
+insert into public.repair_quotes (
+  id, organization_id, repair_id, version_number, status, created_by, updated_by
+) values (
+  'ba000000-0000-4000-8000-000000000001',
+  'b1000000-0000-4000-8000-000000000001',
+  'b8000000-0000-4000-8000-000000000003',
+  1, 'pending',
+  'b2000000-0000-4000-8000-000000000002',
+  'b2000000-0000-4000-8000-000000000002'
+);
+
+update public.warehouse_locations
+set is_active = false
+where id = 'b7000000-0000-4000-8000-000000000001';
+update public.warehouses
+set is_active = false
+where id = 'b6000000-0000-4000-8000-000000000001';
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"b2000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"b3000000-0000-4000-8000-000000000002"}',
+  true
+);
+
+select results_eq(
+  $$
+    select
+      public.has_organization_permission(
+        'b1000000-0000-4000-8000-000000000001', 'REPAIRS_APPROVE_QUOTE'
+      ),
+      public.has_organization_permission(
+        'b1000000-0000-4000-8000-000000000001', 'REPAIRS_USE_PARTS'
+      )
+  $$,
+  $$ values (true, false) $$,
+  'VENTAS puede rechazar cotizaciones sin administrar repuestos'
+);
+
+select lives_ok($$
+  select public.reject_repair_quote(
+    'b1000000-0000-4000-8000-000000000001',
+    'b8000000-0000-4000-8000-000000000003',
+    'ba000000-0000-4000-8000-000000000001',
+    'Cliente rechaza reparacion con reserva parcial'
+  )
+$$, 'rechazar libera la reserva aunque almacen y ubicacion esten inactivos');
+
+select results_eq(
+  $$
+    select repair.status, quote.status, part.status,
+      part.quantity_requested, part.quantity_consumed,
+      reservation.status, reservation.quantity_consumed
+    from public.repairs repair
+    join public.repair_quotes quote
+      on quote.organization_id = repair.organization_id
+     and quote.repair_id = repair.id
+    join public.repair_parts part
+      on part.organization_id = repair.organization_id
+     and part.repair_id = repair.id
+    join public.inventory_reservations reservation
+      on reservation.organization_id = part.organization_id
+     and reservation.source_type = 'repair-part'
+     and reservation.source_id = part.id
+    where repair.id = 'b8000000-0000-4000-8000-000000000003'
+  $$,
+  $$ values (
+    'rejected'::text, 'rejected'::text, 'cancelled'::text,
+    6.000::numeric, 3.000::numeric, 'released'::text, 3.000::numeric
+  ) $$,
+  'el rechazo conserva el consumo y libera solo el saldo pendiente'
+);
+
+select results_eq(
+  $$
+    select physical_quantity, reserved_quantity, assignable_quantity
+    from public.inventory_bucket_availability
+    where organization_id = 'b1000000-0000-4000-8000-000000000001'
+      and product_id = 'b5000000-0000-4000-8000-000000000001'
+      and warehouse_id = 'b6000000-0000-4000-8000-000000000001'
+      and location_id = 'b7000000-0000-4000-8000-000000000001'
+      and stock_status = 'available'
+      and normalized_lot = ''
+      and expiration_date is null
+  $$,
+  $$ values (3.000::numeric, 0.000::numeric, 3.000::numeric) $$,
+  'liberar no revierte el consumo fisico y restaura el asignable restante'
+);
+
+select results_eq(
+  $$
+    select count(*), sum(consumption.quantity),
+      count(movement.id), sum(movement.quantity)
+    from public.repair_part_consumptions consumption
+    join public.repair_parts part
+      on part.organization_id = consumption.organization_id
+     and part.id = consumption.repair_part_id
+    join public.inventory_movements movement
+      on movement.organization_id = consumption.organization_id
+     and movement.id = consumption.inventory_movement_id
+    where part.repair_id = 'b8000000-0000-4000-8000-000000000003'
+  $$,
+  $$ values (1::bigint, 3.000::numeric, 1::bigint, 3.000::numeric) $$,
+  'el rechazo no altera consumos ni movimientos historicos'
+);
+
+select results_eq(
+  $$
+    select event.actor_user_id, event.metadata ->> 'source',
+      event.metadata ->> 'quote_id',
+      (event.metadata ->> 'released_quantity')::numeric
+    from public.repair_events event
+    where event.repair_id = 'b8000000-0000-4000-8000-000000000003'
+      and event.event_type = 'PART_CANCELLED'
+  $$,
+  $$ values (
+    'b2000000-0000-4000-8000-000000000002'::uuid,
+    'quote_rejection'::text,
+    'ba000000-0000-4000-8000-000000000001'::text,
+    3.000::numeric
+  ) $$,
+  'la liberacion identifica actor, cotizacion, origen y cantidad'
+);
+
+reset role;
+select results_eq(
+  $$
+    select count(*), bool_and(
+      audit.actor_user_id = 'b2000000-0000-4000-8000-000000000002'
+    )
+    from public.audit_events audit
+    where audit.entity_id = 'b8000000-0000-4000-8000-000000000003'
+      and audit.action = 'REPAIR_PART_CANCELLED'
+      and audit.metadata ->> 'source' = 'quote_rejection'
+  $$,
+  $$ values (
+    1::bigint,
+    true
+  ) $$,
+  'la liberacion por rechazo deja una auditoria atribuida a VENTAS'
 );
 
 select * from finish();
