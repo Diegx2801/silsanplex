@@ -458,7 +458,7 @@ const transicionesGenericas: Record<EstadoReparacion, EstadoReparacion[]> = {
   in_repair: ['awaiting_parts', 'testing'],
   awaiting_parts: ['in_repair', 'testing'],
   testing: ['in_repair', 'ready_for_delivery'],
-  ready_for_delivery: [],
+  ready_for_delivery: ['in_repair'],
   delivered: [],
   cancelled: [],
   rejected: [],

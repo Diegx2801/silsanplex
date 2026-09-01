@@ -265,7 +265,7 @@ export function DetalleReparacion({
               puedeAsignar={puedeAsignar}
               puedeCambiarEstado={puedeCambiarEstado}
               puedeAprobarCotizacion={puedeAprobarCotizacion}
-              puedeUsarPartes={puedeUsarPartes}
+              puedeUsarPartes={puedeUsarPartes && detalle.reparacion.estado !== 'testing'}
               puedeEntregar={puedeEntregar}
               alEditar={alEditar}
               alAbrirDialogo={setDialogo}
@@ -435,7 +435,9 @@ function DetalleContenido({
   const puedeAprobar = puedeAprobarCotizacion && reparacion.estado === 'waiting_customer_approval' && cotizacion?.estado === 'pending'
   const puedeReservar = puedeUsarPartes && ['quote_approved', 'warranty', 'in_repair', 'awaiting_parts'].includes(reparacion.estado)
   const puedeRegistrarDiagnostico = puedeCambiarEstado && reparacion.estado === 'diagnosis'
-  const puedeRegistrarSolucion = puedeCambiarEstado && !estadoEsTerminal(reparacion.estado)
+  const puedeRegistrarSolucion = puedeCambiarEstado
+    && !estadoEsTerminal(reparacion.estado)
+    && !['testing', 'ready_for_delivery'].includes(reparacion.estado)
   const puedeRegistrarPrueba = puedeCambiarEstado && reparacion.estado === 'testing'
   const puedeEntregarAhora = puedeEntregar && reparacion.estado === 'ready_for_delivery'
 
