@@ -4,6 +4,7 @@ import {
   crearProgramacionEntrega,
   esquemaDatosProgramacionEntrega,
   esquemaProgramacionEntrega,
+  filtrarProgramacionesEntrega,
   type DatosProgramacionEntrega,
 } from './programacionEntrega'
 import { mapearEntrega, prepararPayloadEntrega } from '../servicios/distribucionService'
@@ -215,5 +216,53 @@ describe('programación de entrega', () => {
       estado: 'en_curso',
       incidencias: ['Se confirma horario', 'Parada no programada'],
     })
+  })
+
+  it('filtra entregas por estado y fecha programada', () => {
+    const entregas = [
+      crearProgramacionEntrega({
+        pedidoId: 'pedido-1',
+        pedidoNumero: 'PED-001',
+        clienteNombre: 'Cliente A',
+        direccionEntrega: 'Av. A',
+        numeroDespacho: 'DES-001',
+        numeroGuiaRemision: 'G-001',
+        fechaProgramada: '2026-09-02',
+        fechaEntrega: '2026-09-02',
+        tipoTransporte: 'externo',
+        modalidad: 'movilidad_externa',
+        estado: 'en_curso',
+        observado: '',
+        observaciones: '',
+        evidencia: '',
+        incidencias: [],
+        lineas: [],
+      } as unknown as DatosProgramacionEntrega),
+      crearProgramacionEntrega({
+        pedidoId: 'pedido-2',
+        pedidoNumero: 'PED-002',
+        clienteNombre: 'Cliente B',
+        direccionEntrega: 'Av. B',
+        numeroDespacho: 'DES-002',
+        numeroGuiaRemision: 'G-002',
+        fechaProgramada: '2026-09-03',
+        fechaEntrega: '2026-09-03',
+        tipoTransporte: 'interno',
+        modalidad: 'movilidad_propia',
+        estado: 'programado',
+        observaciones: '',
+        evidencia: '',
+        incidencias: [],
+        lineas: [],
+      } as unknown as DatosProgramacionEntrega),
+    ]
+
+    const porEstado = filtrarProgramacionesEntrega(entregas, { estado: 'en_curso' })
+    const porFecha = filtrarProgramacionesEntrega(entregas, { fecha: '2026-09-03' })
+    const combinado = filtrarProgramacionesEntrega(entregas, { estado: 'en_curso', fecha: '2026-09-02', busqueda: 'cliente a' })
+
+    expect(porEstado).toHaveLength(1)
+    expect(porFecha).toHaveLength(1)
+    expect(combinado).toHaveLength(1)
   })
 })

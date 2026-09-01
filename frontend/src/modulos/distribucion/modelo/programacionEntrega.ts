@@ -89,3 +89,30 @@ export function crearProgramacionEntrega(
     lineas: datos.lineas && datos.lineas.length ? datos.lineas : lineas,
   }
 }
+
+function normalizarTexto(valor: string) {
+  return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-PE')
+}
+
+export type FiltroProgramacionesEntrega = {
+  busqueda?: string
+  estado?: 'todos' | ProgramacionEntrega['estado']
+  fecha?: string
+}
+
+export function filtrarProgramacionesEntrega(
+  programaciones: readonly ProgramacionEntrega[],
+  filtro: FiltroProgramacionesEntrega = {},
+): ProgramacionEntrega[] {
+  const busqueda = normalizarTexto(filtro.busqueda ?? '')
+  const estado = filtro.estado ?? 'todos'
+  const fecha = filtro.fecha ?? ''
+
+  return programaciones.filter((item) => {
+    const coincideBusqueda = !busqueda || normalizarTexto(`${item.pedidoNumero} ${item.clienteNombre} ${item.numeroGuiaRemision}`).includes(busqueda)
+    const coincideEstado = estado === 'todos' || item.estado === estado
+    const coincideFecha = !fecha || [item.fechaEmision, item.fechaProgramada, item.fechaEntrega].some((valor) => valor === fecha)
+
+    return coincideBusqueda && coincideEstado && coincideFecha
+  })
+}

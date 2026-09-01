@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
 import {
   esquemaDatosProgramacionEntrega,
+  filtrarProgramacionesEntrega,
   type DatosProgramacionEntrega,
   type ProgramacionEntrega,
 } from '@/modulos/distribucion/modelo/programacionEntrega'
@@ -31,10 +32,6 @@ const etiquetasModalidad: Record<string, string> = {
   recojo_cliente: 'Recojo del cliente',
 }
 
-function normalizar(valor: string) {
-  return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-PE')
-}
-
 export function DistribucionPage() {
   const { pedidos } = useMemo(
     () => crearRepositorioOperacionesVentaSesion(window.sessionStorage).listar(),
@@ -42,6 +39,8 @@ export function DistribucionPage() {
   )
   const { programaciones, guardar, actualizarEstado } = useProgramacionesEntrega()
   const [busqueda, setBusqueda] = useState('')
+  const [filtroEstado, setFiltroEstado] = useState<'todos' | ProgramacionEntrega['estado']>('todos')
+  const [filtroFecha, setFiltroFecha] = useState('')
   const [formularioAbierto, setFormularioAbierto] = useState(false)
   const [edicion, setEdicion] = useState<ProgramacionEntrega | null>(null)
   const [mensaje, setMensaje] = useState('')
@@ -77,9 +76,11 @@ export function DistribucionPage() {
   const pedidosPorProgramar = pedidos.filter(
     (pedido) => pedido.estado !== 'cancelado' && !programaciones.some((item) => item.pedidoId === pedido.id),
   )
-  const filtradas = programaciones.filter((item) =>
-    normalizar(`${item.pedidoNumero} ${item.clienteNombre} ${item.numeroGuiaRemision}`).includes(normalizar(busquedaDiferida)),
-  )
+  const filtradas = filtrarProgramacionesEntrega(programaciones, {
+    busqueda: busquedaDiferida,
+    estado: filtroEstado,
+    fecha: filtroFecha,
+  })
 
   const pedidoPorId = (pedidoId: string) => pedidos.find((pedido) => pedido.id === pedidoId)
 
@@ -357,9 +358,27 @@ export function DistribucionPage() {
         )}
       </section>
       <section aria-labelledby="entregas-title" className="ledger-sheet">
-        <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[1fr_18rem] lg:items-end print:hidden">
+        <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[1fr_18rem_18rem] lg:items-end print:hidden">
           <div><h2 id="entregas-title" className="text-lg font-semibold">Entregas programadas</h2><p className="mt-1 text-sm text-muted-foreground">{filtradas.length} de {programaciones.length} entregas</p></div>
           <div><label htmlFor="buscar-entrega" className="field-label">Buscar</label><div className="relative"><Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input id="buscar-entrega" type="search" value={busqueda} onChange={(evento) => setBusqueda(evento.target.value)} className="field-control ps-9" placeholder="Pedido, cliente o guía" /></div></div>
+          <div>
+            <label htmlFor="estado-filtro" className="field-label">Estado</label>
+            <select id="estado-filtro" value={filtroEstado} onChange={(evento) => setFiltroEstado(evento.target.value as 'todos' | ProgramacionEntrega['estado'])} className="field-control">
+              <option value="todos">Todos</option>
+              {Object.entries(etiquetasEstado).map(([valor, etiqueta]) => (
+                <option key={valor} value={valor}>{etiqueta}</option>
+              ))}
+            </select>
+          </div>
+          <div className="lg:col-span-3">
+            <label htmlFor="fecha-filtro" className="field-label">Fecha</label>
+            <div className="flex gap-2">
+              <input id="fecha-filtro" type="date" value={filtroFecha} onChange={(evento) => setFiltroFecha(evento.target.value)} className="field-control" />
+              {filtroFecha || filtroEstado !== 'todos' || busqueda ? (
+                <Button type="button" variant="outline" onClick={() => { setBusqueda(''); setFiltroEstado('todos'); setFiltroFecha('') }}>Limpiar</Button>
+              ) : null}
+            </div>
+          </div>
         </div>
         {!filtradas.length ? (
           <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{programaciones.length ? 'No hay coincidencias' : 'Aún no hay entregas programadas'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Programa una entrega desde un pedido confirmado para iniciar el seguimiento.</p></div>
