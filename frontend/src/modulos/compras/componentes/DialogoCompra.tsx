@@ -13,6 +13,7 @@ import {
   type Proveedor,
 } from '@/modulos/compras/modelo/compras'
 import type { Producto } from '@/modulos/productos/modelo/producto'
+import type { Almacen } from '@/modulos/inventario/modelo/almacen'
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', {
   style: 'currency',
@@ -25,6 +26,7 @@ interface DialogoCompraProps {
   compra: Compra | null
   proveedores: readonly Proveedor[]
   productos: readonly Producto[]
+  almacenes: readonly Almacen[]
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (datos: DatosCompra, compraId?: string) => Promise<string | undefined>
   alRestaurarFoco: () => void
@@ -35,12 +37,16 @@ export function DialogoCompra({
   compra,
   proveedores,
   productos,
+  almacenes,
   alCambiarApertura,
   alGuardar,
   alRestaurarFoco,
 }: DialogoCompraProps) {
   const proveedoresDisponibles = proveedores.filter(
     (proveedor) => proveedor.activo || proveedor.id === compra?.proveedorId,
+  )
+  const almacenesDisponibles = almacenes.filter(
+    (almacen) => almacen.activo || almacen.id === compra?.almacenId,
   )
   const valoresIniciales: DatosCompra = compra
     ? compraAFormulario(compra)
@@ -52,7 +58,8 @@ export function DialogoCompra({
         fechaEmision: hoy(),
         fechaVencimientoPago: '',
         fechaEntregaEsperada: '',
-        almacen: 'Almacén principal',
+        almacenId: almacenesDisponibles[0]?.id ?? '',
+        almacen: almacenesDisponibles[0]?.nombre ?? '',
         preciosIncluyenIgv: true,
         observacion: '',
         lineas: [
@@ -70,6 +77,7 @@ export function DialogoCompra({
     register,
     handleSubmit,
     watch,
+    setValue,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<DatosCompra>({
@@ -230,8 +238,12 @@ export function DialogoCompra({
                     id="vencimiento-pago-compra"
                     type="date"
                     className="field-control"
+                    aria-invalid={Boolean(errors.fechaVencimientoPago)}
                     {...register('fechaVencimientoPago')}
                   />
+                  {errors.fechaVencimientoPago ? (
+                    <p className="field-error">{errors.fechaVencimientoPago.message}</p>
+                  ) : null}
                 </div>
                 <div>
                   <label htmlFor="entrega-esperada-compra" className="field-label">
@@ -252,15 +264,33 @@ export function DialogoCompra({
                   <label htmlFor="almacen-compra" className="field-label">
                     Almacén de recepción *
                   </label>
-                  <input
+                  <select
                     id="almacen-compra"
-                    autoComplete="off"
                     className="field-control"
-                    aria-invalid={Boolean(errors.almacen)}
-                    {...register('almacen')}
-                  />
-                  {errors.almacen ? (
-                    <p className="field-error">{errors.almacen.message}</p>
+                    aria-invalid={Boolean(errors.almacenId || errors.almacen)}
+                    {...register('almacenId', {
+                      onChange: (evento) => {
+                        const almacen = almacenesDisponibles.find(
+                          (item) => item.id === evento.target.value,
+                        )
+                        setValue('almacen', almacen?.nombre ?? '', {
+                          shouldValidate: true,
+                        })
+                      },
+                    })}
+                  >
+                    <option value="">Seleccionar almacén</option>
+                    {almacenesDisponibles.map((almacen) => (
+                      <option key={almacen.id} value={almacen.id}>
+                        {almacen.codigo} · {almacen.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <input type="hidden" {...register('almacen')} />
+                  {errors.almacenId || errors.almacen ? (
+                    <p className="field-error">
+                      {errors.almacenId?.message ?? errors.almacen?.message}
+                    </p>
                   ) : null}
                 </div>
               </div>

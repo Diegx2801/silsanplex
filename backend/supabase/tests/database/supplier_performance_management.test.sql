@@ -57,11 +57,12 @@ insert into public.warehouse_locations (
 insert into public.purchase_orders (
   id, organization_id, supplier_id, supplier_document, supplier_name,
   document_type, series, document_number, issue_date, expected_delivery_date,
-  warehouse, status, issued_at, received_at, received_by, created_by, updated_by
+  warehouse, warehouse_id, status, issued_at, received_at, received_by, created_by, updated_by
 ) values (
   '97000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000001',
   '93000000-0000-4000-8000-000000000001', '20555555551', 'Proveedor medible SAC',
-  'factura', 'F001', '9001', '2026-08-01', '2026-08-05', 'Principal', 'received',
+  'factura', 'F001', '9001', '2026-08-01', '2026-08-05', 'Principal',
+  '95000000-0000-4000-8000-000000000001', 'received',
   '2026-08-01 09:00:00+00', '2026-08-07 15:00:00+00',
   '92000000-0000-4000-8000-000000000001',
   '92000000-0000-4000-8000-000000000001', '92000000-0000-4000-8000-000000000001'
@@ -74,6 +75,24 @@ insert into public.purchase_order_items (
   '91000000-0000-4000-8000-000000000001', '94000000-0000-4000-8000-000000000001',
   'CAL-001', 'Producto evaluado', 'UND', false, 10, 7.5
 );
+insert into public.purchase_receipts (
+  id, organization_id, purchase_order_id, warehouse_id, operation_key,
+  received_at, received_by
+) values (
+  '98100000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000001',
+  '97000000-0000-4000-8000-000000000001', '95000000-0000-4000-8000-000000000001',
+  '98200000-0000-4000-8000-000000000001', '2026-08-07 15:00:00+00',
+  '92000000-0000-4000-8000-000000000001'
+);
+insert into public.purchase_receipt_items (
+  id, organization_id, receipt_id, purchase_order_item_id, product_id,
+  warehouse_id, location_id, quantity, unit_cost
+) values (
+  '98300000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000001',
+  '98100000-0000-4000-8000-000000000001', '98000000-0000-4000-8000-000000000001',
+  '94000000-0000-4000-8000-000000000001', '95000000-0000-4000-8000-000000000001',
+  '96000000-0000-4000-8000-000000000001', 10, 7.5
+);
 insert into public.inventory_movements (
   organization_id, product_id, product_code, product_description, unit_of_measure,
   movement_type, quantity, warehouse, warehouse_id, location_id, stock_status,
@@ -83,7 +102,7 @@ insert into public.inventory_movements (
   'CAL-001', 'Producto evaluado', 'UND', 'entrada', 10, 'Principal',
   '95000000-0000-4000-8000-000000000001', '96000000-0000-4000-8000-000000000001',
   'available', 7.5, '2026-08-07', 'Recepción de prueba', 'purchase-receipt',
-  '98000000-0000-4000-8000-000000000001', '92000000-0000-4000-8000-000000000001'
+  '98300000-0000-4000-8000-000000000001', '92000000-0000-4000-8000-000000000001'
 );
 
 set local role authenticated;
@@ -116,8 +135,7 @@ select lives_ok($$
   select public.register_supplier_return('{
     "organization_id":"91000000-0000-4000-8000-000000000001",
     "supplier_id":"93000000-0000-4000-8000-000000000001",
-    "purchase_order_id":"97000000-0000-4000-8000-000000000001",
-    "purchase_order_item_id":"98000000-0000-4000-8000-000000000001",
+    "purchase_receipt_item_id":"98300000-0000-4000-8000-000000000001",
     "quantity":"2","reason":"Empaque dañado al recibir","requested_at":"2026-08-08"
   }'::jsonb)
 $$, 'registra una devolución válida');

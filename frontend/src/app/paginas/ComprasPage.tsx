@@ -30,13 +30,16 @@ import {
   calcularTotalesCompra,
   type Compra,
   type DatosCompra,
+  type DatosRecepcionCompra,
   type EstadoCompra,
 } from '@/modulos/compras/modelo/compras'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
+import { listarAlmacenesCompra, listarUbicacionesCompra } from '@/modulos/compras/servicios/compraService'
 import { listarProveedores } from '@/modulos/proveedores/servicios/proveedorService'
 
 type FiltroEstado = 'todos' | EstadoCompra
 const proveedoresVacios = [] as const
+const almacenesVacios = [] as const
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', {
   style: 'currency',
@@ -63,7 +66,9 @@ function EstadoCompraEtiqueta({ estado }: { estado: EstadoCompra }) {
   const etiquetas: Record<EstadoCompra, string> = {
     borrador: 'Pendiente',
     emitida: 'Emitida',
+    'parcialmente-recibida': 'Recepción parcial',
     recibida: 'Recibida',
+    'cerrada-parcial': 'Cerrada parcial',
     anulada: 'Anulada',
   }
 
@@ -89,6 +94,21 @@ export function ComprasPage() {
     enabled: Boolean(organizationId && puedeConsultarProveedores),
   })
   const proveedores = proveedoresQuery.data ?? proveedoresVacios
+  const almacenesQuery = useQuery({
+    queryKey: ['purchase-warehouses', organizationId],
+    queryFn: () => listarAlmacenesCompra(organizationId),
+    enabled: Boolean(organizationId),
+  })
+  const almacenes = almacenesQuery.data ?? almacenesVacios
+  const ubicacionesQuery = useQuery({
+    queryKey: ['purchase-locations', organizationId],
+    queryFn: () => listarUbicacionesCompra(organizationId),
+    enabled: Boolean(organizationId),
+  })
+  const almacenesActivos = useMemo(
+    () => almacenes.filter((almacen) => almacen.activo),
+    [almacenes],
+  )
   const { productos } = useProductos()
   const productosActivos = useMemo(
     () => productos.filter((producto) => producto.activo),
@@ -162,12 +182,12 @@ export function ComprasPage() {
     setCompraPorRecibir(compra)
   }
 
-  const confirmarRecepcion = async () => {
+  const confirmarRecepcion = async (datos: DatosRecepcionCompra) => {
     if (!compraPorRecibir) return undefined
-    const error = await recibirCompra(compraPorRecibir.id)
+    const error = await recibirCompra(compraPorRecibir.id, datos)
     setMensaje(
       error ??
-        `Compra ${compraPorRecibir.serie}-${compraPorRecibir.numero} recibida e inventario actualizado.`,
+        `Recepción de ${compraPorRecibir.serie}-${compraPorRecibir.numero} registrada e inventario actualizado.`,
     )
     return error
   }
@@ -180,10 +200,10 @@ export function ComprasPage() {
     setCompraPorAnular(compra)
   }
 
-  const confirmarAnulacion = async () => {
+  const confirmarAnulacion = async (motivo: string) => {
     if (!compraPorAnular) return undefined
-    const error = await anularCompra(compraPorAnular.id)
-    setMensaje(error ?? `Orden ${compraPorAnular.serie}-${compraPorAnular.numero} anulada.`)
+    const error = await anularCompra(compraPorAnular.id, motivo)
+    setMensaje(error ?? `Orden ${compraPorAnular.serie}-${compraPorAnular.numero} cerrada con motivo registrado.`)
     return error
   }
 
@@ -208,7 +228,7 @@ export function ComprasPage() {
     },
     {
       etiqueta: 'Pendientes de recibir',
-      valor: compras.filter((compra) => compra.estado === 'emitida').length,
+      valor: compras.filter((compra) => ['emitida', 'parcialmente-recibida'].includes(compra.estado)).length,
       icono: Truck,
     },
     {
@@ -252,8 +272,10 @@ export function ComprasPage() {
             size="lg"
             disabled={
               proveedoresQuery.isLoading ||
+              almacenesQuery.isLoading ||
               !proveedoresActivos.length ||
-              !productosActivos.length
+              !productosActivos.length ||
+              !almacenesActivos.length
             }
             onClick={(evento) => abrirCompra(evento)}
           >
@@ -297,7 +319,13 @@ export function ComprasPage() {
         </aside>
       ) : null}
 
-      {(!proveedoresActivos.length || !productosActivos.length) && (
+      {almacenesQuery.isError ? (
+        <aside role="alert" className="border-s-4 border-destructive bg-destructive/5 px-5 py-4 text-sm text-destructive">
+          No se pudo cargar el maestro de almacenes. Revisa Inventario antes de registrar una compra.
+        </aside>
+      ) : null}
+
+      {(!proveedoresActivos.length || !productosActivos.length || !almacenesActivos.length) && (
         <aside className="border-s-4 border-primary bg-accent/60 px-5 py-4 text-sm leading-6">
           {!proveedoresActivos.length
             ? 'Necesitas al menos un proveedor activo del maestro persistente para crear una compra.'
@@ -312,6 +340,15 @@ export function ComprasPage() {
               Necesitas al menos un producto activo.{' '}
               <Link className="font-medium text-primary underline" to="/productos">
                 Abrir catálogo
+              </Link>
+              .
+            </>
+          ) : null}
+          {!almacenesActivos.length ? (
+            <>
+              Necesitas al menos un almacén activo con una ubicación configurada.{' '}
+              <Link className="font-medium text-primary underline" to="/inventario">
+                Abrir inventario
               </Link>
               .
             </>
@@ -363,7 +400,9 @@ export function ComprasPage() {
               <option value="todos">Todos</option>
               <option value="borrador">Pendientes</option>
               <option value="emitida">Emitidas</option>
+              <option value="parcialmente-recibida">Recepción parcial</option>
               <option value="recibida">Recibidas</option>
+              <option value="cerrada-parcial">Cerradas parciales</option>
               <option value="anulada">Anuladas</option>
             </select>
           </div>
@@ -441,7 +480,7 @@ export function ComprasPage() {
                           <Ban aria-hidden="true" /> Anular
                         </Button>
                       </div>
-                    ) : compra.estado === 'emitida' && puedeRecibir ? (
+                    ) : ['emitida', 'parcialmente-recibida'].includes(compra.estado) && puedeRecibir ? (
                       <div className="mt-4 flex gap-2">
                         <Button type="button" onClick={(evento) => solicitarRecepcion(evento, compra)}>
                           <PackageCheck aria-hidden="true" /> Recibir
@@ -537,7 +576,7 @@ export function ComprasPage() {
                                 <Ban aria-hidden="true" />
                               </Button>
                             </div>
-                          ) : compra.estado === 'emitida' && puedeRecibir ? (
+                          ) : ['emitida', 'parcialmente-recibida'].includes(compra.estado) && puedeRecibir ? (
                             <div className="flex justify-end gap-1">
                               <Button
                                 type="button"
@@ -598,6 +637,7 @@ export function ComprasPage() {
           compra={compraSeleccionada}
           proveedores={proveedoresActivos}
           productos={productosActivos}
+          almacenes={almacenes}
           alCambiarApertura={setDialogoCompraAbierto}
           alGuardar={guardarNuevaCompra}
           alRestaurarFoco={() => disparadorCompra.current?.focus()}
@@ -608,6 +648,7 @@ export function ComprasPage() {
         <DialogoConfirmacionRecepcion
           abierto={Boolean(compraPorRecibir)}
           compra={compraPorRecibir}
+          ubicaciones={ubicacionesQuery.data ?? []}
           alCambiarApertura={(abierto) => {
             if (!abierto) setCompraPorRecibir(null)
           }}

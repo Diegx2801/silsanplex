@@ -5,6 +5,7 @@ import { productoInicial, type Producto } from '@/modulos/productos/modelo/produ
 import {
   calcularTotalesCompra,
   crearCompra,
+  esquemaDatosCompra,
   esquemaDatosProveedor,
   validarCompra,
   type DatosCompra,
@@ -63,6 +64,7 @@ const compraBase = {
   fechaEmision: '2026-08-19',
   fechaVencimientoPago: '',
   fechaEntregaEsperada: '2026-08-25',
+  almacenId: 'a1111111-1111-4111-8111-111111111111',
   almacen: 'Almacén principal',
   preciosIncluyenIgv: true,
   observacion: '',
@@ -148,6 +150,21 @@ describe('compras', () => {
         [producto],
       ),
     ).toContain('lote')
+  })
+
+  it('rechaza fechas de pago o entrega anteriores a la emisión', () => {
+    const resultado = esquemaDatosCompra.safeParse({
+      ...compraBase,
+      fechaVencimientoPago: '2026-08-18',
+      fechaEntregaEsperada: '2026-08-18',
+    })
+
+    expect(resultado.success).toBe(false)
+    if (!resultado.success) {
+      expect(resultado.error.issues.map((issue) => issue.path[0])).toEqual(
+        expect.arrayContaining(['fechaVencimientoPago', 'fechaEntregaEsperada']),
+      )
+    }
   })
 
   it('crea un borrador con instantáneas del proveedor y producto', () => {

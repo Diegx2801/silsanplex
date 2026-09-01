@@ -44,6 +44,7 @@ export const esquemaDatosCompra = z.object({
   fechaEmision: z.string().min(1, 'Selecciona la fecha de emisión'),
   fechaVencimientoPago: z.string(),
   fechaEntregaEsperada: z.string(),
+  almacenId: z.string().uuid('Selecciona un almacén válido'),
   almacen: z
     .string()
     .trim()
@@ -55,6 +56,17 @@ export const esquemaDatosCompra = z.object({
     .array(esquemaLineaCompraFormulario)
     .min(1, 'Agrega al menos un producto'),
 }).superRefine((datos, contexto) => {
+  if (
+    datos.fechaVencimientoPago &&
+    datos.fechaEmision &&
+    datos.fechaVencimientoPago < datos.fechaEmision
+  ) {
+    contexto.addIssue({
+      code: 'custom',
+      path: ['fechaVencimientoPago'],
+      message: 'No puede ser anterior a la fecha de emisión',
+    })
+  }
   if (
     datos.fechaEntregaEsperada &&
     datos.fechaEmision &&
@@ -77,14 +89,31 @@ export const esquemaLineaCompra = z.object({
   productoDescripcion: z.string().min(1),
   unidadMedida: z.string(),
   controlLote: z.boolean(),
+  controlVencimiento: z.boolean(),
   cantidad: z.number().positive(),
+  cantidadRecibida: z.number().nonnegative(),
+  cantidadPendiente: z.number().nonnegative(),
   costoUnitario: z.number().positive(),
   lote: z.string(),
   fechaVencimiento: z.string(),
 })
 
 export type LineaCompra = z.infer<typeof esquemaLineaCompra>
-export type EstadoCompra = 'borrador' | 'emitida' | 'recibida' | 'anulada'
+export type EstadoCompra = 'borrador' | 'emitida' | 'parcialmente-recibida' | 'recibida' | 'cerrada-parcial' | 'anulada'
+
+export interface LineaRecepcionCompra {
+  purchaseOrderItemId: string
+  cantidad: string
+  ubicacionId: string
+  lote: string
+  fechaVencimiento: string
+}
+
+export interface DatosRecepcionCompra {
+  operationKey: string
+  observacion: string
+  lineas: LineaRecepcionCompra[]
+}
 
 export const esquemaCompra = z.object({
   id: z.string().min(1),
@@ -97,11 +126,12 @@ export const esquemaCompra = z.object({
   fechaEmision: z.string().min(1),
   fechaVencimientoPago: z.string(),
   fechaEntregaEsperada: z.string(),
+  almacenId: z.string().uuid(),
   almacen: z.string().min(1),
   preciosIncluyenIgv: z.boolean(),
   observacion: z.string(),
   lineas: z.array(esquemaLineaCompra).min(1),
-  estado: z.enum(['borrador', 'emitida', 'recibida', 'anulada']),
+  estado: z.enum(['borrador', 'emitida', 'parcialmente-recibida', 'recibida', 'cerrada-parcial', 'anulada']),
   fechaRegistro: z.string().datetime(),
   fechaEmisionOrden: z.string().datetime().nullable(),
   fechaRecepcion: z.string().datetime().nullable(),
@@ -188,6 +218,7 @@ export function crearCompra(
     fechaEmision: datos.fechaEmision,
     fechaVencimientoPago: datos.fechaVencimientoPago,
     fechaEntregaEsperada: datos.fechaEntregaEsperada,
+    almacenId: datos.almacenId,
     almacen: datos.almacen,
     preciosIncluyenIgv: datos.preciosIncluyenIgv,
     observacion: datos.observacion,
@@ -200,7 +231,10 @@ export function crearCompra(
         productoDescripcion: producto.descripcion,
         unidadMedida: producto.unidadMedida,
         controlLote: producto.controlLote,
+        controlVencimiento: producto.controlVencimiento,
         cantidad: Number(linea.cantidad),
+        cantidadRecibida: 0,
+        cantidadPendiente: Number(linea.cantidad),
         costoUnitario: Number(linea.costoUnitario),
         lote: linea.lote,
         fechaVencimiento: linea.fechaVencimiento,
@@ -222,6 +256,7 @@ export function compraAFormulario(compra: Compra): DatosCompra {
     fechaEmision: compra.fechaEmision,
     fechaVencimientoPago: compra.fechaVencimientoPago,
     fechaEntregaEsperada: compra.fechaEntregaEsperada,
+    almacenId: compra.almacenId,
     almacen: compra.almacen,
     preciosIncluyenIgv: compra.preciosIncluyenIgv,
     observacion: compra.observacion,

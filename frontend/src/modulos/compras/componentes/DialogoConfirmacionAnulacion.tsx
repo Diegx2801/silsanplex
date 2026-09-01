@@ -9,7 +9,7 @@ interface DialogoConfirmacionAnulacionProps {
   abierto: boolean
   compra: Compra
   alCambiarApertura: (abierto: boolean) => void
-  alConfirmar: () => Promise<string | undefined>
+  alConfirmar: (motivo: string) => Promise<string | undefined>
   alRestaurarFoco: () => void
 }
 
@@ -22,11 +22,16 @@ export function DialogoConfirmacionAnulacion({
 }: DialogoConfirmacionAnulacionProps) {
   const [procesando, setProcesando] = useState(false)
   const [error, setError] = useState('')
+  const [motivo, setMotivo] = useState('')
 
   const confirmar = async () => {
-    setProcesando(true)
     setError('')
-    const resultado = await alConfirmar()
+    if (motivo.trim().length < 5) {
+      setError('Ingresa un motivo de al menos 5 caracteres.')
+      return
+    }
+    setProcesando(true)
+    const resultado = await alConfirmar(motivo.trim())
     setProcesando(false)
     if (resultado) {
       setError(resultado)
@@ -53,8 +58,12 @@ export function DialogoConfirmacionAnulacion({
             Anular orden de compra
           </AlertDialogPrimitive.Title>
           <AlertDialogPrimitive.Description className="mt-2 text-sm leading-6 text-muted-foreground">
-            La orden {compra.serie}-{compra.numero} quedará cerrada y ya no podrá editarse, emitirse ni recibirse. No se alterará el inventario.
+            La orden {compra.serie}-{compra.numero} quedará cerrada y ya no podrá editarse, emitirse ni recibirse. El inventario ya recibido no se alterará.
           </AlertDialogPrimitive.Description>
+          <label className="mt-5 block">
+            <span className="field-label">Motivo *</span>
+            <textarea className="field-control min-h-20" maxLength={240} value={motivo} onChange={(evento) => setMotivo(evento.target.value)} placeholder="Explica por qué se cancela el saldo pendiente" />
+          </label>
           {error ? (
             <p role="alert" className="mt-4 border-s-4 border-destructive bg-destructive/5 px-4 py-3 text-sm text-destructive">
               {error}
