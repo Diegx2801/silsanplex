@@ -219,6 +219,81 @@ describe('programación de entrega', () => {
     })
   })
 
+  it('lee una entrega histórica sin exigir los campos añadidos por la migración', () => {
+    const restaurado = mapearEntrega({
+      id: 'ent-historica',
+      order_id: 'pedido-historico',
+      order_number: 'PED-H-001',
+      customer_name: 'Cliente histórico',
+      issue_date: '2026-08-30',
+      delivery_date: '2026-08-31',
+      guide_number: 'G-H-001',
+      transport_type: 'interno',
+      tracking_status: 'en_curso',
+      observations: '',
+      order_items: [{ id: 'linea-h', productoDescripcion: 'Producto histórico', cantidad: 1, unidadMedida: 'UND' }],
+      created_at: '2026-08-30T00:00:00Z',
+    })
+
+    expect(restaurado).toMatchObject({
+      id: 'ent-historica',
+      direccionEntrega: '',
+      numeroDespacho: '',
+      modalidad: 'movilidad_propia',
+      estado: 'programado',
+      incidencias: [],
+    })
+  })
+
+  it('exige dirección, despacho y guía al registrar una entrega nueva', () => {
+    const base = {
+      pedidoId: 'pedido-1',
+      pedidoNumero: 'PED-001',
+      clienteNombre: 'Cliente demo',
+      direccionEntrega: 'Av. Central 123',
+      numeroDespacho: 'DES-001',
+      numeroGuiaRemision: 'G-001',
+      fechaEmision: '2026-09-01',
+      fechaProgramada: '2026-09-02',
+      tipoTransporte: 'interno' as const,
+      modalidad: 'movilidad_propia' as const,
+    }
+
+    expect(esquemaDatosProgramacionEntrega.safeParse({ ...base, direccionEntrega: '' }).success).toBe(false)
+    expect(esquemaDatosProgramacionEntrega.safeParse({ ...base, numeroDespacho: '' }).success).toBe(false)
+    expect(esquemaDatosProgramacionEntrega.safeParse({ ...base, numeroGuiaRemision: '' }).success).toBe(false)
+  })
+
+  it('representa el recojo del cliente mediante la modalidad y no como tipo de transporte', () => {
+    const recojoCliente = esquemaDatosProgramacionEntrega.safeParse({
+      pedidoId: 'pedido-1',
+      pedidoNumero: 'PED-001',
+      clienteNombre: 'Cliente demo',
+      direccionEntrega: 'Av. Central 123',
+      numeroDespacho: 'DES-001',
+      numeroGuiaRemision: 'G-001',
+      fechaEmision: '2026-09-01',
+      fechaProgramada: '2026-09-02',
+      tipoTransporte: 'externo',
+      modalidad: 'recojo_cliente',
+    })
+
+    const resultado = esquemaDatosProgramacionEntrega.safeParse({
+      pedidoId: 'pedido-1',
+      pedidoNumero: 'PED-001',
+      clienteNombre: 'Cliente demo',
+      direccionEntrega: 'Av. Central 123',
+      numeroDespacho: 'DES-001',
+      numeroGuiaRemision: 'G-001',
+      fechaProgramada: '2026-09-02',
+      tipoTransporte: 'cliente',
+      modalidad: 'recojo_cliente',
+    })
+
+    expect(recojoCliente.success).toBe(true)
+    expect(resultado.success).toBe(false)
+  })
+
   it('filtra entregas por estado y fecha programada', () => {
     const entregas = [
       crearProgramacionEntrega({

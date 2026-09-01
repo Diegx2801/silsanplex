@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { esquemaLineaOperacionVenta } from '@/modulos/ventas/modelo/operacionVenta'
 
 export const MODALIDADES_DISTRIBUCION = ['movilidad_propia', 'movilidad_externa', 'recojo_cliente'] as const
+export const TIPOS_TRANSPORTE_DISTRIBUCION = ['interno', 'externo'] as const
 export const ESTADOS_DISTRIBUCION = [
   'programado',
   'preparando',
@@ -25,13 +26,15 @@ export const esquemaProgramacionEntrega = z.object({
   ventaId: z.string().optional().default(''),
   ventaNumero: z.string().optional().default(''),
   clienteNombre: z.string().min(1),
-  direccionEntrega: z.string().trim().min(1, 'Ingresa la dirección de entrega').default(''),
-  numeroDespacho: z.string().trim().min(1, 'Ingresa el número de despacho').max(40).default(''),
+  // Las filas creadas antes de la migración pueden no tener estos campos.
+  // La obligatoriedad para nuevas entregas está en el esquema de entrada y en el RPC.
+  direccionEntrega: z.string().trim().max(500).default(''),
+  numeroDespacho: z.string().trim().max(40).default(''),
   numeroGuiaRemision: z.string().trim().max(40).default(''),
   fechaEmision: z.string().min(1),
   fechaProgramada: z.string().min(1, 'Selecciona la fecha programada'),
   fechaEntrega: z.string().optional().default(''),
-  tipoTransporte: z.enum(['interno', 'externo', 'cliente']).default('interno'),
+  tipoTransporte: z.enum(TIPOS_TRANSPORTE_DISTRIBUCION).default('interno'),
   modalidad: z.enum(MODALIDADES_DISTRIBUCION).default('movilidad_propia'),
   transportista: z.string().trim().max(120).default(''),
   conductor: z.string().trim().max(120).default(''),
@@ -53,13 +56,13 @@ export const esquemaDatosProgramacionEntrega = z.object({
   ventaId: z.string().optional().default(''),
   ventaNumero: z.string().optional().default(''),
   clienteNombre: z.string().min(1),
-  direccionEntrega: z.string().trim().min(1, 'Ingresa la dirección de entrega').default(''),
-  numeroDespacho: z.string().trim().max(40).default(''),
-  numeroGuiaRemision: z.string().trim().max(40).default(''),
+  direccionEntrega: z.string().trim().min(1, 'Ingresa la dirección de entrega').max(500),
+  numeroDespacho: z.string().trim().min(1, 'Ingresa el número de despacho').max(40),
+  numeroGuiaRemision: z.string().trim().min(1, 'Ingresa el número de guía de remisión').max(40),
   fechaEmision: z.string().min(1).optional().default(''),
   fechaProgramada: z.string().min(1, 'Selecciona la fecha programada'),
   fechaEntrega: z.string().optional().default(''),
-  tipoTransporte: z.enum(['interno', 'externo', 'cliente']).default('interno'),
+  tipoTransporte: z.enum(TIPOS_TRANSPORTE_DISTRIBUCION).default('interno'),
   modalidad: z.enum(MODALIDADES_DISTRIBUCION).default('movilidad_propia'),
   transportista: z.string().trim().max(120).default(''),
   conductor: z.string().trim().max(120).default(''),

@@ -11,6 +11,7 @@ import {
   type DatosProgramacionEntrega,
   type ProgramacionEntrega,
 } from '@/modulos/distribucion/modelo/programacionEntrega'
+import { formatearFechaDistribucion } from '@/modulos/distribucion/servicios/formatoDistribucion'
 import { crearRepositorioOperacionesVentaSesion } from '@/modulos/ventas/servicios/repositorioOperacionesVentaSesion'
 
 const hoy = new Date().toISOString().slice(0, 10)
@@ -253,8 +254,8 @@ export function DistribucionPage() {
     dibujarDato('Cliente', entrega.clienteNombre, margen, 82)
     dibujarDato('Guía de remisión', entrega.numeroGuiaRemision, 106, 86)
     y += 25
-    dibujarDato('Fecha de emisión', formatoFecha.format(new Date(`${entrega.fechaEmision}T12:00:00`)), margen, 55)
-    dibujarDato('Fecha de entrega', formatoFecha.format(new Date(`${entrega.fechaEntrega}T12:00:00`)), 78, 55)
+    dibujarDato('Fecha de emisión', formatearFechaDistribucion(entrega.fechaEmision), margen, 55)
+    dibujarDato('Fecha de entrega', formatearFechaDistribucion(entrega.fechaEntrega), 78, 55)
     dibujarDato('Transporte', entrega.tipoTransporte === 'interno' ? 'Movilidad SILSAN' : 'Movilidad externa', 137, 55)
     y += 28
 
@@ -390,11 +391,11 @@ export function DistribucionPage() {
         ) : (
           <div className="divide-y">{filtradas.map((item) => (
             <article key={item.id} className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[1.1fr_1fr_1fr_auto] lg:items-center">
-              <div className="print-delivery-header"><p className="font-mono text-xs text-primary">SILSANPLEX · CONSTANCIA DE ENTREGA</p><p className="font-mono text-xs text-muted-foreground">Emisión: {formatoFecha.format(new Date(`${item.fechaEmision}T12:00:00`))}</p></div>
+              <div className="print-delivery-header"><p className="font-mono text-xs text-primary">SILSANPLEX · CONSTANCIA DE ENTREGA</p><p className="font-mono text-xs text-muted-foreground">Emisión: {formatearFechaDistribucion(item.fechaEmision)}</p></div>
               <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{pedidoPorId(item.pedidoId)?.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · <span className="font-mono font-semibold">{linea.cantidad}</span> {linea.unidadMedida}</p>) ?? <p>Detalle del pedido no disponible</p>}</div></div>
-              <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted-foreground">Emisión</dt><dd className="mt-1">{formatoFecha.format(new Date(`${item.fechaEmision}T12:00:00`))}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega</dt><dd className="mt-1">{formatoFecha.format(new Date(`${item.fechaEntrega}T12:00:00`))}</dd></div></dl>
+              <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted-foreground">Emisión</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEmision)}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEntrega)}</dd></div></dl>
               <div>
-                <p className="text-sm">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : item.tipoTransporte === 'externo' ? 'Externo' : 'Recojo cliente'}</p>
+                <p className="text-sm">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</p>
                 <select aria-label={`Estado de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado'])} className="field-control mt-2">
                   {Object.entries(etiquetasEstado).map(([valor, etiqueta]) => (
                     <option key={valor} value={valor}>{etiqueta}</option>
@@ -414,14 +415,14 @@ export function DistribucionPage() {
             <div className="flex items-start justify-between gap-4"><div><h2 id="programar-title" className="text-xl font-semibold">{edicion ? 'Editar entrega' : 'Programar entrega'}</h2><p className="mt-1 text-sm text-muted-foreground">Vincula el pedido con su guía y fecha de entrega.</p></div><Button type="button" variant="ghost" onClick={() => setFormularioAbierto(false)}>Cerrar</Button></div>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2"><label htmlFor="pedido-entrega" className="field-label">Pedido</label><select id="pedido-entrega" required disabled={Boolean(edicion)} value={datos.pedidoId} onChange={(evento) => seleccionarPedido(evento.target.value)} className="field-control"><option value="">Selecciona un pedido</option>{pedidosDisponibles.filter((pedido) => pedido.estado !== 'cancelado').map((pedido) => <option key={pedido.id} value={pedido.id}>{pedido.numero} · {pedido.clienteNombre}</option>)}</select></div>
-              <div><label htmlFor="numero-despacho" className="field-label">Número de despacho</label><input id="numero-despacho" value={datos.numeroDespacho} onChange={(evento) => setDatos({ ...datos, numeroDespacho: evento.target.value })} className="field-control" /></div>
-              <div><label htmlFor="guia-remision" className="field-label">Número de guía de remisión</label><input id="guia-remision" value={datos.numeroGuiaRemision} onChange={(evento) => setDatos({ ...datos, numeroGuiaRemision: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="numero-despacho" className="field-label">Número de despacho</label><input id="numero-despacho" required maxLength={40} value={datos.numeroDespacho} onChange={(evento) => setDatos({ ...datos, numeroDespacho: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="guia-remision" className="field-label">Número de guía de remisión</label><input id="guia-remision" required maxLength={40} value={datos.numeroGuiaRemision} onChange={(evento) => setDatos({ ...datos, numeroGuiaRemision: evento.target.value })} className="field-control" /></div>
               <div><label htmlFor="fecha-emision" className="field-label">Fecha de emisión</label><input id="fecha-emision" type="date" value={datos.fechaEmision} onChange={(evento) => setDatos({ ...datos, fechaEmision: evento.target.value })} className="field-control" /></div>
               <div><label htmlFor="cliente-entrega" className="field-label">Cliente</label><input id="cliente-entrega" value={datos.clienteNombre} onChange={(evento) => setDatos({ ...datos, clienteNombre: evento.target.value })} className="field-control" /></div>
-              <div><label htmlFor="direccion-entrega" className="field-label">Dirección de entrega</label><input id="direccion-entrega" value={datos.direccionEntrega} onChange={(evento) => setDatos({ ...datos, direccionEntrega: evento.target.value })} className="field-control" /></div>
+              <div><label htmlFor="direccion-entrega" className="field-label">Dirección de entrega</label><input id="direccion-entrega" required maxLength={500} value={datos.direccionEntrega} onChange={(evento) => setDatos({ ...datos, direccionEntrega: evento.target.value })} className="field-control" /></div>
               <div><label htmlFor="fecha-programada" className="field-label">Fecha programada</label><input id="fecha-programada" required type="date" value={datos.fechaProgramada} onChange={(evento) => setDatos({ ...datos, fechaProgramada: evento.target.value })} className="field-control" /></div>
               <div><label htmlFor="fecha-entrega" className="field-label">Fecha de entrega real</label><input id="fecha-entrega" type="date" value={datos.fechaEntrega} onChange={(evento) => setDatos({ ...datos, fechaEntrega: evento.target.value })} className="field-control" /></div>
-              <div><label htmlFor="tipo-transporte" className="field-label">Tipo de transporte</label><select id="tipo-transporte" value={datos.tipoTransporte} onChange={(evento) => setDatos({ ...datos, tipoTransporte: evento.target.value as DatosProgramacionEntrega['tipoTransporte'] })} className="field-control"><option value="interno">Interno</option><option value="externo">Externo</option><option value="cliente">Recojo del cliente</option></select></div>
+              <div><label htmlFor="tipo-transporte" className="field-label">Tipo de transporte</label><select id="tipo-transporte" required value={datos.tipoTransporte} onChange={(evento) => setDatos({ ...datos, tipoTransporte: evento.target.value as DatosProgramacionEntrega['tipoTransporte'] })} className="field-control"><option value="interno">Interno</option><option value="externo">Externo</option></select></div>
               <div><label htmlFor="modalidad" className="field-label">Modalidad</label><select id="modalidad" value={datos.modalidad} onChange={(evento) => setDatos({ ...datos, modalidad: evento.target.value as DatosProgramacionEntrega['modalidad'] })} className="field-control"><option value="movilidad_propia">Movilidad propia</option><option value="movilidad_externa">Movilidad externa</option><option value="recojo_cliente">Recojo del cliente</option></select></div>
               <div><label htmlFor="transportista" className="field-label">Transportista</label><input id="transportista" value={datos.transportista} onChange={(evento) => setDatos({ ...datos, transportista: evento.target.value })} className="field-control" /></div>
               <div><label htmlFor="conductor" className="field-label">Conductor</label><input id="conductor" value={datos.conductor} onChange={(evento) => setDatos({ ...datos, conductor: evento.target.value })} className="field-control" /></div>

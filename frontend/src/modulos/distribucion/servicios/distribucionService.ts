@@ -85,7 +85,7 @@ export function mapearEntrega(fila: EntregaFila): ProgramacionEntrega {
     numeroGuiaRemision: fila.guide_number,
     fechaEmision: fila.issue_date,
     fechaProgramada: fila.delivery_date || fila.issue_date,
-    fechaEntrega: fila.delivery_date,
+    fechaEntrega: fila.delivery_date ?? '',
     tipoTransporte: fila.transport_type ?? 'interno',
     modalidad: fila.modalidad ?? 'movilidad_propia',
     transportista: fila.transportista ?? '',
@@ -106,6 +106,13 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (error.code === '23505' || mensaje.includes('DISTRIBUTION_DUPLICATE')) return 'Ya existe una entrega para este pedido o guía de remisión'
   if (error.code === '42501' || mensaje.includes('DISTRIBUTION_FORBIDDEN')) return 'No tienes permiso para administrar distribución'
   if (mensaje.includes('DISTRIBUTION_NOT_FOUND')) return 'La entrega ya no existe'
+  if (mensaje.includes('DISTRIBUTION_DIRECTION_REQUIRED')) return 'Ingresa la dirección de entrega'
+  if (mensaje.includes('DISTRIBUTION_DISPATCH_NUMBER_REQUIRED')) return 'Ingresa el número de despacho'
+  if (mensaje.includes('DISTRIBUTION_GUIDE_REQUIRED')) return 'Ingresa el número de guía de remisión'
+  if (mensaje.includes('DISTRIBUTION_TRANSPORT_INVALID')) return 'Selecciona un tipo de transporte válido'
+  if (mensaje.includes('DISTRIBUTION_MODALITY_INVALID')) return 'Selecciona una modalidad válida'
+  if (mensaje.includes('DISTRIBUTION_INCIDENTS_INVALID')) return 'Las incidencias no tienen un formato válido'
+  if (mensaje.includes('DISTRIBUTION_') && error.code === '22023') return 'Revisa los datos de la entrega'
   return 'No se pudo guardar la entrega'
 }
 
