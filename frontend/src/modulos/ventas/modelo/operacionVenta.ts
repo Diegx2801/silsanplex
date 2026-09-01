@@ -41,6 +41,11 @@ export const esquemaLineaOperacionVenta = z.object({
   precioUnitario: z.number().positive(),
   lote: z.string(),
   fechaVencimiento: z.string(),
+  // Identidad persistente de la línea de pedido. El despacho canónico la usa
+  // para consumir únicamente las reservas de su origen comercial.
+  pedidoLineaId: z.string().uuid().optional(),
+  cantidadDespachada: z.number().nonnegative().optional(),
+  cantidadPendiente: z.number().nonnegative().optional(),
 })
 
 export type LineaOperacionVenta = z.infer<typeof esquemaLineaOperacionVenta>
@@ -59,6 +64,11 @@ export const esquemaPedidoVenta = z.object({
   estado: z.enum(['confirmado', 'atendido', 'cancelado']),
   fechaRegistro: z.string().datetime(),
   fechaAtencion: z.string().datetime().nullable(),
+  // Los pedidos persistentes de Fase 2B-1A incluyen el almacen canonico.
+  // Se mantienen opcionales para que el repositorio temporal legado pueda
+  // seguir leyendo borradores historicos mientras se completa la migracion.
+  almacenId: z.string().uuid().optional(),
+  almacenNombre: z.string().min(1).optional(),
 })
 
 export type PedidoVenta = z.infer<typeof esquemaPedidoVenta>

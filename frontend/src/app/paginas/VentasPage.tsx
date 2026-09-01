@@ -20,12 +20,14 @@ import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
+import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
 import { DialogoConfirmacionEmision } from '@/modulos/ventas/componentes/DialogoConfirmacionEmision'
 import { DialogoCotizacion } from '@/modulos/ventas/componentes/DialogoCotizacion'
+import { DialogoSeleccionAlmacenPedido } from '@/modulos/ventas/componentes/DialogoSeleccionAlmacenPedido'
 import { PanelOperacionesVenta } from '@/modulos/ventas/componentes/PanelOperacionesVenta'
 import { useCotizacionesTemporales } from '@/modulos/ventas/estado/useCotizacionesTemporales'
-import { useOperacionesVentaTemporales } from '@/modulos/ventas/estado/useOperacionesVentaTemporales'
+import { useOperacionesVenta } from '@/modulos/ventas/estado/useOperacionesVenta'
 import {
   calcularTotalesCotizacion,
   type Cotizacion,
@@ -88,6 +90,7 @@ function EstadoCotizacionEtiqueta({ cotizacion }: { cotizacion: Cotizacion }) {
 export function VentasPage() {
   const { clientes } = useClientes()
   const { productos } = useProductos()
+  const { almacenes, cargando: cargandoAlmacenes, error: errorAlmacenes } = useAlmacenes()
   const clientesActivos = useMemo(
     () => clientes.filter((cliente) => cliente.activo),
     [clientes],
@@ -95,6 +98,10 @@ export function VentasPage() {
   const productosActivos = useMemo(
     () => productos.filter((producto) => producto.activo),
     [productos],
+  )
+  const almacenesActivos = useMemo(
+    () => almacenes.filter((almacen) => almacen.activo),
+    [almacenes],
   )
   const {
     cotizaciones,
@@ -107,10 +114,18 @@ export function VentasPage() {
     ventas,
     crearPedido,
     registrarVenta,
+    actualizarPedido,
+    cancelarPedido,
     despacharVenta,
-  } = useOperacionesVentaTemporales({
+    creandoPedido,
+    actualizandoPedido,
+    cancelandoPedido,
+    despachandoVenta,
+    cargando: cargandoOperaciones,
+    error: errorOperaciones,
+    reintentar: reintentarOperaciones,
+  } = useOperacionesVenta({
     cotizaciones,
-    productos,
     aceptarCotizacion,
   })
   const [busqueda, setBusqueda] = useState('')
@@ -119,10 +134,13 @@ export function VentasPage() {
     useState<Cotizacion | null>(null)
   const [cotizacionPorEmitir, setCotizacionPorEmitir] =
     useState<Cotizacion | null>(null)
+  const [cotizacionPorCrearPedido, setCotizacionPorCrearPedido] =
+    useState<Cotizacion | null>(null)
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const disparadorFormulario = useRef<HTMLButtonElement | null>(null)
   const disparadorEmision = useRef<HTMLButtonElement | null>(null)
+  const disparadorPedido = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
 
   const cotizacionesFiltradas = useMemo(() => {
@@ -189,9 +207,25 @@ export function VentasPage() {
     if (!error) setCotizacionPorEmitir(null)
   }
 
-  const confirmarPedido = (cotizacion: Cotizacion) => {
-    const error = crearPedido(cotizacion.id)
-    setMensaje(error ?? `${cotizacion.numero} convertida en pedido correctamente.`)
+  const solicitarCreacionPedido = (
+    evento: ReactMouseEvent<HTMLButtonElement>,
+    cotizacion: Cotizacion,
+  ) => {
+    disparadorPedido.current = evento.currentTarget
+    setCotizacionPorCrearPedido(cotizacion)
+  }
+
+  const confirmarPedido = async (almacenId: string) => {
+    if (!cotizacionPorCrearPedido) return 'Selecciona una cotización válida'
+    const cotizacion = cotizacionPorCrearPedido
+    const error = await crearPedido(cotizacion.id, almacenId)
+    if (error) {
+      setMensaje(error)
+      return error
+    }
+    setMensaje(`${cotizacion.numero} convertida en pedido correctamente.`)
+    setCotizacionPorCrearPedido(null)
+    return undefined
   }
 
   const metricas = [
@@ -212,8 +246,9 @@ export function VentasPage() {
             Ventas
           </h1>
           <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
-            Convierte propuestas aceptadas en pedidos y ventas trazables. El
-            inventario se descuenta únicamente al confirmar el despacho.
+            Convierte propuestas aceptadas en pedidos y ventas persistentes. El
+            despacho consume las reservas y descuenta inventario de forma
+            transaccional.
           </p>
         </div>
         <Button
@@ -272,6 +307,20 @@ export function VentasPage() {
               .
             </>
           ) : null}
+        </aside>
+      ) : null}
+
+      {errorAlmacenes ? (
+        <aside role="alert" className="border-s-4 border-destructive bg-destructive/10 px-5 py-4 text-sm leading-6">
+          No se pudieron cargar los almacenes persistentes. No es posible confirmar pedidos hasta reintentar la carga.
+        </aside>
+      ) : !cargandoAlmacenes && !almacenesActivos.length ? (
+        <aside className="border-s-4 border-primary bg-accent/60 px-5 py-4 text-sm leading-6">
+          Registra al menos un almacén activo para poder confirmar pedidos.{' '}
+          <Link className="font-medium text-primary underline" to="/inventario">
+            Abrir inventario
+          </Link>
+          .
         </aside>
       ) : null}
 
@@ -370,8 +419,8 @@ export function VentasPage() {
                         </Button>
                       </div>
                     ) : estadoVisible(cotizacion) === 'emitida' ? (
-                      <Button type="button" className="mt-4" onClick={() => confirmarPedido(cotizacion)}>
-                        <ShoppingCart aria-hidden="true" /> Crear pedido
+                      <Button type="button" className="mt-4" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
+                        <ShoppingCart aria-hidden="true" /> {creandoPedido ? 'Creando pedido…' : 'Crear pedido'}
                       </Button>
                     ) : null}
                   </article>
@@ -423,8 +472,8 @@ export function VentasPage() {
                             </div>
                           ) : estadoVisible(cotizacion) === 'emitida' ? (
                             <div className="flex justify-end">
-                              <Button type="button" variant="outline" size="sm" onClick={() => confirmarPedido(cotizacion)}>
-                                <ShoppingCart aria-hidden="true" /> Crear pedido
+                              <Button type="button" variant="outline" size="sm" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
+                                <ShoppingCart aria-hidden="true" /> {creandoPedido ? 'Creando pedido…' : 'Crear pedido'}
                               </Button>
                             </div>
                           ) : (
@@ -446,10 +495,17 @@ export function VentasPage() {
       <PanelOperacionesVenta
         pedidos={pedidos}
         ventas={ventas}
-        productos={productos}
         alRegistrarVenta={registrarVenta}
+        alActualizarPedido={actualizarPedido}
+        alCancelarPedido={cancelarPedido}
         alDespacharVenta={despacharVenta}
         alNotificar={setMensaje}
+        cargando={cargandoOperaciones}
+        error={errorOperaciones}
+        alReintentar={reintentarOperaciones}
+        actualizandoPedido={actualizandoPedido}
+        cancelandoPedido={cancelandoPedido}
+        despachandoVenta={despachandoVenta}
       />
 
       {dialogoAbierto ? (
@@ -474,6 +530,20 @@ export function VentasPage() {
           }}
           alConfirmar={confirmarEmision}
           alRestaurarFoco={() => disparadorEmision.current?.focus()}
+        />
+      ) : null}
+
+      {cotizacionPorCrearPedido ? (
+        <DialogoSeleccionAlmacenPedido
+          abierto={Boolean(cotizacionPorCrearPedido)}
+          cotizacion={cotizacionPorCrearPedido}
+          almacenes={almacenesActivos}
+          guardando={creandoPedido}
+          alCambiarApertura={(abierto) => {
+            if (!abierto) setCotizacionPorCrearPedido(null)
+          }}
+          alConfirmar={confirmarPedido}
+          alRestaurarFoco={() => disparadorPedido.current?.focus()}
         />
       ) : null}
     </div>

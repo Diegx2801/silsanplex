@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/useAuth'
 import type { DatosAlmacen, DatosReclasificacion, DatosTransferencia, DatosUbicacion } from '@/modulos/inventario/modelo/almacen'
 import {
-  cargarGestionAlmacen,
+  cargarMaestrosAlmacen,
   configurarAlertas,
   crearAlmacen,
   crearUbicacion,
@@ -12,7 +12,7 @@ import {
 } from '@/modulos/inventario/servicios/almacenService'
 
 const vacio = {
-  almacenes: [], ubicaciones: [], saldos: [], alertas: [], kardex: [], transferencias: [],
+  almacenes: [], ubicaciones: [],
 }
 
 export function useAlmacenes() {
@@ -23,7 +23,7 @@ export function useAlmacenes() {
   const queryKey = ['warehouse-management', organizationId] as const
   const query = useQuery({
     queryKey,
-    queryFn: () => cargarGestionAlmacen(organizationId),
+    queryFn: () => cargarMaestrosAlmacen(organizationId),
     enabled: Boolean(organizationId),
   })
 

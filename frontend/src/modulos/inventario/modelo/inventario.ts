@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import type { ConsultaPaginadaInventario } from './paginacionInventario'
+
 import type { Producto } from '@/modulos/productos/modelo/producto'
 
 export const tiposMovimientoInventario = [
@@ -78,6 +80,57 @@ export interface ExistenciaProducto {
   almacenes: number
   lotesConStock: number
   ultimoMovimiento: MovimientoInventario | null
+}
+
+export type FiltroStockInventario = 'todos' | 'con-stock' | 'sin-stock'
+export type OrdenExistenciasInventario =
+  | 'producto-asc'
+  | 'producto-desc'
+  | 'codigo-asc'
+  | 'codigo-desc'
+  | 'stock-asc'
+  | 'stock-desc'
+
+export interface ConsultaExistenciasInventario extends ConsultaPaginadaInventario {
+  busqueda: string
+  filtroStock: FiltroStockInventario
+  orden: OrdenExistenciasInventario
+}
+
+export interface ExistenciaInventario {
+  productoId: string
+  productoCodigo: string
+  productoDescripcion: string
+  laboratorio: string
+  unidadMedida: string
+  stockFisico: number
+  stockDisponibleSanitario: number
+  stockReservado: number
+  stockAsignable: number
+  stockCuarentena: number
+  stockDanado: number
+  stockVencido: number
+  valorInventario: number
+  almacenes: number
+  bucketsConStock: number
+  lotesConStock: number
+}
+
+export interface ResumenExistenciasInventario {
+  productos: number
+  productosConStock: number
+  productosSinStock: number
+}
+
+export type OrdenMovimientosInventario = 'fecha-desc' | 'fecha-asc'
+
+export interface ConsultaMovimientosInventario extends ConsultaPaginadaInventario {
+  busqueda: string
+  almacenId: string
+  tipo: TipoMovimientoInventario | ''
+  fechaDesde: string
+  fechaHasta: string
+  orden: OrdenMovimientosInventario
 }
 
 export interface ResumenStockInventario {

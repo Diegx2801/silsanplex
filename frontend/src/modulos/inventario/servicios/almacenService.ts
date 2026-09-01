@@ -2,6 +2,11 @@ import { supabase } from '@/lib/supabase'
 import type {
   AlertaInventario,
   Almacen,
+  ConsultaAlertasStock,
+  ConsultaKardex,
+  ConsultaStockDetallado,
+  ConsultaTransferencias,
+  ConsultaVencimientos,
   DatosAlmacen,
   DatosReclasificacion,
   DatosTransferencia,
@@ -11,6 +16,11 @@ import type {
   TransferenciaAlmacen,
   UbicacionAlmacen,
 } from '@/modulos/inventario/modelo/almacen'
+import {
+  crearResultadoPaginado,
+  normalizarBusquedaInventario,
+  normalizarPaginacion,
+} from '@/modulos/inventario/modelo/paginacionInventario'
 
 function errorAlmacen(error: { code?: string; message?: string }) {
   const mensaje = error.message ?? ''
@@ -24,17 +34,12 @@ function errorAlmacen(error: { code?: string; message?: string }) {
   return 'No se pudo completar la operacion de almacen.'
 }
 
-export async function cargarGestionAlmacen(organizationId: string) {
-  const [almacenes, ubicaciones, saldos, alertasStock, alertasVencimiento, kardex, transferencias] = await Promise.all([
+export async function cargarMaestrosAlmacen(organizationId: string) {
+  const [almacenes, ubicaciones] = await Promise.all([
     supabase.from('warehouses').select('id,code,name,address,is_active').eq('organization_id', organizationId).order('name'),
     supabase.from('warehouse_locations').select('id,warehouse_id,code,name,description,is_active').eq('organization_id', organizationId).order('name'),
-    supabase.from('inventory_balances').select('*').eq('organization_id', organizationId).neq('quantity', 0).order('product_description'),
-    supabase.from('inventory_low_stock_alerts').select('*').eq('organization_id', organizationId).eq('has_low_stock_alert', true).order('product_description'),
-    supabase.from('inventory_expiration_alerts').select('*').eq('organization_id', organizationId).order('expiration_date'),
-    supabase.from('inventory_kardex').select('*').eq('organization_id', organizationId).order('operation_date', { ascending: false }).order('ledger_sequence', { ascending: false }).limit(250),
-    supabase.from('warehouse_transfers').select('id,reference,source_warehouse_id,destination_warehouse_id,transferred_at,notes').eq('organization_id', organizationId).order('transferred_at', { ascending: false }).limit(100),
   ])
-  const fallo = [almacenes, ubicaciones, saldos, alertasStock, alertasVencimiento, kardex, transferencias].find((resultado) => resultado.error)
+  const fallo = [almacenes, ubicaciones].find((resultado) => resultado.error)
   if (fallo?.error) throw new Error(errorAlmacen(fallo.error))
 
   return {
@@ -44,9 +49,77 @@ export async function cargarGestionAlmacen(organizationId: string) {
     ubicaciones: (ubicaciones.data ?? []).map((fila) => ({
       id: fila.id, almacenId: fila.warehouse_id, codigo: fila.code, nombre: fila.name, descripcion: fila.description ?? '', activa: fila.is_active,
     })) as UbicacionAlmacen[],
-    saldos: (saldos.data ?? []).map(mapearSaldo) as SaldoInventario[],
-    alertas: [
-      ...(alertasStock.data ?? []).map((fila) => ({
+  }
+}
+
+const columnasSaldo =
+  'product_id,product_code,product_description,unit_of_measure,warehouse_id,warehouse_code,warehouse_name,location_id,location_code,location_name,stock_status,lot,expiration_date,quantity,inventory_value,average_cost' as const
+const columnasVencimiento =
+  'product_id,product_code,product_description,unit_of_measure,warehouse_id,warehouse_code,warehouse_name,location_id,location_code,location_name,stock_status,lot,expiration_date,physical_quantity,inventory_value,average_cost,expiration_alert_days,days_until_expiration,expiration_state' as const
+const columnasKardex =
+  'id,product_id,product_code,product_description,warehouse,warehouse_id,stock_status,lot,operation_date,created_at,reason,unit_cost,inbound_quantity,outbound_quantity,inbound_value,outbound_value,running_quantity,running_value,ledger_sequence' as const
+
+function aplicarBusqueda<T extends { or: (filtro: string) => T }>(query: T, busqueda: string) {
+  const termino = normalizarBusquedaInventario(busqueda)
+  return termino
+    ? query.or(`product_code.ilike.%${termino}%,product_description.ilike.%${termino}%`)
+    : query
+}
+
+export async function listarStockDetallado(
+  organizationId: string,
+  consulta: ConsultaStockDetallado,
+) {
+  const { desde, hasta } = normalizarPaginacion(consulta)
+  let query = aplicarBusqueda(
+    supabase.from('inventory_balances').select(columnasSaldo, { count: 'exact' }).eq('organization_id', organizationId).neq('quantity', 0),
+    consulta.busqueda,
+  )
+  if (consulta.almacenId) query = query.eq('warehouse_id', consulta.almacenId)
+  if (consulta.ubicacionId) query = query.eq('location_id', consulta.ubicacionId)
+  if (consulta.lote.trim()) query = query.ilike('lot', `%${normalizarBusquedaInventario(consulta.lote)}%`)
+  if (consulta.estado) query = query.eq('stock_status', consulta.estado)
+  if (consulta.vencimientoDesde) query = query.gte('expiration_date', consulta.vencimientoDesde)
+  if (consulta.vencimientoHasta) query = query.lte('expiration_date', consulta.vencimientoHasta)
+
+  if (consulta.orden === 'producto-asc') {
+    query = query.order('product_description', { ascending: true })
+  } else {
+    query = query.order('expiration_date', {
+      ascending: consulta.orden === 'vencimiento-asc',
+      nullsFirst: false,
+    })
+  }
+  const { data, error, count } = await query
+    .order('product_id', { ascending: true })
+    .order('warehouse_id', { ascending: true })
+    .order('location_id', { ascending: true })
+    .order('stock_status', { ascending: true })
+    .order('lot', { ascending: true, nullsFirst: true })
+    .range(desde, hasta)
+  if (error) throw new Error(errorAlmacen(error))
+  return crearResultadoPaginado((data ?? []).map(mapearSaldo), count, consulta)
+}
+
+export async function listarAlertasStock(
+  organizationId: string,
+  consulta: ConsultaAlertasStock,
+) {
+  const { desde, hasta } = normalizarPaginacion(consulta)
+  let query = aplicarBusqueda(
+    supabase.from('inventory_low_stock_alerts').select('*', { count: 'exact' }).eq('organization_id', organizationId).eq('has_low_stock_alert', true),
+    consulta.busqueda,
+  )
+  if (consulta.almacenId) query = query.eq('warehouse_id', consulta.almacenId)
+  query = consulta.orden === 'stock-asc'
+    ? query.order('assignable_quantity', { ascending: true })
+    : query.order('product_description', { ascending: true })
+  const { data, error, count } = await query
+    .order('product_id', { ascending: true })
+    .order('warehouse_id', { ascending: true })
+    .range(desde, hasta)
+  if (error) throw new Error(errorAlmacen(error))
+  const elementos = (data ?? []).map((fila) => ({
       productoId: fila.product_id,
       productoCodigo: fila.product_code,
       productoDescripcion: fila.product_description,
@@ -69,18 +142,63 @@ export async function cargarGestionAlmacen(organizationId: string) {
       alertaVencimiento: false,
       diasParaVencer: null,
       estadoVencimiento: null,
-      })),
-      ...(alertasVencimiento.data ?? []).map((fila) => ({
-        ...mapearSaldoBucket(fila),
-        stockMinimo: 0,
-        diasAlertaVencimiento: Number(fila.expiration_alert_days),
-        alertaStockMinimo: false,
-        alertaVencimiento: true,
-        diasParaVencer: Number(fila.days_until_expiration),
-        estadoVencimiento: fila.expiration_state as AlertaInventario['estadoVencimiento'],
-      })),
-    ] as AlertaInventario[],
-    kardex: (kardex.data ?? []).map((fila) => ({
+  })) as AlertaInventario[]
+  return crearResultadoPaginado(elementos, count, consulta)
+}
+
+export async function listarVencimientos(
+  organizationId: string,
+  consulta: ConsultaVencimientos,
+) {
+  const { desde, hasta } = normalizarPaginacion(consulta)
+  let query = aplicarBusqueda(
+    supabase.from('inventory_expiration_alerts').select(columnasVencimiento, { count: 'exact' }).eq('organization_id', organizationId),
+    consulta.busqueda,
+  )
+  if (consulta.almacenId) query = query.eq('warehouse_id', consulta.almacenId)
+  if (consulta.estadoVencimiento) query = query.eq('expiration_state', consulta.estadoVencimiento)
+  if (consulta.fechaDesde) query = query.gte('expiration_date', consulta.fechaDesde)
+  if (consulta.fechaHasta) query = query.lte('expiration_date', consulta.fechaHasta)
+  const { data, error, count } = await query
+    .order('expiration_date', { ascending: consulta.orden === 'vencimiento-asc' })
+    .order('product_id', { ascending: true })
+    .order('warehouse_id', { ascending: true })
+    .order('location_id', { ascending: true })
+    .order('stock_status', { ascending: true })
+    .order('lot', { ascending: true, nullsFirst: true })
+    .range(desde, hasta)
+  if (error) throw new Error(errorAlmacen(error))
+  const elementos = (data ?? []).map((fila) => ({
+    ...mapearSaldoBucket(fila),
+    stockMinimo: 0,
+    diasAlertaVencimiento: Number(fila.expiration_alert_days),
+    alertaStockMinimo: false,
+    alertaVencimiento: true,
+    diasParaVencer: Number(fila.days_until_expiration),
+    estadoVencimiento: fila.expiration_state as AlertaInventario['estadoVencimiento'],
+  })) as AlertaInventario[]
+  return crearResultadoPaginado(elementos, count, consulta)
+}
+
+export async function listarKardex(
+  organizationId: string,
+  consulta: ConsultaKardex,
+) {
+  const { desde, hasta } = normalizarPaginacion(consulta)
+  let query = aplicarBusqueda(
+    supabase.from('inventory_kardex').select(columnasKardex, { count: 'exact' }).eq('organization_id', organizationId),
+    consulta.busqueda,
+  )
+  if (consulta.almacenId) query = query.eq('warehouse_id', consulta.almacenId)
+  if (consulta.fechaDesde) query = query.gte('operation_date', consulta.fechaDesde)
+  if (consulta.fechaHasta) query = query.lte('operation_date', consulta.fechaHasta)
+  const ascendente = consulta.orden === 'fecha-asc'
+  const { data, error, count } = await query
+    .order('operation_date', { ascending: ascendente })
+    .order('ledger_sequence', { ascending: ascendente })
+    .range(desde, hasta)
+  if (error) throw new Error(errorAlmacen(error))
+  const elementos = (data ?? []).map((fila) => ({
       id: fila.id,
       productoId: fila.product_id,
       productoCodigo: fila.product_code,
@@ -99,16 +217,41 @@ export async function cargarGestionAlmacen(organizationId: string) {
       saldoCantidad: Number(fila.running_quantity),
       saldoValor: Number(fila.running_value),
       secuenciaLedger: Number(fila.ledger_sequence),
-    })) as MovimientoKardex[],
-    transferencias: (transferencias.data ?? []).map((fila) => ({
+  })) as MovimientoKardex[]
+  return crearResultadoPaginado(elementos, count, consulta)
+}
+
+export async function listarTransferencias(
+  organizationId: string,
+  consulta: ConsultaTransferencias,
+) {
+  const { desde, hasta } = normalizarPaginacion(consulta)
+  let query = supabase
+    .from('warehouse_transfers')
+    .select('id,reference,source_warehouse_id,destination_warehouse_id,transferred_at,notes', { count: 'exact' })
+    .eq('organization_id', organizationId)
+  const busqueda = normalizarBusquedaInventario(consulta.busqueda)
+  if (busqueda) query = query.or(`reference.ilike.%${busqueda}%,notes.ilike.%${busqueda}%`)
+  if (consulta.almacenId) {
+    query = query.or(`source_warehouse_id.eq.${consulta.almacenId},destination_warehouse_id.eq.${consulta.almacenId}`)
+  }
+  if (consulta.fechaDesde) query = query.gte('transferred_at', `${consulta.fechaDesde}T00:00:00`)
+  if (consulta.fechaHasta) query = query.lte('transferred_at', `${consulta.fechaHasta}T23:59:59.999`)
+  const ascendente = consulta.orden === 'fecha-asc'
+  const { data, error, count } = await query
+    .order('transferred_at', { ascending: ascendente })
+    .order('id', { ascending: ascendente })
+    .range(desde, hasta)
+  if (error) throw new Error(errorAlmacen(error))
+  const elementos = (data ?? []).map((fila) => ({
       id: fila.id,
       referencia: fila.reference,
       almacenOrigenId: fila.source_warehouse_id,
       almacenDestinoId: fila.destination_warehouse_id,
       fechaTransferencia: fila.transferred_at,
       notas: fila.notes ?? '',
-    })) as TransferenciaAlmacen[],
-  }
+  })) as TransferenciaAlmacen[]
+  return crearResultadoPaginado(elementos, count, consulta)
 }
 
 function mapearSaldo(fila: Record<string, unknown>): SaldoInventario {

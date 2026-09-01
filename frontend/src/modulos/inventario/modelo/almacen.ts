@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import type { ConsultaPaginadaInventario } from './paginacionInventario'
+
 export type EstadoStock = 'available' | 'quarantine' | 'damaged'
 
 export interface Almacen {
@@ -75,6 +77,53 @@ export interface TransferenciaAlmacen {
   almacenDestinoId: string
   fechaTransferencia: string
   notas: string
+}
+
+export interface FiltrosListadoInventario {
+  busqueda: string
+  almacenId: string
+}
+
+export interface ConsultaStockDetallado
+  extends ConsultaPaginadaInventario,
+    FiltrosListadoInventario {
+  ubicacionId: string
+  lote: string
+  estado: EstadoStock | ''
+  vencimientoDesde: string
+  vencimientoHasta: string
+  orden: 'vencimiento-asc' | 'vencimiento-desc' | 'producto-asc'
+}
+
+export interface ConsultaKardex
+  extends ConsultaPaginadaInventario,
+    FiltrosListadoInventario {
+  fechaDesde: string
+  fechaHasta: string
+  orden: 'fecha-desc' | 'fecha-asc'
+}
+
+export interface ConsultaVencimientos
+  extends ConsultaPaginadaInventario,
+    FiltrosListadoInventario {
+  estadoVencimiento: AlertaInventario['estadoVencimiento'] | ''
+  fechaDesde: string
+  fechaHasta: string
+  orden: 'vencimiento-asc' | 'vencimiento-desc'
+}
+
+export interface ConsultaAlertasStock
+  extends ConsultaPaginadaInventario,
+    FiltrosListadoInventario {
+  orden: 'producto-asc' | 'stock-asc'
+}
+
+export interface ConsultaTransferencias extends ConsultaPaginadaInventario {
+  busqueda: string
+  almacenId: string
+  fechaDesde: string
+  fechaHasta: string
+  orden: 'fecha-desc' | 'fecha-asc'
 }
 
 const cantidadPositiva = z

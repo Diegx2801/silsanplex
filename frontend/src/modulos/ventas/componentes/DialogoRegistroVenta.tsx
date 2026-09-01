@@ -16,7 +16,7 @@ interface DialogoRegistroVentaProps {
   abierto: boolean
   pedido: PedidoVenta
   alCambiarApertura: (abierto: boolean) => void
-  alGuardar: (datos: DatosVenta) => string | undefined
+  alGuardar: (datos: DatosVenta) => string | undefined | Promise<string | undefined>
 }
 
 export function DialogoRegistroVenta({
@@ -41,8 +41,8 @@ export function DialogoRegistroVenta({
     },
   })
 
-  const guardar = (datos: DatosVenta) => {
-    const error = alGuardar(datos)
+  const guardar = async (datos: DatosVenta) => {
+    const error = await alGuardar(datos)
     if (error) return setError('root', { message: error })
     alCambiarApertura(false)
   }

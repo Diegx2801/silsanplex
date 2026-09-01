@@ -1,31 +1,51 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
 import type {
+  ConsultaExistenciasInventario,
+  ConsultaMovimientosInventario,
   DatosMovimientoInventario,
-  MovimientoInventario,
-  ResumenStockInventario,
 } from '@/modulos/inventario/modelo/inventario'
-import { cargarInventario, registrarMovimientoInventario } from '@/modulos/inventario/servicios/inventarioService'
+import {
+  contarResumenExistencias,
+  listarExistenciasInventario,
+  listarMovimientosInventario,
+  registrarMovimientoInventario,
+} from '@/modulos/inventario/servicios/inventarioService'
 
-const movimientosVacios: MovimientoInventario[] = []
-const resumenVacio: ResumenStockInventario[] = []
+interface ConsultasInventario {
+  existencias: ConsultaExistenciasInventario
+  movimientos: ConsultaMovimientosInventario
+}
 
-export function useInventario() {
+export function useInventario(consultas: ConsultasInventario) {
   const { access } = useAuth()
   const queryClient = useQueryClient()
   const organizationId = access?.organizationId ?? ''
-  const queryKey = ['inventory', organizationId] as const
-  const query = useQuery({
-    queryKey,
-    queryFn: () => cargarInventario(organizationId),
+  const inventoryQueryKey = ['inventory', organizationId] as const
+  const existenciasQuery = useQuery({
+    queryKey: [...inventoryQueryKey, 'existencias', consultas.existencias],
+    queryFn: () => listarExistenciasInventario(organizationId, consultas.existencias),
     enabled: Boolean(organizationId),
+    placeholderData: keepPreviousData,
+  })
+  const resumenQuery = useQuery({
+    queryKey: [...inventoryQueryKey, 'resumen-existencias'],
+    queryFn: () => contarResumenExistencias(organizationId),
+    enabled: Boolean(organizationId),
+    staleTime: 30_000,
+  })
+  const movimientosQuery = useQuery({
+    queryKey: [...inventoryQueryKey, 'movimientos', consultas.movimientos],
+    queryFn: () => listarMovimientosInventario(organizationId, consultas.movimientos),
+    enabled: Boolean(organizationId),
+    placeholderData: keepPreviousData,
   })
   const mutation = useMutation({
     mutationFn: (datos: DatosMovimientoInventario) => registrarMovimientoInventario(organizationId, datos),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey }),
+        queryClient.invalidateQueries({ queryKey: inventoryQueryKey }),
         queryClient.invalidateQueries({ queryKey: ['warehouse-management', organizationId] }),
         queryClient.invalidateQueries({ queryKey: ['inventory-fefo', organizationId] }),
       ])
@@ -33,11 +53,17 @@ export function useInventario() {
   })
 
   return {
-    movimientos: query.data?.movimientos ?? movimientosVacios,
-    resumenStock: query.data?.resumenStock ?? resumenVacio,
-    totalMovimientos: query.data?.total ?? 0,
-    cargando: query.isLoading,
-    error: query.error,
+    existencias: existenciasQuery.data,
+    resumenExistencias: resumenQuery.data,
+    movimientos: movimientosQuery.data,
+    cargandoExistencias: existenciasQuery.isLoading,
+    actualizandoExistencias: existenciasQuery.isFetching,
+    errorExistencias: existenciasQuery.error,
+    cargandoMovimientos: movimientosQuery.isLoading,
+    actualizandoMovimientos: movimientosQuery.isFetching,
+    errorMovimientos: movimientosQuery.error,
+    reintentarExistencias: () => existenciasQuery.refetch(),
+    reintentarMovimientos: () => movimientosQuery.refetch(),
     registrarMovimiento: async (datos: DatosMovimientoInventario) => {
       try {
         await mutation.mutateAsync(datos)
