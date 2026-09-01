@@ -6,6 +6,9 @@ interface FunctionErrorBody {
     code?: string
     message?: string
   }
+  code?: string
+  message?: string
+  msg?: string
 }
 
 export class EdgeFunctionError extends Error {
@@ -41,8 +44,12 @@ export async function invokeEdgeFunction<T>(
       const responseBody = (await context.clone().json().catch(() => null)) as
         | FunctionErrorBody
         | null
-      code = responseBody?.error?.code ?? null
-      message = responseBody?.error?.message ?? message
+      code = responseBody?.error?.code ?? responseBody?.code ?? null
+      message = responseBody?.error?.message ?? responseBody?.message ?? responseBody?.msg ?? message
+    }
+
+    if (message === 'No se pudo completar la operación.' && error instanceof Error && error.message) {
+      message = error.message
     }
 
     if (status === 401 || code === 'UNAUTHORIZED') {
