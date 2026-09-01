@@ -10,7 +10,9 @@ select plan(25);
 
 begin;
 drop schema if exists repair_identity_concurrency_test cascade;
+alter table public.audit_events disable trigger audit_events_immutable;
 delete from public.audit_events where organization_id = 'bc140000-0000-4000-8000-000000000001';
+alter table public.audit_events enable trigger audit_events_immutable;
 alter table public.repair_events disable trigger repair_events_immutable;
 delete from public.repair_events where organization_id = 'bc140000-0000-4000-8000-000000000001';
 alter table public.repair_events enable trigger repair_events_immutable;
@@ -374,7 +376,9 @@ select extensions.dblink_disconnect('repair_history_worker');
 
 begin;
 drop schema repair_identity_concurrency_test cascade;
+alter table public.audit_events disable trigger audit_events_immutable;
 delete from public.audit_events where organization_id = 'bc140000-0000-4000-8000-000000000001';
+alter table public.audit_events enable trigger audit_events_immutable;
 alter table public.repair_events disable trigger repair_events_immutable;
 delete from public.repair_events where organization_id = 'bc140000-0000-4000-8000-000000000001';
 alter table public.repair_events enable trigger repair_events_immutable;

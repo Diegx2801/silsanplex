@@ -678,6 +678,7 @@ select throws_ok($$
     '{"organization_id":"a1030000-0000-4000-8000-000000000002","repair_id":"a8030000-0000-4000-8000-000000000004","applied_solution":"Wrong tenant key"}'::jsonb
   )
 $$, 'P0001', 'REPAIR_NOT_FOUND', 'even service_role must match organization and repair');
+reset role;
 select is(
   (select count(*) from public.repair_events where repair_id = 'a8030000-0000-4000-8000-000000000004'),
   0::bigint,
@@ -688,6 +689,8 @@ select is(
   0::bigint,
   'the rejected service_role tenant mismatch creates no audit'
 );
+set local role service_role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select lives_ok($$
   select public.record_repair_solution(
     '{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000004","applied_solution":"Service specialized solution"}'::jsonb

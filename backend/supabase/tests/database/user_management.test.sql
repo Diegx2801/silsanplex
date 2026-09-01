@@ -1,6 +1,6 @@
 begin;
 
-select plan(42);
+select plan(55);
 
 -- -------------------------------------------------------------------------
 -- Estructura y datos base
@@ -141,6 +141,60 @@ select is(
   has_table_privilege('authenticated', 'public.audit_events', 'INSERT'),
   false,
   'el frontend no puede insertar auditoría directamente'
+);
+
+select has_function(
+  'public', 'prevent_audit_event_mutation', array[]::text[],
+  'existe la proteccion de auditoria inmutable'
+);
+select has_trigger(
+  'public', 'audit_events', 'audit_events_immutable',
+  'audit_events rechaza mutaciones despues de insertar'
+);
+select is(
+  has_table_privilege('service_role', 'public.audit_events', 'SELECT'),
+  false,
+  'service_role no consulta auditoria directamente'
+);
+select is(
+  has_table_privilege('service_role', 'public.audit_events', 'INSERT'),
+  false,
+  'service_role escribe auditoria solo mediante RPC confiables'
+);
+select is(
+  has_table_privilege('service_role', 'public.audit_events', 'UPDATE'),
+  false,
+  'service_role no puede alterar auditoria'
+);
+select is(
+  has_table_privilege('service_role', 'public.audit_events', 'DELETE'),
+  false,
+  'service_role no puede eliminar auditoria'
+);
+select is(
+  has_table_privilege('authenticated', 'public.audit_events', 'SELECT'),
+  true,
+  'authenticated conserva lectura sujeta a RLS'
+);
+select is(
+  has_table_privilege('authenticated', 'public.audit_events', 'UPDATE'),
+  false,
+  'authenticated no puede alterar auditoria'
+);
+select is(
+  has_table_privilege('authenticated', 'public.audit_events', 'DELETE'),
+  false,
+  'authenticated no puede eliminar auditoria'
+);
+select is(
+  (
+    select constraint_definition.confdeltype
+    from pg_catalog.pg_constraint constraint_definition
+    where constraint_definition.conrelid = 'public.audit_events'::regclass
+      and constraint_definition.conname = 'audit_events_actor_user_id_fkey'
+  ),
+  'r'::"char",
+  'un actor auditado no se elimina ni pierde su identidad historica'
 );
 
 -- -------------------------------------------------------------------------
@@ -325,6 +379,27 @@ values (
   'USER_CREATED',
   'PROFILE',
   '22222222-2222-4222-8222-222222222222'
+);
+
+select throws_ok($$
+  update public.audit_events
+  set metadata = jsonb_build_object('altered', true)
+  where entity_id = '22222222-2222-4222-8222-222222222222'
+$$, 'P0001', 'AUDIT_EVENT_IMMUTABLE', 'no permite alterar un evento de auditoria');
+
+select throws_ok($$
+  delete from public.audit_events
+  where entity_id = '22222222-2222-4222-8222-222222222222'
+$$, 'P0001', 'AUDIT_EVENT_IMMUTABLE', 'no permite eliminar un evento de auditoria');
+
+select is(
+  (
+    select count(*)
+    from public.audit_events
+    where entity_id = '22222222-2222-4222-8222-222222222222'
+  ),
+  1::bigint,
+  'el evento permanece intacto despues de los intentos de mutacion'
 );
 
 -- -------------------------------------------------------------------------
