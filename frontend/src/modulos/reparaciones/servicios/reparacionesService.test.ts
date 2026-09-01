@@ -320,6 +320,10 @@ describe('reparacionesService', () => {
       { message: 'REPAIR_APPLIED_SOLUTION_REQUIRED' },
       'solucion',
     )).toBe('Describe la solución aplicada antes de guardar.')
+    expect(obtenerMensajeErrorReparacion(
+      { message: 'REPAIR_TECHNICAL_CHANGE_REQUIRES_REWORK' },
+      'solucion',
+    )).toBe('Vuelve la reparación a En reparación antes de realizar cambios técnicos.')
     expect(obtenerMensajeErrorReparacion({}, 'solucion')).toBe(
       'No se pudo guardar la solución aplicada.',
     )

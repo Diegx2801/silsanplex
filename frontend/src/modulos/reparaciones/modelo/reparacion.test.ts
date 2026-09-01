@@ -50,6 +50,7 @@ describe('modelo de reparaciones', () => {
   it('expone solo transiciones comunes del estado actual', () => {
     expect(obtenerTransicionesGenericas('waiting_customer_approval')).toEqual([])
     expect(obtenerTransicionesGenericas('testing')).toEqual(['in_repair', 'ready_for_delivery'])
+    expect(obtenerTransicionesGenericas('ready_for_delivery')).toEqual(['in_repair'])
   })
 
   it('mantiene editable la identidad al crear y en recepción o garantía inicial', () => {

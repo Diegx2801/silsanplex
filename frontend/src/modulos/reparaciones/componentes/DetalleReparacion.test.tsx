@@ -11,6 +11,7 @@ vi.mock('@/modulos/inventario/estado/useCandidatosFefo', () => ({
 import type {
   DetalleReparacion as DatosDetalleReparacion,
   EstadoReparacion,
+  ParteReparacion,
   Reparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
 
@@ -48,16 +49,40 @@ const reparacionBase: Reparacion = {
   actualizadoEn: '2026-08-30T12:00:00Z',
 }
 
+const parteReservada: ParteReparacion = {
+  id: 'part-1',
+  organizationId: 'org-1',
+  reparacionId: 'repair-1',
+  productoId: 'product-1',
+  productoCodigoSnapshot: 'PROD-1',
+  productoDescripcionSnapshot: 'Repuesto de prueba',
+  almacenId: 'warehouse-1',
+  ubicacionId: 'location-1',
+  estadoStock: 'available',
+  lote: '',
+  fechaVencimiento: '',
+  cantidadSolicitada: 1,
+  cantidadConsumida: 0,
+  estado: 'reserved',
+  notas: '',
+  creadoPor: null,
+  actualizadoPor: null,
+  creadoEn: '2026-08-30T12:00:00Z',
+  actualizadoEn: '2026-08-30T12:00:00Z',
+  consumos: [],
+}
+
 function crearDetalle(
   estado: EstadoReparacion = 'diagnosis',
   solucionAplicada = '',
+  conParte = false,
 ): DatosDetalleReparacion {
   return {
     reparacion: { ...reparacionBase, estado, solucionAplicada },
     diagnosticos: [],
     cotizaciones: [],
     cotizacionActiva: null,
-    partes: [],
+    partes: conParte ? [parteReservada] : [],
     pruebas: [],
     eventos: [],
   }
@@ -67,13 +92,17 @@ function renderizarDetalle({
   estado = 'diagnosis',
   puedeEditar = false,
   puedeCambiarEstado = true,
+  puedeUsarPartes = false,
   solucionAplicada = '',
+  conParte = false,
   resultadoSolucion,
 }: {
   estado?: EstadoReparacion
   puedeEditar?: boolean
   puedeCambiarEstado?: boolean
+  puedeUsarPartes?: boolean
   solucionAplicada?: string
+  conParte?: boolean
   resultadoSolucion?: string
 } = {}) {
   const operacion = vi.fn().mockResolvedValue(undefined)
@@ -82,7 +111,7 @@ function renderizarDetalle({
   render(
     <DetalleReparacion
       abierto
-      detalle={crearDetalle(estado, solucionAplicada)}
+      detalle={crearDetalle(estado, solucionAplicada, conParte)}
       cargando={false}
       error={null}
       productos={[]}
@@ -92,7 +121,7 @@ function renderizarDetalle({
       puedeAsignar={false}
       puedeCambiarEstado={puedeCambiarEstado}
       puedeAprobarCotizacion={false}
-      puedeUsarPartes={false}
+      puedeUsarPartes={puedeUsarPartes}
       puedeEntregar={false}
       alCambiarApertura={vi.fn()}
       alRestaurarFoco={vi.fn()}
@@ -142,7 +171,7 @@ describe('DetalleReparacion acciones técnicas', () => {
   })
 
   it('permite modificar la solución aplicada existente', () => {
-    renderizarDetalle({ estado: 'testing', solucionAplicada: 'Fuente reemplazada' })
+    renderizarDetalle({ estado: 'in_repair', solucionAplicada: 'Fuente reemplazada' })
 
     fireEvent.click(screen.getByRole('button', { name: 'Modificar solución' }))
 
@@ -170,6 +199,21 @@ describe('DetalleReparacion acciones técnicas', () => {
     renderizarDetalle({ estado: 'delivered' })
 
     expect(screen.queryByRole('button', { name: 'Registrar solución' })).not.toBeInTheDocument()
+  })
+
+  it.each(['testing', 'ready_for_delivery'] as const)(
+    'exige retrabajo antes de modificar la solución desde %s',
+    (estado) => {
+      renderizarDetalle({ estado, solucionAplicada: 'Fuente reemplazada' })
+
+      expect(screen.queryByRole('button', { name: 'Modificar solución' })).not.toBeInTheDocument()
+    },
+  )
+
+  it('oculta el consumo de repuestos durante testing', () => {
+    renderizarDetalle({ estado: 'testing', puedeUsarPartes: true, conParte: true })
+
+    expect(screen.queryByRole('button', { name: 'Consumir saldo' })).not.toBeInTheDocument()
   })
 
   it('limpia un error de solución al cerrar y volver a abrir el diálogo', async () => {

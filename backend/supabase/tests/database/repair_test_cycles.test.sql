@@ -1,6 +1,6 @@
 begin;
 
-select plan(53);
+select plan(66);
 
 select has_column(
   'public', 'repairs', 'current_test_cycle_number',
@@ -380,6 +380,41 @@ select lives_ok($$
   select public.record_repair_test('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","test_type":"Operacion","result":"Aprobada","passed":true}'::jsonb)
 $$, 'aprueba el ciclo con repuesto pendiente');
 select throws_ok($$
+  select public.consume_repair_part(jsonb_build_object(
+    'organization_id', 'e1100000-0000-4000-8000-000000000001'::uuid,
+    'repair_part_id', (select id from public.repair_parts where repair_id = 'e1800000-0000-4000-8000-000000000005'),
+    'quantity', 1,
+    'operation_key', 'e1900000-0000-4000-8000-000000000001'::uuid
+  ))
+$$, 'P0001', 'REPAIR_TECHNICAL_CHANGE_REQUIRES_REWORK', 'testing rechaza consumo posterior a una prueba');
+select results_eq(
+  $$
+    select part.quantity_consumed, part.status,
+      (select count(*) from public.repair_part_consumptions consumption where consumption.repair_part_id = part.id),
+      (select count(*) from public.inventory_movements movement where movement.organization_id = part.organization_id and movement.source_type = 'repair-consumption')
+    from public.repair_parts part
+    where part.repair_id = 'e1800000-0000-4000-8000-000000000005'
+  $$,
+  $$ values (0.000::numeric, 'reserved'::text, 0::bigint, 0::bigint) $$,
+  'el consumo rechazado no altera reserva, fisico ni tracking'
+);
+select throws_ok($$
+  select public.record_repair_solution(
+    '{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","applied_solution":"Cambio posterior a la prueba"}'::jsonb
+  )
+$$, 'P0001', 'REPAIR_TECHNICAL_CHANGE_REQUIRES_REWORK', 'testing rechaza cambios de solucion posteriores a una prueba');
+select results_eq(
+  $$
+    select repair.applied_solution,
+      (select count(*) from public.repair_events event where event.repair_id = repair.id and event.event_type in ('SOLUTION_RECORDED', 'PART_CONSUMED')),
+      (select count(*) from public.audit_events audit where audit.entity_id = repair.id::text and audit.action in ('REPAIR_SOLUTION_RECORDED', 'REPAIR_PART_CONSUMED'))
+    from public.repairs repair
+    where repair.id = 'e1800000-0000-4000-8000-000000000005'
+  $$,
+  $$ values (null::text, 0::bigint, 0::bigint) $$,
+  'los cambios tecnicos rechazados no dejan valor, evento ni auditoria'
+);
+select throws_ok($$
   select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'ready_for_delivery', null)
 $$, 'P0001', 'REPAIR_PENDING_PARTS', 'repuesto reservado pendiente bloquea ready');
 select lives_ok($$
@@ -392,6 +427,47 @@ $$, 'cancela correctamente el repuesto pendiente');
 select lives_ok($$
   select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'ready_for_delivery', null)
 $$, 'el gate se reevalua luego de liberar el repuesto');
+select throws_ok($$
+  select public.record_repair_solution(
+    '{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","applied_solution":"Cambio cuando ya estaba lista"}'::jsonb
+  )
+$$, 'P0001', 'REPAIR_TECHNICAL_CHANGE_REQUIRES_REWORK', 'ready rechaza cambios tecnicos que volverian obsoleta la prueba');
+select results_eq(
+  $$
+    select repair.status, repair.applied_solution,
+      (select count(*) from public.repair_events event where event.repair_id = repair.id and event.event_type = 'SOLUTION_RECORDED'),
+      (select count(*) from public.audit_events audit where audit.entity_id = repair.id::text and audit.action = 'REPAIR_SOLUTION_RECORDED')
+    from public.repairs repair
+    where repair.id = 'e1800000-0000-4000-8000-000000000005'
+  $$,
+  $$ values ('ready_for_delivery'::text, null::text, 0::bigint, 0::bigint) $$,
+  'el cambio rechazado en ready es atomico'
+);
+select lives_ok($$
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'in_repair', 'Requiere retrabajo')
+$$, 'ready puede volver explicitamente a reparacion');
+select lives_ok($$
+  select public.record_repair_solution(
+    '{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","applied_solution":"Retrabajo controlado"}'::jsonb
+  )
+$$, 'in_repair permite registrar el retrabajo');
+select lives_ok($$
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'testing', 'Nueva validacion')
+$$, 'el retrabajo vuelve a testing por la ruta explicita');
+select is(
+  (select current_test_cycle_number from public.repairs where id = 'e1800000-0000-4000-8000-000000000005'),
+  2,
+  'volver a testing despues del retrabajo abre un ciclo nuevo'
+);
+select throws_ok($$
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'ready_for_delivery', null)
+$$, 'P0001', 'REPAIR_APPROVED_TEST_REQUIRED', 'la prueba anterior no aprueba el ciclo posterior al retrabajo');
+select lives_ok($$
+  select public.record_repair_test('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","test_type":"Operacion","result":"Retrabajo aprobado","passed":true}'::jsonb)
+$$, 'registra una prueba para el nuevo ciclo');
+select lives_ok($$
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'ready_for_delivery', null)
+$$, 'solo la prueba posterior al retrabajo recupera ready');
 
 select lives_ok($$
   select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000006', 'testing', null)

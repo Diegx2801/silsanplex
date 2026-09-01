@@ -267,6 +267,7 @@ const mensajesDominio: Array<[string, string]> = [
   ['REPAIR_PROBLEM_REQUIRED', 'Describe el problema de la reparación.'],
   ['REPAIR_NOT_FOUND', 'No se encontró la reparación solicitada.'],
   ['REPAIR_NOT_EDITABLE', 'La reparación ya no admite cambios.'],
+  ['REPAIR_TECHNICAL_CHANGE_REQUIRES_REWORK', 'Vuelve la reparación a En reparación antes de realizar cambios técnicos.'],
   ['REPAIR_IDENTITY_LOCKED', 'La identidad de la reparación ya no puede modificarse porque la atención ya avanzó.'],
   ['REPAIR_ASSIGN_USE_ASSIGN_RPC', 'La asignación debe realizarse desde la acción de asignar técnico.'],
   ['REPAIR_DIAGNOSIS_USE_DIAGNOSIS_RPC', 'El diagnóstico debe registrarse desde la acción especializada.'],
