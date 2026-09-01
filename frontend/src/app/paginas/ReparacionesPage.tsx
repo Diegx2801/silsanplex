@@ -306,6 +306,7 @@ export function ReparacionesPage() {
         alRegistrarDiagnostico={(datos: DatosDiagnostico) => operaciones.registrarDiagnostico(detalle?.reparacion.id ?? '', datos)}
         alRegistrarSolucion={(datos) => operaciones.registrarSolucion(detalle?.reparacion.id ?? '', datos)}
         alGuardarCotizacion={(datos: DatosCotizacion, enviar: boolean) => operaciones.guardarCotizacion(detalle?.reparacion.id ?? '', datos, enviar)}
+        alRevisarCotizacion={(cotizacionId: string, datos: DatosCotizacion, enviar: boolean) => operaciones.revisarCotizacion(detalle?.reparacion.id ?? '', cotizacionId, datos, enviar)}
         alAprobarCotizacion={(cotizacionId: string, datos: DatosObservacionReparacion) => operaciones.aprobarCotizacion(detalle?.reparacion.id ?? '', cotizacionId, datos)}
         alRechazarCotizacion={(cotizacionId: string, datos: DatosObservacionReparacion) => operaciones.rechazarCotizacion(detalle?.reparacion.id ?? '', cotizacionId, datos)}
         alReservarParte={(datos: DatosReservaParte) => operaciones.reservarParte(detalle?.reparacion.id ?? '', datos)}

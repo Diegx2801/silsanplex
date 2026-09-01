@@ -104,6 +104,7 @@ interface FilaCotizacion {
   organization_id: string
   repair_id: string
   version_number: number
+  is_current: boolean
   status: 'draft' | 'pending' | 'approved' | 'rejected'
   currency: 'PEN' | 'USD'
   prices_include_tax: boolean
@@ -286,6 +287,10 @@ const mensajesDominio: Array<[string, string]> = [
   ['REPAIR_QUOTE_STATE_INVALID', 'La reparación no está en un estado que permita cotizar.'],
   ['REPAIR_QUOTE_NOT_FOUND', 'No se encontró la cotización indicada.'],
   ['REPAIR_QUOTE_NOT_EDITABLE', 'Solo se pueden editar cotizaciones en borrador.'],
+  ['REPAIR_QUOTE_STALE_VERSION', 'La cotización cambió. Actualiza el detalle antes de continuar.'],
+  ['REPAIR_QUOTE_REVISION_REQUIRED', 'Esta cotización requiere crear una revisión explícita.'],
+  ['REPAIR_QUOTE_REVISION_STATE_INVALID', 'La reparación ya no permite crear esta revisión.'],
+  ['REPAIR_QUOTE_REVISION_BASE_INVALID', 'La versión seleccionada no es una cotización rechazada.'],
   ['REPAIR_QUOTE_PRODUCT_NOT_FOUND', 'No se encontró el producto del repuesto.'],
   ['REPAIR_QUOTE_PRODUCT_UNAVAILABLE', 'El producto del repuesto ya no está activo.'],
   ['REPAIR_QUOTE_APPROVAL_STATE_INVALID', 'La reparación no está esperando aprobación del cliente.'],
@@ -428,6 +433,7 @@ function mapearCotizacion(
     organizationId: fila.organization_id,
     reparacionId: fila.repair_id,
     version: fila.version_number,
+    esActual: fila.is_current,
     estado: fila.status,
     moneda: fila.currency,
     preciosIncluyenImpuesto: fila.prices_include_tax,
@@ -447,6 +453,12 @@ function mapearCotizacion(
     actualizadoEn: fila.updated_at,
     lineas,
   }
+}
+
+export function seleccionarCotizacionActual(
+  cotizaciones: readonly CotizacionReparacion[],
+) {
+  return cotizaciones.find((cotizacion) => cotizacion.esActual) ?? null
 }
 
 function mapearConsumo(fila: FilaConsumoParte): ConsumoParteReparacion {
@@ -632,7 +644,7 @@ export async function obtenerDetalleReparacion(
         .maybeSingle(),
       supabase
         .from('repair_quotes')
-        .select('id,organization_id,repair_id,version_number,status,currency,prices_include_tax,tax_rate,subtotal,tax,total,approved_by,approved_at,approval_observation,rejected_by,rejected_at,rejection_observation,created_by,updated_by,created_at,updated_at')
+        .select('id,organization_id,repair_id,version_number,is_current,status,currency,prices_include_tax,tax_rate,subtotal,tax,total,approved_by,approved_at,approval_observation,rejected_by,rejected_at,rejection_observation,created_by,updated_by,created_at,updated_at')
         .eq('organization_id', organizationId)
         .eq('repair_id', repairId)
         .order('version_number', { ascending: false })
@@ -728,7 +740,7 @@ export async function obtenerDetalleReparacion(
     consumosPorParte.set(fila.repair_part_id, consumos)
   }
 
-  const cotizacionActiva = cotizaciones[0] ?? null
+  const cotizacionActiva = seleccionarCotizacionActual(cotizaciones)
   const eventos = ((eventsResult.data ?? []) as FilaEvento[]).map(mapearEvento)
   return {
     reparacion: mapearReparacion(repairResult.data as FilaReparacion),
@@ -976,6 +988,36 @@ export async function guardarCotizacionReparacion(
       organization_id: organizationId,
       repair_id: reparacionId,
       ...(datos.id ? { id: datos.id } : {}),
+      currency: datos.moneda,
+      prices_include_tax: datos.preciosIncluyenImpuesto,
+      tax_rate: Number(datos.tasaImpuesto),
+      submit: enviar,
+      items: datos.lineas.map((linea) => ({
+        line_type: linea.tipo,
+        product_id: linea.tipo === 'part' ? linea.productoId : null,
+        description: linea.descripcion.trim(),
+        quantity: Number(linea.cantidad),
+        unit_price: Number(linea.precioUnitario),
+        taxable: linea.gravable,
+      })),
+    },
+  })
+  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'cotizacion'))
+  return data as string
+}
+
+export async function revisarCotizacionReparacion(
+  organizationId: string,
+  reparacionId: string,
+  cotizacionRechazadaId: string,
+  datos: DatosCotizacion,
+  enviar: boolean,
+) {
+  const { data, error } = await supabase.rpc('revise_repair_quote', {
+    payload: {
+      organization_id: organizationId,
+      repair_id: reparacionId,
+      rejected_quote_id: cotizacionRechazadaId,
       currency: datos.moneda,
       prices_include_tax: datos.preciosIncluyenImpuesto,
       tax_rate: Number(datos.tasaImpuesto),

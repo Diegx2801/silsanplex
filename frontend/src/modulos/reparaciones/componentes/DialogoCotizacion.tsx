@@ -49,6 +49,7 @@ interface DialogoCotizacionProps {
   abierto: boolean
   reparacion: Reparacion
   cotizacion: CotizacionReparacion | null
+  esRevision?: boolean
   productos: readonly OpcionProductoReparacion[]
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (datos: DatosCotizacion, enviar: boolean) => Promise<string | undefined>
@@ -58,6 +59,7 @@ export function DialogoCotizacion({
   abierto,
   reparacion,
   cotizacion,
+  esRevision = false,
   productos,
   alCambiarApertura,
   alGuardar,
@@ -119,7 +121,7 @@ export function DialogoCotizacion({
         <DialogPrimitive.Content className="fixed inset-y-0 end-0 z-[70] flex w-full max-w-4xl flex-col border-s bg-background shadow-xl outline-none data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:animate-in data-[state=open]:slide-in-from-right">
           <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7">
             <div>
-              <DialogPrimitive.Title className="text-xl font-semibold">{cotizacion ? `Editar cotización v${cotizacion.version}` : 'Crear cotización'}</DialogPrimitive.Title>
+              <DialogPrimitive.Title className="text-xl font-semibold">{esRevision && cotizacion ? `Crear revisión desde v${cotizacion.version}` : cotizacion ? `Editar cotización v${cotizacion.version}` : 'Crear cotización'}</DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">{reparacion.codigo} · El servidor calcula subtotal, impuesto y total al guardar.</DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close asChild><button type="button" aria-label="Cerrar cotización" className="grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X aria-hidden="true" className="size-5" /></button></DialogPrimitive.Close>

@@ -1,6 +1,6 @@
 begin;
 
-select plan(143);
+select plan(161);
 
 -- ------------------------------------------------------------
 -- Estructura, seguridad y matriz de permisos
@@ -25,6 +25,7 @@ select has_column(
 select has_table('public', 'repairs', 'existe la cabecera de reparaciones');
 select has_table('public', 'repair_diagnostics', 'existe el historial de diagnosticos');
 select has_table('public', 'repair_quotes', 'existen cotizaciones de reparacion');
+select has_column('public', 'repair_quotes', 'is_current', 'cotizaciones identifican la version vigente');
 select has_table('public', 'repair_quote_items', 'existe el detalle de cotizaciones');
 select has_table('public', 'repair_parts', 'existen reservas de repuestos');
 select has_table('public', 'repair_part_consumptions', 'existen consumos de repuestos');
@@ -117,6 +118,24 @@ select has_function('public', 'assign_repair', array['uuid', 'uuid', 'uuid'], 'e
 select has_function('public', 'change_repair_status', array['uuid', 'uuid', 'text', 'text'], 'existe change_repair_status');
 select has_function('public', 'record_repair_diagnosis', array['jsonb'], 'existe record_repair_diagnosis');
 select has_function('public', 'save_repair_quote', array['jsonb'], 'existe save_repair_quote');
+select has_function('public', 'revise_repair_quote', array['jsonb'], 'existe revise_repair_quote');
+select is(
+  (select prosecdef from pg_proc where oid = 'public.revise_repair_quote(jsonb)'::regprocedure),
+  true,
+  'revise_repair_quote es security definer'
+);
+select is(has_function_privilege('authenticated', 'public.revise_repair_quote(jsonb)', 'EXECUTE'), true, 'authenticated puede ejecutar la revision');
+select is(has_function_privilege('service_role', 'public.revise_repair_quote(jsonb)', 'EXECUTE'), true, 'service_role puede ejecutar la revision');
+select is(has_function_privilege('anon', 'public.revise_repair_quote(jsonb)', 'EXECUTE'), false, 'anon no puede ejecutar la revision');
+select is(
+  has_function_privilege(
+    'authenticated',
+    'public.write_repair_quote(uuid,uuid,uuid,integer,text,text,boolean,numeric,jsonb,uuid)',
+    'EXECUTE'
+  ),
+  false,
+  'el escritor interno de cotizaciones no se expone al cliente'
+);
 select has_function('public', 'approve_repair_quote', array['uuid', 'uuid', 'uuid', 'text'], 'existe approve_repair_quote');
 select has_function('public', 'reject_repair_quote', array['uuid', 'uuid', 'uuid', 'text'], 'existe reject_repair_quote');
 select has_function('public', 'reserve_repair_part', array['jsonb'], 'existe reserve_repair_part');
@@ -162,6 +181,11 @@ select is(
   (select count(*) from pg_constraint where conrelid = 'public.repair_quote_items'::regclass and pg_get_constraintdef(oid) like '%line_subtotal%'),
   0::bigint,
   'line_subtotal no se puede falsear como columna normal'
+);
+select is(
+  (select count(*) from pg_indexes where schemaname = 'public' and indexname = 'repair_quotes_one_current_idx'),
+  1::bigint,
+  'la base garantiza como maximo una cotizacion vigente por reparacion'
 );
 select ok(
   pg_get_functiondef('public.restore_product_version(uuid, uuid, integer)'::regprocedure) like '%serial_control%',
@@ -395,6 +419,15 @@ select is(
   'quote_pending'::text,
   'el borrador deja la reparacion en quote_pending'
 );
+select throws_ok($$
+  select public.save_repair_quote(jsonb_build_object(
+    'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'repair_id', (select id from public.repairs where customer_reference = 'FLOW'),
+    'items', jsonb_build_array(
+      jsonb_build_object('line_type', 'labor', 'description', 'Borrador duplicado', 'quantity', 1, 'unit_price', 10)
+    )
+  ))
+$$, 'P0001', 'REPAIR_QUOTE_REVISION_REQUIRED', 'no crea un segundo borrador implicito');
 select results_eq(
   $$
     select subtotal, tax, total
@@ -818,6 +851,119 @@ select results_eq(
   $$ values ('rejected'::text, 'rejected'::text) $$,
   'el rechazo sincroniza estados'
 );
+select throws_ok($$
+  select public.change_repair_status(
+    'f1000000-0000-4000-8000-000000000001',
+    (select id from public.repairs where customer_reference = 'REJECT'),
+    'quote_pending',
+    'Reapertura generica'
+  )
+$$, 'P0001', 'REPAIR_QUOTE_REVISION_REQUIRED', 'una reparacion rechazada solo reabre por revision');
+select lives_ok($$
+  select public.revise_repair_quote(jsonb_build_object(
+    'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'repair_id', (select id from public.repairs where customer_reference = 'REJECT'),
+    'rejected_quote_id', (
+      select id from public.repair_quotes
+      where repair_id = (select id from public.repairs where customer_reference = 'REJECT')
+        and is_current
+    ),
+    'tax_rate', 7,
+    'submit', false,
+    'items', jsonb_build_array(
+      jsonb_build_object('line_type', 'labor', 'description', 'Revision ajustada', 'quantity', 1, 'unit_price', 18)
+    )
+  ))
+$$, 'crea explicitamente la siguiente version desde la rechazada');
+select results_eq(
+  $$
+    select quote.version_number, quote.status, quote.is_current
+    from public.repair_quotes quote
+    where quote.repair_id = (select id from public.repairs where customer_reference = 'REJECT')
+    order by quote.version_number
+  $$,
+  $$ values
+    (1, 'rejected'::text, false),
+    (2, 'draft'::text, true)
+  $$,
+  'la revision conserva la rechazada historica y deja una sola vigente'
+);
+select throws_ok($$
+  select public.save_repair_quote(jsonb_build_object(
+    'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'repair_id', (select id from public.repairs where customer_reference = 'REJECT'),
+    'id', (
+      select id from public.repair_quotes
+      where repair_id = (select id from public.repairs where customer_reference = 'REJECT')
+        and version_number = 1
+    ),
+    'items', jsonb_build_array(
+      jsonb_build_object('line_type', 'labor', 'description', 'Version obsoleta', 'quantity', 1, 'unit_price', 1)
+    )
+  ))
+$$, 'P0001', 'REPAIR_QUOTE_STALE_VERSION', 'no edita una version historica');
+select throws_ok($$
+  select public.save_repair_quote(jsonb_build_object(
+    'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'repair_id', (select id from public.repairs where customer_reference = 'REJECT'),
+    'items', jsonb_build_array(
+      jsonb_build_object('line_type', 'labor', 'description', 'Nueva version implicita', 'quantity', 1, 'unit_price', 1)
+    )
+  ))
+$$, 'P0001', 'REPAIR_QUOTE_REVISION_REQUIRED', 'no omite la ruta explicita despues de revisar');
+select lives_ok($$
+  select public.save_repair_quote(jsonb_build_object(
+    'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'repair_id', (select id from public.repairs where customer_reference = 'REJECT'),
+    'id', (
+      select id from public.repair_quotes
+      where repair_id = (select id from public.repairs where customer_reference = 'REJECT')
+        and is_current
+    ),
+    'submit', true,
+    'tax_rate', 7,
+    'items', jsonb_build_array(
+      jsonb_build_object('line_type', 'labor', 'description', 'Revision ajustada', 'quantity', 1, 'unit_price', 18)
+    )
+  ))
+$$, 'envia solamente la revision vigente');
+select results_eq(
+  $$
+    select repair.status, quote.status, quote.version_number
+    from public.repairs repair
+    join public.repair_quotes quote
+      on quote.organization_id = repair.organization_id
+     and quote.repair_id = repair.id
+     and quote.is_current
+    where repair.customer_reference = 'REJECT'
+  $$,
+  $$ values ('waiting_customer_approval'::text, 'pending'::text, 2) $$,
+  'el envio de la revision sincroniza la reparacion y la version vigente'
+);
+select throws_ok($$
+  select public.approve_repair_quote(
+    'f1000000-0000-4000-8000-000000000001',
+    (select id from public.repairs where customer_reference = 'REJECT'),
+    (
+      select id from public.repair_quotes
+      where repair_id = (select id from public.repairs where customer_reference = 'REJECT')
+        and version_number = 1
+    ),
+    'Aprobacion obsoleta'
+  )
+$$, 'P0001', 'REPAIR_QUOTE_STALE_VERSION', 'no aprueba una version historica');
+select throws_ok($$
+  select public.reject_repair_quote(
+    'f1000000-0000-4000-8000-000000000001',
+    (select id from public.repairs where customer_reference = 'REJECT'),
+    (
+      select id from public.repair_quotes
+      where repair_id = (select id from public.repairs where customer_reference = 'REJECT')
+        and version_number = 1
+    ),
+    'Rechazo obsoleto'
+  )
+$$, 'P0001', 'REPAIR_QUOTE_STALE_VERSION', 'no rechaza una version historica');
 select set_config(
   'request.jwt.claims',
   '{"sub":"f2000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"f3000000-0000-4000-8000-000000000002"}',

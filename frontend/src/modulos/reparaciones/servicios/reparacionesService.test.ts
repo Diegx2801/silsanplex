@@ -17,7 +17,10 @@ import {
   registrarDiagnosticoReparacion,
   registrarSolucionReparacion,
   reservarParteReparacion,
+  revisarCotizacionReparacion,
+  seleccionarCotizacionActual,
 } from './reparacionesService'
+import type { CotizacionReparacion } from '@/modulos/reparaciones/modelo/reparacion'
 
 interface RespuestaSupabase {
   data: unknown
@@ -292,6 +295,72 @@ describe('reparacionesService', () => {
     })
   })
 
+  it('selecciona la cotización marcada vigente y no la versión numérica mayor', () => {
+    const cotizacionBase = {
+      organizationId: 'org-1',
+      reparacionId: 'repair-1',
+      estado: 'draft',
+      moneda: 'PEN',
+      preciosIncluyenImpuesto: false,
+      tasaImpuesto: 0,
+      subtotal: 10,
+      impuesto: 0,
+      total: 10,
+      aprobadoPor: null,
+      aprobadoEn: null,
+      observacionAprobacion: '',
+      rechazadoPor: null,
+      rechazadoEn: null,
+      observacionRechazo: '',
+      creadoPor: null,
+      actualizadoPor: null,
+      creadoEn: '2026-09-01T00:00:00Z',
+      actualizadoEn: '2026-09-01T00:00:00Z',
+      lineas: [],
+    } satisfies Omit<CotizacionReparacion, 'id' | 'version' | 'esActual'>
+    const cotizaciones: CotizacionReparacion[] = [
+      { ...cotizacionBase, id: 'quote-2', version: 2, esActual: false },
+      { ...cotizacionBase, id: 'quote-1', version: 1, esActual: true, estado: 'pending' },
+    ]
+
+    expect(seleccionarCotizacionActual(cotizaciones)?.id).toBe('quote-1')
+  })
+
+  it('envía la revisión por la RPC especializada con su cotización rechazada', async () => {
+    supabaseMock.rpc.mockResolvedValue({ data: 'quote-2', error: null })
+
+    await revisarCotizacionReparacion('org-1', 'repair-1', 'quote-1', {
+      moneda: 'PEN',
+      preciosIncluyenImpuesto: false,
+      tasaImpuesto: '18',
+      lineas: [{
+        tipo: 'labor',
+        productoId: '',
+        descripcion: 'Mano de obra ajustada',
+        cantidad: '1',
+        precioUnitario: '80',
+        gravable: true,
+      }],
+    }, true)
+
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('revise_repair_quote', {
+      payload: expect.objectContaining({
+        organization_id: 'org-1',
+        repair_id: 'repair-1',
+        rejected_quote_id: 'quote-1',
+        submit: true,
+        items: [{
+          line_type: 'labor',
+          product_id: null,
+          description: 'Mano de obra ajustada',
+          quantity: 1,
+          unit_price: 80,
+          taxable: true,
+        }],
+      }),
+    })
+  })
+
   it('explica los rechazos del gate sobre el ciclo de pruebas vigente', () => {
     expect(obtenerMensajeErrorReparacion(
       { message: 'REPAIR_FAILED_TEST_PRESENT' },
@@ -327,5 +396,9 @@ describe('reparacionesService', () => {
     expect(obtenerMensajeErrorReparacion({}, 'solucion')).toBe(
       'No se pudo guardar la solución aplicada.',
     )
+    expect(obtenerMensajeErrorReparacion(
+      { message: 'REPAIR_QUOTE_STALE_VERSION' },
+      'cotizacion',
+    )).toBe('La cotización cambió. Actualiza el detalle antes de continuar.')
   })
 })
