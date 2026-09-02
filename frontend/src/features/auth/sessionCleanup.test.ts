@@ -9,14 +9,14 @@ describe('limpiarDatosTemporalesDeSesion', () => {
 
   it('elimina únicamente datos temporales de SILSANPLEX', () => {
     window.sessionStorage.setItem('silsanplex.productos-temporales.v1', '[]')
-    window.sessionStorage.setItem('silsanplex.operaciones-venta-temporales.v1', '{}')
+    window.sessionStorage.setItem('silsanplex.cotizaciones-temporales.v1', '[]')
     window.sessionStorage.setItem('otra-aplicacion.estado', 'conservar')
 
     limpiarDatosTemporalesDeSesion(window.sessionStorage)
 
     expect(window.sessionStorage.getItem('silsanplex.productos-temporales.v1')).toBeNull()
     expect(
-      window.sessionStorage.getItem('silsanplex.operaciones-venta-temporales.v1'),
+      window.sessionStorage.getItem('silsanplex.cotizaciones-temporales.v1'),
     ).toBeNull()
     expect(window.sessionStorage.getItem('otra-aplicacion.estado')).toBe('conservar')
   })

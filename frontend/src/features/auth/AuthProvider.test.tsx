@@ -310,7 +310,7 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
     })
-    window.sessionStorage.setItem('silsanplex.ventas-temporales.v1', '{}')
+    window.sessionStorage.setItem('silsanplex.cotizaciones-temporales.v1', '[]')
     mocks.from.mockImplementation((table: string) => {
       if (table !== 'organization_memberships') {
         throw new Error(`Consulta inesperada a ${table}`)
@@ -333,7 +333,7 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('access-state')).toHaveTextContent('sin acceso')
     })
     expect(
-      window.sessionStorage.getItem('silsanplex.ventas-temporales.v1'),
+      window.sessionStorage.getItem('silsanplex.cotizaciones-temporales.v1'),
     ).toBeNull()
   })
 

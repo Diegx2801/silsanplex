@@ -235,9 +235,8 @@ export async function listarVentasPersistentes(organizationId: string) {
   const ventas = ((data ?? []) as unknown as VentaFila[]).map(mapearVenta)
   if (!ventas.length) return ventas
 
-  // El saldo operativo se deriva de las reservas persistentes. No se usa
-  // sessionStorage ni se infiere desde el estado local de la venta. El filtro
-  // por las líneas visibles evita descargar reservas ajenas a estas ventas.
+  // El saldo operativo se deriva de las reservas persistentes. El filtro por
+  // las líneas visibles evita descargar reservas ajenas a estas ventas.
   const orderItemIds = ventas.flatMap((venta) => venta.lineas.map((linea) => linea.pedidoLineaId)).filter((id): id is string => Boolean(id))
   if (!orderItemIds.length) return ventas
   const reservas = await supabase
