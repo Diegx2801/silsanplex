@@ -1,6 +1,6 @@
 import { FileDown, Pencil, Plus, Search, Truck } from 'lucide-react'
 import { jsPDF } from 'jspdf'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useDeferredValue, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
@@ -12,7 +12,8 @@ import {
   type ProgramacionEntrega,
 } from '@/modulos/distribucion/modelo/programacionEntrega'
 import { formatearFechaDistribucion } from '@/modulos/distribucion/servicios/formatoDistribucion'
-import { crearRepositorioOperacionesVentaSesion } from '@/modulos/ventas/servicios/repositorioOperacionesVentaSesion'
+import { usePedidosPersistentes } from '@/modulos/ventas/estado/usePedidosPersistentes'
+import { useVentasPersistentes } from '@/modulos/ventas/estado/useVentasPersistentes'
 
 const hoy = new Date().toISOString().slice(0, 10)
 const formatoFecha = new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -35,11 +36,9 @@ const etiquetasModalidad: Record<string, string> = {
 }
 
 export function DistribucionPage() {
-  const { pedidos } = useMemo(
-    () => crearRepositorioOperacionesVentaSesion(window.sessionStorage).listar(),
-    [],
-  )
-  const { programaciones, guardar, actualizarEstado } = useProgramacionesEntrega()
+  const { pedidos, cargando: cargandoPedidos, error: errorPedidos, reintentar: reintentarPedidos } = usePedidosPersistentes()
+  const { ventas, cargando: cargandoVentas, error: errorVentas, reintentar: reintentarVentas } = useVentasPersistentes()
+  const { programaciones, guardar, actualizarEstado, error: errorProgramaciones, reintentar: reintentarProgramaciones } = useProgramacionesEntrega()
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<'todos' | ProgramacionEntrega['estado']>('todos')
   const [filtroFecha, setFiltroFecha] = useState('')
@@ -72,11 +71,13 @@ export function DistribucionPage() {
     lineas: [],
   })
   const busquedaDiferida = useDeferredValue(busqueda)
+  const ventaPorPedido = new Map(ventas.map((venta) => [venta.pedidoId, venta]))
+  const pedidoTieneVenta = (pedidoId: string) => ventaPorPedido.has(pedidoId)
   const pedidosDisponibles = pedidos.filter((pedido) =>
-    !programaciones.some((item) => item.pedidoId === pedido.id && item.id !== edicion?.id),
+    pedidoTieneVenta(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id && item.id !== edicion?.id),
   )
   const pedidosPorProgramar = pedidos.filter(
-    (pedido) => pedido.estado !== 'cancelado' && !programaciones.some((item) => item.pedidoId === pedido.id),
+    (pedido) => pedido.estado !== 'cancelado' && pedidoTieneVenta(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id),
   )
   const filtradas = filtrarProgramacionesEntrega(programaciones, {
     busqueda: busquedaDiferida,
@@ -86,6 +87,7 @@ export function DistribucionPage() {
   const resumen = resumirEntregas(programaciones, hoy)
 
   const pedidoPorId = (pedidoId: string) => pedidos.find((pedido) => pedido.id === pedidoId)
+  const ventaPorPedidoId = (pedidoId: string) => ventaPorPedido.get(pedidoId)
 
   const abrirFormulario = (programacion?: ProgramacionEntrega) => {
     setEdicion(programacion ?? null)
@@ -145,13 +147,17 @@ export function DistribucionPage() {
 
   const prepararPedido = (pedidoId: string) => {
     const pedido = pedidos.find((item) => item.id === pedidoId)
-    if (!pedido) return
+    const venta = ventaPorPedidoId(pedidoId)
+    if (!pedido || !venta) {
+      setMensaje('El pedido debe tener una venta persistente para programar su entrega')
+      return
+    }
     setEdicion(null)
     setDatos({
       pedidoId: pedido.id,
       pedidoNumero: pedido.numero,
-      ventaId: '',
-      ventaNumero: '',
+      ventaId: venta.id,
+      ventaNumero: venta.numeroInterno,
       clienteNombre: pedido.clienteNombre,
       direccionEntrega: '',
       numeroDespacho: '',
@@ -177,7 +183,15 @@ export function DistribucionPage() {
 
   const seleccionarPedido = (pedidoId: string) => {
     const pedido = pedidos.find((item) => item.id === pedidoId)
-    setDatos((actuales) => ({ ...actuales, pedidoId, pedidoNumero: pedido?.numero ?? '', clienteNombre: pedido?.clienteNombre ?? '' }))
+    const venta = ventaPorPedidoId(pedidoId)
+    setDatos((actuales) => ({
+      ...actuales,
+      pedidoId,
+      pedidoNumero: pedido?.numero ?? '',
+      ventaId: venta?.id ?? '',
+      ventaNumero: venta?.numeroInterno ?? '',
+      clienteNombre: pedido?.clienteNombre ?? '',
+    }))
   }
 
   const enviar = async (evento: React.FormEvent<HTMLFormElement>) => {
@@ -187,7 +201,20 @@ export function DistribucionPage() {
       setMensaje(resultado.error.issues[0]?.message ?? 'Revisa los datos')
       return
     }
-    const error = await guardar(resultado.data, edicion?.id, pedidoPorId(resultado.data.pedidoId)?.lineas ?? edicion?.lineas ?? [])
+    const pedido = pedidoPorId(resultado.data.pedidoId)
+    const venta = ventaPorPedidoId(resultado.data.pedidoId)
+    if ((!pedido || !venta) && !edicion) {
+      setMensaje('El pedido o la venta persistente ya no están disponibles; recarga la página')
+      return
+    }
+    const datosPersistentes = {
+      ...resultado.data,
+      pedidoNumero: pedido?.numero ?? edicion?.pedidoNumero ?? resultado.data.pedidoNumero,
+      clienteNombre: pedido?.clienteNombre ?? edicion?.clienteNombre ?? resultado.data.clienteNombre,
+      ventaId: venta?.id ?? edicion?.ventaId ?? '',
+      ventaNumero: venta?.numeroInterno ?? edicion?.ventaNumero ?? '',
+    }
+    const error = await guardar(datosPersistentes, edicion?.id, pedido?.lineas ?? edicion?.lineas ?? [])
     setMensaje(error ?? (edicion ? 'Distribución actualizada.' : 'Distribución programada.'))
     if (!error) setFormularioAbierto(false)
   }
@@ -196,7 +223,8 @@ export function DistribucionPage() {
     const entrega = programaciones.find((item) => item.id === id)
     if (!entrega) return
     const pedido = pedidoPorId(entrega.pedidoId)
-    if (!pedido) {
+    const lineas = entrega.lineas.length ? entrega.lineas : pedido?.lineas ?? []
+    if (!lineas.length) {
       setMensaje('No se encontró el detalle del pedido seleccionado')
       return
     }
@@ -270,12 +298,16 @@ export function DistribucionPage() {
     pdf.setFontSize(8)
     pdf.text('PRODUCTO', margen + 4, y + 6)
     pdf.text('UNIDAD', 150, y + 6)
-    pdf.text('CANTIDAD', 188, y + 6, { align: 'right' })
+    pdf.text('PEDIDAS', 132, y + 6, { align: 'right' })
+    pdf.text('DESPACHADAS', 162, y + 6, { align: 'right' })
+    pdf.text('PENDIENTES', 190, y + 6, { align: 'right' })
     y += 9
 
     pdf.setFont('helvetica', 'normal')
-    pedido.lineas.forEach((linea, indice) => {
-      const descripcion = pdf.splitTextToSize(linea.productoDescripcion, 115)
+    lineas.forEach((linea, indice) => {
+      const descripcion = pdf.splitTextToSize(linea.productoDescripcion, 100)
+      const despachada = linea.cantidadDespachada ?? 0
+      const pendiente = linea.cantidadPendiente ?? Math.max(linea.cantidad - despachada, 0)
       const alto = Math.max(10, descripcion.length * 4 + 6)
       if (indice % 2 === 0) {
         pdf.setFillColor(248, 250, 249)
@@ -284,9 +316,11 @@ export function DistribucionPage() {
       pdf.setTextColor(...tinta)
       pdf.setFontSize(9)
       pdf.text(descripcion, margen + 4, y + 6)
-      pdf.text(linea.unidadMedida || '-', 150, y + 6)
+      pdf.text(linea.unidadMedida || '-', 118, y + 6)
       pdf.setFont('helvetica', 'bold')
-      pdf.text(String(linea.cantidad), 188, y + 6, { align: 'right' })
+      pdf.text(String(linea.cantidad), 132, y + 6, { align: 'right' })
+      pdf.text(String(despachada), 162, y + 6, { align: 'right' })
+      pdf.text(String(pendiente), 190, y + 6, { align: 'right' })
       pdf.setFont('helvetica', 'normal')
       y += alto
     })
@@ -347,12 +381,20 @@ export function DistribucionPage() {
       </section>
 
       <p role="status" aria-live="polite" className="sr-only">{mensaje}</p>
+      {errorPedidos || errorVentas || errorProgramaciones ? (
+        <aside role="alert" className="flex flex-wrap items-center justify-between gap-3 border-s-4 border-destructive bg-destructive/10 px-5 py-4 text-sm">
+          <span>No se pudieron cargar los pedidos, ventas o entregas persistentes.</span>
+          <Button type="button" variant="outline" onClick={() => { void reintentarPedidos(); void reintentarVentas(); void reintentarProgramaciones() }}>Reintentar</Button>
+        </aside>
+      ) : null}
       <section aria-labelledby="pendientes-programacion-title" className="ledger-sheet">
         <div className="border-b px-5 py-5 sm:px-6">
           <h2 id="pendientes-programacion-title" className="text-lg font-semibold">Pedidos por programar</h2>
           <p className="mt-1 text-sm text-muted-foreground">Pedidos confirmados que todavía no tienen una entrega asignada.</p>
         </div>
-        {!pedidosPorProgramar.length ? (
+        {cargandoPedidos || cargandoVentas ? (
+          <p className="px-5 py-6 text-sm text-muted-foreground sm:px-6">Cargando pedidos persistentes…</p>
+        ) : !pedidosPorProgramar.length ? (
           <p className="px-5 py-6 text-sm text-muted-foreground sm:px-6">No hay pedidos pendientes de programación.</p>
         ) : (
           <div className="divide-y">{pedidosPorProgramar.map((pedido) => (
@@ -392,7 +434,7 @@ export function DistribucionPage() {
           <div className="divide-y">{filtradas.map((item) => (
             <article key={item.id} className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[1.1fr_1fr_1fr_auto] lg:items-center">
               <div className="print-delivery-header"><p className="font-mono text-xs text-primary">SILSANPLEX · CONSTANCIA DE ENTREGA</p><p className="font-mono text-xs text-muted-foreground">Emisión: {formatearFechaDistribucion(item.fechaEmision)}</p></div>
-              <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{pedidoPorId(item.pedidoId)?.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · <span className="font-mono font-semibold">{linea.cantidad}</span> {linea.unidadMedida}</p>) ?? <p>Detalle del pedido no disponible</p>}</div></div>
+              <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · {item.ventaNumero ? `Venta ${item.ventaNumero} · ` : ''}Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{item.lineas.length ? item.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · pedidas <span className="font-mono font-semibold">{linea.cantidad}</span> · despachadas <span className="font-mono font-semibold">{linea.cantidadDespachada ?? 0}</span> · pendientes <span className="font-mono font-semibold">{linea.cantidadPendiente ?? linea.cantidad}</span> {linea.unidadMedida}</p>) : <p>Detalle del pedido no disponible</p>}</div></div>
               <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted-foreground">Emisión</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEmision)}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEntrega)}</dd></div></dl>
               <div>
                 <p className="text-sm">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</p>

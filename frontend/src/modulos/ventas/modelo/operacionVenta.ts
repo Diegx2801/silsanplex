@@ -38,7 +38,9 @@ export const esquemaLineaOperacionVenta = z.object({
   productoDescripcion: z.string().min(1),
   unidadMedida: z.string(),
   cantidad: z.number().positive(),
-  precioUnitario: z.number().positive(),
+  // PostgreSQL permite precio cero para bonificaciones; distribución solo
+  // necesita la cantidad y la identidad persistente de la línea.
+  precioUnitario: z.number().nonnegative(),
   lote: z.string(),
   fechaVencimiento: z.string(),
   // Identidad persistente de la línea de pedido. El despacho canónico la usa

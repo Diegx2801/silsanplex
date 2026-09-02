@@ -1,6 +1,6 @@
 begin;
 
-select plan(41);
+select plan(51);
 
 select has_table('public', 'distribution_deliveries', 'existe la tabla persistente de distribución');
 select has_column('public', 'distribution_deliveries', 'delivery_status', 'existe el estado operativo');
@@ -13,7 +13,10 @@ select has_column('public', 'distribution_deliveries', 'vehiculo', 'existe el ve
 select has_column('public', 'distribution_deliveries', 'placa', 'existe la placa');
 select has_column('public', 'distribution_deliveries', 'evidencia', 'existe la evidencia');
 select has_column('public', 'distribution_deliveries', 'incidencias', 'existe el arreglo de incidencias');
+select has_column('public', 'distribution_deliveries', 'sale_id', 'existe el vínculo persistente con la venta');
+select has_column('public', 'distribution_deliveries', 'sale_number', 'existe el número de venta persistente');
 select has_function('public', 'save_distribution_delivery', array['jsonb'], 'existe el RPC de persistencia');
+select is((select count(*) from pg_constraint where conname = 'distribution_deliveries_order_same_organization'), 1::bigint, 'la FK pedido-distribución conserva la organización');
 select ok((select relrowsecurity from pg_class where oid = 'public.distribution_deliveries'::regclass), 'la tabla mantiene RLS');
 select is(has_table_privilege('authenticated', 'public.distribution_deliveries', 'SELECT'), true, 'authenticated consulta distribución');
 select is(has_table_privilege('authenticated', 'public.distribution_deliveries', 'INSERT'), false, 'authenticated no inserta directamente');
@@ -34,6 +37,98 @@ insert into public.organization_memberships (organization_id, user_id)
 values ('d3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111');
 insert into public.user_roles (organization_id, user_id, role_code)
 values ('d3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111', 'LOGISTICA');
+
+insert into public.customers (
+  id, organization_id, document_type, document_number, legal_name, created_by, updated_by
+) values (
+  'c3111111-1111-4111-8111-111111111111',
+  'd3111111-1111-4111-8111-111111111111',
+  'RUC', '20111111111', 'Cliente persistente distribución',
+  'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+);
+insert into public.products (
+  id, organization_id, code, description, unit_of_measure, batch_control, created_by, updated_by
+) values (
+  'b3111111-1111-4111-8111-111111111111',
+  'd3111111-1111-4111-8111-111111111111',
+  'DIST-001', 'Producto persistente distribución', 'UND', false,
+  'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+);
+insert into public.warehouses (
+  id, organization_id, code, name, created_by, updated_by
+) values (
+  'a3111111-1111-4111-8111-111111111121',
+  'd3111111-1111-4111-8111-111111111111',
+  'DIST', 'Almacén distribución',
+  'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+);
+
+insert into public.orders (
+  id, organization_id, order_number, customer_id, warehouse_id, order_date,
+  status, operation_key, created_by, updated_by
+) values
+  (
+    'a3111111-1111-4111-8111-111111111111',
+    'd3111111-1111-4111-8111-111111111111', 'PED-000001',
+    'c3111111-1111-4111-8111-111111111111', 'a3111111-1111-4111-8111-111111111121',
+    '2026-08-30', 'confirmado', 'a3111111-1111-4111-8111-111111111131',
+    'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+  ),
+  (
+    'a3111111-1111-4111-8111-111111111112',
+    'd3111111-1111-4111-8111-111111111111', 'PED-000002',
+    'c3111111-1111-4111-8111-111111111111', 'a3111111-1111-4111-8111-111111111121',
+    '2026-09-01', 'confirmado', 'a3111111-1111-4111-8111-111111111132',
+    'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+  );
+insert into public.order_items (
+  id, organization_id, order_id, product_id, product_code, product_description,
+  unit_of_measure, quantity, unit_price
+) values
+  (
+    'a3111111-1111-4111-8111-111111111141',
+    'd3111111-1111-4111-8111-111111111111', 'a3111111-1111-4111-8111-111111111111',
+    'b3111111-1111-4111-8111-111111111111', 'DIST-001', 'Producto persistente distribución', 'UND', 2, 10
+  ),
+  (
+    'a3111111-1111-4111-8111-111111111142',
+    'd3111111-1111-4111-8111-111111111111', 'a3111111-1111-4111-8111-111111111112',
+    'b3111111-1111-4111-8111-111111111111', 'DIST-001', 'Producto persistente distribución', 'UND', 3, 10
+  );
+insert into public.sales (
+  id, organization_id, order_id, customer_id, internal_number, document_type,
+  series, document_number, sale_date, warehouse, operation_key, created_by, updated_by
+) values
+  (
+    'a3111111-1111-4111-8111-111111111151',
+    'd3111111-1111-4111-8111-111111111111', 'a3111111-1111-4111-8111-111111111111',
+    'c3111111-1111-4111-8111-111111111111', 'VEN-000001', 'factura', 'F001', '1',
+    '2026-08-30', 'Almacén distribución', 'a3111111-1111-4111-8111-111111111161',
+    'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+  ),
+  (
+    'a3111111-1111-4111-8111-111111111152',
+    'd3111111-1111-4111-8111-111111111111', 'a3111111-1111-4111-8111-111111111112',
+    'c3111111-1111-4111-8111-111111111111', 'VEN-000002', 'factura', 'F001', '2',
+    '2026-09-01', 'Almacén distribución', 'a3111111-1111-4111-8111-111111111162',
+    'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+  );
+insert into public.sale_items (
+  id, organization_id, sale_id, order_id, order_item_id, product_id,
+  product_code, product_description, unit_of_measure, quantity, unit_price
+) values
+  (
+    'a3111111-1111-4111-8111-111111111171',
+    'd3111111-1111-4111-8111-111111111111', 'a3111111-1111-4111-8111-111111111151',
+    'a3111111-1111-4111-8111-111111111111', 'a3111111-1111-4111-8111-111111111141',
+    'b3111111-1111-4111-8111-111111111111', 'DIST-001', 'Producto persistente distribución', 'UND', 2, 10
+  ),
+  (
+    'a3111111-1111-4111-8111-111111111172',
+    'd3111111-1111-4111-8111-111111111111', 'a3111111-1111-4111-8111-111111111152',
+    'a3111111-1111-4111-8111-111111111112', 'a3111111-1111-4111-8111-111111111142',
+    'b3111111-1111-4111-8111-111111111111', 'DIST-001', 'Producto persistente distribución', 'UND', 3, 10
+  );
 
 -- Simula una fila creada antes de que existieran las columnas nuevas.
 insert into public.distribution_deliveries (
@@ -65,6 +160,7 @@ select lives_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
     'organization_id', 'd3111111-1111-4111-8111-111111111111',
     'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111152',
     'order_number', 'PED-N-001',
     'customer_name', 'Cliente nuevo',
     'issue_date', '2026-09-01',
@@ -83,7 +179,7 @@ select lives_ok($$
     'evidencia', 'foto-entrega.jpg',
     'incidencias', jsonb_build_array('Demora de 10 minutos'),
     'observations', 'Entrega de prueba',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-n', 'cantidad', 2))
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
   ));
 $$, 'el RPC guarda una entrega con todos los campos nuevos');
 
@@ -98,6 +194,9 @@ select is((select vehiculo from public.distribution_deliveries where guide_numbe
 select is((select placa from public.distribution_deliveries where guide_number = 'G-N-001'), 'ABC-123', 'persiste la placa normalizada');
 select is((select evidencia from public.distribution_deliveries where guide_number = 'G-N-001'), 'foto-entrega.jpg', 'persiste la evidencia');
 select is((select incidencias from public.distribution_deliveries where guide_number = 'G-N-001'), '["Demora de 10 minutos"]'::jsonb, 'persiste las incidencias');
+select is((select sale_id from public.distribution_deliveries where guide_number = 'G-N-001'), 'a3111111-1111-4111-8111-111111111152'::uuid, 'la entrega queda ligada a la venta real');
+select is((select sale_number from public.distribution_deliveries where guide_number = 'G-N-001'), 'VEN-000002', 'persiste el número real de venta');
+select is((select order_items -> 0 ->> 'id' from public.distribution_deliveries where guide_number = 'G-N-001'), 'a3111111-1111-4111-8111-111111111142', 'las líneas se reconstruyen desde order_items y no desde el payload');
 
 select lives_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
@@ -115,6 +214,38 @@ select lives_ok($$
   ));
 $$, 'una actualización de seguimiento no rompe filas históricas');
 select is((select delivery_status from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), 'en_destino', 'actualiza el estado histórico');
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111113', 'order_number', 'PED-000003',
+    'customer_name', 'Pedido inexistente', 'issue_date', '2026-09-01', 'delivery_date', '2026-09-02',
+    'guide_number', 'G-NOT-FOUND', 'transport_type', 'interno', 'direction', 'Av. Prueba',
+    'numero_despacho', 'DES-NOT-FOUND', 'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 1))
+  ));
+$$, 'P0001', 'DISTRIBUTION_ORDER_NOT_FOUND', 'rechaza pedido persistente inexistente');
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111112',
+    'order_id', 'a3111111-1111-4111-8111-111111111112', 'order_number', 'PED-000002',
+    'customer_name', 'Cruce de organización', 'issue_date', '2026-09-01', 'delivery_date', '2026-09-02',
+    'guide_number', 'G-CROSS-ORG', 'transport_type', 'interno', 'direction', 'Av. Prueba',
+    'numero_despacho', 'DES-CROSS-ORG', 'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 1))
+  ));
+$$, '42501', 'DISTRIBUTION_FORBIDDEN', 'rechaza operación de otra organización');
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112', 'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
+    'issue_date', '2026-09-01', 'delivery_date', '2026-09-02', 'guide_number', 'G-N-001',
+    'transport_type', 'externo', 'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001',
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+  ));
+$$, '23505', 'DISTRIBUTION_DUPLICATE_GUIDE_OR_ORDER', 'un retry no duplica la entrega');
+select is((select count(*) from public.distribution_deliveries where order_id = 'a3111111-1111-4111-8111-111111111112'), 1::bigint, 'el retry conserva una sola entrega');
 
 select throws_ok($$
   select public.save_distribution_delivery(jsonb_build_object(

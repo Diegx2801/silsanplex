@@ -38,5 +38,5 @@ export function useProgramacionesEntrega() {
     return guardar({ ...entrega, estado, seguimiento }, entrega.id, entrega.lineas)
   }
 
-  return { programaciones, guardar, actualizarEstado, actualizarSeguimiento, cargando: query.isLoading, error: query.error }
+  return { programaciones, guardar, actualizarEstado, actualizarSeguimiento, cargando: query.isLoading, error: query.error, reintentar: query.refetch }
 }

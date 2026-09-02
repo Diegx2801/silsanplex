@@ -7,10 +7,13 @@ import {
   type DatosProgramacionEntrega,
   type ProgramacionEntrega,
 } from '@/modulos/distribucion/modelo/programacionEntrega'
+import { listarPedidosPersistentes, listarVentasPersistentes } from '@/modulos/ventas/servicios/ventasService'
 
 interface EntregaFila {
   id: string
   order_id: string
+  sale_id?: string | null
+  sale_number?: string | null
   order_number: string
   customer_name: string
   issue_date: string
@@ -33,7 +36,7 @@ interface EntregaFila {
   created_at: string
 }
 
-const columnas = 'id,order_id,order_number,customer_name,issue_date,delivery_date,guide_number,transport_type,tracking_status,delivery_status,direction,numero_despacho,modalidad,transportista,conductor,vehiculo,placa,evidencia,incidencias,observations,order_items,created_at' as const
+const columnas = 'id,order_id,sale_id,sale_number,order_number,customer_name,issue_date,delivery_date,guide_number,transport_type,tracking_status,delivery_status,direction,numero_despacho,modalidad,transportista,conductor,vehiculo,placa,evidencia,incidencias,observations,order_items,created_at' as const
 
 export function prepararPayloadEntrega(
   organizationId: string,
@@ -45,6 +48,7 @@ export function prepararPayloadEntrega(
     ...(id ? { id } : {}),
     organization_id: organizationId,
     order_id: datos.pedidoId,
+    sale_id: datos.ventaId || null,
     order_number: datos.pedidoNumero,
     customer_name: datos.clienteNombre,
     issue_date: datos.fechaEmision || new Date().toISOString().slice(0, 10),
@@ -78,6 +82,8 @@ export function mapearEntrega(fila: EntregaFila): ProgramacionEntrega {
   return esquemaProgramacionEntrega.parse({
     id: fila.id,
     pedidoId: fila.order_id,
+    ventaId: fila.sale_id ?? '',
+    ventaNumero: fila.sale_number ?? '',
     pedidoNumero: fila.order_number,
     clienteNombre: fila.customer_name,
     direccionEntrega: fila.direction ?? '',
@@ -101,12 +107,44 @@ export function mapearEntrega(fila: EntregaFila): ProgramacionEntrega {
   })
 }
 
+function enriquecerEntrega(
+  entrega: ProgramacionEntrega,
+  pedido: Awaited<ReturnType<typeof listarPedidosPersistentes>>[number] | undefined,
+  venta: Awaited<ReturnType<typeof listarVentasPersistentes>>[number] | undefined,
+) {
+  if (!pedido) return entrega
+
+  const lineas = pedido.lineas.map((linea) => {
+    const lineaVenta = venta?.lineas.find((item) => item.pedidoLineaId === linea.id)
+    return {
+      ...linea,
+      cantidadDespachada: lineaVenta?.cantidadDespachada ?? 0,
+      cantidadPendiente: lineaVenta?.cantidadPendiente ?? linea.cantidad,
+    }
+  })
+
+  return esquemaProgramacionEntrega.parse({
+    ...entrega,
+    pedidoNumero: pedido.numero,
+    clienteNombre: pedido.clienteNombre,
+    ventaId: venta?.id ?? entrega.ventaId ?? '',
+    ventaNumero: venta?.numeroInterno ?? entrega.ventaNumero ?? '',
+    lineas,
+  })
+}
+
 function mensajeError(error: { code?: string; message?: string }) {
   const mensaje = error.message ?? ''
   if (error.code === '23505' || mensaje.includes('DISTRIBUTION_DUPLICATE')) return 'Ya existe una entrega para este pedido o guía de remisión'
   if (error.code === '42501' || mensaje.includes('DISTRIBUTION_FORBIDDEN')) return 'No tienes permiso para administrar distribución'
   if (mensaje.includes('DISTRIBUTION_NOT_FOUND')) return 'La entrega ya no existe'
   if (mensaje.includes('DISTRIBUTION_DIRECTION_REQUIRED')) return 'Ingresa la dirección de entrega'
+  if (mensaje.includes('DISTRIBUTION_ORDER_NOT_FOUND')) return 'El pedido persistente no existe en esta organización'
+  if (mensaje.includes('DISTRIBUTION_ORDER_NOT_AVAILABLE')) return 'El pedido cancelado no puede programarse'
+  if (mensaje.includes('DISTRIBUTION_ORDER_MISMATCH')) return 'La entrega no puede cambiar de pedido'
+  if (mensaje.includes('DISTRIBUTION_ORDER_ITEMS_REQUIRED')) return 'El pedido no tiene líneas persistentes'
+  if (mensaje.includes('DISTRIBUTION_SALE_REQUIRED')) return 'El pedido todavía no tiene una venta persistente'
+  if (mensaje.includes('DISTRIBUTION_SALE_MISMATCH')) return 'La venta no corresponde al pedido seleccionado'
   if (mensaje.includes('DISTRIBUTION_DISPATCH_NUMBER_REQUIRED')) return 'Ingresa el número de despacho'
   if (mensaje.includes('DISTRIBUTION_GUIDE_REQUIRED')) return 'Ingresa el número de guía de remisión'
   if (mensaje.includes('DISTRIBUTION_TRANSPORT_INVALID')) return 'Selecciona un tipo de transporte válido'
@@ -124,7 +162,23 @@ export async function listarEntregas(organizationId: string) {
     .order('delivery_date', { ascending: true })
     .order('id', { ascending: false })
   if (error) throw new Error(mensajeError(error))
-  return ((data ?? []) as EntregaFila[]).map(mapearEntrega)
+  const entregas = ((data ?? []) as EntregaFila[]).map(mapearEntrega)
+  if (!entregas.length) return entregas
+
+  // order_items se conserva solo como snapshot histórico. La lectura vigente
+  // reconstruye las líneas desde SQL y los saldos desde reservas persistentes.
+  const [pedidos, ventas] = await Promise.all([
+    listarPedidosPersistentes(organizationId),
+    listarVentasPersistentes(organizationId),
+  ])
+  const pedidosPorId = new Map(pedidos.map((pedido) => [pedido.id, pedido]))
+  const ventasPorPedidoId = new Map(ventas.map((venta) => [venta.pedidoId, venta]))
+
+  return entregas.map((entrega) => enriquecerEntrega(
+    entrega,
+    pedidosPorId.get(entrega.pedidoId),
+    ventasPorPedidoId.get(entrega.pedidoId),
+  ))
 }
 
 export async function guardarEntrega(
