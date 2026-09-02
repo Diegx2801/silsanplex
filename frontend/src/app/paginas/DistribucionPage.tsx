@@ -3,6 +3,8 @@ import { jsPDF } from 'jspdf'
 import { useDeferredValue, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { useAuth } from '@/features/auth/useAuth'
+import { PERMISSIONS } from '@/features/auth/permissions'
 import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
 import {
   esquemaDatosProgramacionEntrega,
@@ -36,6 +38,8 @@ const etiquetasModalidad: Record<string, string> = {
 }
 
 export function DistribucionPage() {
+  const { hasPermission } = useAuth()
+  const puedeGestionarDistribucion = hasPermission(PERMISSIONS.DISTRIBUTION_MANAGE)
   const { pedidos, cargando: cargandoPedidos, error: errorPedidos, reintentar: reintentarPedidos } = usePedidosPersistentes()
   const { ventas, cargando: cargandoVentas, error: errorVentas, reintentar: reintentarVentas } = useVentasPersistentes()
   const { programaciones, guardar, actualizarEstado, error: errorProgramaciones, reintentar: reintentarProgramaciones } = useProgramacionesEntrega()
@@ -358,7 +362,7 @@ export function DistribucionPage() {
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Distribución</h1>
           <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">Programa entregas de pedidos, registra su guía de remisión y acompaña cada envío hasta destino.</p>
         </div>
-        <Button type="button" size="lg" onClick={() => abrirFormulario()}><Plus aria-hidden="true" /> Programar entrega</Button>
+        {puedeGestionarDistribucion ? <Button type="button" size="lg" onClick={() => abrirFormulario()}><Plus aria-hidden="true" /> Programar entrega</Button> : null}
       </header>
 
       <section aria-label="Resumen de distribución" className="ledger-sheet">
@@ -400,7 +404,7 @@ export function DistribucionPage() {
           <div className="divide-y">{pedidosPorProgramar.map((pedido) => (
             <article key={pedido.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
               <div><p className="font-mono text-xs text-primary">{pedido.numero}</p><h3 className="mt-1 font-semibold">{pedido.clienteNombre}</h3><p className="mt-1 text-xs text-muted-foreground">{pedido.lineas.length} producto{pedido.lineas.length === 1 ? '' : 's'} · Pedido confirmado</p></div>
-              <Button type="button" onClick={() => prepararPedido(pedido.id)}><Plus aria-hidden="true" /> Programar</Button>
+              {puedeGestionarDistribucion ? <Button type="button" onClick={() => prepararPedido(pedido.id)}><Plus aria-hidden="true" /> Programar</Button> : null}
             </article>
           ))}</div>
         )}
@@ -438,20 +442,22 @@ export function DistribucionPage() {
               <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted-foreground">Emisión</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEmision)}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEntrega)}</dd></div></dl>
               <div>
                 <p className="text-sm">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</p>
-                <select aria-label={`Estado de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado'])} className="field-control mt-2">
-                  {Object.entries(etiquetasEstado).map(([valor, etiqueta]) => (
-                    <option key={valor} value={valor}>{etiqueta}</option>
-                  ))}
-                </select>
+                {puedeGestionarDistribucion ? (
+                  <select aria-label={`Estado de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado'])} className="field-control mt-2">
+                    {Object.entries(etiquetasEstado).map(([valor, etiqueta]) => (
+                      <option key={valor} value={valor}>{etiqueta}</option>
+                    ))}
+                  </select>
+                ) : <p className="mt-2 text-sm text-muted-foreground">Solo consulta</p>}
                 {item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}
               </div>
-              <div className="flex gap-2 print:hidden"><Button type="button" variant="outline" onClick={() => abrirFormulario(item)}><Pencil aria-hidden="true" /> Editar</Button><Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
+              <div className="flex gap-2 print:hidden">{puedeGestionarDistribucion ? <Button type="button" variant="outline" onClick={() => abrirFormulario(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}<Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
             </article>
           ))}</div>
         )}
       </section>
 
-      {formularioAbierto ? (
+      {puedeGestionarDistribucion && formularioAbierto ? (
         <div role="dialog" aria-modal="true" aria-labelledby="programar-title" className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
           <form onSubmit={enviar} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto bg-background p-6 shadow-xl">
             <div className="flex items-start justify-between gap-4"><div><h2 id="programar-title" className="text-xl font-semibold">{edicion ? 'Editar entrega' : 'Programar entrega'}</h2><p className="mt-1 text-sm text-muted-foreground">Vincula el pedido con su guía y fecha de entrega.</p></div><Button type="button" variant="ghost" onClick={() => setFormularioAbierto(false)}>Cerrar</Button></div>

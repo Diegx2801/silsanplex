@@ -5,7 +5,8 @@ import type { DatosProgramacionEntrega, ProgramacionEntrega } from '@/modulos/di
 import { guardarEntrega, listarEntregas } from '@/modulos/distribucion/servicios/distribucionService'
 
 export function useProgramacionesEntrega() {
-  const { access } = useAuth()
+  const { access, hasPermission } = useAuth()
+  const puedeGestionarDistribucion = hasPermission('DISTRIBUTION_MANAGE')
   const queryClient = useQueryClient()
   const organizationId = access?.organizationId ?? ''
   const queryKey = ['distribution-deliveries', organizationId] as const
@@ -24,6 +25,7 @@ export function useProgramacionesEntrega() {
   const programaciones = query.data ?? []
 
   const guardar = (datos: DatosProgramacionEntrega, id?: string, lineas: ProgramacionEntrega['lineas'] = []) => {
+    if (!puedeGestionarDistribucion) return Promise.resolve('No tienes permiso para administrar distribución')
     if (programaciones.some((item) => item.pedidoId === datos.pedidoId && item.id !== id)) return Promise.resolve('Este pedido ya tiene una entrega programada')
     return ejecutar(() => guardarMutation.mutateAsync({ datos, lineas, id }))
   }

@@ -173,7 +173,13 @@ export const router = createBrowserRouter([
         lazy: async () => {
           const { VentasPage } = await import('@/app/paginas/VentasPage')
 
-          return { Component: VentasPage }
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.SALES_VIEW}>
+                <VentasPage />
+              </PermissionRoute>
+            ),
+          }
         },
       },
       {
@@ -181,7 +187,13 @@ export const router = createBrowserRouter([
         lazy: async () => {
           const { DistribucionPage } = await import('@/app/paginas/DistribucionPage')
 
-          return { Component: DistribucionPage }
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.DISTRIBUTION_VIEW}>
+                <DistribucionPage />
+              </PermissionRoute>
+            ),
+          }
         },
       },
       {

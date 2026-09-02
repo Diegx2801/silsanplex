@@ -315,6 +315,8 @@ select is(
     'REPAIRS_UPDATE',
     'REPAIRS_USE_PARTS',
     'REPAIRS_VIEW',
+    'SALES_MANAGE',
+    'SALES_VIEW',
     'SUPPLIERS_MANAGE',
     'SUPPLIERS_VIEW',
     'USERS_MANAGE'
@@ -342,7 +344,9 @@ select is(
     'REPAIRS_APPROVE_QUOTE',
     'REPAIRS_CREATE',
     'REPAIRS_UPDATE',
-    'REPAIRS_VIEW'
+    'REPAIRS_VIEW',
+    'SALES_MANAGE',
+    'SALES_VIEW'
   ]::text[],
   'VENTAS obtiene sus permisos comerciales y de consulta operativa'
 );
@@ -462,6 +466,8 @@ select is(
     'REPAIRS_UPDATE',
     'REPAIRS_USE_PARTS',
     'REPAIRS_VIEW',
+    'SALES_MANAGE',
+    'SALES_VIEW',
     'SUPPLIERS_MANAGE',
     'SUPPLIERS_VIEW'
   ]::text[],

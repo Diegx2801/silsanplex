@@ -19,6 +19,8 @@ import {
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { useAuth } from '@/features/auth/useAuth'
+import { PERMISSIONS } from '@/features/auth/permissions'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
 import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
@@ -88,6 +90,11 @@ function EstadoCotizacionEtiqueta({ cotizacion }: { cotizacion: Cotizacion }) {
 }
 
 export function VentasPage() {
+  const { hasPermission } = useAuth()
+  const puedeGestionarVentas = hasPermission(PERMISSIONS.SALES_MANAGE)
+  const puedeDespachar =
+    hasPermission(PERMISSIONS.DISTRIBUTION_MANAGE) &&
+    hasPermission(PERMISSIONS.INVENTORY_MANAGE)
   const { clientes } = useClientes()
   const { productos } = useProductos()
   const { almacenes, cargando: cargandoAlmacenes, error: errorAlmacenes } = useAlmacenes()
@@ -181,6 +188,7 @@ export function VentasPage() {
   }
 
   const guardar = (datos: DatosCotizacion, cotizacionId?: string) => {
+    if (!puedeGestionarVentas) return 'No tienes permiso para administrar ventas'
     const error = guardarCotizacion(datos, cotizacionId)
     if (!error) {
       setMensaje(
@@ -201,6 +209,10 @@ export function VentasPage() {
   }
 
   const confirmarEmision = () => {
+    if (!puedeGestionarVentas) {
+      setMensaje('No tienes permiso para administrar ventas')
+      return
+    }
     if (!cotizacionPorEmitir) return
     const error = emitirCotizacion(cotizacionPorEmitir.id)
     setMensaje(error ?? `${cotizacionPorEmitir.numero} emitida correctamente.`)
@@ -216,6 +228,7 @@ export function VentasPage() {
   }
 
   const confirmarPedido = async (almacenId: string) => {
+    if (!puedeGestionarVentas) return 'No tienes permiso para administrar ventas'
     if (!cotizacionPorCrearPedido) return 'Selecciona una cotización válida'
     const cotizacion = cotizacionPorCrearPedido
     const error = await crearPedido(cotizacion.id, almacenId)
@@ -251,14 +264,16 @@ export function VentasPage() {
             transaccional.
           </p>
         </div>
-        <Button
-          type="button"
-          size="lg"
-          disabled={!clientesActivos.length || !productosActivos.length}
-          onClick={(evento) => abrirFormulario(evento)}
-        >
-          <Plus aria-hidden="true" /> Nueva cotización
-        </Button>
+        {puedeGestionarVentas ? (
+          <Button
+            type="button"
+            size="lg"
+            disabled={!clientesActivos.length || !productosActivos.length}
+            onClick={(evento) => abrirFormulario(evento)}
+          >
+            <Plus aria-hidden="true" /> Nueva cotización
+          </Button>
+        ) : null}
       </header>
 
       <section aria-label="Resumen comercial" className="ledger-sheet">
@@ -287,7 +302,7 @@ export function VentasPage() {
 
       <p role="status" aria-live="polite" className="sr-only">{mensaje}</p>
 
-      {(!clientesActivos.length || !productosActivos.length) ? (
+      {puedeGestionarVentas && (!clientesActivos.length || !productosActivos.length) ? (
         <aside className="border-s-4 border-primary bg-accent/60 px-5 py-4 text-sm leading-6">
           {!clientesActivos.length ? (
             <>
@@ -409,7 +424,7 @@ export function VentasPage() {
                         <dd className="mt-1 font-mono font-semibold">{formatoMoneda.format(total)}</dd>
                       </div>
                     </dl>
-                    {cotizacion.estado === 'borrador' ? (
+                    {puedeGestionarVentas && cotizacion.estado === 'borrador' ? (
                       <div className="mt-4 flex gap-2">
                         <Button type="button" variant="outline" onClick={(evento) => abrirFormulario(evento, cotizacion)}>
                           <Pencil aria-hidden="true" /> Editar
@@ -418,11 +433,13 @@ export function VentasPage() {
                           <Send aria-hidden="true" /> Emitir
                         </Button>
                       </div>
-                    ) : estadoVisible(cotizacion) === 'emitida' ? (
+                    ) : puedeGestionarVentas && estadoVisible(cotizacion) === 'emitida' ? (
                       <Button type="button" className="mt-4" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
                         <ShoppingCart aria-hidden="true" /> {creandoPedido ? 'Creando pedido…' : 'Crear pedido'}
                       </Button>
-                    ) : null}
+                    ) : puedeGestionarVentas ? null : (
+                      <p className="mt-4 text-sm text-muted-foreground">Solo consulta</p>
+                    )}
                   </article>
                 )
               })}
@@ -461,7 +478,7 @@ export function VentasPage() {
                         <td className="px-4 py-4 text-end font-mono font-semibold">{formatoMoneda.format(total)}</td>
                         <td className="px-4 py-4"><EstadoCotizacionEtiqueta cotizacion={cotizacion} /></td>
                         <td className="px-6 py-4">
-                          {cotizacion.estado === 'borrador' ? (
+                          {puedeGestionarVentas && cotizacion.estado === 'borrador' ? (
                             <div className="flex justify-end gap-1">
                               <Button type="button" variant="ghost" size="icon" title="Editar cotización" aria-label={`Editar ${cotizacion.numero}`} onClick={(evento) => abrirFormulario(evento, cotizacion)}>
                                 <Pencil aria-hidden="true" />
@@ -470,16 +487,18 @@ export function VentasPage() {
                                 <Send aria-hidden="true" />
                               </Button>
                             </div>
-                          ) : estadoVisible(cotizacion) === 'emitida' ? (
+                          ) : puedeGestionarVentas && estadoVisible(cotizacion) === 'emitida' ? (
                             <div className="flex justify-end">
                               <Button type="button" variant="outline" size="sm" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
                                 <ShoppingCart aria-hidden="true" /> {creandoPedido ? 'Creando pedido…' : 'Crear pedido'}
                               </Button>
                             </div>
-                          ) : (
+                          ) : puedeGestionarVentas ? (
                             <span className="block text-end text-xs text-muted-foreground">
                               {cotizacion.estado === 'aceptada' ? 'Pedido creado' : 'Sin acciones'}
                             </span>
+                          ) : (
+                            <span className="block text-end text-xs text-muted-foreground">Solo consulta</span>
                           )}
                         </td>
                       </tr>
@@ -495,10 +514,10 @@ export function VentasPage() {
       <PanelOperacionesVenta
         pedidos={pedidos}
         ventas={ventas}
-        alRegistrarVenta={registrarVenta}
-        alActualizarPedido={actualizarPedido}
-        alCancelarPedido={cancelarPedido}
-        alDespacharVenta={despacharVenta}
+        alRegistrarVenta={puedeGestionarVentas ? registrarVenta : undefined}
+        alActualizarPedido={puedeGestionarVentas ? actualizarPedido : undefined}
+        alCancelarPedido={puedeGestionarVentas ? cancelarPedido : undefined}
+        alDespacharVenta={puedeDespachar ? despacharVenta : undefined}
         alNotificar={setMensaje}
         cargando={cargandoOperaciones}
         error={errorOperaciones}
@@ -508,7 +527,7 @@ export function VentasPage() {
         despachandoVenta={despachandoVenta}
       />
 
-      {dialogoAbierto ? (
+      {puedeGestionarVentas && dialogoAbierto ? (
         <DialogoCotizacion
           key={cotizacionSeleccionada?.id ?? 'nueva'}
           abierto={dialogoAbierto}
@@ -521,7 +540,7 @@ export function VentasPage() {
         />
       ) : null}
 
-      {cotizacionPorEmitir ? (
+      {puedeGestionarVentas && cotizacionPorEmitir ? (
         <DialogoConfirmacionEmision
           abierto={Boolean(cotizacionPorEmitir)}
           cotizacion={cotizacionPorEmitir}
@@ -533,7 +552,7 @@ export function VentasPage() {
         />
       ) : null}
 
-      {cotizacionPorCrearPedido ? (
+      {puedeGestionarVentas && cotizacionPorCrearPedido ? (
         <DialogoSeleccionAlmacenPedido
           abierto={Boolean(cotizacionPorCrearPedido)}
           cotizacion={cotizacionPorCrearPedido}

@@ -21,7 +21,7 @@ const formatoFecha = new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: '
 interface PanelOperacionesVentaProps {
   pedidos: readonly PedidoVenta[]
   ventas: readonly Venta[]
-  alRegistrarVenta: (pedidoId: string, datos: DatosVenta) => string | undefined | Promise<string | undefined>
+  alRegistrarVenta?: (pedidoId: string, datos: DatosVenta) => string | undefined | Promise<string | undefined>
   alActualizarPedido?: (pedidoId: string, lineas: readonly CantidadLineaPedido[], operationKey: string) => string | undefined | Promise<string | undefined>
   alCancelarPedido?: (pedidoId: string, operationKey: string) => string | undefined | Promise<string | undefined>
   alDespacharVenta?: (pedidoId: string, ventaId: string, lineas: readonly CantidadDespacho[], operationKey: string, operationDate: string) => string | undefined | Promise<string | undefined>
@@ -117,7 +117,9 @@ export function PanelOperacionesVenta({
                 </div>
                 <div className="flex justify-start lg:justify-end">
                   {!venta && pedido.estado === 'confirmado' ? (
-                    <Button type="button" onClick={() => setPedidoSeleccionado(pedido)}><ReceiptText aria-hidden="true" /> Registrar venta</Button>
+                    alRegistrarVenta ? (
+                      <Button type="button" onClick={() => setPedidoSeleccionado(pedido)}><ReceiptText aria-hidden="true" /> Registrar venta</Button>
+                    ) : <span className="text-sm font-medium text-muted-foreground">Solo consulta</span>
                   ) : venta?.estado === 'registrada' ? (
                     alDespacharVenta ? (
                       <Button
@@ -154,13 +156,13 @@ export function PanelOperacionesVenta({
         </div>
       )}
 
-      {pedidoSeleccionado ? (
+      {pedidoSeleccionado && alRegistrarVenta ? (
         <DialogoRegistroVenta
           abierto
           pedido={pedidoSeleccionado}
           alCambiarApertura={(abierto) => { if (!abierto) setPedidoSeleccionado(null) }}
           alGuardar={async (datos) => {
-            const error = await alRegistrarVenta(pedidoSeleccionado.id, datos)
+            const error = await alRegistrarVenta!(pedidoSeleccionado.id, datos)
             if (!error) alNotificar(`${pedidoSeleccionado.numero}: venta registrada correctamente.`)
             return error
           }}
