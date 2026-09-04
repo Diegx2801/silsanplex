@@ -28,7 +28,6 @@ export function DialogoPrueba({
   const {
     register,
     handleSubmit,
-    setError,
     reset,
     formState: { errors, isSubmitting },
   } = useForm<DatosPrueba>({
@@ -58,7 +57,7 @@ export function DialogoPrueba({
     setMensaje('')
     const error = await alGuardar(datos)
     if (error) {
-      setError('resultado', { message: error })
+      setMensaje(error)
       return
     }
     alCambiarApertura(false)

@@ -145,7 +145,7 @@ begin
     true
   );
 
-  test_id := public.record_repair_test(
+  test_id := public.record_repair_test_unchecked(
     '{"organization_id":"ec100000-0000-4000-8000-000000000001","repair_id":"ec600000-0000-4000-8000-000000000001","test_type":"Operacion","result":"Aprobada concurrente","passed":true}'::jsonb
   );
   perform pg_catalog.pg_advisory_xact_lock(requested_gate_key);
@@ -171,7 +171,7 @@ begin
     true
   );
 
-  perform public.change_repair_status(
+  perform public.change_repair_status_unchecked(
     'ec100000-0000-4000-8000-000000000001',
     'ec600000-0000-4000-8000-000000000001',
     'ready_for_delivery',

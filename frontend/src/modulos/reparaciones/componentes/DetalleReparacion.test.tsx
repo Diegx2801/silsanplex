@@ -21,6 +21,7 @@ import { DetalleReparacion } from './DetalleReparacion'
 const reparacionBase: Reparacion = {
   id: 'repair-1',
   organizationId: 'org-1',
+  lockVersion: 4,
   codigo: 'REP-0001',
   clienteId: 'customer-1',
   productoId: 'product-1',
@@ -138,6 +139,7 @@ function renderizarDetalle({
   solucionAplicada = '',
   conParte = false,
   resultadoSolucion,
+  resultadoOperacion,
   conCotizacionRechazada = false,
 }: {
   estado?: EstadoReparacion
@@ -147,16 +149,24 @@ function renderizarDetalle({
   solucionAplicada?: string
   conParte?: boolean
   resultadoSolucion?: string
+  resultadoOperacion?: string
   conCotizacionRechazada?: boolean
 } = {}) {
-  const operacion = vi.fn().mockResolvedValue(undefined)
+  const operacion = vi.fn().mockResolvedValue(resultadoOperacion)
   const editar = vi.fn()
   const registrarSolucion = vi.fn().mockResolvedValue(resultadoSolucion)
   const revisarCotizacion = vi.fn().mockResolvedValue(undefined)
-  render(
+  const construirDetalle = (lockVersion = reparacionBase.lockVersion) => ({
+    ...crearDetalle(estado, solucionAplicada, conParte, conCotizacionRechazada),
+    reparacion: {
+      ...crearDetalle(estado, solucionAplicada, conParte, conCotizacionRechazada).reparacion,
+      lockVersion,
+    },
+  })
+  const construirElemento = (lockVersion = reparacionBase.lockVersion) => (
     <DetalleReparacion
       abierto
-      detalle={crearDetalle(estado, solucionAplicada, conParte, conCotizacionRechazada)}
+      detalle={construirDetalle(lockVersion)}
       cargando={false}
       error={null}
       productos={[]}
@@ -185,9 +195,16 @@ function renderizarDetalle({
       alRegistrarPrueba={operacion}
       alEntregar={operacion}
       alCancelar={operacion}
-    />,
+    />
   )
-  return { editar, registrarSolucion, revisarCotizacion }
+  const resultado = render(construirElemento())
+  return {
+    editar,
+    operacion,
+    registrarSolucion,
+    revisarCotizacion,
+    rerenderDetalle: (lockVersion: number) => resultado.rerender(construirElemento(lockVersion)),
+  }
 }
 
 describe('DetalleReparacion acciones técnicas', () => {
@@ -212,7 +229,11 @@ describe('DetalleReparacion acciones técnicas', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Guardar solución' }))
 
     await waitFor(() => {
-      expect(registrarSolucion).toHaveBeenCalledWith({ solucionAplicada: 'Fuente reemplazada' })
+      expect(registrarSolucion).toHaveBeenCalledWith(
+        'repair-1',
+        { solucionAplicada: 'Fuente reemplazada' },
+        4,
+      )
     })
   })
 
@@ -295,10 +316,56 @@ describe('DetalleReparacion acciones técnicas', () => {
 
     await waitFor(() => {
       expect(revisarCotizacion).toHaveBeenCalledWith(
+        'repair-1',
         'quote-1',
         expect.objectContaining({ id: undefined, moneda: 'PEN' }),
         true,
+        4,
       )
     })
+  })
+
+  it('conserva la versión abierta aunque el detalle se actualice en segundo plano', async () => {
+    const { operacion, rerenderDetalle } = renderizarDetalle({
+      resultadoOperacion: 'La reparación cambió mientras realizabas esta acción.',
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar estado' }))
+    rerenderDetalle(99)
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar estado' }))
+
+    await waitFor(() => {
+      expect(operacion).toHaveBeenCalledWith('repair-1', 'quote_pending', '', 4)
+    })
+    expect(screen.getByRole('heading', { name: 'Cambiar estado' })).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('La reparación cambió mientras realizabas esta acción.')
+    expect(screen.queryByText('Estado actualizado.')).not.toBeInTheDocument()
+  })
+
+  it('muestra errores remotos de diagnóstico a nivel de formulario y conserva la entrada', async () => {
+    renderizarDetalle({ resultadoOperacion: 'Conflicto de versión' })
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar diagnóstico' }))
+    const sintomas = screen.getByLabelText('Síntomas observados *')
+    fireEvent.change(sintomas, { target: { value: 'Falla intermitente al encender' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar diagnóstico' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Conflicto de versión')
+    expect(sintomas).toHaveValue('Falla intermitente al encender')
+    expect(sintomas).toHaveAttribute('aria-invalid', 'false')
+  })
+
+  it('muestra errores remotos de prueba a nivel de formulario y conserva la entrada', async () => {
+    renderizarDetalle({ estado: 'testing', resultadoOperacion: 'Conflicto de versión' })
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar prueba' }))
+    const resultado = screen.getByLabelText('Resultado *')
+    fireEvent.change(screen.getByLabelText('Tipo de prueba *'), {
+      target: { value: 'Encendido' },
+    })
+    fireEvent.change(resultado, { target: { value: 'Opera correctamente' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar prueba' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Conflicto de versión')
+    expect(resultado).toHaveValue('Opera correctamente')
+    expect(resultado).toHaveAttribute('aria-invalid', 'false')
   })
 })

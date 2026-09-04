@@ -103,7 +103,7 @@ declare
   identity_value text;
 begin
   perform repair_identity_concurrency_test.set_actor();
-  perform public.update_repair(jsonb_build_object(
+  perform public.update_repair_unchecked(jsonb_build_object(
     'organization_id', 'bc140000-0000-4000-8000-000000000001',
     'id', requested_repair_id,
     'customer_id', 'bc440000-0000-4000-8000-000000000002',
@@ -132,7 +132,7 @@ declare
   observed_identity text;
 begin
   perform repair_identity_concurrency_test.set_actor();
-  perform public.record_repair_solution(jsonb_build_object(
+  perform public.record_repair_solution_unchecked(jsonb_build_object(
     'organization_id', 'bc140000-0000-4000-8000-000000000001',
     'repair_id', requested_repair_id,
     'applied_solution', 'Concurrent substantive history'
@@ -154,7 +154,7 @@ set search_path = ''
 as $$
 begin
   perform repair_identity_concurrency_test.set_actor();
-  perform public.update_repair(jsonb_build_object(
+  perform public.update_repair_unchecked(jsonb_build_object(
     'organization_id', 'bc140000-0000-4000-8000-000000000001',
     'id', requested_repair_id,
     'customer_id', 'bc440000-0000-4000-8000-000000000002',

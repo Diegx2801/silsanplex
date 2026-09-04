@@ -220,6 +220,24 @@ values
     '2000-01-01 00:00:00+00'
   );
 
+create function pg_temp.with_repair_version(payload jsonb)
+returns jsonb
+language sql
+stable
+as $$
+  select payload || jsonb_build_object(
+    'expected_lock_version', (
+      select repair.lock_version
+      from public.repairs repair
+      where repair.organization_id = nullif(payload ->> 'organization_id', '')::uuid
+        and repair.id = coalesce(
+          nullif(payload ->> 'id', '')::uuid,
+          nullif(payload ->> 'repair_id', '')::uuid
+        )
+    )
+  );
+$$;
+
 -- ------------------------------------------------------------
 -- General update and backward-compatible technical keys
 -- ------------------------------------------------------------
@@ -233,17 +251,17 @@ select set_config(
 
 select lives_ok($$
   select public.update_repair(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","priority":"urgent","notes":"Updated by sales"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","priority":"urgent","notes":"Updated by sales"}'::jsonb)
   )
 $$, 'VENTAS can still perform a general repair update');
 select throws_ok($$
   select public.update_repair(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","diagnosis":"Sales diagnosis bypass"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","diagnosis":"Sales diagnosis bypass"}'::jsonb)
   )
 $$, 'P0001', 'REPAIR_DIAGNOSIS_USE_DIAGNOSIS_RPC', 'VENTAS cannot change diagnosis through the generic RPC');
 select throws_ok($$
   select public.update_repair(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","applied_solution":"Sales solution bypass"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","applied_solution":"Sales solution bypass"}'::jsonb)
   )
 $$, 'P0001', 'REPAIR_APPLIED_SOLUTION_USE_SOLUTION_RPC', 'VENTAS cannot change applied solution through the generic RPC');
 
@@ -286,12 +304,12 @@ select is(
 
 select throws_ok($$
   select public.update_repair(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","diagnosis":"Different diagnosis","notes":"Must roll back"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","diagnosis":"Different diagnosis","notes":"Must roll back"}'::jsonb)
   )
 $$, 'P0001', 'REPAIR_DIAGNOSIS_USE_DIAGNOSIS_RPC', 'ADMIN cannot change diagnosis through the generic RPC');
 select throws_ok($$
   select public.update_repair(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","applied_solution":"Different solution","notes":"Must also roll back"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","applied_solution":"Different solution","notes":"Must also roll back"}'::jsonb)
   )
 $$, 'P0001', 'REPAIR_APPLIED_SOLUTION_USE_SOLUTION_RPC', 'ADMIN cannot change applied solution through the generic RPC');
 select results_eq(
@@ -321,12 +339,12 @@ select is(
 
 select lives_ok($$
   select public.update_repair(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","diagnosis":"Stored diagnosis","applied_solution":"Stored solution","notes":"Exact old client"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","diagnosis":"Stored diagnosis","applied_solution":"Stored solution","notes":"Exact old client"}'::jsonb)
   )
 $$, 'exact equivalent technical keys remain compatible with old clients');
 select lives_ok($$
   select public.update_repair(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","diagnosis":"  Stored diagnosis  ","applied_solution":"  Stored solution  ","notes":"Compatible old client"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000001","diagnosis":"  Stored diagnosis  ","applied_solution":"  Stored solution  ","notes":"Compatible old client"}'::jsonb)
   )
 $$, 'normalized equivalent technical keys remain compatible with old clients');
 select results_eq(
@@ -356,12 +374,12 @@ select is(
 
 select lives_ok($$
   select public.update_repair(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000006","diagnosis":null,"applied_solution":"","priority":"high"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000006","diagnosis":null,"applied_solution":"","priority":"high"}'::jsonb)
   )
 $$, 'null and empty technical values remain equivalent to stored nulls');
 select lives_ok($$
   select public.update_repair(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000006","diagnosis":"   ","applied_solution":null,"notes":"Null-compatible old client"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000006","diagnosis":"   ","applied_solution":null,"notes":"Null-compatible old client"}'::jsonb)
   )
 $$, 'spaces-only and null technical values remain equivalent to stored nulls');
 select results_eq(
@@ -390,7 +408,7 @@ select is(
 
 select lives_ok($$
   select public.record_repair_diagnosis(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000002","technician_id":"a2030000-0000-4000-8000-000000000003","symptoms":"Device does not start","cause_found":"Power board damaged","recommended_solution":"Replace power board","notes":"Diagnosis path"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000002","technician_id":"a2030000-0000-4000-8000-000000000003","symptoms":"Device does not start","cause_found":"Power board damaged","recommended_solution":"Replace power board","notes":"Diagnosis path"}'::jsonb)
   )
 $$, 'the existing diagnosis RPC still records diagnosis history');
 select is(
@@ -439,7 +457,7 @@ select throws_ok($$
 $$, '22023', 'REPAIR_PAYLOAD_INVALID', 'the solution RPC validates object payloads');
 select throws_ok($$
   select public.record_repair_solution(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000002","applied_solution":"   "}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000002","applied_solution":"   "}'::jsonb)
   )
 $$, 'P0001', 'REPAIR_APPLIED_SOLUTION_REQUIRED', 'the solution RPC requires a nonempty applied solution');
 select set_config(
@@ -449,7 +467,7 @@ select set_config(
 );
 select lives_ok($$
   select public.record_repair_solution(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000002","applied_solution":"  Power board replaced  "}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000002","applied_solution":"  Power board replaced  "}'::jsonb)
   )
 $$, 'ADMIN can call the solution RPC directly');
 select is(
@@ -553,7 +571,7 @@ select set_config(
 );
 select throws_ok($$
   select public.record_repair_solution(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000003","applied_solution":"Unauthorized sales solution"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000003","applied_solution":"Unauthorized sales solution"}'::jsonb)
   )
 $$, '42501', 'REPAIR_FORBIDDEN', 'VENTAS cannot use the status-level solution path');
 
@@ -593,7 +611,7 @@ select set_config(
 );
 select throws_ok($$
   select public.record_repair_solution(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000003","applied_solution":"Cross-tenant solution"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000003","applied_solution":"Cross-tenant solution"}'::jsonb)
   )
 $$, '42501', 'REPAIR_FORBIDDEN', 'an ADMIN from another tenant cannot use the solution RPC');
 
@@ -636,12 +654,12 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 select throws_ok($$
   select public.update_repair(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000004","diagnosis":"Service changed diagnosis"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000004","diagnosis":"Service changed diagnosis"}'::jsonb)
   )
 $$, 'P0001', 'REPAIR_DIAGNOSIS_USE_DIAGNOSIS_RPC', 'service_role cannot change diagnosis through the generic RPC');
 select throws_ok($$
   select public.update_repair(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000004","applied_solution":"Service changed solution"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000004","applied_solution":"Service changed solution"}'::jsonb)
   )
 $$, 'P0001', 'REPAIR_APPLIED_SOLUTION_USE_SOLUTION_RPC', 'service_role cannot change solution through the generic RPC');
 
@@ -675,7 +693,7 @@ set local role service_role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select throws_ok($$
   select public.record_repair_solution(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000002","repair_id":"a8030000-0000-4000-8000-000000000004","applied_solution":"Wrong tenant key"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000002","repair_id":"a8030000-0000-4000-8000-000000000004","applied_solution":"Wrong tenant key"}'::jsonb)
   )
 $$, 'P0001', 'REPAIR_NOT_FOUND', 'even service_role must match organization and repair');
 reset role;
@@ -693,7 +711,7 @@ set local role service_role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select lives_ok($$
   select public.record_repair_solution(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000004","applied_solution":"Service specialized solution"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000004","applied_solution":"Service specialized solution"}'::jsonb)
   )
 $$, 'service_role can use the specialized RPC in a generic-editable received state');
 
@@ -736,7 +754,7 @@ select set_config(
 );
 select throws_ok($$
   select public.record_repair_solution(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000005","applied_solution":"Cannot change terminal repair"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000005","applied_solution":"Cannot change terminal repair"}'::jsonb)
   )
 $$, 'P0001', 'REPAIR_NOT_EDITABLE', 'the specialized path keeps the generic terminal-state boundary');
 select results_eq(
@@ -770,7 +788,7 @@ select set_config(
 );
 select lives_ok($$
   select public.update_repair(
-    '{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000003","problem_description":"General updates still work after specialized changes"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","id":"a8030000-0000-4000-8000-000000000003","problem_description":"General updates still work after specialized changes"}'::jsonb)
   )
 $$, 'the nontechnical generic update path has no regression');
 

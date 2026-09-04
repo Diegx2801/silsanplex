@@ -40,6 +40,7 @@ interface ErrorSupabase {
 interface FilaReparacion {
   id: string
   organization_id: string
+  lock_version: number
   repair_code: string
   customer_id: string
   product_id: string
@@ -230,7 +231,7 @@ interface FilaUbicacion {
 }
 
 const columnasReparacion =
-  'id,organization_id,repair_code,customer_id,product_id,serial_number,received_at,estimated_delivery_date,delivered_at,status,priority,problem_description,diagnosis,applied_solution,notes,customer_reference,sale_document_id,warranty_reference,assigned_technician_id,customer_name_snapshot,customer_document_snapshot,product_code_snapshot,product_description_snapshot,created_by,updated_by,created_at,updated_at,serial_control_snapshot' as const
+  'id,organization_id,lock_version,repair_code,customer_id,product_id,serial_number,received_at,estimated_delivery_date,delivered_at,status,priority,problem_description,diagnosis,applied_solution,notes,customer_reference,sale_document_id,warranty_reference,assigned_technician_id,customer_name_snapshot,customer_document_snapshot,product_code_snapshot,product_description_snapshot,created_by,updated_by,created_at,updated_at,serial_control_snapshot' as const
 
 const tamanioPaginaMaximo = 50
 const paginaMaxima = 100_000
@@ -257,6 +258,8 @@ function textoError(error: ErrorSupabase) {
 }
 
 const mensajesDominio: Array<[string, string]> = [
+  ['REPAIR_VERSION_REQUIRED', 'No se pudo verificar la versión de la reparación. Actualiza el detalle e inténtalo nuevamente.'],
+  ['REPAIR_VERSION_CONFLICT', 'La reparación cambió mientras realizabas esta acción. Revisa la información actualizada antes de volver a intentarlo.'],
   ['REPAIR_PAYLOAD_INVALID', 'Los datos enviados no tienen un formato válido.'],
   ['REPAIR_SERIAL_NUMBER_RULE_VIOLATION', 'El número de serie no coincide con el control del producto seleccionado.'],
   ['REPAIR_CUSTOMER_REQUIRED', 'Selecciona un cliente activo.'],
@@ -330,12 +333,44 @@ const mensajesDominio: Array<[string, string]> = [
   ['AUTH_SESSION_INACTIVE', 'Tu sesión ya no está activa. Inicia sesión nuevamente.'],
 ]
 
+export class ErrorReparacion extends Error {
+  readonly codigo?: string
+
+  constructor(
+    mensaje: string,
+    codigo?: string,
+  ) {
+    super(mensaje)
+    this.name = 'ErrorReparacion'
+    this.codigo = codigo
+  }
+}
+
+function obtenerCodigoErrorReparacion(error: ErrorSupabase) {
+  const mensaje = textoError(error)
+  return mensajesDominio.find(
+    ([codigo]) => error.code === codigo || mensaje.includes(codigo),
+  )?.[0]
+}
+
+function crearErrorReparacion(error: ErrorSupabase, contexto: ContextoError) {
+  return new ErrorReparacion(
+    obtenerMensajeErrorReparacion(error, contexto),
+    obtenerCodigoErrorReparacion(error) ?? error.code,
+  )
+}
+
+export function esConflictoVersionReparacion(error: unknown) {
+  return error instanceof ErrorReparacion
+    && (error.codigo === 'REPAIR_VERSION_REQUIRED' || error.codigo === 'REPAIR_VERSION_CONFLICT')
+}
+
 export function obtenerMensajeErrorReparacion(
   error: ErrorSupabase,
   contexto: ContextoError,
 ) {
-  const mensaje = textoError(error)
-  const dominio = mensajesDominio.find(([codigo]) => mensaje.includes(codigo))
+  const codigoDominio = obtenerCodigoErrorReparacion(error)
+  const dominio = mensajesDominio.find(([codigo]) => codigo === codigoDominio)
   if (dominio) return dominio[1]
   if (error.code === '42501') return 'No tienes permiso para ejecutar esta acción.'
   if (error.code === '23505') return 'Ya existe un registro equivalente para esta operación.'
@@ -359,10 +394,18 @@ export function obtenerMensajeErrorReparacion(
   }[contexto]
 }
 
+function validarLockVersion(lockVersion: number) {
+  if (!Number.isSafeInteger(lockVersion) || lockVersion <= 0) {
+    throw new Error('La versión de la reparación recibida no es válida.')
+  }
+  return lockVersion
+}
+
 function mapearReparacion(fila: FilaReparacion): Reparacion {
   return {
     id: fila.id,
     organizationId: fila.organization_id,
+    lockVersion: validarLockVersion(fila.lock_version),
     codigo: fila.repair_code,
     clienteId: fila.customer_id,
     productoId: fila.product_id,
@@ -597,7 +640,7 @@ export async function listarReparacionesPaginadas(
     consulta,
   ).range(indiceInicial, indiceInicial + tamanioPagina - 1)
 
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'consultar'))
+  if (error) throw crearErrorReparacion(error, 'consultar')
   return {
     elementos: ((data ?? []) as FilaReparacion[]).map(mapearReparacion),
     totalFiltrado: count ?? 0,
@@ -621,7 +664,7 @@ export async function obtenerResumenReparaciones(organizationId: string) {
     (resultado) => resultado.error,
   )
   if (fallo?.error) {
-    throw new Error(obtenerMensajeErrorReparacion(fallo.error, 'consultar'))
+    throw crearErrorReparacion(fallo.error, 'consultar')
   }
 
   return {
@@ -636,14 +679,23 @@ export async function obtenerDetalleReparacion(
   organizationId: string,
   repairId: string,
 ): Promise<DetalleReparacion> {
-  const [repairResult, quotesResult, diagnosticsResult, partsResult, testsResult, eventsResult] =
-    await Promise.all([
-      supabase
-        .from('repair_list')
-        .select(columnasReparacion)
-        .eq('organization_id', organizationId)
-        .eq('id', repairId)
-        .maybeSingle(),
+  const intentosMaximos = 3
+
+  for (let intento = 0; intento < intentosMaximos; intento += 1) {
+    const repairResult = await supabase
+      .from('repair_list')
+      .select(columnasReparacion)
+      .eq('organization_id', organizationId)
+      .eq('id', repairId)
+      .maybeSingle()
+    if (repairResult.error) {
+      throw crearErrorReparacion(repairResult.error, 'consultar')
+    }
+    if (!repairResult.data) throw new Error('No se encontró la reparación solicitada.')
+
+    const reparacion = mapearReparacion(repairResult.data as FilaReparacion)
+    const [quotesResult, diagnosticsResult, partsResult, testsResult, eventsResult] =
+      await Promise.all([
       supabase
         .from('repair_quotes')
         .select('id,organization_id,repair_id,version_number,is_current,status,currency,prices_include_tax,tax_rate,subtotal,tax,total,approved_by,approved_at,approval_observation,rejected_by,rejected_at,rejection_observation,created_by,updated_by,created_at,updated_at')
@@ -679,83 +731,99 @@ export async function obtenerDetalleReparacion(
         .eq('repair_id', repairId)
         .order('created_at', { ascending: false })
         .order('id', { ascending: false }),
-    ])
+      ])
 
-  const fallo = [
-    repairResult,
-    quotesResult,
-    diagnosticsResult,
-    partsResult,
-    testsResult,
-    eventsResult,
-  ].find((resultado) => resultado.error)
-  if (fallo?.error) {
-    throw new Error(obtenerMensajeErrorReparacion(fallo.error, 'consultar'))
-  }
-  if (!repairResult.data) throw new Error('No se encontró la reparación solicitada.')
+    const fallo = [
+      quotesResult,
+      diagnosticsResult,
+      partsResult,
+      testsResult,
+      eventsResult,
+    ].find((resultado) => resultado.error)
+    if (fallo?.error) {
+      throw crearErrorReparacion(fallo.error, 'consultar')
+    }
 
-  const quotes = (quotesResult.data as FilaCotizacion[]).map((fila) =>
-    mapearCotizacion(fila, []),
-  )
-  const quoteIds = quotes.map((quote) => quote.id)
-  const lineasResult = quoteIds.length
-    ? await supabase
+    const quotes = (quotesResult.data as FilaCotizacion[]).map((fila) =>
+      mapearCotizacion(fila, []),
+    )
+    const quoteIds = quotes.map((quote) => quote.id)
+    const lineasResult = quoteIds.length
+      ? await supabase
         .from('repair_quote_items')
         .select('id,organization_id,quote_id,line_type,product_id,description,quantity,unit_price,taxable,line_subtotal,created_at')
         .eq('organization_id', organizationId)
         .in('quote_id', quoteIds)
         .order('id', { ascending: true })
-    : { data: [], error: null }
-  if (lineasResult.error) {
-    throw new Error(obtenerMensajeErrorReparacion(lineasResult.error, 'consultar'))
-  }
+      : { data: [], error: null }
+    if (lineasResult.error) {
+      throw crearErrorReparacion(lineasResult.error, 'consultar')
+    }
 
-  const lineasPorCotizacion = new Map<string, LineaCotizacionReparacion[]>()
-  for (const fila of (lineasResult.data as FilaLineaCotizacion[])) {
-    const lineas = lineasPorCotizacion.get(fila.quote_id) ?? []
-    lineas.push(mapearLineaCotizacion(fila))
-    lineasPorCotizacion.set(fila.quote_id, lineas)
-  }
-  const cotizaciones = (quotesResult.data as FilaCotizacion[]).map((fila) =>
-    mapearCotizacion(fila, lineasPorCotizacion.get(fila.id) ?? []),
-  )
+    const lineasPorCotizacion = new Map<string, LineaCotizacionReparacion[]>()
+    for (const fila of (lineasResult.data as FilaLineaCotizacion[])) {
+      const lineas = lineasPorCotizacion.get(fila.quote_id) ?? []
+      lineas.push(mapearLineaCotizacion(fila))
+      lineasPorCotizacion.set(fila.quote_id, lineas)
+    }
+    const cotizaciones = (quotesResult.data as FilaCotizacion[]).map((fila) =>
+      mapearCotizacion(fila, lineasPorCotizacion.get(fila.id) ?? []),
+    )
 
-  const partes = partsResult.data as FilaParte[]
-  const parteIds = partes.map((parte) => parte.id)
-  const consumosResult = parteIds.length
-    ? await supabase
+    const partes = partsResult.data as FilaParte[]
+    const parteIds = partes.map((parte) => parte.id)
+    const consumosResult = parteIds.length
+      ? await supabase
         .from('repair_part_consumptions')
         .select('id,organization_id,repair_part_id,quantity,warehouse_id,location_id,stock_status,lot,expiration_date,unit_cost,inventory_movement_id,operation_key,consumed_by,consumed_at,created_at')
         .eq('organization_id', organizationId)
         .in('repair_part_id', parteIds)
         .order('consumed_at', { ascending: false })
         .order('id', { ascending: false })
-    : { data: [], error: null }
-  if (consumosResult.error) {
-    throw new Error(obtenerMensajeErrorReparacion(consumosResult.error, 'consultar'))
+      : { data: [], error: null }
+    if (consumosResult.error) {
+      throw crearErrorReparacion(consumosResult.error, 'consultar')
+    }
+
+    const consumosPorParte = new Map<string, ConsumoParteReparacion[]>()
+    for (const fila of (consumosResult.data as FilaConsumoParte[])) {
+      const consumos = consumosPorParte.get(fila.repair_part_id) ?? []
+      consumos.push(mapearConsumo(fila))
+      consumosPorParte.set(fila.repair_part_id, consumos)
+    }
+
+    const versionResult = await supabase
+      .from('repair_list')
+      .select('lock_version')
+      .eq('organization_id', organizationId)
+      .eq('id', repairId)
+      .maybeSingle()
+    if (versionResult.error) {
+      throw crearErrorReparacion(versionResult.error, 'consultar')
+    }
+    if (!versionResult.data) throw new Error('No se encontró la reparación solicitada.')
+    const lockVersionFinal = validarLockVersion(
+      (versionResult.data as Pick<FilaReparacion, 'lock_version'>).lock_version,
+    )
+    if (lockVersionFinal !== reparacion.lockVersion) continue
+
+    const cotizacionActiva = seleccionarCotizacionActual(cotizaciones)
+    const eventos = ((eventsResult.data ?? []) as FilaEvento[]).map(mapearEvento)
+    return {
+      reparacion,
+      diagnosticos: (diagnosticsResult.data as FilaDiagnostico[]).map(mapearDiagnostico),
+      cotizaciones,
+      cotizacionActiva,
+      partes: partes.map((parte) =>
+        mapearParte(parte, consumosPorParte.get(parte.id) ?? []),
+      ),
+      pruebas: (testsResult.data as FilaPrueba[]).map(mapearPrueba),
+      eventos,
+      eventosCompletos: eventsResult.count === eventos.length,
+    }
   }
 
-  const consumosPorParte = new Map<string, ConsumoParteReparacion[]>()
-  for (const fila of (consumosResult.data as FilaConsumoParte[])) {
-    const consumos = consumosPorParte.get(fila.repair_part_id) ?? []
-    consumos.push(mapearConsumo(fila))
-    consumosPorParte.set(fila.repair_part_id, consumos)
-  }
-
-  const cotizacionActiva = seleccionarCotizacionActual(cotizaciones)
-  const eventos = ((eventsResult.data ?? []) as FilaEvento[]).map(mapearEvento)
-  return {
-    reparacion: mapearReparacion(repairResult.data as FilaReparacion),
-    diagnosticos: (diagnosticsResult.data as FilaDiagnostico[]).map(mapearDiagnostico),
-    cotizaciones,
-    cotizacionActiva,
-    partes: partes.map((parte) =>
-      mapearParte(parte, consumosPorParte.get(parte.id) ?? []),
-    ),
-    pruebas: (testsResult.data as FilaPrueba[]).map(mapearPrueba),
-    eventos,
-    eventosCompletos: eventsResult.count === eventos.length,
-  }
+  throw new Error('La reparación cambió durante la carga. Inténtalo nuevamente.')
 }
 
 export async function listarOpcionesClientesReparacion(
@@ -768,7 +836,7 @@ export async function listarOpcionesClientesReparacion(
     .eq('is_active', true)
     .order('legal_name', { ascending: true })
     .limit(1000)
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'opciones'))
+  if (error) throw crearErrorReparacion(error, 'opciones')
 
   return ((data ?? []) as FilaClienteReparacion[]).map((fila) => ({
     id: fila.id,
@@ -789,7 +857,7 @@ export async function listarOpcionesProductosReparacion(
     .order('description', { ascending: true })
     .order('code', { ascending: true })
     .limit(1000)
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'opciones'))
+  if (error) throw crearErrorReparacion(error, 'opciones')
 
   return ((data ?? []) as FilaProductoReparacion[]).map((fila) => ({
     id: fila.id,
@@ -821,7 +889,7 @@ export async function listarAlmacenesReparacion(
   ])
   const fallo = [almacenesResult, ubicacionesResult].find((resultado) => resultado.error)
   if (fallo?.error) {
-    throw new Error(obtenerMensajeErrorReparacion(fallo.error, 'opciones'))
+    throw crearErrorReparacion(fallo.error, 'opciones')
   }
 
   return {
@@ -853,7 +921,7 @@ export async function listarTecnicosReparacion(
     requested_search: busqueda.trim().slice(0, 100),
     requested_limit: limitarEnteroSeguro(limite, 1, 500),
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'tecnicos'))
+  if (error) throw crearErrorReparacion(error, 'tecnicos')
   return ((data ?? []) as FilaTecnico[]).map((fila) => ({
     id: fila.user_id,
     nombre: fila.full_name,
@@ -896,7 +964,7 @@ export async function crearReparacion(
       status: datos.esGarantia ? 'warranty' : 'received',
     },
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'crear'))
+  if (error) throw crearErrorReparacion(error, 'crear')
   return data as string
 }
 
@@ -905,28 +973,32 @@ export async function actualizarReparacion(
   reparacionId: string,
   datos: DatosReparacion,
   identidadEditable: boolean,
+  expectedLockVersion: number,
 ) {
   const { error } = await supabase.rpc('update_repair', {
     payload: {
       id: reparacionId,
+      expected_lock_version: expectedLockVersion,
       ...payloadGeneralReparacion(organizationId, datos),
       ...(identidadEditable ? payloadIdentidadReparacion(datos) : {}),
     },
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'editar'))
+  if (error) throw crearErrorReparacion(error, 'editar')
 }
 
 export async function asignarReparacion(
   organizationId: string,
   reparacionId: string,
   tecnicoId: string,
+  expectedLockVersion: number,
 ) {
   const { error } = await supabase.rpc('assign_repair', {
     requested_organization_id: organizationId,
     requested_repair_id: reparacionId,
     requested_technician_id: tecnicoId,
+    requested_expected_lock_version: expectedLockVersion,
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'asignar'))
+  if (error) throw crearErrorReparacion(error, 'asignar')
 }
 
 export async function cambiarEstadoReparacion(
@@ -934,25 +1006,29 @@ export async function cambiarEstadoReparacion(
   reparacionId: string,
   estado: string,
   observacion: string,
+  expectedLockVersion: number,
 ) {
   const { error } = await supabase.rpc('change_repair_status', {
     requested_organization_id: organizationId,
     requested_repair_id: reparacionId,
     requested_status: estado,
     requested_observation: normalizarTextoOpcional(observacion),
+    requested_expected_lock_version: expectedLockVersion,
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'estado'))
+  if (error) throw crearErrorReparacion(error, 'estado')
 }
 
 export async function registrarDiagnosticoReparacion(
   organizationId: string,
   reparacionId: string,
   datos: DatosDiagnostico,
+  expectedLockVersion: number,
 ) {
   const { data, error } = await supabase.rpc('record_repair_diagnosis', {
     payload: {
       organization_id: organizationId,
       repair_id: reparacionId,
+      expected_lock_version: expectedLockVersion,
       technician_id: normalizarTextoOpcional(datos.tecnicoId),
       symptoms: datos.sintomas.trim(),
       cause_found: normalizarTextoOpcional(datos.causaEncontrada),
@@ -960,7 +1036,7 @@ export async function registrarDiagnosticoReparacion(
       notes: normalizarTextoOpcional(datos.notas),
     },
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'diagnostico'))
+  if (error) throw crearErrorReparacion(error, 'diagnostico')
   return data as string
 }
 
@@ -968,15 +1044,17 @@ export async function registrarSolucionReparacion(
   organizationId: string,
   reparacionId: string,
   datos: DatosSolucionReparacion,
+  expectedLockVersion: number,
 ) {
   const { error } = await supabase.rpc('record_repair_solution', {
     payload: {
       organization_id: organizationId,
       repair_id: reparacionId,
+      expected_lock_version: expectedLockVersion,
       applied_solution: datos.solucionAplicada.trim(),
     },
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'solucion'))
+  if (error) throw crearErrorReparacion(error, 'solucion')
 }
 
 export async function guardarCotizacionReparacion(
@@ -984,11 +1062,13 @@ export async function guardarCotizacionReparacion(
   reparacionId: string,
   datos: DatosCotizacion,
   enviar: boolean,
+  expectedLockVersion: number,
 ) {
   const { data, error } = await supabase.rpc('save_repair_quote', {
     payload: {
       organization_id: organizationId,
       repair_id: reparacionId,
+      expected_lock_version: expectedLockVersion,
       ...(datos.id ? { id: datos.id } : {}),
       currency: datos.moneda,
       prices_include_tax: datos.preciosIncluyenImpuesto,
@@ -1004,7 +1084,7 @@ export async function guardarCotizacionReparacion(
       })),
     },
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'cotizacion'))
+  if (error) throw crearErrorReparacion(error, 'cotizacion')
   return data as string
 }
 
@@ -1014,12 +1094,14 @@ export async function revisarCotizacionReparacion(
   cotizacionRechazadaId: string,
   datos: DatosCotizacion,
   enviar: boolean,
+  expectedLockVersion: number,
 ) {
   const { data, error } = await supabase.rpc('revise_repair_quote', {
     payload: {
       organization_id: organizationId,
       repair_id: reparacionId,
       rejected_quote_id: cotizacionRechazadaId,
+      expected_lock_version: expectedLockVersion,
       currency: datos.moneda,
       prices_include_tax: datos.preciosIncluyenImpuesto,
       tax_rate: Number(datos.tasaImpuesto),
@@ -1034,7 +1116,7 @@ export async function revisarCotizacionReparacion(
       })),
     },
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'cotizacion'))
+  if (error) throw crearErrorReparacion(error, 'cotizacion')
   return data as string
 }
 
@@ -1043,14 +1125,16 @@ export async function aprobarCotizacionReparacion(
   reparacionId: string,
   cotizacionId: string,
   datos: DatosObservacionReparacion,
+  expectedLockVersion: number,
 ) {
   const { error } = await supabase.rpc('approve_repair_quote', {
     requested_organization_id: organizationId,
     requested_repair_id: reparacionId,
     requested_quote_id: cotizacionId,
     requested_observation: normalizarTextoOpcional(datos.observacion),
+    requested_expected_lock_version: expectedLockVersion,
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'aprobacion'))
+  if (error) throw crearErrorReparacion(error, 'aprobacion')
 }
 
 export async function rechazarCotizacionReparacion(
@@ -1058,25 +1142,29 @@ export async function rechazarCotizacionReparacion(
   reparacionId: string,
   cotizacionId: string,
   datos: DatosObservacionReparacion,
+  expectedLockVersion: number,
 ) {
   const { error } = await supabase.rpc('reject_repair_quote', {
     requested_organization_id: organizationId,
     requested_repair_id: reparacionId,
     requested_quote_id: cotizacionId,
     requested_observation: normalizarTextoOpcional(datos.observacion),
+    requested_expected_lock_version: expectedLockVersion,
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'aprobacion'))
+  if (error) throw crearErrorReparacion(error, 'aprobacion')
 }
 
 export async function reservarParteReparacion(
   organizationId: string,
   reparacionId: string,
   datos: DatosReservaParte,
+  expectedLockVersion: number,
 ) {
   const { data, error } = await supabase.rpc('reserve_repair_part', {
     payload: {
       organization_id: organizationId,
       repair_id: reparacionId,
+      expected_lock_version: expectedLockVersion,
       product_id: datos.productoId,
       warehouse_id: datos.almacenId,
       location_id: datos.ubicacionId,
@@ -1087,7 +1175,7 @@ export async function reservarParteReparacion(
       notes: normalizarTextoOpcional(datos.notas),
     },
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'repuesto'))
+  if (error) throw crearErrorReparacion(error, 'repuesto')
   return data as string
 }
 
@@ -1096,16 +1184,18 @@ export async function consumirParteReparacion(
   parteId: string,
   datos: DatosConsumoParte,
   operationKey: string,
+  expectedLockVersion: number,
 ) {
   const { data, error } = await supabase.rpc('consume_repair_part', {
     payload: {
       organization_id: organizationId,
       repair_part_id: parteId,
+      expected_lock_version: expectedLockVersion,
       quantity: Number(datos.cantidad),
       operation_key: operationKey,
     },
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'repuesto'))
+  if (error) throw crearErrorReparacion(error, 'repuesto')
   return data as string
 }
 
@@ -1113,24 +1203,28 @@ export async function cancelarParteReparacion(
   organizationId: string,
   parteId: string,
   datos: DatosObservacionReparacion,
+  expectedLockVersion: number,
 ) {
   const { error } = await supabase.rpc('cancel_repair_part', {
     requested_organization_id: organizationId,
     requested_repair_part_id: parteId,
     requested_observation: normalizarTextoOpcional(datos.observacion),
+    requested_expected_lock_version: expectedLockVersion,
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'repuesto'))
+  if (error) throw crearErrorReparacion(error, 'repuesto')
 }
 
 export async function registrarPruebaReparacion(
   organizationId: string,
   reparacionId: string,
   datos: DatosPrueba,
+  expectedLockVersion: number,
 ) {
   const { data, error } = await supabase.rpc('record_repair_test', {
     payload: {
       organization_id: organizationId,
       repair_id: reparacionId,
+      expected_lock_version: expectedLockVersion,
       performed_by: normalizarTextoOpcional(datos.realizadaPor),
       test_type: datos.tipo.trim(),
       result: datos.resultado.trim(),
@@ -1138,7 +1232,7 @@ export async function registrarPruebaReparacion(
       notes: normalizarTextoOpcional(datos.notas),
     },
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'prueba'))
+  if (error) throw crearErrorReparacion(error, 'prueba')
   return data as string
 }
 
@@ -1146,24 +1240,28 @@ export async function entregarReparacion(
   organizationId: string,
   reparacionId: string,
   datos: DatosObservacionReparacion,
+  expectedLockVersion: number,
 ) {
   const { error } = await supabase.rpc('deliver_repair', {
     requested_organization_id: organizationId,
     requested_repair_id: reparacionId,
     requested_observation: normalizarTextoOpcional(datos.observacion),
+    requested_expected_lock_version: expectedLockVersion,
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'entrega'))
+  if (error) throw crearErrorReparacion(error, 'entrega')
 }
 
 export async function cancelarReparacion(
   organizationId: string,
   reparacionId: string,
   datos: DatosObservacionReparacion,
+  expectedLockVersion: number,
 ) {
   const { error } = await supabase.rpc('cancel_repair', {
     requested_organization_id: organizationId,
     requested_repair_id: reparacionId,
     requested_observation: normalizarTextoOpcional(datos.observacion),
+    requested_expected_lock_version: expectedLockVersion,
   })
-  if (error) throw new Error(obtenerMensajeErrorReparacion(error, 'cancelacion'))
+  if (error) throw crearErrorReparacion(error, 'cancelacion')
 }

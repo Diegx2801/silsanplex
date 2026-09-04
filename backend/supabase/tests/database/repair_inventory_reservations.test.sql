@@ -29,6 +29,17 @@ values
     now(), now()
   );
 
+create function pg_temp.repair_lock_version(organization_id uuid, repair_id uuid)
+returns bigint
+language sql
+stable
+as $$
+  select repair.lock_version
+  from public.repairs repair
+  where repair.organization_id = organization_id
+    and repair.id = repair_id;
+$$;
+
 insert into auth.sessions (id, user_id, created_at, updated_at)
 values
   (
@@ -195,7 +206,7 @@ select lives_ok($$
     "warehouse_id":"b6000000-0000-4000-8000-000000000001",
     "location_id":"b7000000-0000-4000-8000-000000000001",
     "stock_status":"available","quantity_requested":4
-  }'::jsonb)
+  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('b1000000-0000-4000-8000-000000000001', 'b8000000-0000-4000-8000-000000000001')))
 $$, 'reserva cuatro unidades desde Reparaciones');
 
 select results_eq(
@@ -471,6 +482,7 @@ select lives_ok($$
   select public.consume_repair_part(jsonb_build_object(
     'organization_id', 'b1000000-0000-4000-8000-000000000001'::uuid,
     'repair_part_id', (select id from public.repair_parts where repair_id = 'b8000000-0000-4000-8000-000000000001'),
+    'expected_lock_version', pg_temp.repair_lock_version('b1000000-0000-4000-8000-000000000001', 'b8000000-0000-4000-8000-000000000001'),
     'quantity', 2,
     'operation_key', 'b9000000-0000-4000-8000-000000000001'::uuid
   ))
@@ -520,6 +532,7 @@ select lives_ok($$
   select public.consume_repair_part(jsonb_build_object(
     'organization_id', 'b1000000-0000-4000-8000-000000000001'::uuid,
     'repair_part_id', (select id from public.repair_parts where repair_id = 'b8000000-0000-4000-8000-000000000001'),
+    'expected_lock_version', pg_temp.repair_lock_version('b1000000-0000-4000-8000-000000000001', 'b8000000-0000-4000-8000-000000000001'),
     'quantity', 2,
     'operation_key', 'b9000000-0000-4000-8000-000000000002'::uuid
   ))
@@ -557,7 +570,7 @@ select lives_ok($$
     "warehouse_id":"b6000000-0000-4000-8000-000000000001",
     "location_id":"b7000000-0000-4000-8000-000000000001",
     "stock_status":"available","quantity_requested":2
-  }'::jsonb)
+  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('b1000000-0000-4000-8000-000000000001', 'b8000000-0000-4000-8000-000000000002')))
 $$, 'crea otra reserva para validar liberacion');
 
 select results_eq(
@@ -577,7 +590,8 @@ select lives_ok($$
   select public.cancel_repair_part(
     'b1000000-0000-4000-8000-000000000001',
     (select id from public.repair_parts where repair_id = 'b8000000-0000-4000-8000-000000000002'),
-    'Parte no requerida'
+    'Parte no requerida',
+    pg_temp.repair_lock_version('b1000000-0000-4000-8000-000000000001', 'b8000000-0000-4000-8000-000000000002')
   )
 $$, 'cancelar la parte libera la reserva');
 
@@ -613,13 +627,14 @@ select lives_ok($$
     "warehouse_id":"b6000000-0000-4000-8000-000000000001",
     "location_id":"b7000000-0000-4000-8000-000000000001",
     "stock_status":"available","quantity_requested":6
-  }'::jsonb)
+  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('b1000000-0000-4000-8000-000000000001', 'b8000000-0000-4000-8000-000000000003')))
 $$, 'permite reservar todo el stock asignable restante');
 
 select lives_ok($$
   select public.consume_repair_part(jsonb_build_object(
     'organization_id', 'b1000000-0000-4000-8000-000000000001'::uuid,
     'repair_part_id', (select id from public.repair_parts where repair_id = 'b8000000-0000-4000-8000-000000000003'),
+    'expected_lock_version', pg_temp.repair_lock_version('b1000000-0000-4000-8000-000000000001', 'b8000000-0000-4000-8000-000000000003'),
     'quantity', 3,
     'operation_key', 'b9000000-0000-4000-8000-000000000003'::uuid
   ))
@@ -701,7 +716,8 @@ select lives_ok($$
     'b1000000-0000-4000-8000-000000000001',
     'b8000000-0000-4000-8000-000000000003',
     'ba000000-0000-4000-8000-000000000001',
-    'Cliente rechaza reparacion con reserva parcial'
+    'Cliente rechaza reparacion con reserva parcial',
+    pg_temp.repair_lock_version('b1000000-0000-4000-8000-000000000001', 'b8000000-0000-4000-8000-000000000003')
   )
 $$, 'rechazar libera la reserva aunque almacen y ubicacion esten inactivos');
 
