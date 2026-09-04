@@ -1,6 +1,6 @@
 begin;
 
-select plan(48);
+select plan(63);
 
 select has_table('public', 'orders', 'existe el encabezado persistente de pedidos');
 select has_table('public', 'order_items', 'existe el detalle persistente de pedidos');
@@ -8,6 +8,8 @@ select has_table('public', 'sales', 'existe el encabezado persistente de ventas'
 select has_table('public', 'sale_items', 'existe el detalle persistente de ventas');
 select has_function('public', 'create_order', array['jsonb'], 'existe la RPC transaccional de pedidos');
 select has_function('public', 'create_sale_from_order', array['uuid', 'uuid', 'jsonb'], 'existe la RPC de conversion pedido-venta');
+select has_column('public', 'orders', 'operation_payload_hash', 'orders persiste el hash del payload');
+select has_column('public', 'sales', 'operation_payload_hash', 'sales persiste el hash del payload');
 select ok((select relrowsecurity from pg_class where oid = 'public.orders'::regclass), 'orders tiene RLS');
 select ok((select relrowsecurity from pg_class where oid = 'public.order_items'::regclass), 'order_items tiene RLS');
 select ok((select relrowsecurity from pg_class where oid = 'public.sales'::regclass), 'sales tiene RLS');
@@ -93,13 +95,49 @@ select is(
   public.create_order(jsonb_build_object(
     'organization_id','a2a00000-0000-4000-8000-000000000001',
     'operation_key','e2a00000-0000-4000-8000-000000000001',
+    'source_quote_id','f2a00000-0000-4000-8000-000000000001',
+    'source_quote_number','COT-000001',
     'customer_id','c2a00000-0000-4000-8000-000000000001',
     'warehouse_id','e2a00000-0000-4000-8000-000000000001',
+    'order_date','2026-09-01','prices_include_tax',true,'notes','Pedido de prueba',
     'items',jsonb_build_array(jsonb_build_object('product_id','d2a00000-0000-4000-8000-000000000001','quantity',2,'unit_price',23.60))
   )),
   (select id from public.orders limit 1),
   'reintentar la misma operacion devuelve el mismo pedido'
 );
+select ok((select operation_payload_hash ~ '^[0-9a-f]{64}$' from public.orders limit 1), 'el pedido persiste un SHA-256 canonico');
+
+select throws_ok($$select public.create_order(jsonb_build_object(
+  'organization_id','a2a00000-0000-4000-8000-000000000001','operation_key','e2a00000-0000-4000-8000-000000000001',
+  'source_quote_id','f2a00000-0000-4000-8000-000000000001','source_quote_number','COT-000001',
+  'customer_id','c2a00000-0000-4000-8000-000000000001','warehouse_id','e2a00000-0000-4000-8000-000000000001',
+  'order_date','2026-09-01','prices_include_tax',true,'notes','Pedido de prueba',
+  'items',jsonb_build_array(jsonb_build_object('product_id','d2a00000-0000-4000-8000-000000000001','quantity',3,'unit_price',23.60))
+))$$, 'P0001', 'ORDER_IDEMPOTENCY_CONFLICT', 'la misma clave y distinta cantidad entra en conflicto');
+select throws_ok($$select public.create_order(jsonb_build_object(
+  'organization_id','a2a00000-0000-4000-8000-000000000001','operation_key','e2a00000-0000-4000-8000-000000000001',
+  'source_quote_id','f2a00000-0000-4000-8000-000000000001','source_quote_number','COT-000001',
+  'customer_id','c2a00000-0000-4000-8000-000000000002','warehouse_id','e2a00000-0000-4000-8000-000000000001',
+  'order_date','2026-09-01','prices_include_tax',true,'notes','Pedido de prueba',
+  'items',jsonb_build_array(jsonb_build_object('product_id','d2a00000-0000-4000-8000-000000000001','quantity',2,'unit_price',23.60))
+))$$, 'P0001', 'ORDER_IDEMPOTENCY_CONFLICT', 'la misma clave y distinto cliente entra en conflicto');
+select throws_ok($$select public.create_order(jsonb_build_object(
+  'organization_id','a2a00000-0000-4000-8000-000000000001','operation_key','e2a00000-0000-4000-8000-000000000001',
+  'source_quote_id','f2a00000-0000-4000-8000-000000000001','source_quote_number','COT-000001',
+  'customer_id','c2a00000-0000-4000-8000-000000000001','warehouse_id','e2a00000-0000-4000-8000-000000000099',
+  'order_date','2026-09-01','prices_include_tax',true,'notes','Pedido de prueba',
+  'items',jsonb_build_array(jsonb_build_object('product_id','d2a00000-0000-4000-8000-000000000001','quantity',2,'unit_price',23.60))
+))$$, 'P0001', 'ORDER_IDEMPOTENCY_CONFLICT', 'la misma clave y distinto almacen entra en conflicto');
+select throws_ok($$select public.create_order(jsonb_build_object(
+  'organization_id','a2a00000-0000-4000-8000-000000000001','operation_key','e2a00000-0000-4000-8000-000000000007',
+  'source_quote_id','f2a00000-0000-4000-8000-000000000001','source_quote_number','COT-000001',
+  'customer_id','c2a00000-0000-4000-8000-000000000001','warehouse_id','e2a00000-0000-4000-8000-000000000001',
+  'order_date','2026-09-01','prices_include_tax',true,'notes','Pedido de prueba',
+  'items',jsonb_build_array(jsonb_build_object('product_id','d2a00000-0000-4000-8000-000000000001','quantity',3,'unit_price',23.60))
+))$$, 'P0001', 'ORDER_IDEMPOTENCY_CONFLICT', 'source_quote_id no acepta un pedido incompatible');
+select is((select count(*) from public.orders), 1::bigint, 'los conflictos de idempotencia no crean pedidos');
+select is((select count(*) from public.inventory_reservations where source_type = 'order-item'), 1::bigint, 'los conflictos no duplican reservas');
+select is((select count(*) from public.inventory_movements where organization_id = 'a2a00000-0000-4000-8000-000000000001'), 2::bigint, 'los conflictos no generan movimientos de inventario');
 
 select throws_ok($$select public.create_order(jsonb_build_object(
   'organization_id','a2a00000-0000-4000-8000-000000000001','operation_key','e2a00000-0000-4000-8000-000000000002',
@@ -131,6 +169,19 @@ select is((select count(*) from public.orders), 2::bigint, 'dos operaciones gene
 select is((select count(distinct order_number) from public.orders), 2::bigint, 'los numeros de pedido son unicos');
 select is((select count(*) from public.orders where organization_id = 'a2a00000-0000-4000-8000-000000000001'), 2::bigint, 'el listado incluye los pedidos de la organizacion');
 
+select is(
+  public.create_order(jsonb_build_object(
+    'organization_id','a2a00000-0000-4000-8000-000000000001','operation_key','e2a00000-0000-4000-8000-000000000006',
+    'customer_id','c2a00000-0000-4000-8000-000000000001','warehouse_id','e2a00000-0000-4000-8000-000000000001',
+    'items',jsonb_build_array(
+      jsonb_build_object('product_id','d2a00000-0000-4000-8000-000000000002','quantity',3,'unit_price',5),
+      jsonb_build_object('product_id','d2a00000-0000-4000-8000-000000000001','quantity',1,'unit_price',10)
+    )
+  )),
+  (select id from public.orders where operation_key = 'e2a00000-0000-4000-8000-000000000006'),
+  'las lineas en orden distinto conservan la idempotencia semantica'
+);
+
 select lives_ok($$
   select public.create_sale_from_order(
     'a2a00000-0000-4000-8000-000000000001',
@@ -146,15 +197,22 @@ select is((select count(*) from public.audit_events where action = 'SALE_CREATED
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'b2a00000-0000-4000-8000-000000000001', true);
 select is((select internal_number from public.sales limit 1), 'VEN-000001', 'la numeracion interna de venta es correlativa');
+select ok((select operation_payload_hash ~ '^[0-9a-f]{64}$' from public.sales limit 1), 'la venta persiste un SHA-256 canonico');
 select is(
   public.create_sale_from_order(
     'a2a00000-0000-4000-8000-000000000001',
     (select order_id from public.sales limit 1),
-    jsonb_build_object('operation_key','e2a00000-0000-4000-8000-000000000011','document_type','factura','series','f001','document_number','000001','warehouse','Almacen principal')
+    jsonb_build_object('operation_key','e2a00000-0000-4000-8000-000000000011','document_type','factura','series','f001','document_number','000001','sale_date','2026-09-01','warehouse','Almacen principal')
   ),
   (select id from public.sales limit 1),
   'reintentar la conversion devuelve la misma venta'
 );
+select throws_ok($$select public.create_sale_from_order(
+  'a2a00000-0000-4000-8000-000000000001', (select order_id from public.sales limit 1),
+  jsonb_build_object('operation_key','e2a00000-0000-4000-8000-000000000011','document_type','factura','series','f001','document_number','000099','sale_date','2026-09-01','warehouse','Almacen principal')
+)$$, 'P0001', 'SALE_IDEMPOTENCY_CONFLICT', 'la misma clave de venta y comprobante distinto entra en conflicto');
+select is((select count(*) from public.sales), 1::bigint, 'el conflicto de venta no crea otra venta');
+select is((select count(*) from public.sale_items), 1::bigint, 'el conflicto de venta no duplica lineas ni movimientos');
 select throws_ok($$select public.create_sale_from_order('a2a00000-0000-4000-8000-000000000001', (select order_id from public.sales limit 1), jsonb_build_object('operation_key','e2a00000-0000-4000-8000-000000000012','document_type','factura','series','f001','document_number','000002','warehouse','Almacen principal'))$$, '23505', 'SALE_ORDER_ALREADY_CONVERTED', 'una venta por pedido');
 select throws_ok($$select public.create_sale_from_order('a2a00000-0000-4000-8000-000000000001', (select id from public.orders order by order_number desc limit 1), jsonb_build_object('operation_key','e2a00000-0000-4000-8000-000000000014','document_type','factura','series','f001','document_number','000002','warehouse',null))$$, '22023', 'SALE_DOCUMENT_INVALID', 'rechaza datos obligatorios de venta ausentes');
 select is((select total from public.sales limit 1), (select total from public.orders order by order_number limit 1), 'la venta conserva el total calculado');

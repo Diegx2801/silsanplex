@@ -456,6 +456,7 @@ select is(
     'operation_key','f2100000-0000-4000-8000-000000000001',
     'customer_id','f2d00000-0000-4000-8000-000000000001',
     'warehouse_id','f2f00000-0000-4000-8000-000000000001',
+    'order_date','2026-09-01',
     'items',jsonb_build_array(jsonb_build_object(
       'product_id','f2e00000-0000-4000-8000-000000000001',
       'quantity',7,'unit_price',10

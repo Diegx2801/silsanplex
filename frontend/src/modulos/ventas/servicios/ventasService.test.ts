@@ -54,6 +54,16 @@ describe('ventasService', () => {
     })
   })
 
+  it('traduce conflictos de idempotencia de pedidos y ventas', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'ORDER_IDEMPOTENCY_CONFLICT' } })
+    await expect(crearPedidoPersistente('org-1', cotizacion, 'warehouse-1')).rejects.toThrow('La clave de operación del pedido ya fue usada con datos diferentes')
+
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'SALE_IDEMPOTENCY_CONFLICT' } })
+    await expect(registrarVentaPersistente('org-1', 'pedido-1', {
+      tipoDocumento: 'factura', serie: 'f001', numeroDocumento: '1', fechaVenta: '2026-09-01', almacen: 'Principal',
+    })).rejects.toThrow('La clave de operación de la venta ya fue usada con datos diferentes')
+  })
+
   it('expone un error de stock asignable insuficiente', async () => {
     supabaseMock.rpc.mockResolvedValue({
       data: null,
