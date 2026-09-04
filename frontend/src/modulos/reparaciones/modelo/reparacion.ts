@@ -138,6 +138,7 @@ export interface Reparacion {
   clienteDocumentoSnapshot: string
   productoCodigoSnapshot: string
   productoDescripcionSnapshot: string
+  serialControlSnapshot: boolean
   creadoPor: string | null
   actualizadoPor: string | null
   creadoEn: string
@@ -303,8 +304,8 @@ const uuidOpcional = z
   )
 
 export const esquemaDatosReparacion = z.object({
-  clienteId: z.string().uuid('Selecciona un cliente activo'),
-  productoId: z.string().uuid('Selecciona un producto activo'),
+  clienteId: z.string().uuid('Selecciona un cliente'),
+  productoId: z.string().uuid('Selecciona un producto'),
   numeroSerie: z.string().trim().max(120, 'Máximo 120 caracteres'),
   prioridad: z.enum(['low', 'normal', 'high', 'urgent']),
   fechaEstimadaEntrega: fechaOpcional,

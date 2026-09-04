@@ -185,7 +185,7 @@ export function ReparacionesPage() {
   const filtrosVisuales: ConsultaReparaciones = { ...consulta, busqueda }
   const operaciones = useReparaciones({ consulta, pagina, tamanioPagina })
   const opciones = useReparacionOpciones({
-    cargarClientes: puedeCrear,
+    cargarClientes: puedeCrear || puedeEditar,
     cargarProductos: puedeCrear || puedeUsarPartes || puedeEditar,
     cargarAlmacenes: puedeUsarPartes,
   })

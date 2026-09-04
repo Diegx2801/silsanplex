@@ -132,6 +132,7 @@ export function DialogoReparacion({
   alRestaurarFoco,
 }: DialogoReparacionProps) {
   const [mensaje, setMensaje] = useState('')
+  const [productoSeleccionadoExplicitamente, setProductoSeleccionadoExplicitamente] = useState(false)
   const {
     register,
     handleSubmit,
@@ -146,16 +147,47 @@ export function DialogoReparacion({
   const productoId = watch('productoId')
   const numeroSerie = watch('numeroSerie')
   const producto = productos.find((item) => item.id === productoId)
+  const productoEsReferenciaOriginal = Boolean(
+    reparacion && productoId === reparacion.productoId,
+  )
+  const productoEsConocido = productoEsReferenciaOriginal || Boolean(producto)
+  const controlaSerie = productoEsReferenciaOriginal
+    ? reparacion?.serialControlSnapshot ?? false
+    : producto?.serialControl ?? false
+  const clienteHistorico = reparacion && !clientes.some((cliente) => cliente.id === reparacion.clienteId)
+    ? reparacion
+    : null
+  const productoHistorico = reparacion && !productos.some((item) => item.id === reparacion.productoId)
+    ? reparacion
+    : null
+  const registroProducto = register('productoId')
 
   useEffect(() => {
-    if (identidadEditable && producto && !producto.serialControl && numeroSerie) {
+    if (
+      identidadEditable
+      && productoSeleccionadoExplicitamente
+      && productoEsConocido
+      && !controlaSerie
+      && numeroSerie
+    ) {
       setValue('numeroSerie', '')
     }
-  }, [identidadEditable, numeroSerie, producto, setValue])
+  }, [
+    controlaSerie,
+    identidadEditable,
+    numeroSerie,
+    productoEsConocido,
+    productoSeleccionadoExplicitamente,
+    setValue,
+  ])
 
   const guardar = async (datos: DatosReparacion) => {
+    if (identidadEditable && !productoEsConocido) {
+      setError('productoId', { message: 'Selecciona un producto activo' })
+      return
+    }
     const errorSerie = identidadEditable
-      ? validarNumeroSerie(datos.numeroSerie, producto?.serialControl ?? false)
+      ? validarNumeroSerie(datos.numeroSerie, controlaSerie)
       : undefined
     if (errorSerie) {
       setError('numeroSerie', { message: errorSerie })
@@ -165,7 +197,10 @@ export function DialogoReparacion({
     setMensaje('')
     const datosNormalizados = {
       ...datos,
-      numeroSerie: identidadEditable && !producto?.serialControl ? '' : datos.numeroSerie,
+      numeroSerie:
+        identidadEditable && productoSeleccionadoExplicitamente && !controlaSerie
+          ? ''
+          : datos.numeroSerie,
     }
     const error = await alGuardar(datosNormalizados, reparacion?.id, identidadEditable)
     if (error) {
@@ -221,7 +256,9 @@ export function DialogoReparacion({
                 <h2 id="reparacion-identificacion" className="font-semibold">Identificación del servicio</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {identidadEditable
-                    ? 'Cliente y producto deben estar activos en la organización.'
+                    ? reparacion
+                      ? 'Puedes conservar las referencias de la orden; cualquier reemplazo debe estar activo.'
+                      : 'Cliente y producto deben estar activos en la organización.'
                     : 'Información conservada de la recepción de la orden.'}
                 </p>
               </div>
@@ -261,34 +298,55 @@ export function DialogoReparacion({
                         {cliente.nombre} · {cliente.documento}
                       </option>
                     ))}
+                    {clienteHistorico ? (
+                      <option value={clienteHistorico.clienteId}>
+                        {clienteHistorico.clienteNombreSnapshot} · {clienteHistorico.clienteDocumentoSnapshot} (referencia de la orden)
+                      </option>
+                    ) : null}
                   </select>
                   {errors.clienteId ? <p className="field-error">{errors.clienteId.message}</p> : null}
                 </div>
                 <div>
                   <label htmlFor="reparacion-producto" className="field-label">Producto o equipo *</label>
-                  <select id="reparacion-producto" className="field-control" aria-invalid={Boolean(errors.productoId)} {...register('productoId')}>
+                  <select
+                    id="reparacion-producto"
+                    className="field-control"
+                    aria-invalid={Boolean(errors.productoId)}
+                    {...registroProducto}
+                    onChange={(evento) => {
+                      setProductoSeleccionadoExplicitamente(true)
+                      void registroProducto.onChange(evento)
+                    }}
+                  >
                     <option value="">{cargandoOpciones ? 'Cargando productos…' : 'Selecciona un producto'}</option>
                     {productos.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.codigo} · {item.descripcion}
                       </option>
                     ))}
+                    {productoHistorico ? (
+                      <option value={productoHistorico.productoId}>
+                        {productoHistorico.productoCodigoSnapshot} · {productoHistorico.productoDescripcionSnapshot} (referencia de la orden)
+                      </option>
+                    ) : null}
                   </select>
                   {errors.productoId ? <p className="field-error">{errors.productoId.message}</p> : null}
                 </div>
-                {producto?.serialControl ? (
+                {controlaSerie || (productoEsReferenciaOriginal && Boolean(numeroSerie)) ? (
                   <CampoTexto
-                    etiqueta="Número de serie *"
+                    etiqueta={`Número de serie${controlaSerie ? ' *' : ''}`}
                     autoComplete="off"
                     placeholder="Serie del equipo recibido"
                     error={errors.numeroSerie?.message}
-                    ayuda="Este producto controla series; la serie se conserva en la orden."
+                    ayuda={controlaSerie
+                      ? 'La regla de serie conservada al recibir la orden exige este dato.'
+                      : 'La serie histórica se conservará mientras mantengas el producto original.'}
                     {...register('numeroSerie')}
                   />
                 ) : (
                   <div className="flex items-end sm:col-span-2">
                     <p className="w-full border border-dashed px-4 py-3 text-sm leading-6 text-muted-foreground">
-                      {producto
+                      {productoEsConocido
                         ? 'Este producto no controla números de serie. La reparación se registrará sin serie.'
                         : 'Selecciona un producto para saber si se debe registrar una serie.'}
                     </p>

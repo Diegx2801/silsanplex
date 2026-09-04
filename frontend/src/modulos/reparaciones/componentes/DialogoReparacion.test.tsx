@@ -51,6 +51,7 @@ const reparacion: Reparacion = {
   clienteDocumentoSnapshot: 'DNI 00000001',
   productoCodigoSnapshot: 'PROD-1',
   productoDescripcionSnapshot: 'Equipo prueba',
+  serialControlSnapshot: false,
   creadoPor: null,
   actualizadoPor: null,
   creadoEn: '2026-08-30T12:00:00Z',
@@ -60,6 +61,8 @@ const reparacion: Reparacion = {
 function renderizarDialogo(
   reparacionActual: Reparacion | null,
   identidadEditable: boolean,
+  clientesDisponibles = clientes,
+  productosDisponibles = productos,
 ) {
   const alGuardar = vi.fn().mockResolvedValue(undefined)
   render(
@@ -67,8 +70,8 @@ function renderizarDialogo(
       abierto
       reparacion={reparacionActual}
       identidadEditable={identidadEditable}
-      clientes={clientes}
-      productos={productos}
+      clientes={clientesDisponibles}
+      productos={productosDisponibles}
       alCambiarApertura={vi.fn()}
       alGuardar={alGuardar}
       alRestaurarFoco={vi.fn()}
@@ -118,6 +121,82 @@ describe('DialogoReparacion', () => {
       }),
       'repair-1',
       false,
+    ))
+  })
+
+  it('permite conservar referencias ausentes de las listas activas', async () => {
+    const alGuardar = renderizarDialogo(reparacion, true, [], [])
+
+    expect(screen.getByRole('option', {
+      name: 'Cliente prueba · DNI 00000001 (referencia de la orden)',
+    })).toBeInTheDocument()
+    expect(screen.getByRole('option', {
+      name: 'PROD-1 · Equipo prueba (referencia de la orden)',
+    })).toBeInTheDocument()
+    expect(screen.getByLabelText('Cliente *')).toHaveValue(clienteId)
+    expect(screen.getByLabelText('Producto o equipo *')).toHaveValue(productoId)
+    expect(screen.getByLabelText('Número de serie')).toHaveValue('SER-ORIGINAL')
+
+    fireEvent.change(screen.getByLabelText('Notas de recepción'), {
+      target: { value: 'Actualización administrativa' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clienteId,
+        productoId,
+        numeroSerie: 'SER-ORIGINAL',
+        notas: 'Actualización administrativa',
+      }),
+      'repair-1',
+      true,
+    ))
+  })
+
+  it('usa la regla de serie conservada aunque el maestro actual difiera', async () => {
+    const alGuardar = renderizarDialogo({
+      ...reparacion,
+      serialControlSnapshot: true,
+    }, true)
+
+    expect(screen.getByLabelText('Número de serie *')).toHaveValue('SER-ORIGINAL')
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(
+      expect.objectContaining({ numeroSerie: 'SER-ORIGINAL' }),
+      'repair-1',
+      true,
+    ))
+  })
+
+  it('limpia la serie al seleccionar otro producto conocido sin series', async () => {
+    const otroProductoId = '00000000-0000-4000-8000-000000000003'
+    const alGuardar = renderizarDialogo({
+      ...reparacion,
+      serialControlSnapshot: true,
+    }, true, clientes, [
+      productos[0],
+      {
+        ...productos[0],
+        id: otroProductoId,
+        codigo: 'PROD-2',
+        descripcion: 'Equipo sin serie',
+      },
+    ])
+
+    fireEvent.change(screen.getByLabelText('Producto o equipo *'), {
+      target: { value: otroProductoId },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productoId: otroProductoId,
+        numeroSerie: '',
+      }),
+      'repair-1',
+      true,
     ))
   })
 })
