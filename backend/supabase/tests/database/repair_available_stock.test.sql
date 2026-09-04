@@ -1,6 +1,6 @@
 begin;
 
-select plan(36);
+select plan(42);
 
 select has_trigger(
   'public', 'repair_parts', 'repair_parts_enforce_available_stock',
@@ -35,6 +35,10 @@ select ok(
     in pg_get_functiondef('public.consume_repair_part(jsonb)'::regprocedure)
   ),
   'el guard sanitario se ejecuta despues de resolver la idempotencia'
+);
+select has_column(
+  'public', 'repair_list', 'serial_control_snapshot',
+  'repair_list expone la regla historica de serie'
 );
 
 insert into public.organizations (id, name, slug)
@@ -175,6 +179,16 @@ values
     'd2000000-0000-4000-8000-000000000002',
     'd2000000-0000-4000-8000-000000000002'
   );
+
+select results_eq(
+  $$
+    select serial_control_snapshot
+    from public.repair_list
+    where id = 'd8000000-0000-4000-8000-000000000001'
+  $$,
+  $$ values (false) $$,
+  'repair_list conserva el snapshot de serie de la recepcion'
+);
 
 set local role authenticated;
 select set_config(
@@ -529,6 +543,61 @@ select results_eq(
   'cancelar no altera el fisico no disponible'
 );
 
+reset role;
+update public.products
+set code = 'REP-CURRENT',
+    description = 'Descripcion actual modificada',
+    is_active = false
+where id = 'd5000000-0000-4000-8000-000000000001';
+update public.customers
+set legal_name = 'Cliente actual modificado',
+    is_active = false
+where id = 'd4000000-0000-4000-8000-000000000001';
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"d2000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"d3000000-0000-4000-8000-000000000001"}',
+  true
+);
+
+select lives_ok($$
+  select public.update_repair(jsonb_build_object(
+    'organization_id', 'd1000000-0000-4000-8000-000000000001'::uuid,
+    'id', 'd8000000-0000-4000-8000-000000000001'::uuid,
+    'customer_id', 'd4000000-0000-4000-8000-000000000001'::uuid,
+    'product_id', 'd5000000-0000-4000-8000-000000000001'::uuid,
+    'notes', 'Actualizacion administrativa historica'
+  ))
+$$, 'actualiza datos generales conservando maestros desactivados');
+
+select results_eq(
+  $$
+    select
+      customer_name_snapshot, customer_document_snapshot,
+      product_code_snapshot, product_description_snapshot,
+      serial_control_snapshot, notes
+    from public.repairs
+    where id = 'd8000000-0000-4000-8000-000000000001'
+  $$,
+  $$ values (
+    'Cliente disponible'::text, 'DNI 41000001'::text,
+    'REP-AVAILABLE'::text, 'Repuesto sanitario'::text,
+    false, 'Actualizacion administrativa historica'::text
+  ) $$,
+  'la actualizacion no reemplaza snapshots con datos actuales'
+);
+
+select throws_ok($$
+  select public.reserve_repair_part('{
+    "organization_id":"d1000000-0000-4000-8000-000000000001",
+    "repair_id":"d8000000-0000-4000-8000-000000000002",
+    "product_id":"d5000000-0000-4000-8000-000000000001",
+    "warehouse_id":"d6000000-0000-4000-8000-000000000001",
+    "location_id":"d7000000-0000-4000-8000-000000000001",
+    "stock_status":"available","quantity_requested":1
+  }'::jsonb)
+$$, 'P0001', 'REPAIR_PART_PRODUCT_UNAVAILABLE', 'una reserva nueva sigue exigiendo producto activo');
+
 select lives_ok($$
   select public.consume_repair_part(jsonb_build_object(
     'organization_id', 'd1000000-0000-4000-8000-000000000001'::uuid,
@@ -539,7 +608,19 @@ select lives_ok($$
     'quantity', 2,
     'operation_key', 'db000000-0000-4000-8000-000000000003'::uuid
   ))
-$$, 'consume parcialmente stock available');
+$$, 'consume reserva available aunque el producto se desactive');
+
+select results_eq(
+  $$
+    select movement.product_code, movement.product_description
+    from public.inventory_movements movement
+    join public.repair_part_consumptions consumption
+      on consumption.inventory_movement_id = movement.id
+    where consumption.operation_key = 'db000000-0000-4000-8000-000000000003'
+  $$,
+  $$ values ('REP-AVAILABLE'::text, 'Repuesto sanitario'::text) $$,
+  'el consumo escribe los snapshots capturados al reservar'
+);
 
 select results_eq(
   $$
@@ -627,6 +708,10 @@ select results_eq(
 );
 
 reset role;
+
+update public.products
+set is_active = true
+where id = 'd5000000-0000-4000-8000-000000000001';
 
 select throws_ok($$
   insert into public.inventory_movements (

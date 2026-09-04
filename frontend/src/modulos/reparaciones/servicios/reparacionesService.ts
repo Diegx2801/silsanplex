@@ -61,6 +61,7 @@ interface FilaReparacion {
   customer_document_snapshot: string
   product_code_snapshot: string
   product_description_snapshot: string
+  serial_control_snapshot: boolean
   created_by: string | null
   updated_by: string | null
   created_at: string
@@ -229,7 +230,7 @@ interface FilaUbicacion {
 }
 
 const columnasReparacion =
-  'id,organization_id,repair_code,customer_id,product_id,serial_number,received_at,estimated_delivery_date,delivered_at,status,priority,problem_description,diagnosis,applied_solution,notes,customer_reference,sale_document_id,warranty_reference,assigned_technician_id,customer_name_snapshot,customer_document_snapshot,product_code_snapshot,product_description_snapshot,created_by,updated_by,created_at,updated_at' as const
+  'id,organization_id,repair_code,customer_id,product_id,serial_number,received_at,estimated_delivery_date,delivered_at,status,priority,problem_description,diagnosis,applied_solution,notes,customer_reference,sale_document_id,warranty_reference,assigned_technician_id,customer_name_snapshot,customer_document_snapshot,product_code_snapshot,product_description_snapshot,created_by,updated_by,created_at,updated_at,serial_control_snapshot' as const
 
 const tamanioPaginaMaximo = 50
 const paginaMaxima = 100_000
@@ -385,6 +386,7 @@ function mapearReparacion(fila: FilaReparacion): Reparacion {
     clienteDocumentoSnapshot: fila.customer_document_snapshot,
     productoCodigoSnapshot: fila.product_code_snapshot,
     productoDescripcionSnapshot: fila.product_description_snapshot,
+    serialControlSnapshot: fila.serial_control_snapshot,
     creadoPor: fila.created_by,
     actualizadoPor: fila.updated_by,
     creadoEn: fila.created_at,

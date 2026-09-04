@@ -44,6 +44,7 @@ const reparacionBase: Reparacion = {
   clienteDocumentoSnapshot: 'DNI 00000001',
   productoCodigoSnapshot: 'PROD-1',
   productoDescripcionSnapshot: 'Equipo prueba',
+  serialControlSnapshot: true,
   creadoPor: null,
   actualizadoPor: null,
   creadoEn: '2026-08-30T12:00:00Z',
