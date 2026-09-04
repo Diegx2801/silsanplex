@@ -28,6 +28,7 @@ const productos = [{
 const reparacion: Reparacion = {
   id: 'repair-1',
   organizationId: 'org-1',
+  lockVersion: 4,
   codigo: 'REP-0001',
   clienteId,
   productoId,

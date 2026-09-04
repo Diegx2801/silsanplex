@@ -49,6 +49,7 @@ import {
   type DatosPrueba,
   type DatosReservaParte,
   type DatosSolucionReparacion,
+  type CotizacionReparacion,
   type DetalleReparacion as DatosDetalleReparacion,
   type EstadoReparacion,
   type OpcionProductoReparacion,
@@ -143,23 +144,23 @@ interface DetalleReparacionProps {
   alCambiarApertura: (abierto: boolean) => void
   alRestaurarFoco: () => void
   alEditar: () => void
-  alAsignar: (tecnicoId: string) => Promise<string | undefined>
-  alCambiarEstado: (estado: EstadoReparacion, observacion: string) => Promise<string | undefined>
-  alRegistrarDiagnostico: (datos: DatosDiagnostico) => Promise<string | undefined>
-  alRegistrarSolucion: (datos: DatosSolucionReparacion) => Promise<string | undefined>
-  alGuardarCotizacion: (datos: DatosCotizacion, enviar: boolean) => Promise<string | undefined>
-  alRevisarCotizacion: (cotizacionId: string, datos: DatosCotizacion, enviar: boolean) => Promise<string | undefined>
-  alAprobarCotizacion: (cotizacionId: string, datos: DatosObservacionReparacion) => Promise<string | undefined>
-  alRechazarCotizacion: (cotizacionId: string, datos: DatosObservacionReparacion) => Promise<string | undefined>
-  alReservarParte: (datos: DatosReservaParte) => Promise<string | undefined>
-  alConsumirParte: (parteId: string, datos: DatosConsumoParte, operationKey: string) => Promise<string | undefined>
-  alCancelarParte: (parteId: string, datos: DatosObservacionReparacion) => Promise<string | undefined>
-  alRegistrarPrueba: (datos: DatosPrueba) => Promise<string | undefined>
-  alEntregar: (datos: DatosObservacionReparacion) => Promise<string | undefined>
-  alCancelar: (datos: DatosObservacionReparacion) => Promise<string | undefined>
+  alAsignar: (reparacionId: string, tecnicoId: string, expectedLockVersion: number) => Promise<string | undefined>
+  alCambiarEstado: (reparacionId: string, estado: EstadoReparacion, observacion: string, expectedLockVersion: number) => Promise<string | undefined>
+  alRegistrarDiagnostico: (reparacionId: string, datos: DatosDiagnostico, expectedLockVersion: number) => Promise<string | undefined>
+  alRegistrarSolucion: (reparacionId: string, datos: DatosSolucionReparacion, expectedLockVersion: number) => Promise<string | undefined>
+  alGuardarCotizacion: (reparacionId: string, datos: DatosCotizacion, enviar: boolean, expectedLockVersion: number) => Promise<string | undefined>
+  alRevisarCotizacion: (reparacionId: string, cotizacionId: string, datos: DatosCotizacion, enviar: boolean, expectedLockVersion: number) => Promise<string | undefined>
+  alAprobarCotizacion: (reparacionId: string, cotizacionId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
+  alRechazarCotizacion: (reparacionId: string, cotizacionId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
+  alReservarParte: (reparacionId: string, datos: DatosReservaParte, expectedLockVersion: number) => Promise<string | undefined>
+  alConsumirParte: (parteId: string, datos: DatosConsumoParte, operationKey: string, expectedLockVersion: number) => Promise<string | undefined>
+  alCancelarParte: (parteId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
+  alRegistrarPrueba: (reparacionId: string, datos: DatosPrueba, expectedLockVersion: number) => Promise<string | undefined>
+  alEntregar: (reparacionId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
+  alCancelar: (reparacionId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
 }
 
-type DialogoActivo =
+type TipoDialogoActivo =
   | 'estado'
   | 'asignacion'
   | 'diagnostico'
@@ -173,7 +174,29 @@ type DialogoActivo =
   | 'prueba'
   | 'entregar'
   | 'cancelar'
-  | null
+
+interface ContextoAccion {
+  tipo: TipoDialogoActivo
+  reparacion: Reparacion
+  cotizacion: CotizacionReparacion | null
+  parte?: ParteReparacion
+}
+
+function crearContextoAccion(
+  tipo: TipoDialogoActivo,
+  detalle: DatosDetalleReparacion,
+): ContextoAccion {
+  return {
+    tipo,
+    reparacion: { ...detalle.reparacion },
+    cotizacion: detalle.cotizacionActiva
+      ? {
+          ...detalle.cotizacionActiva,
+          lineas: detalle.cotizacionActiva.lineas.map((linea) => ({ ...linea })),
+        }
+      : null,
+  }
+}
 
 export function DetalleReparacion({
   abierto,
@@ -207,12 +230,11 @@ export function DetalleReparacion({
   alEntregar,
   alCancelar,
 }: DetalleReparacionProps) {
-  const [dialogo, setDialogo] = useState<DialogoActivo>(null)
-  const [parteSeleccionada, setParteSeleccionada] = useState<ParteReparacion | null>(null)
+  const [accion, setAccion] = useState<ContextoAccion | null>(null)
   const [mensaje, setMensaje] = useState('')
 
   const cerrarDialogo = (abiertoDialogo: boolean) => {
-    if (!abiertoDialogo) setDialogo(null)
+    if (!abiertoDialogo) setAccion(null)
   }
 
   const ejecutar = async (
@@ -226,13 +248,20 @@ export function DetalleReparacion({
     return undefined
   }
 
-  const abrirParte = (siguienteDialogo: 'consumo' | 'cancelarParte', parte: ParteReparacion) => {
-    if (siguienteDialogo === 'consumo' && !estadoStockReparacionEsConsumible(parte.estadoStock)) {
+  const abrirDialogo = (tipo: TipoDialogoActivo) => {
+    if (detalle) setAccion(crearContextoAccion(tipo, detalle))
+  }
+
+  const abrirParte = (tipo: 'consumo' | 'cancelarParte', parte: ParteReparacion) => {
+    if (tipo === 'consumo' && !estadoStockReparacionEsConsumible(parte.estadoStock)) {
       setMensaje('El stock dañado o en cuarentena no puede consumirse en Reparaciones.')
       return
     }
-    setParteSeleccionada(parte)
-    setDialogo(siguienteDialogo)
+    if (!detalle) return
+    setAccion({
+      ...crearContextoAccion(tipo, detalle),
+      parte: { ...parte, consumos: parte.consumos.map((consumo) => ({ ...consumo })) },
+    })
   }
 
   return (
@@ -272,7 +301,7 @@ export function DetalleReparacion({
               puedeUsarPartes={puedeUsarPartes && detalle.reparacion.estado !== 'testing'}
               puedeEntregar={puedeEntregar}
               alEditar={alEditar}
-              alAbrirDialogo={setDialogo}
+              alAbrirDialogo={abrirDialogo}
               alAbrirParte={abrirParte}
             />
           )}
@@ -281,118 +310,118 @@ export function DetalleReparacion({
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
 
-      {detalle ? (
+      {accion ? (
         <>
           <DialogoCambioEstado
-            abierto={dialogo === 'estado'}
-            reparacion={detalle.reparacion}
+            abierto={accion.tipo === 'estado'}
+            reparacion={accion.reparacion}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(estado, observacion) => ejecutar(() => alCambiarEstado(estado, observacion), 'Estado actualizado.')}
+            alGuardar={(estado, observacion) => ejecutar(() => alCambiarEstado(accion.reparacion.id, estado, observacion, accion.reparacion.lockVersion), 'Estado actualizado.')}
           />
           <DialogoAsignacion
-            key={`asignacion-${detalle.reparacion.tecnicoAsignadoId ?? 'sin-tecnico'}`}
-            abierto={dialogo === 'asignacion'}
-            reparacion={detalle.reparacion}
+            key={`asignacion-${accion.reparacion.tecnicoAsignadoId ?? 'sin-tecnico'}`}
+            abierto={accion.tipo === 'asignacion'}
+            reparacion={accion.reparacion}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(tecnicoId) => ejecutar(() => alAsignar(tecnicoId), 'Técnico asignado.')}
+            alGuardar={(tecnicoId) => ejecutar(() => alAsignar(accion.reparacion.id, tecnicoId, accion.reparacion.lockVersion), 'Técnico asignado.')}
           />
           <DialogoDiagnostico
-            abierto={dialogo === 'diagnostico'}
-            reparacion={detalle.reparacion}
+            abierto={accion.tipo === 'diagnostico'}
+            reparacion={accion.reparacion}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(datos) => ejecutar(() => alRegistrarDiagnostico(datos), 'Diagnóstico registrado.')}
+            alGuardar={(datos) => ejecutar(() => alRegistrarDiagnostico(accion.reparacion.id, datos, accion.reparacion.lockVersion), 'Diagnóstico registrado.')}
           />
           <DialogoSolucionReparacion
-            abierto={dialogo === 'solucion'}
-            reparacion={detalle.reparacion}
+            abierto={accion.tipo === 'solucion'}
+            reparacion={accion.reparacion}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(datos) => ejecutar(() => alRegistrarSolucion(datos), 'Solución aplicada guardada.')}
+            alGuardar={(datos) => ejecutar(() => alRegistrarSolucion(accion.reparacion.id, datos, accion.reparacion.lockVersion), 'Solución aplicada guardada.')}
           />
           <DialogoCotizacion
-            abierto={dialogo === 'cotizacion'}
-            reparacion={detalle.reparacion}
-            cotizacion={detalle.cotizacionActiva?.estado === 'draft' || detalle.reparacion.estado === 'rejected' ? detalle.cotizacionActiva : null}
-            esRevision={detalle.reparacion.estado === 'rejected'}
+            abierto={accion.tipo === 'cotizacion'}
+            reparacion={accion.reparacion}
+            cotizacion={accion.cotizacion?.estado === 'draft' || accion.reparacion.estado === 'rejected' ? accion.cotizacion : null}
+            esRevision={accion.reparacion.estado === 'rejected'}
             productos={productos}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(datos, enviar) => detalle.reparacion.estado === 'rejected' && detalle.cotizacionActiva
-              ? ejecutar(() => alRevisarCotizacion(detalle.cotizacionActiva!.id, datos, enviar), enviar ? 'Revisión enviada a aprobación.' : 'Revisión guardada como borrador.')
-              : ejecutar(() => alGuardarCotizacion(datos, enviar), enviar ? 'Cotización enviada a aprobación.' : 'Borrador de cotización guardado.')}
+            alGuardar={(datos, enviar) => accion.reparacion.estado === 'rejected' && accion.cotizacion
+              ? ejecutar(() => alRevisarCotizacion(accion.reparacion.id, accion.cotizacion!.id, datos, enviar, accion.reparacion.lockVersion), enviar ? 'Revisión enviada a aprobación.' : 'Revisión guardada como borrador.')
+              : ejecutar(() => alGuardarCotizacion(accion.reparacion.id, datos, enviar, accion.reparacion.lockVersion), enviar ? 'Cotización enviada a aprobación.' : 'Borrador de cotización guardado.')}
           />
-          {detalle.cotizacionActiva ? (
+          {accion.cotizacion ? (
             <>
               <DialogoObservacion
-                abierto={dialogo === 'aprobar'}
+                abierto={accion.tipo === 'aprobar'}
                 titulo="Aprobar cotización"
-                descripcion={`La versión ${detalle.cotizacionActiva.version} pasará a aprobada y la orden avanzará.`}
+                descripcion={`La versión ${accion.cotizacion.version} pasará a aprobada y la orden avanzará.`}
                 etiquetaAccion="Aprobar cotización"
                 alCambiarApertura={cerrarDialogo}
-                alGuardar={(datos) => ejecutar(() => alAprobarCotizacion(detalle.cotizacionActiva!.id, datos), 'Cotización aprobada.')}
+                alGuardar={(datos) => ejecutar(() => alAprobarCotizacion(accion.reparacion.id, accion.cotizacion!.id, datos, accion.reparacion.lockVersion), 'Cotización aprobada.')}
               />
               <DialogoObservacion
-                abierto={dialogo === 'rechazar'}
+                abierto={accion.tipo === 'rechazar'}
                 titulo="Rechazar cotización"
                 descripcion="La cotización quedará rechazada. Si el cliente solicita cambios, podrás crear una revisión explícita."
                 etiquetaAccion="Rechazar cotización"
                 variante="destructive"
                 observacionObligatoria
                 alCambiarApertura={cerrarDialogo}
-                alGuardar={(datos) => ejecutar(() => alRechazarCotizacion(detalle.cotizacionActiva!.id, datos), 'Cotización rechazada.')}
+                alGuardar={(datos) => ejecutar(() => alRechazarCotizacion(accion.reparacion.id, accion.cotizacion!.id, datos, accion.reparacion.lockVersion), 'Cotización rechazada.')}
               />
             </>
           ) : null}
           <DialogoReservaParte
-            abierto={dialogo === 'reserva'}
-            reparacion={detalle.reparacion}
+            abierto={accion.tipo === 'reserva'}
+            reparacion={accion.reparacion}
             productos={productos}
             almacenes={almacenes}
             ubicaciones={ubicaciones}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(datos) => ejecutar(() => alReservarParte(datos), 'Repuesto reservado.')}
+            alGuardar={(datos) => ejecutar(() => alReservarParte(accion.reparacion.id, datos, accion.reparacion.lockVersion), 'Repuesto reservado.')}
           />
-          {parteSeleccionada ? (
+          {accion.parte ? (
             <>
               <DialogoConsumoParte
-                abierto={dialogo === 'consumo'}
-                parte={parteSeleccionada}
+                abierto={accion.tipo === 'consumo'}
+                parte={accion.parte}
                 alCambiarApertura={cerrarDialogo}
-                 alGuardar={(datos, operationKey) => ejecutar(() => alConsumirParte(parteSeleccionada!.id, datos, operationKey), 'Consumo registrado.')}
+                alGuardar={(datos, operationKey) => ejecutar(() => alConsumirParte(accion.parte!.id, datos, operationKey, accion.reparacion.lockVersion), 'Consumo registrado.')}
               />
               <DialogoObservacion
-                abierto={dialogo === 'cancelarParte'}
+                abierto={accion.tipo === 'cancelarParte'}
                 titulo="Cancelar reserva"
-                descripcion={`Se liberará el saldo pendiente de ${parteSeleccionada.productoDescripcionSnapshot}.`}
+                descripcion={`Se liberará el saldo pendiente de ${accion.parte.productoDescripcionSnapshot}.`}
                 etiquetaAccion="Cancelar reserva"
                 variante="destructive"
                 observacionObligatoria
                 alCambiarApertura={cerrarDialogo}
-                alGuardar={(datos) => ejecutar(() => alCancelarParte(parteSeleccionada!.id, datos), 'Reserva cancelada.')}
+                alGuardar={(datos) => ejecutar(() => alCancelarParte(accion.parte!.id, datos, accion.reparacion.lockVersion), 'Reserva cancelada.')}
               />
             </>
           ) : null}
           <DialogoPrueba
-            abierto={dialogo === 'prueba'}
-            reparacion={detalle.reparacion}
+            abierto={accion.tipo === 'prueba'}
+            reparacion={accion.reparacion}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(datos) => ejecutar(() => alRegistrarPrueba(datos), 'Prueba registrada.')}
+            alGuardar={(datos) => ejecutar(() => alRegistrarPrueba(accion.reparacion.id, datos, accion.reparacion.lockVersion), 'Prueba registrada.')}
           />
           <DialogoObservacion
-            abierto={dialogo === 'entregar'}
+            abierto={accion.tipo === 'entregar'}
             titulo="Entregar reparación"
             descripcion="El servidor verificará técnico asignado, pruebas aprobadas y reservas pendientes antes de confirmar."
             etiquetaAccion="Confirmar entrega"
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(datos) => ejecutar(() => alEntregar(datos), 'Reparación entregada.')}
+            alGuardar={(datos) => ejecutar(() => alEntregar(accion.reparacion.id, datos, accion.reparacion.lockVersion), 'Reparación entregada.')}
           />
           <DialogoObservacion
-            abierto={dialogo === 'cancelar'}
+            abierto={accion.tipo === 'cancelar'}
             titulo="Cancelar reparación"
             descripcion="La orden pasará a cancelada y las reservas pendientes se liberarán automáticamente."
             etiquetaAccion="Cancelar reparación"
             variante="destructive"
             observacionObligatoria
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(datos) => ejecutar(() => alCancelar(datos), 'Reparación cancelada.')}
+            alGuardar={(datos) => ejecutar(() => alCancelar(accion.reparacion.id, datos, accion.reparacion.lockVersion), 'Reparación cancelada.')}
           />
         </>
       ) : null}
@@ -412,7 +441,7 @@ interface DetalleContenidoProps {
   puedeUsarPartes: boolean
   puedeEntregar: boolean
   alEditar: () => void
-  alAbrirDialogo: (dialogo: DialogoActivo) => void
+  alAbrirDialogo: (dialogo: TipoDialogoActivo) => void
   alAbrirParte: (dialogo: 'consumo' | 'cancelarParte', parte: ParteReparacion) => void
 }
 

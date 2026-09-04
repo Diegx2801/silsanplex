@@ -107,7 +107,7 @@ declare
   quote_id uuid;
 begin
   perform repair_quote_concurrency_test.set_actor();
-  quote_id := public.save_repair_quote('{
+  quote_id := public.save_repair_quote_unchecked('{
     "organization_id":"bd140000-0000-4000-8000-000000000001",
     "repair_id":"bd640000-0000-4000-8000-000000000001",
     "items":[{"line_type":"labor","description":"First concurrent quote","quantity":1,"unit_price":20}]
@@ -125,7 +125,7 @@ set search_path = ''
 as $$
 begin
   perform repair_quote_concurrency_test.set_actor();
-  perform public.save_repair_quote('{
+  perform public.save_repair_quote_unchecked('{
     "organization_id":"bd140000-0000-4000-8000-000000000001",
     "repair_id":"bd640000-0000-4000-8000-000000000001",
     "items":[{"line_type":"labor","description":"Second concurrent quote","quantity":1,"unit_price":30}]
@@ -152,7 +152,7 @@ begin
   from public.repair_quotes quote
   where quote.repair_id = 'bd640000-0000-4000-8000-000000000001'
     and quote.is_current;
-  revised_quote_id := public.revise_repair_quote(jsonb_build_object(
+  revised_quote_id := public.revise_repair_quote_unchecked(jsonb_build_object(
     'organization_id', 'bd140000-0000-4000-8000-000000000001',
     'repair_id', 'bd640000-0000-4000-8000-000000000001',
     'rejected_quote_id', rejected_quote_id,
@@ -178,7 +178,7 @@ begin
   from public.repair_quotes quote
   where quote.repair_id = 'bd640000-0000-4000-8000-000000000001'
     and quote.is_current;
-  perform public.revise_repair_quote(jsonb_build_object(
+  perform public.revise_repair_quote_unchecked(jsonb_build_object(
     'organization_id', 'bd140000-0000-4000-8000-000000000001',
     'repair_id', 'bd640000-0000-4000-8000-000000000001',
     'rejected_quote_id', rejected_quote_id,
@@ -320,6 +320,7 @@ select set_config(
 select public.save_repair_quote(jsonb_build_object(
   'organization_id', 'bd140000-0000-4000-8000-000000000001',
   'repair_id', 'bd640000-0000-4000-8000-000000000001',
+  'expected_lock_version', (select lock_version from public.repairs where organization_id = 'bd140000-0000-4000-8000-000000000001' and id = 'bd640000-0000-4000-8000-000000000001'),
   'id', (select id from public.repair_quotes where repair_id = 'bd640000-0000-4000-8000-000000000001' and is_current),
   'submit', true,
   'items', '[{"line_type":"labor","description":"Submitted before rejection","quantity":1,"unit_price":20}]'::jsonb
@@ -328,7 +329,8 @@ select public.reject_repair_quote(
   'bd140000-0000-4000-8000-000000000001',
   'bd640000-0000-4000-8000-000000000001',
   (select id from public.repair_quotes where repair_id = 'bd640000-0000-4000-8000-000000000001' and is_current),
-  'Customer requests a concurrent revision test'
+  'Customer requests a concurrent revision test',
+  (select lock_version from public.repairs where organization_id = 'bd140000-0000-4000-8000-000000000001' and id = 'bd640000-0000-4000-8000-000000000001')
 );
 commit;
 

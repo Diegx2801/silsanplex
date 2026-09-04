@@ -28,7 +28,6 @@ export function DialogoDiagnostico({
   const {
     register,
     handleSubmit,
-    setError,
     reset,
     formState: { errors, isSubmitting },
   } = useForm<DatosDiagnostico>({
@@ -58,7 +57,7 @@ export function DialogoDiagnostico({
     setMensaje('')
     const error = await alGuardar(datos)
     if (error) {
-      setError('sintomas', { message: error })
+      setMensaje(error)
       return
     }
     alCambiarApertura(false)

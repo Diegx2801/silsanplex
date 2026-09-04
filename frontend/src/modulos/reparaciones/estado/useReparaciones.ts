@@ -26,6 +26,7 @@ import {
   consumirParteReparacion,
   crearReparacion,
   entregarReparacion,
+  esConflictoVersionReparacion,
   guardarCotizacionReparacion,
   listarReparacionesPaginadas,
   obtenerResumenReparaciones,
@@ -89,16 +90,26 @@ export function useReparaciones(
     staleTime: 30_000,
   })
 
-  const invalidar = async () => {
+  const invalidarLecturasReparacion = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: reparacionesKey }),
       queryClient.invalidateQueries({
         queryKey: ['repair-detail', organizationId],
       }),
+    ])
+  }
+
+  const invalidar = async () => {
+    await Promise.all([
+      invalidarLecturasReparacion(),
       queryClient.invalidateQueries({ queryKey: ['inventory', organizationId] }),
       queryClient.invalidateQueries({ queryKey: ['warehouse-management', organizationId] }),
       queryClient.invalidateQueries({ queryKey: ['inventory-fefo', organizationId] }),
     ])
+  }
+
+  const invalidarSiHayConflicto = async (error: unknown) => {
+    if (esConflictoVersionReparacion(error)) await invalidarLecturasReparacion()
   }
 
   const crearMutation = useMutation({
@@ -106,60 +117,73 @@ export function useReparaciones(
     onSuccess: invalidar,
   })
   const actualizarMutation = useMutation({
-    mutationFn: ({ id, datos, identidadEditable }: { id: string; datos: DatosReparacion; identidadEditable: boolean }) =>
-      actualizarReparacion(organizationId, id, datos, identidadEditable),
+    mutationFn: ({ id, datos, identidadEditable, expectedLockVersion }: { id: string; datos: DatosReparacion; identidadEditable: boolean; expectedLockVersion: number }) =>
+      actualizarReparacion(organizationId, id, datos, identidadEditable, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const asignarMutation = useMutation({
-    mutationFn: ({ id, tecnicoId }: { id: string; tecnicoId: string }) =>
-      asignarReparacion(organizationId, id, tecnicoId),
+    mutationFn: ({ id, tecnicoId, expectedLockVersion }: { id: string; tecnicoId: string; expectedLockVersion: number }) =>
+      asignarReparacion(organizationId, id, tecnicoId, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const estadoMutation = useMutation({
     mutationFn: ({
       id,
       estado,
       observacion,
+      expectedLockVersion,
     }: {
       id: string
       estado: string
       observacion: string
-    }) => cambiarEstadoReparacion(organizationId, id, estado, observacion),
+      expectedLockVersion: number
+    }) => cambiarEstadoReparacion(organizationId, id, estado, observacion, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const diagnosticoMutation = useMutation({
-    mutationFn: ({ id, datos }: { id: string; datos: DatosDiagnostico }) =>
-      registrarDiagnosticoReparacion(organizationId, id, datos),
+    mutationFn: ({ id, datos, expectedLockVersion }: { id: string; datos: DatosDiagnostico; expectedLockVersion: number }) =>
+      registrarDiagnosticoReparacion(organizationId, id, datos, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const solucionMutation = useMutation({
-    mutationFn: ({ id, datos }: { id: string; datos: DatosSolucionReparacion }) =>
-      registrarSolucionReparacion(organizationId, id, datos),
+    mutationFn: ({ id, datos, expectedLockVersion }: { id: string; datos: DatosSolucionReparacion; expectedLockVersion: number }) =>
+      registrarSolucionReparacion(organizationId, id, datos, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const cotizacionMutation = useMutation({
     mutationFn: ({
       id,
       datos,
       enviar,
+      expectedLockVersion,
     }: {
       id: string
       datos: DatosCotizacion
       enviar: boolean
-    }) => guardarCotizacionReparacion(organizationId, id, datos, enviar),
+      expectedLockVersion: number
+    }) => guardarCotizacionReparacion(organizationId, id, datos, enviar, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const aprobarCotizacionMutation = useMutation({
     mutationFn: ({
       repairId,
       quoteId,
       datos,
+      expectedLockVersion,
     }: {
       repairId: string
       quoteId: string
       datos: DatosObservacionReparacion
-    }) => aprobarCotizacionReparacion(organizationId, repairId, quoteId, datos),
+      expectedLockVersion: number
+    }) => aprobarCotizacionReparacion(organizationId, repairId, quoteId, datos, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const revisarCotizacionMutation = useMutation({
     mutationFn: ({
@@ -167,72 +191,90 @@ export function useReparaciones(
       quoteId,
       datos,
       enviar,
+      expectedLockVersion,
     }: {
       repairId: string
       quoteId: string
       datos: DatosCotizacion
       enviar: boolean
-    }) => revisarCotizacionReparacion(organizationId, repairId, quoteId, datos, enviar),
+      expectedLockVersion: number
+    }) => revisarCotizacionReparacion(organizationId, repairId, quoteId, datos, enviar, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const rechazarCotizacionMutation = useMutation({
     mutationFn: ({
       repairId,
       quoteId,
       datos,
+      expectedLockVersion,
     }: {
       repairId: string
       quoteId: string
       datos: DatosObservacionReparacion
-    }) => rechazarCotizacionReparacion(organizationId, repairId, quoteId, datos),
+      expectedLockVersion: number
+    }) => rechazarCotizacionReparacion(organizationId, repairId, quoteId, datos, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const reservaMutation = useMutation({
     mutationFn: ({
       repairId,
       datos,
+      expectedLockVersion,
     }: {
       repairId: string
       datos: DatosReservaParte
-    }) => reservarParteReparacion(organizationId, repairId, datos),
+      expectedLockVersion: number
+    }) => reservarParteReparacion(organizationId, repairId, datos, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const consumoMutation = useMutation({
     mutationFn: ({
       partId,
       datos,
       operationKey,
+      expectedLockVersion,
     }: {
       partId: string
       datos: DatosConsumoParte
       operationKey: string
-    }) => consumirParteReparacion(organizationId, partId, datos, operationKey),
+      expectedLockVersion: number
+    }) => consumirParteReparacion(organizationId, partId, datos, operationKey, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const cancelacionParteMutation = useMutation({
     mutationFn: ({
       partId,
       datos,
+      expectedLockVersion,
     }: {
       partId: string
       datos: DatosObservacionReparacion
-    }) => cancelarParteReparacion(organizationId, partId, datos),
+      expectedLockVersion: number
+    }) => cancelarParteReparacion(organizationId, partId, datos, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const pruebaMutation = useMutation({
-    mutationFn: ({ id, datos }: { id: string; datos: DatosPrueba }) =>
-      registrarPruebaReparacion(organizationId, id, datos),
+    mutationFn: ({ id, datos, expectedLockVersion }: { id: string; datos: DatosPrueba; expectedLockVersion: number }) =>
+      registrarPruebaReparacion(organizationId, id, datos, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const entregaMutation = useMutation({
-    mutationFn: ({ id, datos }: { id: string; datos: DatosObservacionReparacion }) =>
-      entregarReparacion(organizationId, id, datos),
+    mutationFn: ({ id, datos, expectedLockVersion }: { id: string; datos: DatosObservacionReparacion; expectedLockVersion: number }) =>
+      entregarReparacion(organizationId, id, datos, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
   const cancelacionMutation = useMutation({
-    mutationFn: ({ id, datos }: { id: string; datos: DatosObservacionReparacion }) =>
-      cancelarReparacion(organizationId, id, datos),
+    mutationFn: ({ id, datos, expectedLockVersion }: { id: string; datos: DatosObservacionReparacion; expectedLockVersion: number }) =>
+      cancelarReparacion(organizationId, id, datos, expectedLockVersion),
     onSuccess: invalidar,
+    onError: invalidarSiHayConflicto,
   })
 
   return {
@@ -268,49 +310,49 @@ export function useReparaciones(
         return mensajeDeError(error, 'No se pudo registrar la reparación.')
       }
     },
-    actualizar: async (id: string, datos: DatosReparacion, identidadEditable: boolean) => {
+    actualizar: async (id: string, datos: DatosReparacion, identidadEditable: boolean, expectedLockVersion: number) => {
       try {
-        await actualizarMutation.mutateAsync({ id, datos, identidadEditable })
+        await actualizarMutation.mutateAsync({ id, datos, identidadEditable, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo actualizar la reparación.')
       }
     },
-    asignar: async (id: string, tecnicoId: string) => {
+    asignar: async (id: string, tecnicoId: string, expectedLockVersion: number) => {
       try {
-        await asignarMutation.mutateAsync({ id, tecnicoId })
+        await asignarMutation.mutateAsync({ id, tecnicoId, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo asignar el técnico.')
       }
     },
-    cambiarEstado: async (id: string, estado: string, observacion: string) => {
+    cambiarEstado: async (id: string, estado: string, observacion: string, expectedLockVersion: number) => {
       try {
-        await estadoMutation.mutateAsync({ id, estado, observacion })
+        await estadoMutation.mutateAsync({ id, estado, observacion, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo cambiar el estado.')
       }
     },
-    registrarDiagnostico: async (id: string, datos: DatosDiagnostico) => {
+    registrarDiagnostico: async (id: string, datos: DatosDiagnostico, expectedLockVersion: number) => {
       try {
-        await diagnosticoMutation.mutateAsync({ id, datos })
+        await diagnosticoMutation.mutateAsync({ id, datos, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo registrar el diagnóstico.')
       }
     },
-    registrarSolucion: async (id: string, datos: DatosSolucionReparacion) => {
+    registrarSolucion: async (id: string, datos: DatosSolucionReparacion, expectedLockVersion: number) => {
       try {
-        await solucionMutation.mutateAsync({ id, datos })
+        await solucionMutation.mutateAsync({ id, datos, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo guardar la solución aplicada.')
       }
     },
-    guardarCotizacion: async (id: string, datos: DatosCotizacion, enviar: boolean) => {
+    guardarCotizacion: async (id: string, datos: DatosCotizacion, enviar: boolean, expectedLockVersion: number) => {
       try {
-        await cotizacionMutation.mutateAsync({ id, datos, enviar })
+        await cotizacionMutation.mutateAsync({ id, datos, enviar, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo guardar la cotización.')
@@ -321,9 +363,10 @@ export function useReparaciones(
       quoteId: string,
       datos: DatosCotizacion,
       enviar: boolean,
+      expectedLockVersion: number,
     ) => {
       try {
-        await revisarCotizacionMutation.mutateAsync({ repairId, quoteId, datos, enviar })
+        await revisarCotizacionMutation.mutateAsync({ repairId, quoteId, datos, enviar, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo crear la revisión de la cotización.')
@@ -333,9 +376,10 @@ export function useReparaciones(
       repairId: string,
       quoteId: string,
       datos: DatosObservacionReparacion,
+      expectedLockVersion: number,
     ) => {
       try {
-        await aprobarCotizacionMutation.mutateAsync({ repairId, quoteId, datos })
+        await aprobarCotizacionMutation.mutateAsync({ repairId, quoteId, datos, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo aprobar la cotización.')
@@ -345,25 +389,26 @@ export function useReparaciones(
       repairId: string,
       quoteId: string,
       datos: DatosObservacionReparacion,
+      expectedLockVersion: number,
     ) => {
       try {
-        await rechazarCotizacionMutation.mutateAsync({ repairId, quoteId, datos })
+        await rechazarCotizacionMutation.mutateAsync({ repairId, quoteId, datos, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo rechazar la cotización.')
       }
     },
-    reservarParte: async (repairId: string, datos: DatosReservaParte) => {
+    reservarParte: async (repairId: string, datos: DatosReservaParte, expectedLockVersion: number) => {
       try {
-        await reservaMutation.mutateAsync({ repairId, datos })
+        await reservaMutation.mutateAsync({ repairId, datos, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo reservar el repuesto.')
       }
     },
-    consumirParte: async (partId: string, datos: DatosConsumoParte, operationKey: string) => {
+    consumirParte: async (partId: string, datos: DatosConsumoParte, operationKey: string, expectedLockVersion: number) => {
       try {
-        await consumoMutation.mutateAsync({ partId, datos, operationKey })
+        await consumoMutation.mutateAsync({ partId, datos, operationKey, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo consumir el repuesto.')
@@ -372,33 +417,34 @@ export function useReparaciones(
     cancelarParte: async (
       partId: string,
       datos: DatosObservacionReparacion,
+      expectedLockVersion: number,
     ) => {
       try {
-        await cancelacionParteMutation.mutateAsync({ partId, datos })
+        await cancelacionParteMutation.mutateAsync({ partId, datos, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo cancelar la reserva.')
       }
     },
-    registrarPrueba: async (id: string, datos: DatosPrueba) => {
+    registrarPrueba: async (id: string, datos: DatosPrueba, expectedLockVersion: number) => {
       try {
-        await pruebaMutation.mutateAsync({ id, datos })
+        await pruebaMutation.mutateAsync({ id, datos, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo registrar la prueba.')
       }
     },
-    entregar: async (id: string, datos: DatosObservacionReparacion) => {
+    entregar: async (id: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => {
       try {
-        await entregaMutation.mutateAsync({ id, datos })
+        await entregaMutation.mutateAsync({ id, datos, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo entregar la reparación.')
       }
     },
-    cancelar: async (id: string, datos: DatosObservacionReparacion) => {
+    cancelar: async (id: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => {
       try {
-        await cancelacionMutation.mutateAsync({ id, datos })
+        await cancelacionMutation.mutateAsync({ id, datos, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo cancelar la reparación.')

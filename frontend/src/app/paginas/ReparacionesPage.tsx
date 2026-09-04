@@ -234,8 +234,11 @@ export function ReparacionesPage() {
     id: string | undefined,
     identidadEditable: boolean,
   ) => {
+    if (id && !reparacionEnEdicion) {
+      return 'No se pudo verificar la versión de la reparación. Cierra y vuelve a abrir la edición.'
+    }
     const error = id
-      ? await operaciones.actualizar(id, datos, identidadEditable)
+      ? await operaciones.actualizar(id, datos, identidadEditable, reparacionEnEdicion!.lockVersion)
       : await operaciones.crear(datos)
     if (!error) setMensaje(id ? 'La reparación se actualizó correctamente.' : 'La reparación se registró correctamente.')
     return error
@@ -301,20 +304,20 @@ export function ReparacionesPage() {
         alCambiarApertura={(abierto) => { if (!abierto) setReparacionId(null) }}
         alRestaurarFoco={() => disparadorDetalle.current?.focus()}
         alEditar={abrirEdicionDesdeDetalle}
-        alAsignar={(tecnicoId) => operaciones.asignar(detalle?.reparacion.id ?? '', tecnicoId)}
-        alCambiarEstado={(estado, observacion) => operaciones.cambiarEstado(detalle?.reparacion.id ?? '', estado, observacion)}
-        alRegistrarDiagnostico={(datos: DatosDiagnostico) => operaciones.registrarDiagnostico(detalle?.reparacion.id ?? '', datos)}
-        alRegistrarSolucion={(datos) => operaciones.registrarSolucion(detalle?.reparacion.id ?? '', datos)}
-        alGuardarCotizacion={(datos: DatosCotizacion, enviar: boolean) => operaciones.guardarCotizacion(detalle?.reparacion.id ?? '', datos, enviar)}
-        alRevisarCotizacion={(cotizacionId: string, datos: DatosCotizacion, enviar: boolean) => operaciones.revisarCotizacion(detalle?.reparacion.id ?? '', cotizacionId, datos, enviar)}
-        alAprobarCotizacion={(cotizacionId: string, datos: DatosObservacionReparacion) => operaciones.aprobarCotizacion(detalle?.reparacion.id ?? '', cotizacionId, datos)}
-        alRechazarCotizacion={(cotizacionId: string, datos: DatosObservacionReparacion) => operaciones.rechazarCotizacion(detalle?.reparacion.id ?? '', cotizacionId, datos)}
-        alReservarParte={(datos: DatosReservaParte) => operaciones.reservarParte(detalle?.reparacion.id ?? '', datos)}
-         alConsumirParte={(parteId: string, datos, operationKey) => operaciones.consumirParte(parteId, datos, operationKey)}
-        alCancelarParte={(parteId: string, datos: DatosObservacionReparacion) => operaciones.cancelarParte(parteId, datos)}
-        alRegistrarPrueba={(datos: DatosPrueba) => operaciones.registrarPrueba(detalle?.reparacion.id ?? '', datos)}
-        alEntregar={(datos: DatosObservacionReparacion) => operaciones.entregar(detalle?.reparacion.id ?? '', datos)}
-        alCancelar={(datos: DatosObservacionReparacion) => operaciones.cancelar(detalle?.reparacion.id ?? '', datos)}
+        alAsignar={(repairId, tecnicoId, lockVersion) => operaciones.asignar(repairId, tecnicoId, lockVersion)}
+        alCambiarEstado={(repairId, estado, observacion, lockVersion) => operaciones.cambiarEstado(repairId, estado, observacion, lockVersion)}
+        alRegistrarDiagnostico={(repairId, datos: DatosDiagnostico, lockVersion) => operaciones.registrarDiagnostico(repairId, datos, lockVersion)}
+        alRegistrarSolucion={(repairId, datos, lockVersion) => operaciones.registrarSolucion(repairId, datos, lockVersion)}
+        alGuardarCotizacion={(repairId, datos: DatosCotizacion, enviar: boolean, lockVersion) => operaciones.guardarCotizacion(repairId, datos, enviar, lockVersion)}
+        alRevisarCotizacion={(repairId, cotizacionId: string, datos: DatosCotizacion, enviar: boolean, lockVersion) => operaciones.revisarCotizacion(repairId, cotizacionId, datos, enviar, lockVersion)}
+        alAprobarCotizacion={(repairId, cotizacionId: string, datos: DatosObservacionReparacion, lockVersion) => operaciones.aprobarCotizacion(repairId, cotizacionId, datos, lockVersion)}
+        alRechazarCotizacion={(repairId, cotizacionId: string, datos: DatosObservacionReparacion, lockVersion) => operaciones.rechazarCotizacion(repairId, cotizacionId, datos, lockVersion)}
+        alReservarParte={(repairId, datos: DatosReservaParte, lockVersion) => operaciones.reservarParte(repairId, datos, lockVersion)}
+        alConsumirParte={(parteId: string, datos, operationKey, lockVersion) => operaciones.consumirParte(parteId, datos, operationKey, lockVersion)}
+        alCancelarParte={(parteId: string, datos: DatosObservacionReparacion, lockVersion) => operaciones.cancelarParte(parteId, datos, lockVersion)}
+        alRegistrarPrueba={(repairId, datos: DatosPrueba, lockVersion) => operaciones.registrarPrueba(repairId, datos, lockVersion)}
+        alEntregar={(repairId, datos: DatosObservacionReparacion, lockVersion) => operaciones.entregar(repairId, datos, lockVersion)}
+        alCancelar={(repairId, datos: DatosObservacionReparacion, lockVersion) => operaciones.cancelar(repairId, datos, lockVersion)}
       /> : null}
     </div>
   )

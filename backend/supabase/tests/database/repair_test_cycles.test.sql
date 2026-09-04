@@ -34,13 +34,13 @@ select is(
   'repair_tests conserva RLS'
 );
 select ok(
-  position('for update' in lower(pg_get_functiondef('public.change_repair_status(uuid, uuid, text, text)'::regprocedure))) > 0
-  and position('for update' in lower(pg_get_functiondef('public.record_repair_test(jsonb)'::regprocedure))) > 0
-  and position('for update' in lower(pg_get_functiondef('public.deliver_repair(uuid, uuid, text)'::regprocedure))) > 0,
+  position('for update' in lower(pg_get_functiondef('public.change_repair_status_unchecked(uuid, uuid, text, text)'::regprocedure))) > 0
+  and position('for update' in lower(pg_get_functiondef('public.record_repair_test_unchecked(jsonb)'::regprocedure))) > 0
+  and position('for update' in lower(pg_get_functiondef('public.deliver_repair_unchecked(uuid, uuid, text)'::regprocedure))) > 0,
   'estado, prueba y entrega conservan el lock de la reparacion'
 );
 select ok(
-  position('test_cycle_number' in pg_get_functiondef('public.record_repair_test(jsonb)'::regprocedure)) > 0,
+  position('test_cycle_number' in pg_get_functiondef('public.record_repair_test_unchecked(jsonb)'::regprocedure)) > 0,
   'record_repair_test asigna explicitamente el ciclo vigente'
 );
 
@@ -93,6 +93,30 @@ values
     'e1200000-0000-4000-8000-000000000002',
     'e1200000-0000-4000-8000-000000000002'
   );
+
+create function pg_temp.repair_lock_version(organization_id uuid, repair_id uuid)
+returns bigint
+language sql
+stable
+as $$
+  select repair.lock_version
+  from public.repairs repair
+  where repair.organization_id = organization_id
+    and repair.id = repair_id;
+$$;
+
+create function pg_temp.with_repair_version(payload jsonb)
+returns jsonb
+language sql
+stable
+as $$
+  select payload || jsonb_build_object(
+    'expected_lock_version', pg_temp.repair_lock_version(
+      nullif(payload ->> 'organization_id', '')::uuid,
+      nullif(payload ->> 'repair_id', '')::uuid
+    )
+  );
+$$;
 
 insert into public.warehouses (id, organization_id, code, name, created_by, updated_by)
 values (
@@ -210,7 +234,8 @@ select set_config(
 select lives_ok($$
   select public.change_repair_status(
     'e1100000-0000-4000-8000-000000000001',
-    'e1800000-0000-4000-8000-000000000001', 'testing', 'Ciclo inicial'
+    'e1800000-0000-4000-8000-000000000001', 'testing', 'Ciclo inicial',
+    pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000001')
   )
 $$, 'entrar a testing inicia el ciclo 1');
 select results_eq(
@@ -231,7 +256,8 @@ select results_eq(
 select throws_ok($$
   select public.change_repair_status(
     'e1100000-0000-4000-8000-000000000001',
-    'e1800000-0000-4000-8000-000000000001', 'testing', 'No inicia otro ciclo'
+    'e1800000-0000-4000-8000-000000000001', 'testing', 'No inicia otro ciclo',
+    pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000001')
   )
 $$, 'P0001', 'REPAIR_STATUS_TRANSITION_INVALID', 'testing a testing no representa una nueva entrada');
 select is(
@@ -240,7 +266,7 @@ select is(
   'una transicion testing a testing rechazada no incrementa el ciclo'
 );
 select lives_ok($$
-  select public.record_repair_test('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000001","test_type":"Seguridad","result":"Falla inicial","passed":false,"performed_by":"e1200000-0000-4000-8000-000000000001","notes":"Requiere correccion"}'::jsonb)
+  select public.record_repair_test(pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000001","test_type":"Seguridad","result":"Falla inicial","passed":false,"performed_by":"e1200000-0000-4000-8000-000000000001","notes":"Requiere correccion"}'::jsonb))
 $$, 'registra FAILED en ciclo 1');
 select results_eq(
   $$
@@ -254,7 +280,8 @@ select results_eq(
 select throws_ok($$
   select public.change_repair_status(
     'e1100000-0000-4000-8000-000000000001',
-    'e1800000-0000-4000-8000-000000000001', 'ready_for_delivery', null
+    'e1800000-0000-4000-8000-000000000001', 'ready_for_delivery', null,
+    pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000001')
   )
 $$, 'P0001', 'REPAIR_FAILED_TEST_PRESENT', 'FAILED vigente bloquea ready');
 select is(
@@ -265,13 +292,15 @@ select is(
 select lives_ok($$
   select public.change_repair_status(
     'e1100000-0000-4000-8000-000000000001',
-    'e1800000-0000-4000-8000-000000000001', 'in_repair', 'Corregir falla'
+    'e1800000-0000-4000-8000-000000000001', 'in_repair', 'Corregir falla',
+    pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000001')
   )
 $$, 'FAILED puede volver a reparacion');
 select lives_ok($$
   select public.change_repair_status(
     'e1100000-0000-4000-8000-000000000001',
-    'e1800000-0000-4000-8000-000000000001', 'testing', 'Retest'
+    'e1800000-0000-4000-8000-000000000001', 'testing', 'Retest',
+    pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000001')
   )
 $$, 'reentrar a testing inicia ciclo 2');
 select results_eq(
@@ -289,12 +318,13 @@ select results_eq(
   'reparacion y eventos avanzan al ciclo 2'
 );
 select lives_ok($$
-  select public.record_repair_test('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000001","test_type":"Seguridad","result":"Correccion validada","passed":true,"performed_by":"e1200000-0000-4000-8000-000000000001","notes":"Retest aprobado"}'::jsonb)
+  select public.record_repair_test(pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000001","test_type":"Seguridad","result":"Correccion validada","passed":true,"performed_by":"e1200000-0000-4000-8000-000000000001","notes":"Retest aprobado"}'::jsonb))
 $$, 'registra PASSED en ciclo 2');
 select lives_ok($$
   select public.change_repair_status(
     'e1100000-0000-4000-8000-000000000001',
-    'e1800000-0000-4000-8000-000000000001', 'ready_for_delivery', 'Ciclo vigente aprobado'
+    'e1800000-0000-4000-8000-000000000001', 'ready_for_delivery', 'Ciclo vigente aprobado',
+    pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000001')
   )
 $$, 'FAILED historico no bloquea el ciclo 2 aprobado');
 select results_eq(
@@ -328,7 +358,8 @@ select is(
 select lives_ok($$
   select public.deliver_repair(
     'e1100000-0000-4000-8000-000000000001',
-    'e1800000-0000-4000-8000-000000000001', 'Entrega tras retest'
+    'e1800000-0000-4000-8000-000000000001', 'Entrega tras retest',
+    pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000001')
   )
 $$, 'deliver_repair acepta el ciclo vigente aprobado');
 select is(
@@ -338,51 +369,52 @@ select is(
 );
 
 select lives_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000002', 'testing', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000002', 'testing', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000002'))
 $$, 'abre un ciclo sin pruebas');
 select throws_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000002', 'ready_for_delivery', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000002', 'ready_for_delivery', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000002'))
 $$, 'P0001', 'REPAIR_APPROVED_TEST_REQUIRED', 'cero pruebas bloquea ready');
 
 select lives_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000003', 'testing', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000003', 'testing', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000003'))
 $$, 'abre ciclo 1 para prueba aprobada historica');
 select lives_ok($$
-  select public.record_repair_test('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000003","test_type":"Operacion","result":"Aprobada ciclo 1","passed":true}'::jsonb)
+  select public.record_repair_test(pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000003","test_type":"Operacion","result":"Aprobada ciclo 1","passed":true}'::jsonb))
 $$, 'registra PASSED en ciclo 1');
 select lives_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000003', 'in_repair', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000003', 'in_repair', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000003'))
 $$, 'vuelve a reparacion tras ciclo aprobado');
 select lives_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000003', 'testing', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000003', 'testing', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000003'))
 $$, 'abre ciclo 2 independiente');
 select throws_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000003', 'ready_for_delivery', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000003', 'ready_for_delivery', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000003'))
 $$, 'P0001', 'REPAIR_APPROVED_TEST_REQUIRED', 'PASSED anterior no satisface el ciclo nuevo');
 
 select lives_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000004', 'testing', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000004', 'testing', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000004'))
 $$, 'abre ciclo sin tecnico asignado');
 select lives_ok($$
-  select public.record_repair_test('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000004","test_type":"Operacion","result":"Aprobada","passed":true}'::jsonb)
+  select public.record_repair_test(pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000004","test_type":"Operacion","result":"Aprobada","passed":true}'::jsonb))
 $$, 'el actor activo registra prueba sin tecnico asignado');
 select throws_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000004', 'ready_for_delivery', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000004', 'ready_for_delivery', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000004'))
 $$, 'P0001', 'REPAIR_ASSIGNED_TECHNICIAN_REQUIRED', 'la regla actual de tecnico bloquea ready');
 
 select lives_ok($$
-  select public.reserve_repair_part('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","product_id":"e1500000-0000-4000-8000-000000000001","warehouse_id":"e1600000-0000-4000-8000-000000000001","location_id":"e1700000-0000-4000-8000-000000000001","stock_status":"available","quantity_requested":1}'::jsonb)
+  select public.reserve_repair_part(pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","product_id":"e1500000-0000-4000-8000-000000000001","warehouse_id":"e1600000-0000-4000-8000-000000000001","location_id":"e1700000-0000-4000-8000-000000000001","stock_status":"available","quantity_requested":1}'::jsonb))
 $$, 'reserva un repuesto por el flujo P1-05');
 select lives_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'testing', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'testing', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005'))
 $$, 'abre testing con repuesto pendiente');
 select lives_ok($$
-  select public.record_repair_test('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","test_type":"Operacion","result":"Aprobada","passed":true}'::jsonb)
+  select public.record_repair_test(pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","test_type":"Operacion","result":"Aprobada","passed":true}'::jsonb))
 $$, 'aprueba el ciclo con repuesto pendiente');
 select throws_ok($$
   select public.consume_repair_part(jsonb_build_object(
     'organization_id', 'e1100000-0000-4000-8000-000000000001'::uuid,
     'repair_part_id', (select id from public.repair_parts where repair_id = 'e1800000-0000-4000-8000-000000000005'),
+    'expected_lock_version', pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005'),
     'quantity', 1,
     'operation_key', 'e1900000-0000-4000-8000-000000000001'::uuid
   ))
@@ -400,7 +432,7 @@ select results_eq(
 );
 select throws_ok($$
   select public.record_repair_solution(
-    '{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","applied_solution":"Cambio posterior a la prueba"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","applied_solution":"Cambio posterior a la prueba"}'::jsonb)
   )
 $$, 'P0001', 'REPAIR_TECHNICAL_CHANGE_REQUIRES_REWORK', 'testing rechaza cambios de solucion posteriores a una prueba');
 select results_eq(
@@ -415,21 +447,22 @@ select results_eq(
   'los cambios tecnicos rechazados no dejan valor, evento ni auditoria'
 );
 select throws_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'ready_for_delivery', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'ready_for_delivery', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005'))
 $$, 'P0001', 'REPAIR_PENDING_PARTS', 'repuesto reservado pendiente bloquea ready');
 select lives_ok($$
   select public.cancel_repair_part(
     'e1100000-0000-4000-8000-000000000001',
     (select id from public.repair_parts where repair_id = 'e1800000-0000-4000-8000-000000000005'),
-    'No requerido'
+    'No requerido',
+    pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005')
   )
 $$, 'cancela correctamente el repuesto pendiente');
 select lives_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'ready_for_delivery', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'ready_for_delivery', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005'))
 $$, 'el gate se reevalua luego de liberar el repuesto');
 select throws_ok($$
   select public.record_repair_solution(
-    '{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","applied_solution":"Cambio cuando ya estaba lista"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","applied_solution":"Cambio cuando ya estaba lista"}'::jsonb)
   )
 $$, 'P0001', 'REPAIR_TECHNICAL_CHANGE_REQUIRES_REWORK', 'ready rechaza cambios tecnicos que volverian obsoleta la prueba');
 select results_eq(
@@ -444,15 +477,15 @@ select results_eq(
   'el cambio rechazado en ready es atomico'
 );
 select lives_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'in_repair', 'Requiere retrabajo')
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'in_repair', 'Requiere retrabajo', pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005'))
 $$, 'ready puede volver explicitamente a reparacion');
 select lives_ok($$
   select public.record_repair_solution(
-    '{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","applied_solution":"Retrabajo controlado"}'::jsonb
+    pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","applied_solution":"Retrabajo controlado"}'::jsonb)
   )
 $$, 'in_repair permite registrar el retrabajo');
 select lives_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'testing', 'Nueva validacion')
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'testing', 'Nueva validacion', pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005'))
 $$, 'el retrabajo vuelve a testing por la ruta explicita');
 select is(
   (select current_test_cycle_number from public.repairs where id = 'e1800000-0000-4000-8000-000000000005'),
@@ -460,23 +493,23 @@ select is(
   'volver a testing despues del retrabajo abre un ciclo nuevo'
 );
 select throws_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'ready_for_delivery', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'ready_for_delivery', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005'))
 $$, 'P0001', 'REPAIR_APPROVED_TEST_REQUIRED', 'la prueba anterior no aprueba el ciclo posterior al retrabajo');
 select lives_ok($$
-  select public.record_repair_test('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","test_type":"Operacion","result":"Retrabajo aprobado","passed":true}'::jsonb)
+  select public.record_repair_test(pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","test_type":"Operacion","result":"Retrabajo aprobado","passed":true}'::jsonb))
 $$, 'registra una prueba para el nuevo ciclo');
 select lives_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'ready_for_delivery', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'ready_for_delivery', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005'))
 $$, 'solo la prueba posterior al retrabajo recupera ready');
 
 select lives_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000006', 'testing', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000006', 'testing', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000006'))
 $$, 'abre ciclo para defensa en profundidad');
 select lives_ok($$
-  select public.record_repair_test('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000006","test_type":"Operacion","result":"Aprobada","passed":true}'::jsonb)
+  select public.record_repair_test(pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000006","test_type":"Operacion","result":"Aprobada","passed":true}'::jsonb))
 $$, 'registra PASSED para ready');
 select lives_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000006', 'ready_for_delivery', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000006', 'ready_for_delivery', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000006'))
 $$, 'el gate inicial permite ready');
 
 reset role;
@@ -490,7 +523,7 @@ select set_config(
   true
 );
 select throws_ok($$
-  select public.deliver_repair('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000006', null)
+  select public.deliver_repair('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000006', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000006'))
 $$, 'P0001', 'REPAIR_FAILED_TEST_PRESENT', 'deliver_repair revalida el mismo gate');
 select is(
   (select status from public.repairs where id = 'e1800000-0000-4000-8000-000000000006'),
@@ -504,10 +537,10 @@ select set_config(
   true
 );
 select throws_ok($$
-  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000002', 'in_repair', null)
+  select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000002', 'in_repair', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000002'))
 $$, '42501', 'REPAIR_FORBIDDEN', 'otro tenant no cambia el ciclo ajeno');
 select throws_ok($$
-  select public.record_repair_test('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000002","test_type":"Operacion","result":"Falso","passed":true}'::jsonb)
+  select public.record_repair_test(pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000002","test_type":"Operacion","result":"Falso","passed":true}'::jsonb))
 $$, '42501', 'REPAIR_FORBIDDEN', 'otro tenant no registra pruebas ajenas');
 select is(
   (select count(*) from public.repair_tests where organization_id = 'e1100000-0000-4000-8000-000000000001'),

@@ -29,10 +29,10 @@ select is(
 select ok(
   position(
     'return existing_consumption.id'
-    in pg_get_functiondef('public.consume_repair_part(jsonb)'::regprocedure)
+    in pg_get_functiondef('public.consume_repair_part_unchecked(jsonb)'::regprocedure)
   ) < position(
     'REPAIR_PART_STOCK_NOT_ASSIGNABLE'
-    in pg_get_functiondef('public.consume_repair_part(jsonb)'::regprocedure)
+    in pg_get_functiondef('public.consume_repair_part_unchecked(jsonb)'::regprocedure)
   ),
   'el guard sanitario se ejecuta despues de resolver la idempotencia'
 );
@@ -180,6 +180,17 @@ values
     'd2000000-0000-4000-8000-000000000002'
   );
 
+create function pg_temp.repair_lock_version(organization_id uuid, repair_id uuid)
+returns bigint
+language sql
+stable
+as $$
+  select repair.lock_version
+  from public.repairs repair
+  where repair.organization_id = organization_id
+    and repair.id = repair_id;
+$$;
+
 select results_eq(
   $$
     select serial_control_snapshot
@@ -241,7 +252,7 @@ select lives_ok($$
     "warehouse_id":"d6000000-0000-4000-8000-000000000001",
     "location_id":"d7000000-0000-4000-8000-000000000001",
     "stock_status":"available","quantity_requested":4
-  }'::jsonb)
+  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000001')))
 $$, 'reserva stock available por el flujo normal');
 
 select results_eq(
@@ -266,7 +277,7 @@ select throws_ok($$
     "warehouse_id":"d6000000-0000-4000-8000-000000000001",
     "location_id":"d7000000-0000-4000-8000-000000000001",
     "stock_status":"damaged","quantity_requested":2
-  }'::jsonb)
+  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000002')))
 $$, 'P0001', 'REPAIR_PART_STOCK_NOT_ASSIGNABLE', 'rechaza reservar stock damaged');
 
 select throws_ok($$
@@ -277,7 +288,7 @@ select throws_ok($$
     "warehouse_id":"d6000000-0000-4000-8000-000000000001",
     "location_id":"d7000000-0000-4000-8000-000000000001",
     "stock_status":"quarantine","quantity_requested":2
-  }'::jsonb)
+  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000003')))
 $$, 'P0001', 'REPAIR_PART_STOCK_NOT_ASSIGNABLE', 'rechaza reservar stock quarantine');
 
 select results_eq(
@@ -407,7 +418,7 @@ select throws_ok($$
     "repair_part_id":"da000000-0000-4000-8000-000000000001",
     "quantity":1,
     "operation_key":"db000000-0000-4000-8000-000000000001"
-  }'::jsonb)
+  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000002')))
 $$, 'P0001', 'REPAIR_PART_STOCK_NOT_ASSIGNABLE', 'rechaza consumo historico damaged');
 
 select throws_ok($$
@@ -416,7 +427,7 @@ select throws_ok($$
     "repair_part_id":"da000000-0000-4000-8000-000000000002",
     "quantity":1,
     "operation_key":"db000000-0000-4000-8000-000000000002"
-  }'::jsonb)
+  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000003')))
 $$, 'P0001', 'REPAIR_PART_STOCK_NOT_ASSIGNABLE', 'rechaza consumo historico quarantine');
 
 select results_eq(
@@ -478,7 +489,8 @@ select lives_ok($$
   select public.cancel_repair_part(
     'd1000000-0000-4000-8000-000000000001',
     'da000000-0000-4000-8000-000000000001',
-    'Liberacion explicita de historico damaged'
+    'Liberacion explicita de historico damaged',
+    pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000002')
   )
 $$, 'permite cancelar historico damaged');
 
@@ -486,7 +498,8 @@ select lives_ok($$
   select public.cancel_repair_part(
     'd1000000-0000-4000-8000-000000000001',
     'da000000-0000-4000-8000-000000000002',
-    'Liberacion explicita de historico quarantine'
+    'Liberacion explicita de historico quarantine',
+    pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000003')
   )
 $$, 'permite cancelar historico quarantine');
 
@@ -564,6 +577,7 @@ select lives_ok($$
   select public.update_repair(jsonb_build_object(
     'organization_id', 'd1000000-0000-4000-8000-000000000001'::uuid,
     'id', 'd8000000-0000-4000-8000-000000000001'::uuid,
+    'expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000001'),
     'customer_id', 'd4000000-0000-4000-8000-000000000001'::uuid,
     'product_id', 'd5000000-0000-4000-8000-000000000001'::uuid,
     'notes', 'Actualizacion administrativa historica'
@@ -595,7 +609,7 @@ select throws_ok($$
     "warehouse_id":"d6000000-0000-4000-8000-000000000001",
     "location_id":"d7000000-0000-4000-8000-000000000001",
     "stock_status":"available","quantity_requested":1
-  }'::jsonb)
+  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000002')))
 $$, 'P0001', 'REPAIR_PART_PRODUCT_UNAVAILABLE', 'una reserva nueva sigue exigiendo producto activo');
 
 select lives_ok($$
@@ -605,6 +619,7 @@ select lives_ok($$
       select id from public.repair_parts
       where repair_id = 'd8000000-0000-4000-8000-000000000001'
     ),
+    'expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000001'),
     'quantity', 2,
     'operation_key', 'db000000-0000-4000-8000-000000000003'::uuid
   ))
@@ -650,6 +665,7 @@ select is(
       select id from public.repair_parts
       where repair_id = 'd8000000-0000-4000-8000-000000000001'
     ),
+    'expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000001'),
     'quantity', 2,
     'operation_key', 'db000000-0000-4000-8000-000000000003'::uuid
   )),
@@ -667,6 +683,7 @@ select lives_ok($$
       select id from public.repair_parts
       where repair_id = 'd8000000-0000-4000-8000-000000000001'
     ),
+    'expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000001'),
     'quantity', 2,
     'operation_key', 'db000000-0000-4000-8000-000000000004'::uuid
   ))
@@ -790,7 +807,7 @@ select throws_ok($$
     "repair_part_id":"da000000-0000-4000-8000-000000000001",
     "quantity":1,
     "operation_key":"db000000-0000-4000-8000-000000000006"
-  }'::jsonb)
+  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000002')))
 $$, '42501', 'REPAIR_FORBIDDEN', 'otro tenant no consume reservas ajenas');
 
 select is(

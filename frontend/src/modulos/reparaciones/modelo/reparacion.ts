@@ -115,6 +115,7 @@ export interface OpcionProductoReparacion {
 export interface Reparacion {
   id: string
   organizationId: string
+  lockVersion: number
   codigo: string
   clienteId: string
   productoId: string
