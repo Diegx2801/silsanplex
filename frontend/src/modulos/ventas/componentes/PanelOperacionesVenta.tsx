@@ -194,7 +194,9 @@ export function PanelOperacionesVenta({
           alGuardar={async (lineas, operationKey, operationDate) => {
             const error = await alDespacharVenta(ventaPorDespachar.pedidoId, ventaPorDespachar.id, lineas, operationKey, operationDate)
             if (!error) {
-              alNotificar(`${ventaPorDespachar.numeroInterno}: despacho registrado y stock actualizado.`)
+              const soloServicios = ventaPorDespachar.lineas.length > 0
+                && ventaPorDespachar.lineas.every((linea) => linea.tipoProducto === 'service')
+              alNotificar(`${ventaPorDespachar.numeroInterno}: ${soloServicios ? 'atención comercial registrada.' : 'despacho registrado y stock actualizado.'}`)
             }
             return error
           }}

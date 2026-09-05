@@ -303,6 +303,7 @@ const mensajesDominio: Array<[string, string]> = [
   ['REPAIR_PART_RESERVATION_STATE_INVALID', 'La reparación no permite reservar repuestos en este estado.'],
   ['REPAIR_PART_PRODUCT_NOT_FOUND', 'No se encontró el producto del repuesto.'],
   ['REPAIR_PART_PRODUCT_UNAVAILABLE', 'El producto del repuesto ya no está activo.'],
+  ['INVENTORY_SERVICE_PRODUCT_FORBIDDEN', 'Los servicios no pueden reservarse ni consumirse como repuestos de inventario.'],
   ['REPAIR_PART_LOT_REQUIRED', 'El producto requiere indicar un lote.'],
   ['REPAIR_PART_WAREHOUSE_UNAVAILABLE', 'El almacén seleccionado no está activo.'],
   ['REPAIR_PART_LOCATION_UNAVAILABLE', 'La ubicación seleccionada no está activa en ese almacén.'],

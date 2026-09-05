@@ -39,6 +39,32 @@ const cotizacion = {
 describe('ventasService', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it.each(['registrada', 'despachada'])('calcula atención de servicio para venta %s sin reservas', async (status) => {
+    supabaseMock.from.mockReturnValueOnce(cadena({
+      data: [{
+        id: 'venta-1', organization_id: 'org-1', order_id: 'pedido-1',
+        internal_number: 'VEN-000001', status,
+        orders: { order_number: 'PED-000001' },
+        customers: { document_number: '12345678', legal_name: 'Cliente' },
+        sale_items: [
+          { id: 's', order_item_id: 'servicio', product_id: 's', quantity: 2, unit_price: 100, products: { product_type: 'service' } },
+          { id: 'g', order_item_id: 'bien', product_id: 'g', quantity: 10, unit_price: 10, products: { product_type: 'good' } },
+        ],
+      }], error: null,
+    })).mockReturnValueOnce(cadena({
+      data: [{ source_id: 'bien', quantity: 10, quantity_consumed: 4, status: 'active' }], error: null,
+    }))
+    const [resultado] = await listarVentasPersistentes('org-1')
+    expect(resultado.lineas[0]).toMatchObject({
+      tipoProducto: 'service',
+      cantidadDespachada: status === 'despachada' ? 2 : 0,
+      cantidadPendiente: status === 'despachada' ? 0 : 2,
+    })
+    expect(resultado.lineas[1]).toMatchObject({
+      tipoProducto: 'good', cantidadDespachada: 4, cantidadPendiente: 6,
+    })
+  })
+
   it('crea pedidos mediante una RPC con clave idempotente y líneas normalizadas', async () => {
     supabaseMock.rpc.mockResolvedValue({ data: 'pedido-1', error: null })
 

@@ -13,6 +13,7 @@ export type DatosVenta = z.infer<typeof esquemaDatosVenta>
 export const esquemaLineaOperacionVenta = z.object({
   id: z.string().min(1),
   productoId: z.string().min(1),
+  tipoProducto: z.enum(['good', 'service']).optional(),
   productoCodigo: z.string().min(1),
   productoDescripcion: z.string().min(1),
   unidadMedida: z.string(),

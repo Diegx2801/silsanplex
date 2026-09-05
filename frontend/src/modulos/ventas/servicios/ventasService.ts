@@ -11,6 +11,7 @@ interface ClienteFila {
 interface LineaPedidoFila {
   id: string
   product_id: string
+  products?: { product_type: 'good' | 'service' } | null
   product_code: string
   product_description: string
   unit_of_measure: string | null
@@ -78,7 +79,7 @@ const columnasPedido = [
   'prices_include_tax',
   'notes',
   'created_at',
-  'order_items(id,product_id,product_code,product_description,unit_of_measure,quantity,unit_price)',
+  'order_items(id,product_id,product_code,product_description,unit_of_measure,quantity,unit_price,products(product_type))',
   'warehouses!orders_warehouse_same_organization(code,name)',
   'customers!orders_customer_same_organization(document_type,document_number,legal_name)',
 ].join(',')
@@ -99,7 +100,7 @@ const columnasVenta = [
   'created_at',
   'orders!sales_order_same_organization(order_number)',
   'customers!sales_customer_same_organization(document_type,document_number,legal_name)',
-  'sale_items(id,order_item_id,product_id,product_code,product_description,unit_of_measure,quantity,unit_price)',
+  'sale_items(id,order_item_id,product_id,product_code,product_description,unit_of_measure,quantity,unit_price,products(product_type))',
 ].join(',')
 
 function primerCliente(cliente: ClienteFila | ClienteFila[] | null) {
@@ -118,6 +119,7 @@ function mapearLinea(fila: LineaPedidoFila) {
   return {
     id: fila.id,
     productoId: fila.product_id,
+    tipoProducto: fila.products?.product_type ?? 'good',
     productoCodigo: fila.product_code,
     productoDescripcion: fila.product_description,
     unidadMedida: fila.unit_of_measure ?? '',
@@ -185,6 +187,8 @@ function mapearVenta(fila: VentaFila): Venta {
 
 function mensajeError(error: { code?: string; message?: string }) {
   const message = error.message ?? ''
+  if (message.includes('ORDER_SERVICE_COMPLETION_QUANTITY_INVALID')) return 'Los servicios se atienden por la cantidad completa al cerrar la venta'
+  if (message.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no generan reservas ni pueden despacharse como inventario.'
   if (error.code === '42501' || /_FORBIDDEN|AUTHENTICATION_REQUIRED/.test(message)) return 'No tienes permiso para gestionar operaciones comerciales'
   if (message.includes('ORDER_CUSTOMER_UNAVAILABLE')) return 'El cliente seleccionado ya no está disponible'
   if (message.includes('ORDER_WAREHOUSE_REQUIRED')) return 'Selecciona un almacén para el pedido'
@@ -260,6 +264,13 @@ export async function listarVentasPersistentes(organizationId: string) {
   return ventas.map((venta) => ({
     ...venta,
     lineas: venta.lineas.map((linea) => {
+      if (linea.tipoProducto === 'service') {
+        return {
+          ...linea,
+          cantidadDespachada: venta.estado === 'despachada' ? linea.cantidad : 0,
+          cantidadPendiente: venta.estado === 'despachada' ? 0 : linea.cantidad,
+        }
+      }
       const saldo = linea.pedidoLineaId ? saldos.get(linea.pedidoLineaId) : undefined
       return {
         ...linea,

@@ -98,6 +98,7 @@ function mapearCompra(fila: CompraFila): Compra {
 
 function mensajeError(error: { code?: string; message?: string }) {
   const mensaje = error.message ?? ''
+  if (mensaje.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no pueden recibirse como mercadería ni ingresar a inventario.'
   if (error.code === '23505') return mensaje.includes('DUPLICATE_PRODUCT') ? 'Cada producto debe aparecer una sola vez' : 'Ya existe una compra con este documento'
   if (mensaje.includes('PURCHASE_ORDER_NOT_EDITABLE')) return 'Solo se pueden editar órdenes en borrador'
   if (mensaje.includes('PURCHASE_ORDER_NOT_ISSUABLE')) return 'La orden ya no está disponible para emitir'

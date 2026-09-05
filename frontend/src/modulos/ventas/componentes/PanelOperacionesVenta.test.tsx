@@ -62,6 +62,43 @@ function renderPanel(props: Partial<React.ComponentProps<typeof PanelOperaciones
 }
 
 describe('PanelOperacionesVenta', () => {
+  it('confirma servicios sin pedir cantidades de inventario', async () => {
+    const alDespacharVenta = vi.fn().mockResolvedValue(undefined)
+    renderPanel({
+      pedidos: [pedido],
+      ventas: [{ ...venta, lineas: [{ ...venta.lineas[0], tipoProducto: 'service' }] }],
+      alDespacharVenta,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Despachar venta' }))
+    expect(screen.getByText(/No se modificará el inventario/)).toBeVisible()
+    expect(screen.queryByLabelText('Cantidad a despachar')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar atención' }))
+    await waitFor(() => expect(alDespacharVenta).toHaveBeenCalledWith(
+      'pedido-1', 'venta-1', [{ orderItemId: 'linea-1', quantity: 10 }],
+      expect.any(String), expect.any(String),
+    ))
+  })
+
+  it('envía solo bienes en un despacho mixto parcial', async () => {
+    const alDespacharVenta = vi.fn().mockResolvedValue(undefined)
+    renderPanel({
+      pedidos: [pedido],
+      ventas: [{ ...venta, lineas: [
+        { ...venta.lineas[0], tipoProducto: 'good' },
+        { ...venta.lineas[0], id: 'servicio', pedidoLineaId: 'servicio-pedido', tipoProducto: 'service', cantidad: 1, cantidadPendiente: 1 },
+      ] }],
+      alDespacharVenta,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Despachar venta' }))
+    expect(screen.getAllByLabelText('Cantidad a despachar')).toHaveLength(1)
+    fireEvent.change(screen.getByLabelText('Cantidad a despachar'), { target: { value: '4' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar despacho' }))
+    await waitFor(() => expect(alDespacharVenta).toHaveBeenCalledWith(
+      'pedido-1', 'venta-1', [{ orderItemId: 'linea-1', quantity: 4 }],
+      expect.any(String), expect.any(String),
+    ))
+  })
+
   it('muestra estado vacío cuando no existen pedidos persistentes', () => {
     renderPanel()
     expect(screen.getByText('Todavía no hay pedidos')).toBeVisible()
