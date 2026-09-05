@@ -1,5 +1,18 @@
 import { adminUserRequestSchema } from './schemas.ts'
 
+Deno.test('permite crear y editar técnicos sin rol ADMIN', () => {
+  for (const action of ['create', 'update']) {
+    const result = adminUserRequestSchema.safeParse({
+      action, userId: '11111111-1111-4111-8111-111111111111',
+      email: 'tecnico@silsan.com', fullName: 'Técnico Reparaciones',
+      roleCodes: ['TECNICO_REPARACIONES'],
+    })
+    assert(result.success, `El rol técnico fue rechazado en ${action}`)
+    assert('roleCodes' in result.data && result.data.roleCodes.length === 1
+      && result.data.roleCodes[0] === 'TECNICO_REPARACIONES', 'Se alteró el rol solicitado')
+  }
+})
+
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
 }

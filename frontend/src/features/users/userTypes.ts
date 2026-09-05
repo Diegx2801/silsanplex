@@ -6,6 +6,7 @@ export const roleOptions = [
   { code: 'COMPRAS', label: 'Compras' },
   { code: 'VENTAS', label: 'Ventas' },
   { code: 'CONTABILIDAD', label: 'Contabilidad' },
+  { code: 'TECNICO_REPARACIONES', label: 'Técnico de reparaciones' },
 ] as const
 
 export type RoleCode = (typeof roleOptions)[number]['code']

@@ -51,8 +51,8 @@ select is(
 
 select is(
   (select count(*) from public.roles where is_active),
-  7::bigint,
-  'existen los siete roles iniciales'
+  8::bigint,
+  'existen los siete roles iniciales y el técnico de reparaciones'
 );
 
 select is(

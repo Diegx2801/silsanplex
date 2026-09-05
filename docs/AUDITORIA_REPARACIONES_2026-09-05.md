@@ -92,20 +92,27 @@ de prueba vigente, aprobación del ciclo 2 y entrega. La pantalla muestra los
 resultados anteriores separados de los actuales durante ese recorrido.
 No requiere migraciones nuevas: utiliza las columnas del contrato existente.
 
-### R-AUD-05 — P2: falta un flujo operativo para habilitar técnicos no administradores
+### R-AUD-05 — P2 corregido: técnicos asignables sin administración
 
-P1-06 ahora exige la capacidad explícita `REPAIRS_PERFORM_TECHNICAL` y la concede
-inicialmente solo a `ADMIN`. Es una mejora de autorización, pero no se añadió un
-rol técnico asignable desde la administración ni una interfaz de concesión de
-capacidades. La habilitación de otros roles requiere configuración de backend.
-No conviene resolver el alta de técnicos concediéndoles administración completa.
+La migración `20260905010000_add_repair_technician_role.sql` incorpora el rol
+`TECNICO_REPARACIONES` con exactamente `REPAIRS_VIEW`, `REPAIRS_CHANGE_STATUS`
+y `REPAIRS_PERFORM_TECHNICAL`. El formulario existente de usuarios permite
+seleccionarlo al invitar y editar; la Edge Function acepta el mismo código.
+Se reutilizan `roles`, `role_permissions` y `user_roles`, sin cambiar las
+concesiones de ADMIN ni los validadores de capacidad técnica.
 
-Referencia: `backend/supabase/migrations/20260904030000_require_repair_technical_capability.sql:11`;
-catálogo permitido en `backend/supabase/functions/admin-users/schemas.ts`.
+Las pruebas SQL ejercitan asignación y edición desde administración, consulta
+con RLS, diagnóstico, solución, prueba y cambio de estado con la sesión del
+técnico. También comprueban el rechazo de usuarios sin permiso, la revocación
+de capacidad y la denegación de administración al actor técnico. Las pruebas
+del formulario y de la Edge Function cubren el rol en creación y edición.
 
-Pendiente de definición operativa: rol técnico con permisos mínimos y su alta
-desde la administración, o un procedimiento explícito de concesión soportado.
-No impide una operación limitada a administradores ya autorizados.
+Validación: 1.661 pruebas SQL, 68 pruebas frontend de Usuarios/Reparaciones,
+19 pruebas de Edge Functions y cinco E2E de Reparaciones aprobados; build,
+lint y tipos del frontend, E2E, scripts y Edge Functions correctos. Los E2E
+existentes conservan la sesión ADMIN; la sesión técnica se valida contra
+PostgreSQL en la suite SQL. Para habilitarlo en otro entorno se deben aplicar
+la migración, desplegar `admin-users` y publicar el frontend.
 
 ## Cobertura P1-10 incorporada durante este trabajo
 
