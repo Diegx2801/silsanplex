@@ -95,12 +95,15 @@ select results_eq(
       ('ADMIN'::text, 'REPAIRS_VIEW'::text),
       ('ALMACEN'::text, 'REPAIRS_USE_PARTS'::text),
       ('ALMACEN'::text, 'REPAIRS_VIEW'::text),
+      ('TECNICO_REPARACIONES'::text, 'REPAIRS_CHANGE_STATUS'::text),
+      ('TECNICO_REPARACIONES'::text, 'REPAIRS_PERFORM_TECHNICAL'::text),
+      ('TECNICO_REPARACIONES'::text, 'REPAIRS_VIEW'::text),
       ('VENTAS'::text, 'REPAIRS_APPROVE_QUOTE'::text),
       ('VENTAS'::text, 'REPAIRS_CREATE'::text),
       ('VENTAS'::text, 'REPAIRS_UPDATE'::text),
       ('VENTAS'::text, 'REPAIRS_VIEW'::text)
   $$,
-  'la matriz solo otorga reparaciones a ADMIN, VENTAS y ALMACEN'
+  'la matriz concede al técnico solo consulta, cambio de estado y capacidad técnica'
 );
 select is(
   (select count(*) from public.role_permissions where role_code = 'LOGISTICA' and permission_code like 'REPAIRS_%'),

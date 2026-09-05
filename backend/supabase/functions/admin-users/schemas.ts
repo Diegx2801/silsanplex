@@ -8,6 +8,7 @@ export const roleCodes = [
   'COMPRAS',
   'VENTAS',
   'CONTABILIDAD',
+  'TECNICO_REPARACIONES',
 ] as const
 
 const roleCodeSchema = z.enum(roleCodes)

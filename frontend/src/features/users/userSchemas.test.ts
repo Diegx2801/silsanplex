@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { userFormSchema } from '@/features/users/userSchemas'
 
 describe('userFormSchema', () => {
+  it('acepta un técnico sin asignarle ADMIN', () => {
+    const result = userFormSchema.parse({
+      fullName: 'Técnico de Reparaciones', email: 'tecnico@silsan.com',
+      phone: '', roleCodes: ['TECNICO_REPARACIONES'],
+    })
+    expect(result.roleCodes).toEqual(['TECNICO_REPARACIONES'])
+  })
   it('acepta un usuario con correo y varios roles', () => {
     const result = userFormSchema.safeParse({
       fullName: 'Usuario de Ventas',

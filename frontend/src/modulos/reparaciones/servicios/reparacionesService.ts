@@ -181,6 +181,7 @@ interface FilaConsumoParte {
 }
 
 interface FilaPrueba {
+  test_cycle_number: number | null
   id: string
   organization_id: string
   repair_id: string
@@ -558,6 +559,7 @@ function mapearParte(
 
 function mapearPrueba(fila: FilaPrueba): PruebaReparacion {
   return {
+    ciclo: fila.test_cycle_number,
     id: fila.id,
     organizationId: fila.organization_id,
     reparacionId: fila.repair_id,
@@ -721,7 +723,7 @@ export async function obtenerDetalleReparacion(
         .order('id', { ascending: true }),
       supabase
         .from('repair_tests')
-        .select('id,organization_id,repair_id,test_type,result,passed,performed_by,notes,completed_at,created_by,created_at')
+        .select('id,organization_id,repair_id,test_cycle_number,test_type,result,passed,performed_by,notes,completed_at,created_by,created_at')
         .eq('organization_id', organizationId)
         .eq('repair_id', repairId)
         .order('completed_at', { ascending: false })
@@ -795,8 +797,8 @@ export async function obtenerDetalleReparacion(
     }
 
     const versionResult = await supabase
-      .from('repair_list')
-      .select('lock_version')
+      .from('repairs')
+      .select('lock_version,current_test_cycle_number')
       .eq('organization_id', organizationId)
       .eq('id', repairId)
       .maybeSingle()
@@ -812,6 +814,7 @@ export async function obtenerDetalleReparacion(
     const cotizacionActiva = seleccionarCotizacionActual(cotizaciones)
     const eventos = ((eventsResult.data ?? []) as FilaEvento[]).map(mapearEvento)
     return {
+      cicloPruebasActual: (versionResult.data as { current_test_cycle_number: number }).current_test_cycle_number,
       reparacion,
       diagnosticos: (diagnosticsResult.data as FilaDiagnostico[]).map(mapearDiagnostico),
       cotizaciones,

@@ -62,6 +62,24 @@ serie y la base de datos vuelve a validar esa regla. El campo también aparece e
 el detalle del producto y en la exportación del catálogo. En la importación de
 productos se acepta la columna opcional `ControlSerie`.
 
+## Habilitar técnicos
+
+En Administración de usuarios, al invitar o editar una cuenta, seleccionar
+**Técnico de reparaciones** (`TECNICO_REPARACIONES`). Para una cuenta dedicada
+exclusivamente al trabajo técnico, dejar seleccionado solo ese rol: los permisos
+de los distintos roles de una cuenta se acumulan.
+
+El rol permite consultar reparaciones de la organización, figurar como técnico
+asignado, registrar diagnósticos, soluciones y pruebas, y ejecutar las transiciones
+permitidas por `REPAIRS_CHANGE_STATUS` (incluida cancelación según el contrato
+existente). No concede `USERS_MANAGE`, asignación de técnicos, creación/edición
+comercial, aprobación de cotizaciones, gestión de repuestos ni entrega. ADMIN
+conserva sus permisos. La capacidad técnica requiere cuenta, membresía, rol,
+permiso y organización activos.
+
+Despliegue: aplicar `20260905010000_add_repair_technician_role.sql`, desplegar
+la Edge Function `admin-users` y publicar el frontend. La asignación utiliza
+las operaciones existentes de administración y queda en su auditoría.
 ## Precio mínimo pendiente
 
 P1C no aplica `products.minimum_sale_price` a las cotizaciones de Reparaciones.
@@ -72,6 +90,12 @@ separada después de definir y persistir ese snapshot; no se debe comparar usand
 un tipo de cambio vigente ni convertir documentos históricos.
 
 ## Validación local
+
+El detalle muestra el número del ciclo de pruebas vigente y sus resultados
+separados del historial. Al volver a entrar en pruebas después de un retrabajo,
+el nuevo ciclo empieza sin resultados. Las aprobaciones anteriores no habilitan
+la entrega; las pruebas antiguas sin ciclo identificado se conservan como
+historial. El E2E principal verifica fallo, retrabajo, nuevo ciclo y entrega.
 
 Los E2E de Reparaciones están en `frontend/tests/e2e/repairs.spec.ts`. Desde
 `frontend`, ejecutar `npm run test:e2e:local -- repairs.spec.ts` para preparar
