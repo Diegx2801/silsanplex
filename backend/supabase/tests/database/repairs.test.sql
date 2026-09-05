@@ -69,11 +69,11 @@ select is(
     where code = any (array[
       'REPAIRS_VIEW', 'REPAIRS_CREATE', 'REPAIRS_UPDATE', 'REPAIRS_ASSIGN',
       'REPAIRS_CHANGE_STATUS', 'REPAIRS_APPROVE_QUOTE', 'REPAIRS_USE_PARTS',
-      'REPAIRS_DELIVER'
+      'REPAIRS_DELIVER', 'REPAIRS_PERFORM_TECHNICAL'
     ])
   ),
-  8::bigint,
-  'existen exactamente los ocho permisos aprobados'
+  9::bigint,
+  'existen los nueve permisos de reparaciones, incluida la capacidad técnica'
 );
 select results_eq(
   $$
@@ -89,6 +89,7 @@ select results_eq(
       ('ADMIN'::text, 'REPAIRS_CHANGE_STATUS'::text),
       ('ADMIN'::text, 'REPAIRS_CREATE'::text),
       ('ADMIN'::text, 'REPAIRS_DELIVER'::text),
+      ('ADMIN'::text, 'REPAIRS_PERFORM_TECHNICAL'::text),
       ('ADMIN'::text, 'REPAIRS_UPDATE'::text),
       ('ADMIN'::text, 'REPAIRS_USE_PARTS'::text),
       ('ADMIN'::text, 'REPAIRS_VIEW'::text),
@@ -232,6 +233,11 @@ values
   ('f1000000-0000-4000-8000-000000000001', 'f2000000-0000-4000-8000-000000000003', 'ALMACEN'),
   ('f1000000-0000-4000-8000-000000000001', 'f2000000-0000-4000-8000-000000000004', 'CONTABILIDAD'),
   ('f1000000-0000-4000-8000-000000000002', 'f2000000-0000-4000-8000-000000000005', 'ALMACEN');
+
+-- The fixture technician is explicitly qualified without administrative powers.
+insert into public.roles (code, name) values ('TEST_REPAIR_TECH', 'Test repair technician');
+insert into public.role_permissions (role_code, permission_code) values ('TEST_REPAIR_TECH', 'REPAIRS_PERFORM_TECHNICAL');
+insert into public.user_roles (organization_id, user_id, role_code) values ('f1000000-0000-4000-8000-000000000001', 'f2000000-0000-4000-8000-000000000004', 'TEST_REPAIR_TECH');
 
 insert into public.customers (id, organization_id, document_type, document_number, legal_name)
 values
