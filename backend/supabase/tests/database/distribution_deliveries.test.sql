@@ -47,11 +47,11 @@ insert into public.customers (
   'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
 );
 insert into public.products (
-  id, organization_id, code, description, unit_of_measure, batch_control, created_by, updated_by
+  id, organization_id, code, description, unit_of_measure, tax_affectation, batch_control, created_by, updated_by
 ) values (
   'b3111111-1111-4111-8111-111111111111',
   'd3111111-1111-4111-8111-111111111111',
-  'DIST-001', 'Producto persistente distribución', 'UND', false,
+  'DIST-001', 'Producto persistente distribución', 'UND', 'gravado', false,
   'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
 );
 insert into public.warehouses (

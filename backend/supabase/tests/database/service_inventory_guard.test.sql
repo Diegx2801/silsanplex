@@ -34,17 +34,17 @@ insert into public.customers (
 
 insert into public.products (
   id, organization_id, code, description, unit_of_measure, product_type,
-  batch_control, expiration_control
+  tax_affectation, batch_control, expiration_control
 ) values
   (
     'c3000000-0000-4000-8000-000000000001',
     'c1000000-0000-4000-8000-000000000001',
-    'GOOD-001', 'Producto fisico de prueba', 'UND', 'good', false, false
+    'GOOD-001', 'Producto fisico de prueba', 'UND', 'good', 'gravado', false, false
   ),
   (
     'c3000000-0000-4000-8000-000000000002',
     'c1000000-0000-4000-8000-000000000001',
-    'SERV-001', 'Servicio sin stock', 'UND', 'service', false, false
+    'SERV-001', 'Servicio sin stock', 'UND', 'service', 'gravado', false, false
   );
 
 insert into public.warehouses (id, organization_id, code, name, created_by, updated_by)

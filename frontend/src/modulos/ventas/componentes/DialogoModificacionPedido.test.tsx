@@ -14,6 +14,13 @@ const pedido = {
   clienteDocumento: '20548796321',
   clienteNombre: 'Cliente Uno',
   preciosIncluyenIgv: true,
+  baseGravada: 84.75,
+  montoExonerado: 0,
+  montoInafecto: 0,
+  subtotal: 84.75,
+  igv: 15.25,
+  total: 100,
+  estadoCalculoTributario: 'calculated',
   observacion: '',
   lineas: [{
     id: 'linea-1',

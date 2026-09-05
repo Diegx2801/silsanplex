@@ -44,8 +44,8 @@ insert into public.user_roles (organization_id, user_id, role_code) values
   ('d5b00000-0000-4000-8000-000000000001', 'd5c00000-0000-4000-8000-000000000002', 'ADMIN');
 insert into public.customers (id, organization_id, document_type, document_number, legal_name, created_by, updated_by) values
   ('d5d00000-0000-4000-8000-000000000001', 'd5b00000-0000-4000-8000-000000000001', 'RUC', '20222222222', 'Cliente carrera', 'd5c00000-0000-4000-8000-000000000001', 'd5c00000-0000-4000-8000-000000000001');
-insert into public.products (id, organization_id, code, description, unit_of_measure, created_by, updated_by) values
-  ('d5e00000-0000-4000-8000-000000000001', 'd5b00000-0000-4000-8000-000000000001', 'DSP-CONC', 'Producto despacho concurrente', 'UND', 'd5c00000-0000-4000-8000-000000000001', 'd5c00000-0000-4000-8000-000000000001');
+insert into public.products (id, organization_id, code, description, unit_of_measure, tax_affectation, created_by, updated_by) values
+  ('d5e00000-0000-4000-8000-000000000001', 'd5b00000-0000-4000-8000-000000000001', 'DSP-CONC', 'Producto despacho concurrente', 'UND', 'gravado', 'd5c00000-0000-4000-8000-000000000001', 'd5c00000-0000-4000-8000-000000000001');
 insert into public.warehouses (id, organization_id, code, name, created_by, updated_by) values
   ('d5f00000-0000-4000-8000-000000000001', 'd5b00000-0000-4000-8000-000000000001', 'DC', 'Almacen despacho concurrente', 'd5c00000-0000-4000-8000-000000000001', 'd5c00000-0000-4000-8000-000000000001');
 insert into public.warehouse_locations (id, organization_id, warehouse_id, code, name, created_by, updated_by) values

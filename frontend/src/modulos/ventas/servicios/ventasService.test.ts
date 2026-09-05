@@ -44,6 +44,8 @@ describe('ventasService', () => {
       data: [{
         id: 'venta-1', organization_id: 'org-1', order_id: 'pedido-1',
         internal_number: 'VEN-000001', status,
+        prices_include_tax: true, taxable_base: 200, exempt_amount: 0, unaffected_amount: 0,
+        subtotal: 200, tax: 36, total: 236, tax_calculation_status: 'calculated',
         orders: { order_number: 'PED-000001' },
         customers: { document_number: '12345678', legal_name: 'Cliente' },
         sale_items: [
@@ -105,7 +107,8 @@ describe('ventasService', () => {
       .mockReturnValueOnce(cadena({
       data: [{
         id: 'pedido-1', organization_id: 'org-1', order_number: 'PED-000001', source_quote_id: 'cotizacion-1', source_quote_number: 'COT-000001',
-        customer_id: 'cliente-1', warehouse_id: 'warehouse-1', order_date: '2026-09-01', status: 'confirmado', prices_include_tax: true, notes: '', created_at: '2026-09-01T12:00:00.000Z',
+        customer_id: 'cliente-1', warehouse_id: 'warehouse-1', order_date: '2026-09-01', status: 'confirmado', prices_include_tax: true,
+        taxable_base: 16.95, exempt_amount: 0, unaffected_amount: 0, subtotal: 16.95, tax: 3.05, total: 20, tax_calculation_status: 'calculated', notes: '', created_at: '2026-09-01T12:00:00.000Z',
         customers: { document_type: 'RUC', document_number: '20548796321', legal_name: 'Cliente Uno' },
         warehouses: { code: 'MAIN', name: 'Almacén principal' },
         order_items: [{ id: 'linea-1', product_id: 'producto-1', product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', tax_affectation: 'gravado', quantity: 2, unit_price: 10 }],
@@ -124,6 +127,7 @@ describe('ventasService', () => {
       data: [{
         id: 'venta-1', organization_id: 'org-1', order_id: 'pedido-1', customer_id: 'cliente-1', internal_number: 'VEN-000001',
         document_type: 'factura', series: 'F001', document_number: '1', sale_date: '2026-09-01', warehouse: 'Principal', prices_include_tax: true,
+        taxable_base: 16.95, exempt_amount: 0, unaffected_amount: 0, subtotal: 16.95, tax: 3.05, total: 20, tax_calculation_status: 'calculated',
         status: 'registrada', created_at: '2026-09-01T12:00:00.000Z', orders: { order_number: 'PED-000001' },
         customers: { document_type: 'RUC', document_number: '20548796321', legal_name: 'Cliente Uno' },
         sale_items: [{ id: 'sale-linea-1', order_item_id: 'linea-1', product_id: 'producto-1', product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', tax_affectation: 'exonerado', quantity: 2, unit_price: 10 }],

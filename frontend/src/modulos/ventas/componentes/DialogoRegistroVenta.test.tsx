@@ -9,7 +9,9 @@ const pedido = {
   id: 'pedido-1', numero: 'PED-000001', cotizacionId: 'cotizacion-1',
   cotizacionNumero: 'COT-000001', clienteId: 'cliente-1',
   clienteDocumento: '20548796321', clienteNombre: 'Cliente Uno',
-  preciosIncluyenIgv: true, observacion: '', lineas: [{
+  preciosIncluyenIgv: true, baseGravada: 8.47, montoExonerado: 0,
+  montoInafecto: 0, subtotal: 8.47, igv: 1.53, total: 10,
+  estadoCalculoTributario: 'calculated', observacion: '', lineas: [{
     id: 'linea-1', productoId: 'producto-1', productoCodigo: 'P-1',
     productoDescripcion: 'Producto', unidadMedida: 'UND', cantidad: 1,
     precioUnitario: 10, lote: '', fechaVencimiento: '',

@@ -41,10 +41,10 @@ insert into public.user_roles (organization_id, user_id, role_code) values
 insert into public.customers (id, organization_id, document_type, document_number, legal_name, created_by, updated_by) values
   ('c2a00000-0000-4000-8000-000000000001', 'a2a00000-0000-4000-8000-000000000001', 'RUC', '20999999991', 'Cliente Ventas Uno', 'b2a00000-0000-4000-8000-000000000001', 'b2a00000-0000-4000-8000-000000000001'),
   ('c2a00000-0000-4000-8000-000000000002', 'a2a00000-0000-4000-8000-000000000002', 'RUC', '20999999992', 'Cliente Ventas Dos', 'b2a00000-0000-4000-8000-000000000002', 'b2a00000-0000-4000-8000-000000000002');
-insert into public.products (id, organization_id, code, description, unit_of_measure, batch_control, created_by, updated_by) values
-  ('d2a00000-0000-4000-8000-000000000001', 'a2a00000-0000-4000-8000-000000000001', 'VEN-001', 'Producto Venta Uno', 'UND', false, 'b2a00000-0000-4000-8000-000000000001', 'b2a00000-0000-4000-8000-000000000001'),
-  ('d2a00000-0000-4000-8000-000000000002', 'a2a00000-0000-4000-8000-000000000001', 'VEN-002', 'Producto Venta Dos', 'CAJA', false, 'b2a00000-0000-4000-8000-000000000001', 'b2a00000-0000-4000-8000-000000000001'),
-  ('d2a00000-0000-4000-8000-000000000003', 'a2a00000-0000-4000-8000-000000000002', 'VEN-003', 'Producto Venta Otra', 'UND', false, 'b2a00000-0000-4000-8000-000000000002', 'b2a00000-0000-4000-8000-000000000002');
+insert into public.products (id, organization_id, code, description, unit_of_measure, tax_affectation, batch_control, created_by, updated_by) values
+  ('d2a00000-0000-4000-8000-000000000001', 'a2a00000-0000-4000-8000-000000000001', 'VEN-001', 'Producto Venta Uno', 'UND', 'gravado', false, 'b2a00000-0000-4000-8000-000000000001', 'b2a00000-0000-4000-8000-000000000001'),
+  ('d2a00000-0000-4000-8000-000000000002', 'a2a00000-0000-4000-8000-000000000001', 'VEN-002', 'Producto Venta Dos', 'CAJA', 'gravado', false, 'b2a00000-0000-4000-8000-000000000001', 'b2a00000-0000-4000-8000-000000000001'),
+  ('d2a00000-0000-4000-8000-000000000003', 'a2a00000-0000-4000-8000-000000000002', 'VEN-003', 'Producto Venta Otra', 'UND', 'gravado', false, 'b2a00000-0000-4000-8000-000000000002', 'b2a00000-0000-4000-8000-000000000002');
 insert into public.warehouses (id, organization_id, code, name, created_by, updated_by) values
   ('e2a00000-0000-4000-8000-000000000001', 'a2a00000-0000-4000-8000-000000000001', 'VENTAS', 'Almacen Ventas', 'b2a00000-0000-4000-8000-000000000001', 'b2a00000-0000-4000-8000-000000000001');
 insert into public.warehouse_locations (id, organization_id, warehouse_id, code, name, created_by, updated_by) values

@@ -99,20 +99,20 @@ values (
 
 insert into public.products (
   id, organization_id, code, description, unit_of_measure,
-  batch_control, expiration_control, created_by, updated_by
+  tax_affectation, batch_control, expiration_control, created_by, updated_by
 )
 values
   (
     'f2e00000-0000-4000-8000-000000000001',
     'f2b00000-0000-4000-8000-000000000001',
-    'COM-001', 'Producto comercial por lote', 'UND', true, true,
+    'COM-001', 'Producto comercial por lote', 'UND', 'gravado', true, true,
     'f2c00000-0000-4000-8000-000000000001',
     'f2c00000-0000-4000-8000-000000000001'
   ),
   (
     'f2e00000-0000-4000-8000-000000000002',
     'f2b00000-0000-4000-8000-000000000001',
-    'COM-002', 'Producto comercial sin lote', 'UND', false, false,
+    'COM-002', 'Producto comercial sin lote', 'UND', 'gravado', false, false,
     'f2c00000-0000-4000-8000-000000000001',
     'f2c00000-0000-4000-8000-000000000001'
   );

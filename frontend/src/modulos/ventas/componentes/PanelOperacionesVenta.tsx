@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { DialogoDespachoPersistente } from '@/modulos/ventas/componentes/DialogoDespachoPersistente'
 import { DialogoModificacionPedido } from '@/modulos/ventas/componentes/DialogoModificacionPedido'
 import { DialogoRegistroVenta } from '@/modulos/ventas/componentes/DialogoRegistroVenta'
-import { calcularTotalesCotizacion } from '@/modulos/ventas/modelo/cotizacion'
 import type {
   DatosVenta,
   PedidoVenta,
@@ -90,7 +89,7 @@ export function PanelOperacionesVenta({
         <div className="divide-y">
           {pedidosOrdenados.map((pedido) => {
             const venta = ventasPorPedido.get(pedido.id)
-            const total = calcularTotalesCotizacion(pedido.lineas, pedido.preciosIncluyenIgv).total
+            const fiscalCalculado = pedido.estadoCalculoTributario === 'calculated'
             return (
               <article key={pedido.id} className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(15rem,1fr)_minmax(20rem,1.35fr)_auto] lg:items-center">
                 <div>
@@ -104,7 +103,7 @@ export function PanelOperacionesVenta({
                 </div>
                 <div className="grid grid-cols-3 gap-3 border-y py-3 text-sm lg:border-y-0 lg:border-s lg:ps-5">
                   <div><p className="text-xs text-muted-foreground">Productos</p><p className="mt-1 font-mono">{pedido.lineas.length}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Total</p><p className="mt-1 font-mono font-semibold">{formatoMoneda.format(total)}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Total</p><p className="mt-1 font-mono font-semibold">{formatoMoneda.format(pedido.total)}</p></div>
                   <div>
                     <p className="text-xs text-muted-foreground">Documento</p>
                     <p className="mt-1 truncate font-mono text-xs">{venta ? `${venta.serie}-${venta.numeroDocumento}` : 'Pendiente'}</p>
@@ -116,10 +115,14 @@ export function PanelOperacionesVenta({
                   </div>
                 </div>
                 <div className="flex justify-start lg:justify-end">
-                  {!venta && pedido.estado === 'confirmado' ? (
+                  {!venta && pedido.estado === 'confirmado' && !fiscalCalculado ? (
+                    <span className="text-sm font-medium text-muted-foreground">Cálculo tributario {pedido.estadoCalculoTributario === 'pending' ? 'pendiente' : 'no reconstruible'}</span>
+                  ) : !venta && pedido.estado === 'confirmado' ? (
                     alRegistrarVenta ? (
                       <Button type="button" onClick={() => setPedidoSeleccionado(pedido)}><ReceiptText aria-hidden="true" /> Registrar venta</Button>
                     ) : <span className="text-sm font-medium text-muted-foreground">Solo consulta</span>
+                  ) : venta?.estado === 'registrada' && venta.estadoCalculoTributario !== 'calculated' ? (
+                    <span className="text-sm font-medium text-muted-foreground">Cálculo tributario {venta.estadoCalculoTributario === 'pending' ? 'pendiente' : 'no reconstruible'}</span>
                   ) : venta?.estado === 'registrada' ? (
                     alDespacharVenta ? (
                       <Button
@@ -139,7 +142,7 @@ export function PanelOperacionesVenta({
                 {!venta && pedido.estado === 'confirmado' && (alActualizarPedido || alCancelarPedido) ? (
                   <div className="flex flex-wrap gap-2 lg:col-start-3 lg:justify-end">
                     {alActualizarPedido ? (
-                      <Button type="button" variant="outline" size="sm" disabled={actualizandoPedido || cancelandoPedido} onClick={() => setPedidoPorModificar(pedido)}>
+                      <Button type="button" variant="outline" size="sm" disabled={actualizandoPedido || cancelandoPedido || !fiscalCalculado} onClick={() => setPedidoPorModificar(pedido)}>
                         <Pencil aria-hidden="true" /> Modificar cantidades
                       </Button>
                     ) : null}

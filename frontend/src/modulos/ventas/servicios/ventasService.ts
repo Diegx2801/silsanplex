@@ -36,6 +36,13 @@ interface PedidoFila {
   order_date: string
   status: PedidoVenta['estado']
   prices_include_tax: boolean
+  taxable_base: number | string | null
+  exempt_amount: number | string | null
+  unaffected_amount: number | string | null
+  subtotal: number | string
+  tax: number | string
+  total: number | string
+  tax_calculation_status: PedidoVenta['estadoCalculoTributario']
   notes: string
   created_at: string
   order_items: LineaPedidoFila[]
@@ -59,6 +66,13 @@ interface VentaFila {
   sale_date: string
   warehouse: string
   prices_include_tax: boolean
+  taxable_base: number | string | null
+  exempt_amount: number | string | null
+  unaffected_amount: number | string | null
+  subtotal: number | string
+  tax: number | string
+  total: number | string
+  tax_calculation_status: Venta['estadoCalculoTributario']
   status: Venta['estado']
   created_at: string
   sales_order?: { order_number: string } | { order_number: string }[] | null
@@ -78,6 +92,13 @@ const columnasPedido = [
   'order_date',
   'status',
   'prices_include_tax',
+  'taxable_base',
+  'exempt_amount',
+  'unaffected_amount',
+  'subtotal',
+  'tax',
+  'total',
+  'tax_calculation_status',
   'notes',
   'created_at',
   'order_items(id,product_id,product_code,product_description,unit_of_measure,tax_affectation,quantity,unit_price,products(product_type))',
@@ -97,6 +118,13 @@ const columnasVenta = [
   'sale_date',
   'warehouse',
   'prices_include_tax',
+  'taxable_base',
+  'exempt_amount',
+  'unaffected_amount',
+  'subtotal',
+  'tax',
+  'total',
+  'tax_calculation_status',
   'status',
   'created_at',
   'orders!sales_order_same_organization(order_number)',
@@ -114,6 +142,10 @@ function primerPedido(pedido: VentaFila['orders']) {
 
 function primerAlmacen(almacen: PedidoFila['warehouses']) {
   return Array.isArray(almacen) ? almacen[0] : almacen
+}
+
+function importeOpcional(valor: number | string | null) {
+  return valor === null ? null : Number(valor)
 }
 
 function mapearLinea(fila: LineaPedidoFila) {
@@ -152,6 +184,13 @@ function mapearPedido(fila: PedidoFila): PedidoVenta {
     clienteDocumento: cliente.document_number,
     clienteNombre: cliente.legal_name,
     preciosIncluyenIgv: fila.prices_include_tax,
+    baseGravada: importeOpcional(fila.taxable_base),
+    montoExonerado: importeOpcional(fila.exempt_amount),
+    montoInafecto: importeOpcional(fila.unaffected_amount),
+    subtotal: Number(fila.subtotal),
+    igv: Number(fila.tax),
+    total: Number(fila.total),
+    estadoCalculoTributario: fila.tax_calculation_status,
     observacion: fila.notes,
     lineas: fila.order_items.map(mapearLinea),
     estado: fila.status,
@@ -180,6 +219,13 @@ function mapearVenta(fila: VentaFila): Venta {
     fechaVenta: fila.sale_date,
     almacen: fila.warehouse,
     preciosIncluyenIgv: fila.prices_include_tax,
+    baseGravada: importeOpcional(fila.taxable_base),
+    montoExonerado: importeOpcional(fila.exempt_amount),
+    montoInafecto: importeOpcional(fila.unaffected_amount),
+    subtotal: Number(fila.subtotal),
+    igv: Number(fila.tax),
+    total: Number(fila.total),
+    estadoCalculoTributario: fila.tax_calculation_status,
     lineas: fila.sale_items.map((linea) => ({ ...mapearLineaVenta(linea), id: linea.id })),
     estado: fila.status,
     fechaRegistro: fila.created_at,
@@ -189,6 +235,11 @@ function mapearVenta(fila: VentaFila): Venta {
 
 function mensajeError(error: { code?: string; message?: string }) {
   const message = error.message ?? ''
+  if (message.includes('ORDER_TAX_AFFECTATION_LEGACY_UNKNOWN')) return 'El pedido histórico no tiene afectación tributaria reconstruible'
+  if (message.includes('ORDER_TAX_AFFECTATION_UNDEFINED')) return 'No se puede crear o modificar un pedido con productos por definir tributariamente'
+  if (message.includes('SALE_TAX_AFFECTATION_LEGACY_UNKNOWN')) return 'El pedido histórico no tiene afectación tributaria reconstruible para registrar la venta'
+  if (message.includes('SALE_TAX_AFFECTATION_UNDEFINED')) return 'No se puede registrar una venta con afectación tributaria por definir'
+  if (message.includes('ORDER_TAX_CALCULATION_REQUIRED')) return 'No se puede despachar una venta sin cálculo tributario válido'
   if (message.includes('ORDER_SERVICE_COMPLETION_QUANTITY_INVALID')) return 'Los servicios se atienden por la cantidad completa al cerrar la venta'
   if (message.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no generan reservas ni pueden despacharse como inventario.'
   if (error.code === '42501' || /_FORBIDDEN|AUTHENTICATION_REQUIRED/.test(message)) return 'No tienes permiso para gestionar operaciones comerciales'

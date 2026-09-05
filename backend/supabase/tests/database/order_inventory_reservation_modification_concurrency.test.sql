@@ -28,11 +28,11 @@ insert into public.customers (
   'bd200000-0000-4000-8000-000000000001', 'bd200000-0000-4000-8000-000000000001'
 );
 insert into public.products (
-  id, organization_id, code, description, unit_of_measure, batch_control,
+  id, organization_id, code, description, unit_of_measure, tax_affectation, batch_control,
   expiration_control, created_by, updated_by
 ) values (
   'bd400000-0000-4000-8000-000000000001', 'bd100000-0000-4000-8000-000000000001',
-  'CONC-MOD-001', 'Producto concurrencia modificaciones', 'UND', false, false,
+  'CONC-MOD-001', 'Producto concurrencia modificaciones', 'UND', 'gravado', false, false,
   'bd200000-0000-4000-8000-000000000001', 'bd200000-0000-4000-8000-000000000001'
 );
 insert into public.warehouses (

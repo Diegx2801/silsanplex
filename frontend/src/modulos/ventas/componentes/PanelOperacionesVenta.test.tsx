@@ -14,6 +14,13 @@ const pedido = {
   clienteDocumento: '20548796321',
   clienteNombre: 'Cliente Uno',
   preciosIncluyenIgv: true,
+  baseGravada: 8.47,
+  montoExonerado: 0,
+  montoInafecto: 0,
+  subtotal: 8.47,
+  igv: 1.53,
+  total: 10,
+  estadoCalculoTributario: 'calculated',
   observacion: '',
   lineas: [{
     id: 'linea-1', productoId: 'producto-1', productoCodigo: 'P-1',
@@ -39,6 +46,13 @@ const venta = {
   fechaVenta: '2026-09-01',
   almacen: 'Almacén central',
   preciosIncluyenIgv: true,
+  baseGravada: 84.75,
+  montoExonerado: 0,
+  montoInafecto: 0,
+  subtotal: 84.75,
+  igv: 15.25,
+  total: 100,
+  estadoCalculoTributario: 'calculated',
   lineas: [{
     id: 'sale-linea-1', pedidoLineaId: 'linea-1', productoId: 'producto-1', productoCodigo: 'P-1',
     productoDescripcion: 'Producto', unidadMedida: 'UND', cantidad: 10, cantidadDespachada: 0,
@@ -62,6 +76,13 @@ function renderPanel(props: Partial<React.ComponentProps<typeof PanelOperaciones
 }
 
 describe('PanelOperacionesVenta', () => {
+  it('no permite registrar ni modificar un pedido con cálculo fiscal pendiente', () => {
+    renderPanel({ pedidos: [{ ...pedido, estadoCalculoTributario: 'pending' }], alActualizarPedido: vi.fn() })
+    expect(screen.queryByRole('button', { name: 'Registrar venta' })).not.toBeInTheDocument()
+    expect(screen.getByText('Cálculo tributario pendiente')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Modificar cantidades' })).toBeDisabled()
+  })
+
   it('confirma servicios sin pedir cantidades de inventario', async () => {
     const alDespacharVenta = vi.fn().mockResolvedValue(undefined)
     renderPanel({

@@ -10,6 +10,9 @@ export const esquemaDatosVenta = z.object({
 
 export type DatosVenta = z.infer<typeof esquemaDatosVenta>
 
+export const esquemaEstadoCalculoTributario = z.enum(['calculated', 'pending', 'legacy_unknown'])
+export type EstadoCalculoTributario = z.infer<typeof esquemaEstadoCalculoTributario>
+
 export const esquemaLineaOperacionVenta = z.object({
   id: z.string().min(1),
   productoId: z.string().min(1),
@@ -43,6 +46,13 @@ export const esquemaPedidoVenta = z.object({
   clienteDocumento: z.string().min(1),
   clienteNombre: z.string().min(1),
   preciosIncluyenIgv: z.boolean(),
+  baseGravada: z.number().nonnegative().nullable(),
+  montoExonerado: z.number().nonnegative().nullable(),
+  montoInafecto: z.number().nonnegative().nullable(),
+  subtotal: z.number().nonnegative(),
+  igv: z.number().nonnegative(),
+  total: z.number().nonnegative(),
+  estadoCalculoTributario: esquemaEstadoCalculoTributario,
   observacion: z.string(),
   lineas: z.array(esquemaLineaOperacionVenta).min(1),
   estado: z.enum(['confirmado', 'atendido', 'cancelado']),
@@ -69,6 +79,13 @@ export const esquemaVenta = z.object({
   fechaVenta: z.string().min(1),
   almacen: z.string().min(1),
   preciosIncluyenIgv: z.boolean(),
+  baseGravada: z.number().nonnegative().nullable(),
+  montoExonerado: z.number().nonnegative().nullable(),
+  montoInafecto: z.number().nonnegative().nullable(),
+  subtotal: z.number().nonnegative(),
+  igv: z.number().nonnegative(),
+  total: z.number().nonnegative(),
+  estadoCalculoTributario: esquemaEstadoCalculoTributario,
   lineas: z.array(esquemaLineaOperacionVenta).min(1),
   estado: z.enum(['registrada', 'despachada']),
   fechaRegistro: z.string().datetime(),

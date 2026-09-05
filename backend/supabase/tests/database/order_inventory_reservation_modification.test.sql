@@ -37,11 +37,11 @@ insert into public.customers (
 
 insert into public.products (
   id, organization_id, code, description, unit_of_measure,
-  batch_control, expiration_control, created_by, updated_by
+  tax_affectation, batch_control, expiration_control, created_by, updated_by
 ) values
-  ('b2f40000-0000-4000-8000-000000000001', 'b2f10000-0000-4000-8000-000000000001', 'MOD-001', 'Producto modificable FEFO', 'UND', true, true, 'b2f20000-0000-4000-8000-000000000001', 'b2f20000-0000-4000-8000-000000000001'),
-  ('b2f40000-0000-4000-8000-000000000002', 'b2f10000-0000-4000-8000-000000000001', 'MOD-002', 'Producto modificable simple', 'UND', false, false, 'b2f20000-0000-4000-8000-000000000001', 'b2f20000-0000-4000-8000-000000000001'),
-  ('b2f40000-0000-4000-8000-000000000003', 'b2f10000-0000-4000-8000-000000000001', 'MOD-003', 'Producto rollback multilinea', 'UND', false, false, 'b2f20000-0000-4000-8000-000000000001', 'b2f20000-0000-4000-8000-000000000001');
+  ('b2f40000-0000-4000-8000-000000000001', 'b2f10000-0000-4000-8000-000000000001', 'MOD-001', 'Producto modificable FEFO', 'UND', 'gravado', true, true, 'b2f20000-0000-4000-8000-000000000001', 'b2f20000-0000-4000-8000-000000000001'),
+  ('b2f40000-0000-4000-8000-000000000002', 'b2f10000-0000-4000-8000-000000000001', 'MOD-002', 'Producto modificable simple', 'UND', 'gravado', false, false, 'b2f20000-0000-4000-8000-000000000001', 'b2f20000-0000-4000-8000-000000000001'),
+  ('b2f40000-0000-4000-8000-000000000003', 'b2f10000-0000-4000-8000-000000000001', 'MOD-003', 'Producto rollback multilinea', 'UND', 'gravado', false, false, 'b2f20000-0000-4000-8000-000000000001', 'b2f20000-0000-4000-8000-000000000001');
 
 insert into public.warehouses (id, organization_id, code, name, is_active, created_by, updated_by) values
   ('b2f50000-0000-4000-8000-000000000001', 'b2f10000-0000-4000-8000-000000000001', 'MOD', 'Almacen modificacion', true, 'b2f20000-0000-4000-8000-000000000001', 'b2f20000-0000-4000-8000-000000000001'),
