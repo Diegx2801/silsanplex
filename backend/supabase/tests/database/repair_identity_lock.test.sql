@@ -67,6 +67,11 @@ values
   ('b1040000-0000-4000-8000-000000000001', 'b2040000-0000-4000-8000-000000000003', 'ALMACEN'),
   ('b1040000-0000-4000-8000-000000000002', 'b2040000-0000-4000-8000-000000000004', 'ADMIN');
 
+-- The fixture technician is explicitly qualified without administrative powers.
+insert into public.roles (code, name) values ('TEST_REPAIR_TECH', 'Test repair technician');
+insert into public.role_permissions (role_code, permission_code) values ('TEST_REPAIR_TECH', 'REPAIRS_PERFORM_TECHNICAL');
+insert into public.user_roles (organization_id, user_id, role_code) values ('b1040000-0000-4000-8000-000000000001', 'b2040000-0000-4000-8000-000000000003', 'TEST_REPAIR_TECH');
+
 insert into public.customers (id, organization_id, document_type, document_number, legal_name, trade_name, is_active)
 values
   ('b4040000-0000-4000-8000-000000000001', 'b1040000-0000-4000-8000-000000000001', 'DNI', '54000001', 'Identity Customer One', null, true),

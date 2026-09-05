@@ -278,7 +278,7 @@ const mensajesDominio: Array<[string, string]> = [
   ['REPAIR_DIAGNOSIS_USE_DIAGNOSIS_RPC', 'El diagnóstico debe registrarse desde la acción especializada.'],
   ['REPAIR_APPLIED_SOLUTION_USE_SOLUTION_RPC', 'La solución aplicada debe registrarse desde la acción especializada.'],
   ['REPAIR_RECEIVED_AT_IMMUTABLE', 'La fecha de recepción no puede modificarse.'],
-  ['REPAIR_TECHNICIAN_UNAVAILABLE', 'El técnico seleccionado no está activo en la organización.'],
+  ['REPAIR_TECHNICIAN_UNAVAILABLE', 'El técnico seleccionado debe estar activo y tener capacidad técnica en la organización.'],
   ['REPAIR_NOT_ASSIGNABLE', 'La reparación ya no admite asignación.'],
   ['REPAIR_STATUS_USE_STATUS_RPC', 'El estado debe cambiarse desde la acción de flujo.'],
   ['REPAIR_SPECIALIZED_STATUS_REQUIRED', 'Ese estado se alcanza desde una acción especializada.'],

@@ -56,8 +56,8 @@ select ok(
 );
 select is(
   (select count(*) from public.permissions where code like 'REPAIRS_%'),
-  8::bigint,
-  'the change adds no repair permission'
+  9::bigint,
+  'the repair permissions include explicit technical capability'
 );
 select is(
   (select count(*) from public.roles where code = 'SERVICIO_TECNICO'),
@@ -115,6 +115,11 @@ values
   ('a1030000-0000-4000-8000-000000000001', 'a2030000-0000-4000-8000-000000000003', 'CONTABILIDAD'),
   ('a1030000-0000-4000-8000-000000000002', 'a2030000-0000-4000-8000-000000000004', 'ADMIN'),
   ('a1030000-0000-4000-8000-000000000001', 'a2030000-0000-4000-8000-000000000005', 'ADMIN');
+
+-- The fixture technician is explicitly qualified without administrative powers.
+insert into public.roles (code, name) values ('TEST_REPAIR_TECH', 'Test repair technician');
+insert into public.role_permissions (role_code, permission_code) values ('TEST_REPAIR_TECH', 'REPAIRS_PERFORM_TECHNICAL');
+insert into public.user_roles (organization_id, user_id, role_code) values ('a1030000-0000-4000-8000-000000000001', 'a2030000-0000-4000-8000-000000000003', 'TEST_REPAIR_TECH');
 
 insert into public.customers (
   id, organization_id, document_type, document_number, legal_name
