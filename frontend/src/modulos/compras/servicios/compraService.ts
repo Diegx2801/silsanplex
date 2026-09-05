@@ -32,6 +32,13 @@ interface CompraFila {
   warehouse_id: string
   warehouse: string
   prices_include_tax: boolean
+  taxable_base: number | null
+  exempt_amount: number | null
+  unaffected_amount: number | null
+  subtotal: number | null
+  tax: number | null
+  total: number | null
+  tax_calculation_status: 'calculated' | 'pending' | 'legacy_unknown'
   notes: string | null
   status: 'draft' | 'issued' | 'partially_received' | 'received' | 'closed_partial' | 'cancelled'
   issued_at: string | null
@@ -41,7 +48,7 @@ interface CompraFila {
 }
 
 const columnasCompra =
-  'id,supplier_id,supplier_document,supplier_name,document_type,series,document_number,issue_date,payment_due_date,expected_delivery_date,warehouse_id,warehouse,prices_include_tax,notes,status,issued_at,received_at,created_at,purchase_order_items(id,product_id,product_code,product_description,unit_of_measure,tax_affectation,batch_control,quantity,unit_cost,lot,expiration_date,products(expiration_control),purchase_receipt_items(quantity))' as const
+  'id,supplier_id,supplier_document,supplier_name,document_type,series,document_number,issue_date,payment_due_date,expected_delivery_date,warehouse_id,warehouse,prices_include_tax,taxable_base,exempt_amount,unaffected_amount,subtotal,tax,total,tax_calculation_status,notes,status,issued_at,received_at,created_at,purchase_order_items(id,product_id,product_code,product_description,unit_of_measure,tax_affectation,batch_control,quantity,unit_cost,lot,expiration_date,products(expiration_control),purchase_receipt_items(quantity))' as const
 
 const estados: Record<CompraFila['status'], EstadoCompra> = {
   draft: 'borrador',
@@ -89,6 +96,13 @@ function mapearCompra(fila: CompraFila): Compra {
     almacenId: fila.warehouse_id,
     almacen: fila.warehouse,
     preciosIncluyenIgv: fila.prices_include_tax,
+    baseGravada: fila.taxable_base === null ? null : Number(fila.taxable_base),
+    montoExonerado: fila.exempt_amount === null ? null : Number(fila.exempt_amount),
+    montoInafecto: fila.unaffected_amount === null ? null : Number(fila.unaffected_amount),
+    subtotal: fila.subtotal === null ? null : Number(fila.subtotal),
+    igv: fila.tax === null ? null : Number(fila.tax),
+    total: fila.total === null ? null : Number(fila.total),
+    estadoCalculoTributario: fila.tax_calculation_status,
     observacion: fila.notes ?? '',
     lineas: fila.purchase_order_items.map(mapearLinea),
     estado: estados[fila.status],
@@ -104,6 +118,8 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (error.code === '23505') return mensaje.includes('DUPLICATE_PRODUCT') ? 'Cada producto debe aparecer una sola vez' : 'Ya existe una compra con este documento'
   if (mensaje.includes('PURCHASE_ORDER_NOT_EDITABLE')) return 'Solo se pueden editar órdenes en borrador'
   if (mensaje.includes('PURCHASE_ORDER_NOT_ISSUABLE')) return 'La orden ya no está disponible para emitir'
+  if (mensaje.includes('PURCHASE_ORDER_TAX_AFFECTATION_UNDEFINED')) return 'Completa la afectación tributaria de todos los productos antes de emitir'
+  if (mensaje.includes('PURCHASE_ORDER_TAX_AFFECTATION_LEGACY_UNKNOWN')) return 'Esta orden histórica no tiene afectación tributaria reconstruible'
   if (mensaje.includes('PURCHASE_ORDER_NOT_RECEIVABLE')) return 'La orden debe estar emitida y pendiente de recepción'
   if (mensaje.includes('PURCHASE_RECEIPT_EXCEEDS_ORDERED_QUANTITY')) return 'La cantidad supera el saldo pendiente de la orden'
   if (mensaje.includes('PURCHASE_RECEIPT_LOCATION_INVALID')) return 'Selecciona una ubicación activa del almacén de la compra'
