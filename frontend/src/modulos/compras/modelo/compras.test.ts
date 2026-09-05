@@ -120,17 +120,59 @@ describe('proveedores', () => {
 
 describe('compras', () => {
   it('calcula IGV cuando el costo lo incluye y cuando debe agregarse', () => {
-    const lineas = [{ cantidad: 10, costoUnitario: 11.8 }]
+    const lineas = [{ cantidad: 10, costoUnitario: 11.8, afectacionIgv: 'gravado' as const }]
 
     expect(calcularTotalesCompra(lineas, true)).toEqual({
+      estado: 'calculated',
+      baseGravada: 100,
+      montoExonerado: 0,
+      montoInafecto: 0,
       subtotal: 100,
       igv: 18,
       total: 118,
     })
     expect(calcularTotalesCompra(lineas, false)).toEqual({
+      estado: 'calculated',
+      baseGravada: 118,
+      montoExonerado: 0,
+      montoInafecto: 0,
       subtotal: 118,
       igv: 21.24,
       total: 139.24,
+    })
+  })
+
+  it('separa líneas gravadas, exoneradas e inafectas', () => {
+    expect(
+      calcularTotalesCompra([
+        { cantidad: 1, costoUnitario: 118, afectacionIgv: 'gravado' },
+        { cantidad: 2, costoUnitario: 10, afectacionIgv: 'exonerado' },
+        { cantidad: 3, costoUnitario: 5, afectacionIgv: 'inafecto' },
+      ], true),
+    ).toEqual({
+      estado: 'calculated',
+      baseGravada: 100,
+      montoExonerado: 20,
+      montoInafecto: 15,
+      subtotal: 135,
+      igv: 18,
+      total: 153,
+    })
+  })
+
+  it('mantiene el cálculo pendiente cuando una línea está por definir', () => {
+    expect(
+      calcularTotalesCompra([
+        { cantidad: 1, costoUnitario: 10, afectacionIgv: 'por-definir' },
+      ], true),
+    ).toEqual({
+      estado: 'pending',
+      baseGravada: null,
+      montoExonerado: null,
+      montoInafecto: null,
+      subtotal: null,
+      igv: null,
+      total: null,
     })
   })
 

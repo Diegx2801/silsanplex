@@ -27,7 +27,6 @@ import { DialogoConfirmacionAnulacion } from '@/modulos/compras/componentes/Dial
 import { DialogoConfirmacionRecepcion } from '@/modulos/compras/componentes/DialogoConfirmacionRecepcion'
 import { useCompras } from '@/modulos/compras/estado/useCompras'
 import {
-  calcularTotalesCompra,
   type Compra,
   type DatosCompra,
   type DatosRecepcionCompra,
@@ -155,13 +154,7 @@ export function ComprasPage() {
     () =>
       compras
         .filter((compra) => compra.estado === 'recibida')
-        .reduce(
-          (total, compra) =>
-            total +
-            calcularTotalesCompra(compra.lineas, compra.preciosIncluyenIgv)
-              .total,
-          0,
-        ),
+        .reduce((total, compra) => total + (compra.total ?? 0), 0),
     [compras],
   )
 
@@ -424,10 +417,6 @@ export function ComprasPage() {
           <>
             <div className="divide-y md:hidden">
               {comprasFiltradas.map((compra) => {
-                const totales = calcularTotalesCompra(
-                  compra.lineas,
-                  compra.preciosIncluyenIgv,
-                )
                 return (
                   <article key={compra.id} className="px-5 py-5">
                     <div className="flex items-start justify-between gap-3">
@@ -453,7 +442,9 @@ export function ComprasPage() {
                       <div>
                         <dt className="text-xs text-muted-foreground">Total</dt>
                         <dd className="mt-1 font-mono font-semibold">
-                          {formatoMoneda.format(totales.total)}
+                          {compra.total === null || compra.total === undefined
+                            ? 'Pendiente'
+                            : formatoMoneda.format(compra.total)}
                         </dd>
                       </div>
                     </dl>
@@ -515,10 +506,6 @@ export function ComprasPage() {
                 </thead>
                 <tbody className="divide-y">
                   {comprasFiltradas.map((compra) => {
-                    const totales = calcularTotalesCompra(
-                      compra.lineas,
-                      compra.preciosIncluyenIgv,
-                    )
                     return (
                       <tr key={compra.id} className="hover:bg-muted/35">
                         <td className="px-6 py-4 font-mono text-xs uppercase">
@@ -537,7 +524,9 @@ export function ComprasPage() {
                           {compra.lineas.length}
                         </td>
                         <td className="px-4 py-4 text-end font-mono font-semibold tabular-nums">
-                          {formatoMoneda.format(totales.total)}
+                          {compra.total === null || compra.total === undefined
+                            ? 'Pendiente'
+                            : formatoMoneda.format(compra.total)}
                         </td>
                         <td className="px-4 py-4">
                           <EstadoCompraEtiqueta estado={compra.estado} />

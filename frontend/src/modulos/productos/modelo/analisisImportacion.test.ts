@@ -92,6 +92,66 @@ describe('analizarFilasImportacion', () => {
     )
   })
 
+  it('mantiene sin bloqueo un catálogo completamente sin filas de precio', () => {
+    const resultado = analizarFilasImportacion(
+      [{ Codigo: 'SIN-PRECIO', Producto: 'Producto sin precio' }],
+      [],
+    )
+
+    expect(resultado.tieneBloqueos).toBe(false)
+    expect(resultado.datos.productos).toHaveLength(1)
+    expect(resultado.datos.precios).toHaveLength(0)
+    expect(resultado.filasObservadas).toContainEqual(
+      expect.objectContaining({ tipoAviso: 'sin-precio', codigo: 'SIN-PRECIO' }),
+    )
+  })
+
+  it('distingue mínimo sin precio efectivo y precio cero', () => {
+    const resultado = analizarFilasImportacion(
+      [{ Codigo: 'SKU-1', Producto: 'Producto uno' }],
+      [
+        { CodigoProducto: 'SKU-1', Medida: 'UND', Precio_venta: '', PrecioMinimo: '2' },
+        { CodigoProducto: 'SKU-1', Medida: 'CAJA', Precio_venta: '0' },
+      ],
+    )
+
+    expect(resultado.hallazgos).toContainEqual(
+      expect.objectContaining({ id: 'minimos-sin-precio', nivel: 'advertencia' }),
+    )
+    expect(resultado.filasObservadas).toContainEqual(
+      expect.objectContaining({ tipoAviso: 'minimo-sin-precio' }),
+    )
+    expect(resultado.hallazgos).toContainEqual(
+      expect.objectContaining({ id: 'precios-en-cero', nivel: 'advertencia' }),
+    )
+    expect(resultado.filasObservadas).toContainEqual(
+      expect.objectContaining({ tipoAviso: 'precio-cero' }),
+    )
+  })
+
+  it('advierte que IncIGV no permite inferir la afectación tributaria', () => {
+    const resultado = analizarFilasImportacion(
+      [
+        { Codigo: 'NO-IGV', Producto: 'Precio neto' },
+        { Codigo: 'PEND-IGV', Producto: 'Precio pendiente' },
+        { Codigo: 'EMPTY-IGV', Producto: 'Precio vacío' },
+      ],
+      [
+        { CodigoProducto: 'NO-IGV', Medida: 'UND', Precio_venta: '10', IncIGV: ' No ' },
+        { CodigoProducto: 'PEND-IGV', Medida: 'UND', Precio_venta: '11', IncIGV: 'Pendiente' },
+        { CodigoProducto: 'EMPTY-IGV', Medida: 'UND', Precio_venta: '12', IncIGV: '' },
+      ],
+    )
+
+    expect(resultado.tieneBloqueos).toBe(false)
+    expect(resultado.hallazgos).toContainEqual(
+      expect.objectContaining({ id: 'inc-igv-ambiguo', nivel: 'advertencia', cantidad: 3 }),
+    )
+    expect(resultado.filasObservadas).toContainEqual(
+      expect.objectContaining({ tipoAviso: 'inc-igv-ambiguo', codigo: 'NO-IGV' }),
+    )
+  })
+
   it('prepara una fila por código y expone duplicados y conflictos por fila', () => {
     const resultado = analizarFilasImportacion(
       [

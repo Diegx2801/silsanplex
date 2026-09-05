@@ -33,6 +33,7 @@ export function DialogoDespachoPersistente({
   alCambiarApertura,
   alGuardar,
 }: DialogoDespachoPersistenteProps) {
+  const soloServicios = venta.lineas.every((linea) => linea.tipoProducto === 'service')
   const [cantidades, setCantidades] = useState<Record<string, string>>(() =>
     Object.fromEntries(venta.lineas.map((linea) => [linea.id, String(linea.cantidadPendiente ?? linea.cantidad)])),
   )
@@ -62,6 +63,10 @@ export function DialogoDespachoPersistente({
     for (const linea of venta.lineas) {
       const pendiente = linea.cantidadPendiente ?? linea.cantidad
       if (pendiente <= 0) continue
+      if (linea.tipoProducto === 'service') {
+        if (soloServicios) lineas.push({ orderItemId: linea.pedidoLineaId ?? linea.id, quantity: linea.cantidad })
+        continue
+      }
       const cantidad = Number(cantidades[linea.id])
       if (!Number.isFinite(cantidad) || cantidad < 0 || cantidad > pendiente) {
         setError(`Ingresa una cantidad entre 0 y ${pendiente} para ${linea.productoDescripcion}`)
@@ -93,9 +98,11 @@ export function DialogoDespachoPersistente({
         <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 border bg-background shadow-xl outline-none">
           <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7">
             <div>
-              <DialogPrimitive.Title className="text-xl font-semibold">Despachar venta</DialogPrimitive.Title>
+              <DialogPrimitive.Title className="text-xl font-semibold">{soloServicios ? 'Completar servicios' : 'Despachar venta'}</DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">
-                {venta.numeroInterno} · El sistema consumirá las reservas en orden FEFO.
+                {venta.numeroInterno} · {soloServicios
+                  ? 'Confirma la atención comercial de los servicios. No se modificará el inventario.'
+                  : 'Los bienes consumen reservas FEFO. Los servicios se consideran atendidos al completar todos los bienes.'}
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close asChild>
@@ -132,7 +139,9 @@ export function DialogoDespachoPersistente({
                         {linea.productoCodigo} · despachado: {despachada} · pendiente: {pendiente} {linea.unidadMedida}
                       </p>
                     </div>
-                    <div>
+                    {linea.tipoProducto === 'service' ? (
+                      <p className="text-sm text-muted-foreground">Servicio · atención al cierre, sin inventario</p>
+                    ) : <div>
                       <label htmlFor={`cantidad-despacho-${linea.id}`} className="field-label">Cantidad a despachar</label>
                       <input
                         id={`cantidad-despacho-${linea.id}`}
@@ -146,7 +155,7 @@ export function DialogoDespachoPersistente({
                         onChange={(evento) => cambiarCantidad(linea.id, evento.target.value)}
                         disabled={estaGuardando || pendiente <= 0}
                       />
-                    </div>
+                    </div>}
                   </div>
                 )
               })}
@@ -154,7 +163,7 @@ export function DialogoDespachoPersistente({
             {error ? <p role="alert" className="mt-5 border-s-4 border-destructive bg-destructive/10 px-4 py-3 text-sm">{error}</p> : null}
             <footer className="mt-6 flex justify-end gap-3 border-t pt-5">
               <DialogPrimitive.Close asChild><Button type="button" variant="outline" disabled={estaGuardando}>Cerrar</Button></DialogPrimitive.Close>
-              <Button type="submit" disabled={estaGuardando}>{estaGuardando ? 'Despachando…' : 'Confirmar despacho'}</Button>
+              <Button type="submit" disabled={estaGuardando}>{estaGuardando ? 'Procesando…' : soloServicios ? 'Confirmar atención' : 'Confirmar despacho'}</Button>
             </footer>
           </form>
         </DialogPrimitive.Content>

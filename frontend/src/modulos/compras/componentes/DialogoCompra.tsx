@@ -12,7 +12,7 @@ import {
   type DatosCompra,
   type Proveedor,
 } from '@/modulos/compras/modelo/compras'
-import type { Producto } from '@/modulos/productos/modelo/producto'
+import type { AfectacionTributaria, Producto } from '@/modulos/productos/modelo/producto'
 import type { Almacen } from '@/modulos/inventario/modelo/almacen'
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', {
@@ -20,6 +20,10 @@ const formatoMoneda = new Intl.NumberFormat('es-PE', {
   currency: 'PEN',
 })
 const hoy = () => new Date().toISOString().slice(0, 10)
+
+function afectacionProducto(valor: Producto['afectacionIgv'] | undefined): AfectacionTributaria {
+  return valor || 'por-definir'
+}
 
 interface DialogoCompraProps {
   abierto: boolean
@@ -87,10 +91,18 @@ export function DialogoCompra({
   const { fields, append, remove } = useFieldArray({ control, name: 'lineas' })
   const lineas = watch('lineas')
   const preciosIncluyenIgv = watch('preciosIncluyenIgv')
+  const snapshotsPorProducto = new Map(
+    (compra?.lineas ?? []).map((linea) => [linea.productoId, linea.afectacionIgv]),
+  )
   const totales = calcularTotalesCompra(
     lineas.map((linea) => ({
       cantidad: Number(linea.cantidad) || 0,
       costoUnitario: Number(linea.costoUnitario) || 0,
+      afectacionIgv:
+        snapshotsPorProducto.get(linea.productoId) ??
+        afectacionProducto(
+          productos.find((producto) => producto.id === linea.productoId)?.afectacionIgv,
+        ),
     })),
     preciosIncluyenIgv,
   )
@@ -448,23 +460,46 @@ export function DialogoCompra({
                   </span>
                 </label>
               </div>
+              {totales.estado === 'pending' ? (
+                <p className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-950">
+                  Completa la afectación tributaria de todos los productos para calcular los importes y emitir la orden.
+                </p>
+              ) : null}
               <dl className="border bg-muted/25 px-4 py-2">
+                <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                  <dt className="text-muted-foreground">Base gravada</dt>
+                  <dd className="font-mono tabular-nums">
+                    {totales.baseGravada === null ? 'Pendiente' : formatoMoneda.format(totales.baseGravada)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                  <dt className="text-muted-foreground">Exonerado</dt>
+                  <dd className="font-mono tabular-nums">
+                    {totales.montoExonerado === null ? 'Pendiente' : formatoMoneda.format(totales.montoExonerado)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                  <dt className="text-muted-foreground">Inafecto</dt>
+                  <dd className="font-mono tabular-nums">
+                    {totales.montoInafecto === null ? 'Pendiente' : formatoMoneda.format(totales.montoInafecto)}
+                  </dd>
+                </div>
                 <div className="flex justify-between gap-4 border-b py-3 text-sm">
                   <dt className="text-muted-foreground">Subtotal</dt>
                   <dd className="font-mono tabular-nums">
-                    {formatoMoneda.format(totales.subtotal)}
+                    {totales.subtotal === null ? 'Pendiente' : formatoMoneda.format(totales.subtotal)}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-4 border-b py-3 text-sm">
                   <dt className="text-muted-foreground">IGV</dt>
                   <dd className="font-mono tabular-nums">
-                    {formatoMoneda.format(totales.igv)}
+                    {totales.igv === null ? 'Pendiente' : formatoMoneda.format(totales.igv)}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-4 py-3 font-semibold">
                   <dt>Total</dt>
                   <dd className="font-mono tabular-nums">
-                    {formatoMoneda.format(totales.total)}
+                    {totales.total === null ? 'Pendiente' : formatoMoneda.format(totales.total)}
                   </dd>
                 </div>
               </dl>

@@ -111,8 +111,8 @@ export async function analizarArchivosProductos(
   )
   const precios = leerFilas(preciosBuffer, archivoPrecios.name, columnasPrecios)
 
-  if (!productos.length || !precios.length) {
-    throw new Error('Los dos archivos deben contener al menos una fila de datos.')
+  if (!productos.length) {
+    throw new Error('El archivo de productos debe contener al menos una fila de datos.')
   }
 
   return analizarFilasImportacion(productos, precios)

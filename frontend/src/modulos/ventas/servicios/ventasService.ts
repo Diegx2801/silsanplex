@@ -11,9 +11,11 @@ interface ClienteFila {
 interface LineaPedidoFila {
   id: string
   product_id: string
+  products?: { product_type: 'good' | 'service' } | null
   product_code: string
   product_description: string
   unit_of_measure: string | null
+  tax_affectation: 'por-definir' | 'gravado' | 'exonerado' | 'inafecto' | null
   quantity: number | string
   unit_price: number | string
 }
@@ -34,6 +36,13 @@ interface PedidoFila {
   order_date: string
   status: PedidoVenta['estado']
   prices_include_tax: boolean
+  taxable_base: number | string | null
+  exempt_amount: number | string | null
+  unaffected_amount: number | string | null
+  subtotal: number | string
+  tax: number | string
+  total: number | string
+  tax_calculation_status: PedidoVenta['estadoCalculoTributario']
   notes: string
   created_at: string
   order_items: LineaPedidoFila[]
@@ -57,6 +66,13 @@ interface VentaFila {
   sale_date: string
   warehouse: string
   prices_include_tax: boolean
+  taxable_base: number | string | null
+  exempt_amount: number | string | null
+  unaffected_amount: number | string | null
+  subtotal: number | string
+  tax: number | string
+  total: number | string
+  tax_calculation_status: Venta['estadoCalculoTributario']
   status: Venta['estado']
   created_at: string
   sales_order?: { order_number: string } | { order_number: string }[] | null
@@ -76,9 +92,16 @@ const columnasPedido = [
   'order_date',
   'status',
   'prices_include_tax',
+  'taxable_base',
+  'exempt_amount',
+  'unaffected_amount',
+  'subtotal',
+  'tax',
+  'total',
+  'tax_calculation_status',
   'notes',
   'created_at',
-  'order_items(id,product_id,product_code,product_description,unit_of_measure,quantity,unit_price)',
+  'order_items(id,product_id,product_code,product_description,unit_of_measure,tax_affectation,quantity,unit_price,products(product_type))',
   'warehouses!orders_warehouse_same_organization(code,name)',
   'customers!orders_customer_same_organization(document_type,document_number,legal_name)',
 ].join(',')
@@ -95,11 +118,18 @@ const columnasVenta = [
   'sale_date',
   'warehouse',
   'prices_include_tax',
+  'taxable_base',
+  'exempt_amount',
+  'unaffected_amount',
+  'subtotal',
+  'tax',
+  'total',
+  'tax_calculation_status',
   'status',
   'created_at',
   'orders!sales_order_same_organization(order_number)',
   'customers!sales_customer_same_organization(document_type,document_number,legal_name)',
-  'sale_items(id,order_item_id,product_id,product_code,product_description,unit_of_measure,quantity,unit_price)',
+  'sale_items(id,order_item_id,product_id,product_code,product_description,unit_of_measure,tax_affectation,quantity,unit_price,products(product_type))',
 ].join(',')
 
 function primerCliente(cliente: ClienteFila | ClienteFila[] | null) {
@@ -114,10 +144,15 @@ function primerAlmacen(almacen: PedidoFila['warehouses']) {
   return Array.isArray(almacen) ? almacen[0] : almacen
 }
 
+function importeOpcional(valor: number | string | null) {
+  return valor === null ? null : Number(valor)
+}
+
 function mapearLinea(fila: LineaPedidoFila) {
   return {
     id: fila.id,
     productoId: fila.product_id,
+    tipoProducto: fila.products?.product_type ?? 'good',
     productoCodigo: fila.product_code,
     productoDescripcion: fila.product_description,
     unidadMedida: fila.unit_of_measure ?? '',
@@ -125,6 +160,7 @@ function mapearLinea(fila: LineaPedidoFila) {
     precioUnitario: Number(fila.unit_price),
     lote: '',
     fechaVencimiento: '',
+    afectacionIgv: fila.tax_affectation,
   }
 }
 
@@ -148,6 +184,13 @@ function mapearPedido(fila: PedidoFila): PedidoVenta {
     clienteDocumento: cliente.document_number,
     clienteNombre: cliente.legal_name,
     preciosIncluyenIgv: fila.prices_include_tax,
+    baseGravada: importeOpcional(fila.taxable_base),
+    montoExonerado: importeOpcional(fila.exempt_amount),
+    montoInafecto: importeOpcional(fila.unaffected_amount),
+    subtotal: Number(fila.subtotal),
+    igv: Number(fila.tax),
+    total: Number(fila.total),
+    estadoCalculoTributario: fila.tax_calculation_status,
     observacion: fila.notes,
     lineas: fila.order_items.map(mapearLinea),
     estado: fila.status,
@@ -176,6 +219,13 @@ function mapearVenta(fila: VentaFila): Venta {
     fechaVenta: fila.sale_date,
     almacen: fila.warehouse,
     preciosIncluyenIgv: fila.prices_include_tax,
+    baseGravada: importeOpcional(fila.taxable_base),
+    montoExonerado: importeOpcional(fila.exempt_amount),
+    montoInafecto: importeOpcional(fila.unaffected_amount),
+    subtotal: Number(fila.subtotal),
+    igv: Number(fila.tax),
+    total: Number(fila.total),
+    estadoCalculoTributario: fila.tax_calculation_status,
     lineas: fila.sale_items.map((linea) => ({ ...mapearLineaVenta(linea), id: linea.id })),
     estado: fila.status,
     fechaRegistro: fila.created_at,
@@ -185,6 +235,14 @@ function mapearVenta(fila: VentaFila): Venta {
 
 function mensajeError(error: { code?: string; message?: string }) {
   const message = error.message ?? ''
+  if (message.includes('ORDER_TAX_AFFECTATION_LEGACY_UNKNOWN')) return 'El pedido histórico no tiene afectación tributaria reconstruible'
+  if (message.includes('ORDER_TAX_AFFECTATION_UNDEFINED')) return 'No se puede crear o modificar un pedido con productos por definir tributariamente'
+  if (message.includes('ORDER_MINIMUM_SALE_PRICE_VIOLATION')) return 'El precio unitario no puede ser menor al precio mínimo final del producto'
+  if (message.includes('SALE_TAX_AFFECTATION_LEGACY_UNKNOWN')) return 'El pedido histórico no tiene afectación tributaria reconstruible para registrar la venta'
+  if (message.includes('SALE_TAX_AFFECTATION_UNDEFINED')) return 'No se puede registrar una venta con afectación tributaria por definir'
+  if (message.includes('ORDER_TAX_CALCULATION_REQUIRED')) return 'No se puede despachar una venta sin cálculo tributario válido'
+  if (message.includes('ORDER_SERVICE_COMPLETION_QUANTITY_INVALID')) return 'Los servicios se atienden por la cantidad completa al cerrar la venta'
+  if (message.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no generan reservas ni pueden despacharse como inventario.'
   if (error.code === '42501' || /_FORBIDDEN|AUTHENTICATION_REQUIRED/.test(message)) return 'No tienes permiso para gestionar operaciones comerciales'
   if (message.includes('ORDER_CUSTOMER_UNAVAILABLE')) return 'El cliente seleccionado ya no está disponible'
   if (message.includes('ORDER_WAREHOUSE_REQUIRED')) return 'Selecciona un almacén para el pedido'
@@ -197,6 +255,7 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (message.includes('ORDER_ITEMS_MISMATCH') || message.includes('ORDER_ITEM_NOT_FOUND')) return 'Las líneas del pedido ya no son válidas; recarga el pedido'
   if (message.includes('ORDER_DUPLICATE_ITEM')) return 'Cada línea del pedido debe aparecer una sola vez'
   if (message.includes('ORDER_OPERATION_KEY_REUSED')) return 'La operación ya fue utilizada; vuelve a cargar el pedido'
+  if (message.includes('ORDER_IDEMPOTENCY_CONFLICT')) return 'La clave de operación del pedido ya fue usada con datos diferentes; revisa y vuelve a cargar la cotización'
   if (message.includes('ORDER_DUPLICATE_PRODUCT')) return 'Cada producto debe aparecer una sola vez en el pedido'
   if (message.includes('ORDER_ITEM_VALUES_INVALID')) return 'Las cantidades y precios deben ser válidos'
   if (message.includes('ORDER_OPERATION_KEY_REQUIRED')) return 'No se pudo identificar el reintento del pedido'
@@ -206,6 +265,7 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (message.includes('ORDER_NOT_DISPATCHABLE')) return 'La venta ya no puede despacharse en su estado actual'
   if (message.includes('ORDER_RESERVATION_STATE_INVALID')) return 'La reserva ya no es válida para despacho; recarga el documento'
   if (message.includes('SALE_ORDER_ALREADY_CONVERTED')) return 'El pedido ya tiene una venta registrada'
+  if (message.includes('SALE_IDEMPOTENCY_CONFLICT')) return 'La clave de operación de la venta ya fue usada con datos diferentes; revisa el comprobante'
   if (message.includes('SALE_ORDER_NOT_AVAILABLE')) return 'El pedido ya no está disponible para registrar una venta'
   if (message.includes('SALE_ORDER_NOT_FOUND')) return 'El pedido ya no existe'
   if (message.includes('SALE_DOCUMENT_INVALID')) return 'Revisa los datos del comprobante'
@@ -258,6 +318,13 @@ export async function listarVentasPersistentes(organizationId: string) {
   return ventas.map((venta) => ({
     ...venta,
     lineas: venta.lineas.map((linea) => {
+      if (linea.tipoProducto === 'service') {
+        return {
+          ...linea,
+          cantidadDespachada: venta.estado === 'despachada' ? linea.cantidad : 0,
+          cantidadPendiente: venta.estado === 'despachada' ? 0 : linea.cantidad,
+        }
+      }
       const saldo = linea.pedidoLineaId ? saldos.get(linea.pedidoLineaId) : undefined
       return {
         ...linea,

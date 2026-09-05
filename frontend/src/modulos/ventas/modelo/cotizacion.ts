@@ -14,10 +14,18 @@ const numeroPositivo = z
     'Ingresa un valor mayor a cero con hasta 4 decimales',
   )
 
+const importeNoNegativo = z
+  .string()
+  .trim()
+  .refine(
+    (valor) => /^\d+(\.\d{1,4})?$/.test(valor),
+    'Ingresa un importe válido con hasta 4 decimales',
+  )
+
 export const esquemaLineaCotizacionFormulario = z.object({
   productoId: z.string().min(1, 'Selecciona un producto'),
   cantidad: numeroPositivo,
-  precioUnitario: numeroPositivo,
+  precioUnitario: importeNoNegativo,
 })
 
 export const esquemaDatosCotizacion = z
@@ -50,7 +58,7 @@ export const esquemaLineaCotizacion = z.object({
   productoDescripcion: z.string().min(1),
   unidadMedida: z.string(),
   cantidad: z.number().positive(),
-  precioUnitario: z.number().positive(),
+  precioUnitario: z.number().nonnegative(),
 })
 
 export type LineaCotizacion = z.infer<typeof esquemaLineaCotizacion>
@@ -104,6 +112,18 @@ export function calcularTotalesCotizacion(
   return { subtotal, igv, total: redondearMoneda(subtotal + igv) }
 }
 
+export function obtenerPrecioMinimoCotizacion(
+  producto: Pick<Producto, 'afectacionIgv' | 'precioMinimo'>,
+  preciosIncluyenIgv: boolean,
+) {
+  if (producto.precioMinimo === '') return null
+
+  const precioMinimoFinal = Number(producto.precioMinimo)
+  return producto.afectacionIgv === 'gravado' && !preciosIncluyenIgv
+    ? precioMinimoFinal / 1.18
+    : precioMinimoFinal
+}
+
 export function validarCotizacion(
   datos: DatosCotizacion,
   productos: readonly Producto[],
@@ -124,12 +144,12 @@ export function validarCotizacion(
       return 'Uno de los productos ya no está disponible'
     }
 
-    const precioMinimo = Number(producto.precioMinimo)
-    if (
-      producto.precioMinimo &&
-      Number(linea.precioUnitario) < precioMinimo
-    ) {
-      return `${producto.descripcion}: el precio unitario no puede ser menor a S/ ${precioMinimo.toFixed(2)}`
+    const precioMinimo = obtenerPrecioMinimoCotizacion(
+      producto,
+      datos.preciosIncluyenIgv,
+    )
+    if (precioMinimo !== null && Number(linea.precioUnitario) < precioMinimo) {
+      return `${producto.descripcion}: el precio unitario no puede ser menor a S/ ${precioMinimo.toFixed(4)}`
     }
   }
 

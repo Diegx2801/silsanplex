@@ -36,10 +36,12 @@ describe('compraService', () => {
         supplier_name: 'Proveedor SAC', document_type: 'factura', series: 'F001',
         document_number: '1', issue_date: '2026-08-31', payment_due_date: null,
         expected_delivery_date: null, warehouse_id: 'almacen-1', warehouse: 'Principal',
-        prices_include_tax: true, notes: null, status: 'draft', issued_at: null,
+        prices_include_tax: true, taxable_base: 0, exempt_amount: 20, unaffected_amount: 0,
+        subtotal: 20, tax: 0, total: 20, tax_calculation_status: 'calculated',
+        notes: null, status: 'draft', issued_at: null,
         received_at: null, created_at: '2026-08-31T12:00:00.000Z', purchase_order_items: [{
           id: 'linea-1', product_id: 'producto-1', product_code: 'P-1',
-          product_description: 'Producto', unit_of_measure: 'UND', batch_control: false,
+          product_description: 'Producto', unit_of_measure: 'UND', tax_affectation: 'exonerado', batch_control: false,
           quantity: 2, unit_cost: 10, lot: null, expiration_date: null,
           products: [{ expiration_control: false }], purchase_receipt_items: [],
         }],
@@ -48,7 +50,7 @@ describe('compraService', () => {
     }))
 
     await expect(listarCompras('org-1')).resolves.toEqual([
-      expect.objectContaining({ almacenId: 'almacen-1', almacen: 'Principal' }),
+      expect.objectContaining({ almacenId: 'almacen-1', almacen: 'Principal', lineas: [expect.objectContaining({ afectacionIgv: 'exonerado' })] }),
     ])
   })
 
@@ -84,6 +86,16 @@ describe('compraService', () => {
         warehouse_id: 'a1111111-1111-4111-8111-111111111111',
       }),
     })
+    const payload = supabaseMock.rpc.mock.calls[0][1].payload
+    expect(payload).not.toEqual(expect.objectContaining({
+      tax_affectation: expect.anything(),
+      taxable_base: expect.anything(),
+      exempt_amount: expect.anything(),
+      unaffected_amount: expect.anything(),
+      subtotal: expect.anything(),
+      tax: expect.anything(),
+      total: expect.anything(),
+    }))
   })
 
   it('lista únicamente ubicaciones activas de la organización', async () => {

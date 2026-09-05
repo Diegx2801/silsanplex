@@ -10,9 +10,13 @@ export const esquemaDatosVenta = z.object({
 
 export type DatosVenta = z.infer<typeof esquemaDatosVenta>
 
+export const esquemaEstadoCalculoTributario = z.enum(['calculated', 'pending', 'legacy_unknown'])
+export type EstadoCalculoTributario = z.infer<typeof esquemaEstadoCalculoTributario>
+
 export const esquemaLineaOperacionVenta = z.object({
   id: z.string().min(1),
   productoId: z.string().min(1),
+  tipoProducto: z.enum(['good', 'service']).optional(),
   productoCodigo: z.string().min(1),
   productoDescripcion: z.string().min(1),
   unidadMedida: z.string(),
@@ -22,6 +26,8 @@ export const esquemaLineaOperacionVenta = z.object({
   precioUnitario: z.number().nonnegative(),
   lote: z.string(),
   fechaVencimiento: z.string(),
+  // NULL identifica líneas históricas anteriores a P1B-1 sin dato reconstruible.
+  afectacionIgv: z.enum(['por-definir', 'gravado', 'exonerado', 'inafecto']).nullable().optional(),
   // Identidad persistente de la línea de pedido. El despacho canónico la usa
   // para consumir únicamente las reservas de su origen comercial.
   pedidoLineaId: z.string().uuid().optional(),
@@ -40,6 +46,13 @@ export const esquemaPedidoVenta = z.object({
   clienteDocumento: z.string().min(1),
   clienteNombre: z.string().min(1),
   preciosIncluyenIgv: z.boolean(),
+  baseGravada: z.number().nonnegative().nullable(),
+  montoExonerado: z.number().nonnegative().nullable(),
+  montoInafecto: z.number().nonnegative().nullable(),
+  subtotal: z.number().nonnegative(),
+  igv: z.number().nonnegative(),
+  total: z.number().nonnegative(),
+  estadoCalculoTributario: esquemaEstadoCalculoTributario,
   observacion: z.string(),
   lineas: z.array(esquemaLineaOperacionVenta).min(1),
   estado: z.enum(['confirmado', 'atendido', 'cancelado']),
@@ -66,6 +79,13 @@ export const esquemaVenta = z.object({
   fechaVenta: z.string().min(1),
   almacen: z.string().min(1),
   preciosIncluyenIgv: z.boolean(),
+  baseGravada: z.number().nonnegative().nullable(),
+  montoExonerado: z.number().nonnegative().nullable(),
+  montoInafecto: z.number().nonnegative().nullable(),
+  subtotal: z.number().nonnegative(),
+  igv: z.number().nonnegative(),
+  total: z.number().nonnegative(),
+  estadoCalculoTributario: esquemaEstadoCalculoTributario,
   lineas: z.array(esquemaLineaOperacionVenta).min(1),
   estado: z.enum(['registrada', 'despachada']),
   fechaRegistro: z.string().datetime(),

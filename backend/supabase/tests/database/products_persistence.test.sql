@@ -610,8 +610,8 @@ select results_eq(
   $$
     values
       ('IMP-001'::text, 'Caja'::text, 15.50::numeric, 'gravado'::text),
-      ('IMP-002'::text, 'Unidad'::text, 0.00::numeric, 'por-definir'::text),
-      ('IMP-003'::text, 'Paquete'::text, 8.00::numeric, 'por-definir'::text)
+      ('IMP-002'::text, 'Unidad'::text, null::numeric, 'por-definir'::text),
+      ('IMP-003'::text, 'Paquete'::text, null::numeric, 'por-definir'::text)
   $$,
   'la medida y la afectación de IGV se mapean sin inventar categorías'
 );

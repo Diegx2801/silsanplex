@@ -92,12 +92,12 @@ values (
 );
 insert into public.products (
   id, organization_id, code, description, unit_of_measure,
-  batch_control, created_by, updated_by
+  tax_affectation, batch_control, created_by, updated_by
 )
 values (
   'ca400000-0000-4000-8000-000000000001',
   'ca100000-0000-4000-8000-000000000001',
-  'CONC-ORDER-001', 'Producto pedidos concurrentes', 'UND', false,
+  'CONC-ORDER-001', 'Producto pedidos concurrentes', 'UND', 'gravado', false,
   'ca200000-0000-4000-8000-000000000001',
   'ca200000-0000-4000-8000-000000000001'
 );

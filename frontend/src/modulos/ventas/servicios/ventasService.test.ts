@@ -39,6 +39,34 @@ const cotizacion = {
 describe('ventasService', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it.each(['registrada', 'despachada'])('calcula atención de servicio para venta %s sin reservas', async (status) => {
+    supabaseMock.from.mockReturnValueOnce(cadena({
+      data: [{
+        id: 'venta-1', organization_id: 'org-1', order_id: 'pedido-1',
+        internal_number: 'VEN-000001', status,
+        prices_include_tax: true, taxable_base: 200, exempt_amount: 0, unaffected_amount: 0,
+        subtotal: 200, tax: 36, total: 236, tax_calculation_status: 'calculated',
+        orders: { order_number: 'PED-000001' },
+        customers: { document_number: '12345678', legal_name: 'Cliente' },
+        sale_items: [
+          { id: 's', order_item_id: 'servicio', product_id: 's', quantity: 2, unit_price: 100, products: { product_type: 'service' } },
+          { id: 'g', order_item_id: 'bien', product_id: 'g', quantity: 10, unit_price: 10, products: { product_type: 'good' } },
+        ],
+      }], error: null,
+    })).mockReturnValueOnce(cadena({
+      data: [{ source_id: 'bien', quantity: 10, quantity_consumed: 4, status: 'active' }], error: null,
+    }))
+    const [resultado] = await listarVentasPersistentes('org-1')
+    expect(resultado.lineas[0]).toMatchObject({
+      tipoProducto: 'service',
+      cantidadDespachada: status === 'despachada' ? 2 : 0,
+      cantidadPendiente: status === 'despachada' ? 0 : 2,
+    })
+    expect(resultado.lineas[1]).toMatchObject({
+      tipoProducto: 'good', cantidadDespachada: 4, cantidadPendiente: 6,
+    })
+  })
+
   it('crea pedidos mediante una RPC con clave idempotente y líneas normalizadas', async () => {
     supabaseMock.rpc.mockResolvedValue({ data: 'pedido-1', error: null })
 
@@ -54,6 +82,16 @@ describe('ventasService', () => {
     })
   })
 
+  it('traduce conflictos de idempotencia de pedidos y ventas', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'ORDER_IDEMPOTENCY_CONFLICT' } })
+    await expect(crearPedidoPersistente('org-1', cotizacion, 'warehouse-1')).rejects.toThrow('La clave de operación del pedido ya fue usada con datos diferentes')
+
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'SALE_IDEMPOTENCY_CONFLICT' } })
+    await expect(registrarVentaPersistente('org-1', 'pedido-1', {
+      tipoDocumento: 'factura', serie: 'f001', numeroDocumento: '1', fechaVenta: '2026-09-01', almacen: 'Principal',
+    })).rejects.toThrow('La clave de operación de la venta ya fue usada con datos diferentes')
+  })
+
   it('expone un error de stock asignable insuficiente', async () => {
     supabaseMock.rpc.mockResolvedValue({
       data: null,
@@ -64,21 +102,32 @@ describe('ventasService', () => {
       .rejects.toThrow('No hay stock asignable suficiente en el almacén seleccionado')
   })
 
+  it('expone la violación autoritativa del precio mínimo', async () => {
+    supabaseMock.rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'P0001', message: 'ORDER_MINIMUM_SALE_PRICE_VIOLATION' },
+    })
+
+    await expect(crearPedidoPersistente('org-1', cotizacion, 'warehouse-1'))
+      .rejects.toThrow('El precio unitario no puede ser menor al precio mínimo final del producto')
+  })
+
   it('mapea pedidos persistentes con cliente y líneas', async () => {
     supabaseMock.from
       .mockReturnValueOnce(cadena({
       data: [{
         id: 'pedido-1', organization_id: 'org-1', order_number: 'PED-000001', source_quote_id: 'cotizacion-1', source_quote_number: 'COT-000001',
-        customer_id: 'cliente-1', warehouse_id: 'warehouse-1', order_date: '2026-09-01', status: 'confirmado', prices_include_tax: true, notes: '', created_at: '2026-09-01T12:00:00.000Z',
+        customer_id: 'cliente-1', warehouse_id: 'warehouse-1', order_date: '2026-09-01', status: 'confirmado', prices_include_tax: true,
+        taxable_base: 16.95, exempt_amount: 0, unaffected_amount: 0, subtotal: 16.95, tax: 3.05, total: 20, tax_calculation_status: 'calculated', notes: '', created_at: '2026-09-01T12:00:00.000Z',
         customers: { document_type: 'RUC', document_number: '20548796321', legal_name: 'Cliente Uno' },
         warehouses: { code: 'MAIN', name: 'Almacén principal' },
-        order_items: [{ id: 'linea-1', product_id: 'producto-1', product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', quantity: 2, unit_price: 10 }],
+        order_items: [{ id: 'linea-1', product_id: 'producto-1', product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', tax_affectation: 'gravado', quantity: 2, unit_price: 10 }],
       }],
       error: null,
     }))
 
     await expect(listarPedidosPersistentes('org-1')).resolves.toEqual([
-      expect.objectContaining({ id: 'pedido-1', numero: 'PED-000001', clienteNombre: 'Cliente Uno', almacenId: 'warehouse-1', almacenNombre: 'Almacén principal', lineas: [expect.objectContaining({ cantidad: 2 })] }),
+      expect.objectContaining({ id: 'pedido-1', numero: 'PED-000001', clienteNombre: 'Cliente Uno', almacenId: 'warehouse-1', almacenNombre: 'Almacén principal', lineas: [expect.objectContaining({ cantidad: 2, afectacionIgv: 'gravado' })] }),
     ])
   })
 
@@ -88,9 +137,10 @@ describe('ventasService', () => {
       data: [{
         id: 'venta-1', organization_id: 'org-1', order_id: 'pedido-1', customer_id: 'cliente-1', internal_number: 'VEN-000001',
         document_type: 'factura', series: 'F001', document_number: '1', sale_date: '2026-09-01', warehouse: 'Principal', prices_include_tax: true,
+        taxable_base: 16.95, exempt_amount: 0, unaffected_amount: 0, subtotal: 16.95, tax: 3.05, total: 20, tax_calculation_status: 'calculated',
         status: 'registrada', created_at: '2026-09-01T12:00:00.000Z', orders: { order_number: 'PED-000001' },
         customers: { document_type: 'RUC', document_number: '20548796321', legal_name: 'Cliente Uno' },
-        sale_items: [{ id: 'sale-linea-1', order_item_id: 'linea-1', product_id: 'producto-1', product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', quantity: 2, unit_price: 10 }],
+        sale_items: [{ id: 'sale-linea-1', order_item_id: 'linea-1', product_id: 'producto-1', product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', tax_affectation: 'exonerado', quantity: 2, unit_price: 10 }],
       }],
       error: null,
     }))
@@ -102,7 +152,7 @@ describe('ventasService', () => {
     await expect(listarVentasPersistentes('org-1')).resolves.toEqual([
       expect.objectContaining({
         pedidoId: 'pedido-1', pedidoNumero: 'PED-000001', numeroInterno: 'VEN-000001', clienteId: 'cliente-1',
-        lineas: [expect.objectContaining({ cantidadDespachada: 1, cantidadPendiente: 1 })],
+        lineas: [expect.objectContaining({ cantidadDespachada: 1, cantidadPendiente: 1, afectacionIgv: 'exonerado' })],
       }),
     ])
   })

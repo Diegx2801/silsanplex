@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import type { Producto } from '@/modulos/productos/modelo/producto'
+import type { AfectacionTributaria, Producto } from '@/modulos/productos/modelo/producto'
 import type { Proveedor } from '@/modulos/proveedores/modelo/proveedor'
 
 export {
@@ -96,6 +96,8 @@ export const esquemaLineaCompra = z.object({
   costoUnitario: z.number().positive(),
   lote: z.string(),
   fechaVencimiento: z.string(),
+  // NULL identifica líneas históricas anteriores a P1B-1 sin dato reconstruible.
+  afectacionIgv: z.enum(['por-definir', 'gravado', 'exonerado', 'inafecto']).nullable().optional(),
 })
 
 export type LineaCompra = z.infer<typeof esquemaLineaCompra>
@@ -135,14 +137,27 @@ export const esquemaCompra = z.object({
   fechaRegistro: z.string().datetime(),
   fechaEmisionOrden: z.string().datetime().nullable(),
   fechaRecepcion: z.string().datetime().nullable(),
+  baseGravada: z.number().nonnegative().nullable().optional(),
+  montoExonerado: z.number().nonnegative().nullable().optional(),
+  montoInafecto: z.number().nonnegative().nullable().optional(),
+  subtotal: z.number().nonnegative().nullable().optional(),
+  igv: z.number().nonnegative().nullable().optional(),
+  total: z.number().nonnegative().nullable().optional(),
+  estadoCalculoTributario: z.enum(['calculated', 'pending', 'legacy_unknown']).optional(),
 })
 
 export type Compra = z.infer<typeof esquemaCompra>
 
+export type EstadoCalculoTributario = 'calculated' | 'pending' | 'legacy_unknown'
+
 export interface TotalesCompra {
-  subtotal: number
-  igv: number
-  total: number
+  estado: EstadoCalculoTributario
+  baseGravada: number | null
+  montoExonerado: number | null
+  montoInafecto: number | null
+  subtotal: number | null
+  igv: number | null
+  total: number | null
 }
 
 function redondearMoneda(valor: number) {
@@ -150,23 +165,64 @@ function redondearMoneda(valor: number) {
 }
 
 export function calcularTotalesCompra(
-  lineas: readonly Pick<LineaCompra, 'cantidad' | 'costoUnitario'>[],
+  lineas: readonly (Pick<LineaCompra, 'cantidad' | 'costoUnitario'> & {
+    afectacionIgv?: AfectacionTributaria | null
+  })[],
   preciosIncluyenIgv: boolean,
 ): TotalesCompra {
-  const importeLineas = lineas.reduce(
-    (total, linea) => total + linea.cantidad * linea.costoUnitario,
-    0,
-  )
-
-  if (preciosIncluyenIgv) {
-    const total = redondearMoneda(importeLineas)
-    const subtotal = redondearMoneda(total / 1.18)
-    return { subtotal, igv: redondearMoneda(total - subtotal), total }
+  if (lineas.some((linea) => !linea.afectacionIgv || linea.afectacionIgv === 'por-definir')) {
+    return {
+      estado: 'pending',
+      baseGravada: null,
+      montoExonerado: null,
+      montoInafecto: null,
+      subtotal: null,
+      igv: null,
+      total: null,
+    }
   }
 
-  const subtotal = redondearMoneda(importeLineas)
-  const igv = redondearMoneda(subtotal * 0.18)
-  return { subtotal, igv, total: redondearMoneda(subtotal + igv) }
+  const acumulado = lineas.reduce(
+    (totales, linea) => {
+      const importe = redondearMoneda(linea.cantidad * linea.costoUnitario)
+      const afectacion = linea.afectacionIgv
+      if (afectacion === 'gravado') {
+        const base = preciosIncluyenIgv
+          ? redondearMoneda(importe / 1.18)
+          : importe
+        const igv = preciosIncluyenIgv
+          ? redondearMoneda(importe - base)
+          : redondearMoneda(base * 0.18)
+        return {
+          baseGravada: totales.baseGravada + base,
+          montoExonerado: totales.montoExonerado,
+          montoInafecto: totales.montoInafecto,
+          igv: totales.igv + igv,
+        }
+      }
+      return {
+        baseGravada: totales.baseGravada,
+        montoExonerado: totales.montoExonerado + (afectacion === 'exonerado' ? importe : 0),
+        montoInafecto: totales.montoInafecto + (afectacion === 'inafecto' ? importe : 0),
+        igv: totales.igv,
+      }
+    },
+    { baseGravada: 0, montoExonerado: 0, montoInafecto: 0, igv: 0 },
+  )
+  const baseGravada = redondearMoneda(acumulado.baseGravada)
+  const montoExonerado = redondearMoneda(acumulado.montoExonerado)
+  const montoInafecto = redondearMoneda(acumulado.montoInafecto)
+  const subtotal = redondearMoneda(baseGravada + montoExonerado + montoInafecto)
+  const igv = redondearMoneda(acumulado.igv)
+  return {
+    estado: 'calculated',
+    baseGravada,
+    montoExonerado,
+    montoInafecto,
+    subtotal,
+    igv,
+    total: redondearMoneda(subtotal + igv),
+  }
 }
 
 export function validarCompra(
@@ -238,6 +294,7 @@ export function crearCompra(
         costoUnitario: Number(linea.costoUnitario),
         lote: linea.lote,
         fechaVencimiento: linea.fechaVencimiento,
+        afectacionIgv: producto.afectacionIgv || 'por-definir',
       }
     }),
     estado: 'borrador',

@@ -79,11 +79,11 @@ insert into public.customers (
 );
 insert into public.products (
   id, organization_id, code, description, unit_of_measure,
-  batch_control, expiration_control, created_by, updated_by
+  tax_affectation, batch_control, expiration_control, created_by, updated_by
 ) values (
   'bc400000-0000-4000-8000-000000000001',
   'bc100000-0000-4000-8000-000000000001',
-  'CONC-RES-001', 'Producto reservas concurrentes', 'UND', false, false,
+  'CONC-RES-001', 'Producto reservas concurrentes', 'UND', 'gravado', false, false,
   'bc200000-0000-4000-8000-000000000001',
   'bc200000-0000-4000-8000-000000000001'
 );

@@ -80,6 +80,14 @@ permiso y organización activos.
 Despliegue: aplicar `20260905010000_add_repair_technician_role.sql`, desplegar
 la Edge Function `admin-users` y publicar el frontend. La asignación utiliza
 las operaciones existentes de administración y queda en su auditoría.
+## Precio mínimo pendiente
+
+P1C no aplica `products.minimum_sale_price` a las cotizaciones de Reparaciones.
+El catálogo expresa ese mínimo como precio final por unidad base en PEN, mientras
+que Reparaciones admite cotizaciones en PEN y USD y todavía no conserva un
+snapshot de tipo de cambio adecuado. El enforcement debe abordarse en una fase
+separada después de definir y persistir ese snapshot; no se debe comparar usando
+un tipo de cambio vigente ni convertir documentos históricos.
 
 ## Validación local
 

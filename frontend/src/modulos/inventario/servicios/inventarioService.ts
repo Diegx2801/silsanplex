@@ -83,6 +83,7 @@ function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
 }
 
 function mensajeError(error: { code?: string; message?: string }) {
+  if (error.message?.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no generan stock ni movimientos de inventario'
   if (error.message?.includes('INVENTORY_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock disponible'
   if (error.message?.includes('INVENTORY_RESERVED_STOCK')) return 'La cantidad afectaría unidades reservadas por otro proceso'
   if (error.message?.includes('INVENTORY_FEFO_VIOLATION')) return 'Debes utilizar primero el lote con vencimiento más próximo'

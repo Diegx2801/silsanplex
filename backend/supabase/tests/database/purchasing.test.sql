@@ -54,9 +54,9 @@ insert into public.user_roles (organization_id, user_id, role_code) values
   ('d1111111-1111-4111-8111-111111111111', 'e3333333-3333-4333-8333-333333333333', 'GERENCIA'),
   ('d2222222-2222-4222-8222-222222222222', 'e4444444-4444-4444-8444-444444444444', 'COMPRAS');
 
-insert into public.products (id, organization_id, code, description, unit_of_measure, batch_control, created_by, updated_by) values
-  ('f1111111-1111-4111-8111-111111111111', 'd1111111-1111-4111-8111-111111111111', 'MED-001', 'Producto con lote', 'UND', true, 'e1111111-1111-4111-8111-111111111111', 'e1111111-1111-4111-8111-111111111111'),
-  ('f2222222-2222-4222-8222-222222222222', 'd1111111-1111-4111-8111-111111111111', 'MED-002', 'Producto sin lote', 'UND', false, 'e1111111-1111-4111-8111-111111111111', 'e1111111-1111-4111-8111-111111111111');
+insert into public.products (id, organization_id, code, description, unit_of_measure, batch_control, tax_affectation, created_by, updated_by) values
+  ('f1111111-1111-4111-8111-111111111111', 'd1111111-1111-4111-8111-111111111111', 'MED-001', 'Producto con lote', 'UND', true, 'gravado', 'e1111111-1111-4111-8111-111111111111', 'e1111111-1111-4111-8111-111111111111'),
+  ('f2222222-2222-4222-8222-222222222222', 'd1111111-1111-4111-8111-111111111111', 'MED-002', 'Producto sin lote', 'UND', false, 'gravado', 'e1111111-1111-4111-8111-111111111111', 'e1111111-1111-4111-8111-111111111111');
 
 insert into public.warehouses (id, organization_id, code, name, created_by, updated_by) values
   ('a1111111-1111-4111-8111-111111111111', 'd1111111-1111-4111-8111-111111111111', 'ALM-01', 'Almacén principal', 'e2222222-2222-4222-8222-222222222222', 'e2222222-2222-4222-8222-222222222222');

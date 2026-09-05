@@ -36,6 +36,7 @@ export function DialogoMovimientoInventario({
   alGuardar,
   alRestaurarFoco,
 }: DialogoMovimientoInventarioProps) {
+  const productosInventariables = productos.filter((producto) => producto.tipo === 'good')
   const {
     register,
     handleSubmit,
@@ -46,7 +47,7 @@ export function DialogoMovimientoInventario({
   } = useForm<DatosMovimientoInventario>({
     resolver: zodResolver(esquemaDatosMovimientoInventario),
     defaultValues: {
-      productoId: productos[0]?.id ?? '',
+      productoId: productosInventariables[0]?.id ?? '',
       tipo: 'entrada',
       cantidad: '',
       almacen: almacenes[0]?.nombre ?? 'Almacen principal',
@@ -65,8 +66,8 @@ export function DialogoMovimientoInventario({
   const almacenId = watch('almacenId')
   const estadoStock = watch('estadoStock')
   const producto = useMemo(
-    () => productos.find((item) => item.id === productoId),
-    [productoId, productos],
+    () => productosInventariables.find((item) => item.id === productoId),
+    [productoId, productosInventariables],
   )
   const esSalida = movimientoEsSalida(tipo)
   const usarFefo = tipo === 'salida' && estadoStock === 'available'
@@ -188,7 +189,7 @@ export function DialogoMovimientoInventario({
                   aria-invalid={Boolean(errors.productoId)}
                   {...register('productoId')}
                 >
-                  {productos.map((item) => (
+                  {productosInventariables.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.codigo} · {item.descripcion}
                     </option>
