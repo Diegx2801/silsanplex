@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form'
 import { Button } from '@/components/ui/button'
 import { useCandidatosFefo } from '@/modulos/inventario/estado/useCandidatosFefo'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
+import type { CandidatoFefo } from '@/modulos/inventario/modelo/inventario'
 import {
   esquemaDatosConsumoParte,
   esquemaDatosReservaParte,
@@ -24,7 +25,7 @@ interface DialogoReservaParteProps {
   almacenes: readonly Almacen[]
   ubicaciones: readonly UbicacionAlmacen[]
   alCambiarApertura: (abierto: boolean) => void
-  alGuardar: (datos: DatosReservaParte) => Promise<string | undefined>
+  alGuardar: (datos: DatosReservaParte, operationKey: string) => Promise<string | undefined>
 }
 
 export function DialogoReservaParte({
@@ -39,6 +40,10 @@ export function DialogoReservaParte({
   const primerAlmacen = almacenes[0]?.id ?? ''
   const primeraUbicacion = ubicaciones.find((item) => item.almacenId === primerAlmacen)?.id ?? ''
   const [mensaje, setMensaje] = useState('')
+  const operacion = useRef<{ firma: string; clave: string } | null>(null)
+  const [seleccionEnviada, setSeleccionEnviada] = useState<{
+    productoId: string; almacenId: string; candidato: CandidatoFefo
+  } | null>(null)
   const {
     register,
     handleSubmit,
@@ -65,9 +70,15 @@ export function DialogoReservaParte({
   const almacenId = watch('almacenId')
   const { candidatos, cargando: cargandoFefo, error: errorFefo } =
     useCandidatosFefo(productoId, almacenId, abierto)
-  const candidatoFefo = candidatos[0]
+  const conservaSeleccion = seleccionEnviada?.productoId === productoId
+    && seleccionEnviada?.almacenId === almacenId
+  const candidatoFefo = conservaSeleccion ? seleccionEnviada.candidato : candidatos[0]
 
   useEffect(() => {
+    // Una recarga del catálogo no debe borrar una operación pendiente de reintento.
+    if (abierto && operacion.current) return
+    operacion.current = null
+    setSeleccionEnviada(null)
     if (abierto) {
       reset({
         productoId: productos[0]?.id ?? '',
@@ -91,11 +102,6 @@ export function DialogoReservaParte({
   }, [almacenId, primerAlmacen, setValue])
 
   useEffect(() => {
-    const ubicacion = ubicaciones.find((item) => item.almacenId === almacenId)
-    if (ubicacion) setValue('ubicacionId', ubicacion.id)
-  }, [almacenId, setValue, ubicaciones])
-
-  useEffect(() => {
     setValue('ubicacionId', candidatoFefo?.ubicacionId ?? '')
     setValue('lote', candidatoFefo?.lote ?? '')
     setValue('fechaVencimiento', candidatoFefo?.fechaVencimiento ?? '')
@@ -116,7 +122,14 @@ export function DialogoReservaParte({
       return
     }
     setMensaje('')
-    const error = await alGuardar(datos)
+    const firma = JSON.stringify(datos)
+    if (operacion.current?.firma !== firma) {
+      operacion.current = { firma, clave: crypto.randomUUID() }
+    }
+    if (candidatoFefo) {
+      setSeleccionEnviada({ productoId, almacenId, candidato: candidatoFefo })
+    }
+    const error = await alGuardar(datos, operacion.current.clave)
     if (error) {
       setMensaje(error)
       return

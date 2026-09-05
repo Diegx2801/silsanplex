@@ -232,7 +232,7 @@ describe('reparacionesService', () => {
       esGarantia: true,
     } as const
 
-    await crearReparacion('org-1', datos)
+    await crearReparacion('org-1', datos, '00000000-0000-4000-8000-000000000010')
     await actualizarReparacion('org-1', 'repair-1', datos, true, 7)
 
     for (const [, llamada] of supabaseMock.rpc.mock.calls) {
@@ -244,6 +244,7 @@ describe('reparacionesService', () => {
         organization_id: 'org-1',
         status: 'warranty',
         serial_number: 'SER-1',
+        operation_key: '00000000-0000-4000-8000-000000000010',
       }),
     })
     expect(supabaseMock.rpc).toHaveBeenNthCalledWith(2, 'update_repair', {
@@ -353,13 +354,14 @@ describe('reparacionesService', () => {
       fechaVencimiento: '',
       cantidadSolicitada: '2',
       notas: '',
-    }, 12)
+    }, '00000000-0000-4000-8000-000000000011', 12)
 
     expect(supabaseMock.rpc).toHaveBeenCalledWith('reserve_repair_part', {
       payload: expect.objectContaining({
         organization_id: 'org-1',
         repair_id: 'repair-1',
         expected_lock_version: 12,
+        operation_key: '00000000-0000-4000-8000-000000000011',
         stock_status: 'available',
       }),
     })
@@ -411,7 +413,7 @@ describe('reparacionesService', () => {
         precioUnitario: '80',
         gravable: true,
       }],
-    }, true, 13)
+    }, true, '00000000-0000-4000-8000-000000000012', 13)
 
     expect(supabaseMock.rpc).toHaveBeenCalledWith('revise_repair_quote', {
       payload: expect.objectContaining({
@@ -419,6 +421,7 @@ describe('reparacionesService', () => {
         repair_id: 'repair-1',
         rejected_quote_id: 'quote-1',
         expected_lock_version: 13,
+        operation_key: '00000000-0000-4000-8000-000000000012',
         submit: true,
         items: [{
           line_type: 'labor',
@@ -475,7 +478,14 @@ describe('reparacionesService', () => {
 
     await asignarReparacion('org-1', 'repair-1', 'technician-1', 20)
     await cambiarEstadoReparacion('org-1', 'repair-1', 'diagnosis', 'Revisión', 21)
-    await guardarCotizacionReparacion('org-1', 'repair-1', cotizacion, true, 22)
+    await guardarCotizacionReparacion(
+      'org-1',
+      'repair-1',
+      cotizacion,
+      true,
+      '00000000-0000-4000-8000-000000000013',
+      22,
+    )
     await aprobarCotizacionReparacion('org-1', 'repair-1', 'quote-1', observacion, 23)
     await rechazarCotizacionReparacion('org-1', 'repair-1', 'quote-1', observacion, 24)
     await cancelarParteReparacion('org-1', 'part-1', observacion, 25)
@@ -491,7 +501,12 @@ describe('reparacionesService', () => {
 
     expect(supabaseMock.rpc).toHaveBeenCalledWith('assign_repair', expect.objectContaining({ requested_expected_lock_version: 20 }))
     expect(supabaseMock.rpc).toHaveBeenCalledWith('change_repair_status', expect.objectContaining({ requested_expected_lock_version: 21 }))
-    expect(supabaseMock.rpc).toHaveBeenCalledWith('save_repair_quote', { payload: expect.objectContaining({ expected_lock_version: 22 }) })
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('save_repair_quote', {
+      payload: expect.objectContaining({
+        expected_lock_version: 22,
+        operation_key: '00000000-0000-4000-8000-000000000013',
+      }),
+    })
     expect(supabaseMock.rpc).toHaveBeenCalledWith('approve_repair_quote', expect.objectContaining({ requested_expected_lock_version: 23 }))
     expect(supabaseMock.rpc).toHaveBeenCalledWith('reject_repair_quote', expect.objectContaining({ requested_expected_lock_version: 24 }))
     expect(supabaseMock.rpc).toHaveBeenCalledWith('cancel_repair_part', expect.objectContaining({ requested_expected_lock_version: 25 }))

@@ -148,11 +148,11 @@ interface DetalleReparacionProps {
   alCambiarEstado: (reparacionId: string, estado: EstadoReparacion, observacion: string, expectedLockVersion: number) => Promise<string | undefined>
   alRegistrarDiagnostico: (reparacionId: string, datos: DatosDiagnostico, expectedLockVersion: number) => Promise<string | undefined>
   alRegistrarSolucion: (reparacionId: string, datos: DatosSolucionReparacion, expectedLockVersion: number) => Promise<string | undefined>
-  alGuardarCotizacion: (reparacionId: string, datos: DatosCotizacion, enviar: boolean, expectedLockVersion: number) => Promise<string | undefined>
-  alRevisarCotizacion: (reparacionId: string, cotizacionId: string, datos: DatosCotizacion, enviar: boolean, expectedLockVersion: number) => Promise<string | undefined>
+  alGuardarCotizacion: (reparacionId: string, datos: DatosCotizacion, enviar: boolean, operationKey: string, expectedLockVersion: number) => Promise<string | undefined>
+  alRevisarCotizacion: (reparacionId: string, cotizacionId: string, datos: DatosCotizacion, enviar: boolean, operationKey: string, expectedLockVersion: number) => Promise<string | undefined>
   alAprobarCotizacion: (reparacionId: string, cotizacionId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
   alRechazarCotizacion: (reparacionId: string, cotizacionId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
-  alReservarParte: (reparacionId: string, datos: DatosReservaParte, expectedLockVersion: number) => Promise<string | undefined>
+  alReservarParte: (reparacionId: string, datos: DatosReservaParte, operationKey: string, expectedLockVersion: number) => Promise<string | undefined>
   alConsumirParte: (parteId: string, datos: DatosConsumoParte, operationKey: string, expectedLockVersion: number) => Promise<string | undefined>
   alCancelarParte: (parteId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
   alRegistrarPrueba: (reparacionId: string, datos: DatosPrueba, expectedLockVersion: number) => Promise<string | undefined>
@@ -344,9 +344,9 @@ export function DetalleReparacion({
             esRevision={accion.reparacion.estado === 'rejected'}
             productos={productos}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(datos, enviar) => accion.reparacion.estado === 'rejected' && accion.cotizacion
-              ? ejecutar(() => alRevisarCotizacion(accion.reparacion.id, accion.cotizacion!.id, datos, enviar, accion.reparacion.lockVersion), enviar ? 'Revisión enviada a aprobación.' : 'Revisión guardada como borrador.')
-              : ejecutar(() => alGuardarCotizacion(accion.reparacion.id, datos, enviar, accion.reparacion.lockVersion), enviar ? 'Cotización enviada a aprobación.' : 'Borrador de cotización guardado.')}
+            alGuardar={(datos, enviar, operationKey) => accion.reparacion.estado === 'rejected' && accion.cotizacion
+              ? ejecutar(() => alRevisarCotizacion(accion.reparacion.id, accion.cotizacion!.id, datos, enviar, operationKey, accion.reparacion.lockVersion), enviar ? 'Revisión enviada a aprobación.' : 'Revisión guardada como borrador.')
+              : ejecutar(() => alGuardarCotizacion(accion.reparacion.id, datos, enviar, operationKey, accion.reparacion.lockVersion), enviar ? 'Cotización enviada a aprobación.' : 'Borrador de cotización guardado.')}
           />
           {accion.cotizacion ? (
             <>
@@ -377,7 +377,7 @@ export function DetalleReparacion({
             almacenes={almacenes}
             ubicaciones={ubicaciones}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(datos) => ejecutar(() => alReservarParte(accion.reparacion.id, datos, accion.reparacion.lockVersion), 'Repuesto reservado.')}
+            alGuardar={(datos, operationKey) => ejecutar(() => alReservarParte(accion.reparacion.id, datos, operationKey, accion.reparacion.lockVersion), 'Repuesto reservado.')}
           />
           {accion.parte ? (
             <>

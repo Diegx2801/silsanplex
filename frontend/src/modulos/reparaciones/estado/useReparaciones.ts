@@ -113,7 +113,8 @@ export function useReparaciones(
   }
 
   const crearMutation = useMutation({
-    mutationFn: (datos: DatosReparacion) => crearReparacion(organizationId, datos),
+    mutationFn: ({ datos, operationKey }: { datos: DatosReparacion; operationKey: string }) =>
+      crearReparacion(organizationId, datos, operationKey),
     onSuccess: invalidar,
   })
   const actualizarMutation = useMutation({
@@ -160,13 +161,15 @@ export function useReparaciones(
       id,
       datos,
       enviar,
+      operationKey,
       expectedLockVersion,
     }: {
       id: string
       datos: DatosCotizacion
       enviar: boolean
+      operationKey: string
       expectedLockVersion: number
-    }) => guardarCotizacionReparacion(organizationId, id, datos, enviar, expectedLockVersion),
+    }) => guardarCotizacionReparacion(organizationId, id, datos, enviar, operationKey, expectedLockVersion),
     onSuccess: invalidar,
     onError: invalidarSiHayConflicto,
   })
@@ -191,14 +194,16 @@ export function useReparaciones(
       quoteId,
       datos,
       enviar,
+      operationKey,
       expectedLockVersion,
     }: {
       repairId: string
       quoteId: string
       datos: DatosCotizacion
       enviar: boolean
+      operationKey: string
       expectedLockVersion: number
-    }) => revisarCotizacionReparacion(organizationId, repairId, quoteId, datos, enviar, expectedLockVersion),
+    }) => revisarCotizacionReparacion(organizationId, repairId, quoteId, datos, enviar, operationKey, expectedLockVersion),
     onSuccess: invalidar,
     onError: invalidarSiHayConflicto,
   })
@@ -221,12 +226,14 @@ export function useReparaciones(
     mutationFn: ({
       repairId,
       datos,
+      operationKey,
       expectedLockVersion,
     }: {
       repairId: string
       datos: DatosReservaParte
+      operationKey: string
       expectedLockVersion: number
-    }) => reservarParteReparacion(organizationId, repairId, datos, expectedLockVersion),
+    }) => reservarParteReparacion(organizationId, repairId, datos, operationKey, expectedLockVersion),
     onSuccess: invalidar,
     onError: invalidarSiHayConflicto,
   })
@@ -302,9 +309,9 @@ export function useReparaciones(
     registrandoPrueba: pruebaMutation.isPending,
     entregando: entregaMutation.isPending,
     cancelando: cancelacionMutation.isPending,
-    crear: async (datos: DatosReparacion) => {
+    crear: async (datos: DatosReparacion, operationKey: string) => {
       try {
-        await crearMutation.mutateAsync(datos)
+        await crearMutation.mutateAsync({ datos, operationKey })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo registrar la reparación.')
@@ -350,9 +357,9 @@ export function useReparaciones(
         return mensajeDeError(error, 'No se pudo guardar la solución aplicada.')
       }
     },
-    guardarCotizacion: async (id: string, datos: DatosCotizacion, enviar: boolean, expectedLockVersion: number) => {
+    guardarCotizacion: async (id: string, datos: DatosCotizacion, enviar: boolean, operationKey: string, expectedLockVersion: number) => {
       try {
-        await cotizacionMutation.mutateAsync({ id, datos, enviar, expectedLockVersion })
+        await cotizacionMutation.mutateAsync({ id, datos, enviar, operationKey, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo guardar la cotización.')
@@ -363,10 +370,11 @@ export function useReparaciones(
       quoteId: string,
       datos: DatosCotizacion,
       enviar: boolean,
+      operationKey: string,
       expectedLockVersion: number,
     ) => {
       try {
-        await revisarCotizacionMutation.mutateAsync({ repairId, quoteId, datos, enviar, expectedLockVersion })
+        await revisarCotizacionMutation.mutateAsync({ repairId, quoteId, datos, enviar, operationKey, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo crear la revisión de la cotización.')
@@ -398,9 +406,9 @@ export function useReparaciones(
         return mensajeDeError(error, 'No se pudo rechazar la cotización.')
       }
     },
-    reservarParte: async (repairId: string, datos: DatosReservaParte, expectedLockVersion: number) => {
+    reservarParte: async (repairId: string, datos: DatosReservaParte, operationKey: string, expectedLockVersion: number) => {
       try {
-        await reservaMutation.mutateAsync({ repairId, datos, expectedLockVersion })
+        await reservaMutation.mutateAsync({ repairId, datos, operationKey, expectedLockVersion })
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo reservar el repuesto.')

@@ -165,6 +165,7 @@ select set_config(
 select lives_ok($$
   select public.create_repair('{
     "organization_id":"c1100000-0000-4000-8000-000000000001",
+    "operation_key":"c1a00000-0000-4000-8000-000000000001",
     "customer_id":"c1400000-0000-4000-8000-000000000001",
     "product_id":"c1500000-0000-4000-8000-000000000001",
     "problem_description":"Exercise aggregate concurrency",
@@ -279,6 +280,7 @@ $$, 'stock is available for the idempotent consumption scenario');
 select lives_ok($$
   select public.reserve_repair_part('{
     "organization_id":"c1100000-0000-4000-8000-000000000001",
+    "operation_key":"c1a00000-0000-4000-8000-000000000002",
     "repair_id":"c1800000-0000-4000-8000-000000000002",
     "expected_lock_version":1,
     "product_id":"c1500000-0000-4000-8000-000000000001",

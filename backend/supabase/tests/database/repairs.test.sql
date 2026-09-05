@@ -317,13 +317,13 @@ select set_config(
 );
 
 select lives_ok($$
-  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"No enciende","customer_reference":"SERIAL_FALSE"}'::jsonb)
+  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","operation_key":"f9100000-0000-4000-8000-000000000001","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"No enciende","customer_reference":"SERIAL_FALSE"}'::jsonb)
 $$, 'VENTAS puede crear una reparacion sin numero de serie');
 select throws_ok($$
-  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000002","problem_description":"Falla de equipo","customer_reference":"SERIAL_MISSING"}'::jsonb)
+  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","operation_key":"f9100000-0000-4000-8000-000000000002","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000002","problem_description":"Falla de equipo","customer_reference":"SERIAL_MISSING"}'::jsonb)
 $$, 'P0001', 'REPAIR_SERIAL_NUMBER_RULE_VIOLATION', 'exige serie cuando el producto la controla');
 select lives_ok($$
-  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000002","serial_number":"SN-0001","problem_description":"Falla de equipo","customer_reference":"SERIAL_OK"}'::jsonb)
+  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","operation_key":"f9100000-0000-4000-8000-000000000003","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000002","serial_number":"SN-0001","problem_description":"Falla de equipo","customer_reference":"SERIAL_OK"}'::jsonb)
 $$, 'permite una serie para producto serializado');
 select is(
   (select serial_number from public.repairs where customer_reference = 'SERIAL_OK'),
@@ -332,7 +332,7 @@ select is(
 );
 
 select lives_ok($$
-  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"No carga","priority":"high","customer_reference":"FLOW"}'::jsonb)
+  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","operation_key":"f9100000-0000-4000-8000-000000000004","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"No carga","priority":"high","customer_reference":"FLOW"}'::jsonb)
 $$, 'VENTAS puede crear la reparacion del flujo principal');
 select lives_ok($$
   select public.update_repair(jsonb_build_object(
@@ -413,6 +413,7 @@ select set_config(
 select lives_ok($$
   select public.save_repair_quote(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000005'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'FLOW'),
     'expected_lock_version', pg_temp.repair_lock_version('FLOW'),
     'currency', 'PEN',
@@ -436,6 +437,7 @@ select is(
 select throws_ok($$
   select public.save_repair_quote(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000006'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'FLOW'),
     'expected_lock_version', pg_temp.repair_lock_version('FLOW'),
     'items', jsonb_build_array(
@@ -455,6 +457,7 @@ select results_eq(
 select lives_ok($$
   select public.save_repair_quote(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000007'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'FLOW'),
     'expected_lock_version', pg_temp.repair_lock_version('FLOW'),
     'id', (select id from public.repair_quotes where repair_id = (select id from public.repairs where customer_reference = 'FLOW')),
@@ -513,6 +516,7 @@ $$, 'quote_approved transiciona a in_repair');
 select lives_ok($$
   select public.reserve_repair_part(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000008'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'FLOW'),
     'expected_lock_version', pg_temp.repair_lock_version('FLOW'),
     'product_id', 'f5000000-0000-4000-8000-000000000001'::uuid,
@@ -539,6 +543,7 @@ select is(
 select throws_ok($$
   select public.reserve_repair_part(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000009'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'FLOW'),
     'expected_lock_version', pg_temp.repair_lock_version('FLOW'),
     'product_id', 'f5000000-0000-4000-8000-000000000001'::uuid,
@@ -625,13 +630,14 @@ select is(
 );
 
 select lives_ok($$
-  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000004","problem_description":"Repuesto con vencimiento","customer_reference":"EXPIRATION"}'::jsonb)
+  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","operation_key":"f9100000-0000-4000-8000-000000000010","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000004","problem_description":"Repuesto con vencimiento","customer_reference":"EXPIRATION"}'::jsonb)
 $$, 'crea reparacion para probar vencimiento');
 select lives_ok($$ select public.change_repair_status('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'EXPIRATION'), 'diagnosis', null, pg_temp.repair_lock_version('EXPIRATION')) $$, 'vencimiento diagnosis');
 select lives_ok($$ select public.change_repair_status('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'EXPIRATION'), 'in_repair', null, pg_temp.repair_lock_version('EXPIRATION')) $$, 'vencimiento in_repair');
 select lives_ok($$
   select public.reserve_repair_part(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000011'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'EXPIRATION'),
     'expected_lock_version', pg_temp.repair_lock_version('EXPIRATION'),
     'product_id', 'f5000000-0000-4000-8000-000000000004'::uuid,
@@ -673,6 +679,7 @@ select results_eq(
 select throws_ok($$
   select public.reserve_repair_part(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000012'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'EXPIRATION'),
     'expected_lock_version', pg_temp.repair_lock_version('EXPIRATION'),
     'product_id', 'f5000000-0000-4000-8000-000000000004'::uuid,
@@ -732,7 +739,7 @@ select is(
 );
 
 select lives_ok($$
-  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","customer_id":"f4000000-0000-4000-8000-000000000002","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"Prueba de gates","customer_reference":"GATES"}'::jsonb)
+  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","operation_key":"f9100000-0000-4000-8000-000000000013","customer_id":"f4000000-0000-4000-8000-000000000002","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"Prueba de gates","customer_reference":"GATES"}'::jsonb)
 $$, 'crea reparacion para gates de entrega');
 select lives_ok($$ select public.change_repair_status('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'GATES'), 'diagnosis', null, pg_temp.repair_lock_version('GATES')) $$, 'gates diagnosis');
 select lives_ok($$ select public.change_repair_status('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'GATES'), 'in_repair', null, pg_temp.repair_lock_version('GATES')) $$, 'gates in_repair');
@@ -795,7 +802,7 @@ select throws_ok($$
 $$, 'P0001', 'REPAIR_FAILED_TEST_PRESENT', 'ready rechaza una prueba fallida del ciclo vigente');
 
 select lives_ok($$
-  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","customer_id":"f4000000-0000-4000-8000-000000000002","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"Parte pendiente","customer_reference":"PENDING_PART"}'::jsonb)
+  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","operation_key":"f9100000-0000-4000-8000-000000000014","customer_id":"f4000000-0000-4000-8000-000000000002","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"Parte pendiente","customer_reference":"PENDING_PART"}'::jsonb)
 $$, 'crea reparacion con parte pendiente');
 select lives_ok($$ select public.assign_repair('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'PENDING_PART'), 'f2000000-0000-4000-8000-000000000004', pg_temp.repair_lock_version('PENDING_PART')) $$, 'asigna tecnico a reparacion con parte');
 select lives_ok($$ select public.change_repair_status('f1000000-0000-4000-8000-000000000001', (select id from public.repairs where customer_reference = 'PENDING_PART'), 'diagnosis', null, pg_temp.repair_lock_version('PENDING_PART')) $$, 'parte pendiente diagnosis');
@@ -803,6 +810,7 @@ select lives_ok($$ select public.change_repair_status('f1000000-0000-4000-8000-0
 select lives_ok($$
   select public.reserve_repair_part(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000015'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'PENDING_PART'),
     'expected_lock_version', pg_temp.repair_lock_version('PENDING_PART'),
     'product_id', 'f5000000-0000-4000-8000-000000000001'::uuid,
@@ -846,7 +854,7 @@ select set_config(
   true
 );
 select lives_ok($$
-  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"Cotizacion rechazada","customer_reference":"REJECT"}'::jsonb)
+  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","operation_key":"f9100000-0000-4000-8000-000000000016","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"Cotizacion rechazada","customer_reference":"REJECT"}'::jsonb)
 $$, 'crea reparacion para rechazo');
 select set_config(
   'request.jwt.claims',
@@ -857,6 +865,7 @@ select lives_ok($$ select public.change_repair_status('f1000000-0000-4000-8000-0
 select lives_ok($$
   select public.save_repair_quote(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000017'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'REJECT'),
     'expected_lock_version', pg_temp.repair_lock_version('REJECT'),
     'submit', true,
@@ -894,6 +903,7 @@ $$, 'P0001', 'REPAIR_QUOTE_REVISION_REQUIRED', 'una reparacion rechazada solo re
 select lives_ok($$
   select public.revise_repair_quote(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000018'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'REJECT'),
     'expected_lock_version', pg_temp.repair_lock_version('REJECT'),
     'rejected_quote_id', (
@@ -924,6 +934,7 @@ select results_eq(
 select throws_ok($$
   select public.save_repair_quote(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000019'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'REJECT'),
     'expected_lock_version', pg_temp.repair_lock_version('REJECT'),
     'id', (
@@ -939,6 +950,7 @@ $$, 'P0001', 'REPAIR_QUOTE_STALE_VERSION', 'no edita una version historica');
 select throws_ok($$
   select public.save_repair_quote(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000020'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'REJECT'),
     'expected_lock_version', pg_temp.repair_lock_version('REJECT'),
     'items', jsonb_build_array(
@@ -949,6 +961,7 @@ $$, 'P0001', 'REPAIR_QUOTE_REVISION_REQUIRED', 'no omite la ruta explicita despu
 select lives_ok($$
   select public.save_repair_quote(jsonb_build_object(
     'organization_id', 'f1000000-0000-4000-8000-000000000001'::uuid,
+    'operation_key', 'f9100000-0000-4000-8000-000000000021'::uuid,
     'repair_id', (select id from public.repairs where customer_reference = 'REJECT'),
     'expected_lock_version', pg_temp.repair_lock_version('REJECT'),
     'id', (
@@ -1007,7 +1020,7 @@ select set_config(
   '{"sub":"f2000000-0000-4000-8000-000000000002","role":"authenticated","session_id":"f3000000-0000-4000-8000-000000000002"}',
   true
 );
-select lives_ok($$ select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","customer_id":"f4000000-0000-4000-8000-000000000002","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"Se cancela","customer_reference":"CANCEL"}'::jsonb) $$, 'crea reparacion cancelable');
+select lives_ok($$ select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","operation_key":"f9100000-0000-4000-8000-000000000022","customer_id":"f4000000-0000-4000-8000-000000000002","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"Se cancela","customer_reference":"CANCEL"}'::jsonb) $$, 'crea reparacion cancelable');
 select set_config(
   'request.jwt.claims',
   '{"sub":"f2000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"f3000000-0000-4000-8000-000000000001"}',
@@ -1064,7 +1077,7 @@ select is(
   'un tenant ve sus reparaciones'
 );
 select throws_ok($$
-  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"Intento cruzado"}'::jsonb)
+  select public.create_repair('{"organization_id":"f1000000-0000-4000-8000-000000000001","operation_key":"f9100000-0000-4000-8000-000000000023","customer_id":"f4000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000001","problem_description":"Intento cruzado"}'::jsonb)
 $$, '42501', 'REPAIR_FORBIDDEN', 'un RPC no permite cruzar organizaciones');
 
 reset role;

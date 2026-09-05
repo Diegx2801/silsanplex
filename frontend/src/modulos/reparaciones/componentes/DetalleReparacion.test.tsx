@@ -320,6 +320,7 @@ describe('DetalleReparacion acciones técnicas', () => {
         'quote-1',
         expect.objectContaining({ id: undefined, moneda: 'PEN' }),
         true,
+        expect.any(String),
         4,
       )
     })

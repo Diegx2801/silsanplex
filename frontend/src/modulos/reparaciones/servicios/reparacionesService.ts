@@ -311,9 +311,10 @@ const mensajesDominio: Array<[string, string]> = [
   ['REPAIR_INSUFFICIENT_STOCK', 'La cantidad supera el stock disponible en el almacén, ubicación y lote seleccionados.'],
   ['INVENTORY_FEFO_VIOLATION', 'Debes reservar primero el lote con vencimiento más próximo.'],
   ['INVENTORY_EXPIRED_STOCK', 'El lote está vencido y no puede reservarse.'],
+  ['REPAIR_OPERATION_KEY_REQUIRED', 'No se pudo generar la clave única de la operación. Inténtalo nuevamente.'],
   ['REPAIR_CONSUMPTION_KEYS_REQUIRED', 'No se pudo generar la clave única del consumo. Inténtalo nuevamente.'],
   ['REPAIR_CONSUMPTION_QUANTITY_INVALID', 'La cantidad a consumir no es válida.'],
-  ['REPAIR_OPERATION_KEY_REUSED', 'El consumo ya fue registrado con otra cantidad o repuesto.'],
+  ['REPAIR_OPERATION_KEY_REUSED', 'La clave de operación ya fue utilizada con otros datos. Actualiza la información antes de continuar.'],
   ['REPAIR_PART_NOT_FOUND', 'No se encontró la reserva de repuesto.'],
   ['REPAIR_PART_CONSUMPTION_STATE_INVALID', 'La reparación no permite consumir repuestos en este estado.'],
   ['REPAIR_PART_NOT_CONSUMABLE', 'La reserva ya no tiene saldo consumible.'],
@@ -956,12 +957,14 @@ function payloadIdentidadReparacion(datos: DatosReparacion) {
 export async function crearReparacion(
   organizationId: string,
   datos: DatosReparacion,
+  operationKey: string,
 ) {
   const { data, error } = await supabase.rpc('create_repair', {
     payload: {
       ...payloadGeneralReparacion(organizationId, datos),
       ...payloadIdentidadReparacion(datos),
       status: datos.esGarantia ? 'warranty' : 'received',
+      operation_key: operationKey,
     },
   })
   if (error) throw crearErrorReparacion(error, 'crear')
@@ -1062,6 +1065,7 @@ export async function guardarCotizacionReparacion(
   reparacionId: string,
   datos: DatosCotizacion,
   enviar: boolean,
+  operationKey: string,
   expectedLockVersion: number,
 ) {
   const { data, error } = await supabase.rpc('save_repair_quote', {
@@ -1074,6 +1078,7 @@ export async function guardarCotizacionReparacion(
       prices_include_tax: datos.preciosIncluyenImpuesto,
       tax_rate: Number(datos.tasaImpuesto),
       submit: enviar,
+      operation_key: operationKey,
       items: datos.lineas.map((linea) => ({
         line_type: linea.tipo,
         product_id: linea.tipo === 'part' ? linea.productoId : null,
@@ -1094,6 +1099,7 @@ export async function revisarCotizacionReparacion(
   cotizacionRechazadaId: string,
   datos: DatosCotizacion,
   enviar: boolean,
+  operationKey: string,
   expectedLockVersion: number,
 ) {
   const { data, error } = await supabase.rpc('revise_repair_quote', {
@@ -1106,6 +1112,7 @@ export async function revisarCotizacionReparacion(
       prices_include_tax: datos.preciosIncluyenImpuesto,
       tax_rate: Number(datos.tasaImpuesto),
       submit: enviar,
+      operation_key: operationKey,
       items: datos.lineas.map((linea) => ({
         line_type: linea.tipo,
         product_id: linea.tipo === 'part' ? linea.productoId : null,
@@ -1158,6 +1165,7 @@ export async function reservarParteReparacion(
   organizationId: string,
   reparacionId: string,
   datos: DatosReservaParte,
+  operationKey: string,
   expectedLockVersion: number,
 ) {
   const { data, error } = await supabase.rpc('reserve_repair_part', {
@@ -1165,6 +1173,7 @@ export async function reservarParteReparacion(
       organization_id: organizationId,
       repair_id: reparacionId,
       expected_lock_version: expectedLockVersion,
+      operation_key: operationKey,
       product_id: datos.productoId,
       warehouse_id: datos.almacenId,
       location_id: datos.ubicacionId,
