@@ -242,6 +242,7 @@ export interface ParteReparacion {
 }
 
 export interface PruebaReparacion {
+  ciclo: number | null
   id: string
   organizationId: string
   reparacionId: string
@@ -269,6 +270,7 @@ export interface EventoReparacion {
 }
 
 export interface DetalleReparacion {
+  cicloPruebasActual: number
   reparacion: Reparacion
   diagnosticos: DiagnosticoReparacion[]
   cotizaciones: CotizacionReparacion[]

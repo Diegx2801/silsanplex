@@ -64,6 +64,12 @@ productos se acepta la columna opcional `ControlSerie`.
 
 ## Validación local
 
+El detalle muestra el número del ciclo de pruebas vigente y sus resultados
+separados del historial. Al volver a entrar en pruebas después de un retrabajo,
+el nuevo ciclo empieza sin resultados. Las aprobaciones anteriores no habilitan
+la entrega; las pruebas antiguas sin ciclo identificado se conservan como
+historial. El E2E principal verifica fallo, retrabajo, nuevo ciclo y entrega.
+
 Los E2E de Reparaciones están en `frontend/tests/e2e/repairs.spec.ts`. Desde
 `frontend`, ejecutar `npm run test:e2e:local -- repairs.spec.ts` para preparar
 identidades locales y probar el flujo en Chromium, o `npm run test:e2e:local`

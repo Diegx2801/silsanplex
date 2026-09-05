@@ -121,6 +121,7 @@ function crearDetalle(
 ): DatosDetalleReparacion {
   const cotizaciones = conCotizacionRechazada ? [cotizacionRechazada] : []
   return {
+    cicloPruebasActual: 0,
     reparacion: { ...reparacionBase, estado, solucionAplicada },
     diagnosticos: [],
     cotizaciones,

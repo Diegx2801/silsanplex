@@ -439,13 +439,13 @@ describe('reparacionesService', () => {
     const ordenConsultas: string[] = []
     const respuestasRaiz: RespuestaSupabase[] = [
       { data: crearFilaReparacion(1), error: null },
-      { data: { lock_version: 2 }, error: null },
+      { data: { lock_version: 2, current_test_cycle_number: 1 }, error: null },
       { data: crearFilaReparacion(2), error: null },
-      { data: { lock_version: 2 }, error: null },
+      { data: { lock_version: 2, current_test_cycle_number: 2 }, error: null },
     ]
     supabaseMock.from.mockImplementation((tabla: string) => {
       ordenConsultas.push(tabla)
-      const respuestaTabla = tabla === 'repair_list'
+      const respuestaTabla = tabla === 'repair_list' || tabla === 'repairs'
         ? respuestasRaiz.shift() ?? { data: null, error: null }
         : { data: [], error: null, count: 0 }
       return crearCadena(() => respuestaTabla)
@@ -455,7 +455,9 @@ describe('reparacionesService', () => {
 
     expect(detalle.reparacion.lockVersion).toBe(2)
     expect(ordenConsultas[0]).toBe('repair_list')
-    expect(ordenConsultas.filter((tabla) => tabla === 'repair_list')).toHaveLength(4)
+    expect(detalle.cicloPruebasActual).toBe(2)
+    expect(ordenConsultas.filter((tabla) => tabla === 'repair_list')).toHaveLength(2)
+    expect(ordenConsultas.filter((tabla) => tabla === 'repairs')).toHaveLength(2)
     expect(ordenConsultas.filter((tabla) => tabla === 'repair_quotes')).toHaveLength(2)
   })
 

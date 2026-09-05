@@ -73,19 +73,24 @@ Corrección: paginar historiales y cargar las líneas por cotización selecciona
 con conteos que permitan detectar resultados incompletos. Hallazgo estático;
 no se ejecutó una prueba de volumen de historial.
 
-### R-AUD-04 — P2: la pantalla de pruebas no identifica el ciclo vigente
+### R-AUD-04 — P2 corregido: identificación del ciclo vigente
 
-El backend valida ciclos y conserva el historial, pero la consulta de pruebas
-no solicita `test_cycle_number`, ni la interfaz muestra el ciclo vigente. Una
-prueba aprobada antigua o un fallo ya superado se presentan sin esa distinción.
-El backend bloquea una entrega inválida; el problema es de interpretación y
-operación del usuario, no de evasión de esa regla.
+La consulta de pruebas ahora solicita `test_cycle_number`. El detalle obtiene
+`current_test_cycle_number` de `repairs` junto con la comprobación final de
+`lock_version`, conservando el reintento del detalle si hay cambios concurrentes.
+La pantalla separa los resultados del ciclo vigente del historial, identifica
+cada ciclo y conserva las pruebas antiguas con ciclo nulo como historia sin
+ciclo identificado. Un ciclo nuevo sin pruebas no hereda aprobaciones antiguas.
 
 Referencias: `frontend/src/modulos/reparaciones/servicios/reparacionesService.ts:722`
 y `frontend/src/modulos/reparaciones/componentes/DetalleReparacion.tsx:546`.
 
-Corrección: exponer número de ciclo en el modelo y mostrar resultados actuales
-separados del historial. Probar fallo, retrabajo, nuevo ciclo y entrega.
+Validación: 58 pruebas unitarias de Reparaciones y los cinco E2E aprobados,
+además de build, lint y tipos E2E. El recorrido completo incluye aprobación y
+fallo del ciclo 1, bloqueo de salida, retrabajo, ciclo 2 vacío, bloqueo por falta
+de prueba vigente, aprobación del ciclo 2 y entrega. La pantalla muestra los
+resultados anteriores separados de los actuales durante ese recorrido.
+No requiere migraciones nuevas: utiliza las columnas del contrato existente.
 
 ### R-AUD-05 — P2: falta un flujo operativo para habilitar técnicos no administradores
 
@@ -124,7 +129,7 @@ las ejecuciones locales se conservan; los UUID/referencias nuevos evitan que los
 casos dependan de limpiarlos o de un orden entre casos.
 
 Esta cobertura no equivale a todos los escenarios de negocio: cancelación y
-liberación de reservas, retrabajo con varios ciclos, catálogos grandes, restricciones
+liberación de reservas, catálogos grandes, restricciones
 de técnicos y contrato service_role también deben mantenerse en la matriz de
 regresión. Existen pruebas SQL para varias de esas reglas, pero no todas tienen
 recorrido de navegador.
