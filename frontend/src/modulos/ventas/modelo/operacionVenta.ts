@@ -23,6 +23,8 @@ export const esquemaLineaOperacionVenta = z.object({
   precioUnitario: z.number().nonnegative(),
   lote: z.string(),
   fechaVencimiento: z.string(),
+  // NULL identifica líneas históricas anteriores a P1B-1 sin dato reconstruible.
+  afectacionIgv: z.enum(['por-definir', 'gravado', 'exonerado', 'inafecto']).nullable().optional(),
   // Identidad persistente de la línea de pedido. El despacho canónico la usa
   // para consumir únicamente las reservas de su origen comercial.
   pedidoLineaId: z.string().uuid().optional(),

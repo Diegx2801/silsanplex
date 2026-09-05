@@ -8,6 +8,7 @@ interface LineaCompraFila {
   product_code: string
   product_description: string
   unit_of_measure: string | null
+  tax_affectation: 'por-definir' | 'gravado' | 'exonerado' | 'inafecto' | null
   batch_control: boolean
   products: { expiration_control: boolean }[] | null
   quantity: number
@@ -40,7 +41,7 @@ interface CompraFila {
 }
 
 const columnasCompra =
-  'id,supplier_id,supplier_document,supplier_name,document_type,series,document_number,issue_date,payment_due_date,expected_delivery_date,warehouse_id,warehouse,prices_include_tax,notes,status,issued_at,received_at,created_at,purchase_order_items(id,product_id,product_code,product_description,unit_of_measure,batch_control,quantity,unit_cost,lot,expiration_date,products(expiration_control),purchase_receipt_items(quantity))' as const
+  'id,supplier_id,supplier_document,supplier_name,document_type,series,document_number,issue_date,payment_due_date,expected_delivery_date,warehouse_id,warehouse,prices_include_tax,notes,status,issued_at,received_at,created_at,purchase_order_items(id,product_id,product_code,product_description,unit_of_measure,tax_affectation,batch_control,quantity,unit_cost,lot,expiration_date,products(expiration_control),purchase_receipt_items(quantity))' as const
 
 const estados: Record<CompraFila['status'], EstadoCompra> = {
   draft: 'borrador',
@@ -69,6 +70,7 @@ function mapearLinea(fila: LineaCompraFila): LineaCompra {
     costoUnitario: Number(fila.unit_cost),
     lote: fila.lot ?? '',
     fechaVencimiento: fila.expiration_date ?? '',
+    afectacionIgv: fila.tax_affectation,
   }
 }
 

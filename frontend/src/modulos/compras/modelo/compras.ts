@@ -96,6 +96,8 @@ export const esquemaLineaCompra = z.object({
   costoUnitario: z.number().positive(),
   lote: z.string(),
   fechaVencimiento: z.string(),
+  // NULL identifica líneas históricas anteriores a P1B-1 sin dato reconstruible.
+  afectacionIgv: z.enum(['por-definir', 'gravado', 'exonerado', 'inafecto']).nullable().optional(),
 })
 
 export type LineaCompra = z.infer<typeof esquemaLineaCompra>

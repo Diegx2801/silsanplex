@@ -33,6 +33,8 @@ export const afectacionesIgv = [
   { valor: 'inafecto', etiqueta: 'Inafecto' },
 ] as const
 
+export type AfectacionTributaria = 'por-definir' | 'gravado' | 'exonerado' | 'inafecto'
+
 const esquemaUnidadAlternativa = z.object({
   id: z.string().uuid().optional(),
   unidadId: z.string().uuid('Selecciona una unidad válida'),

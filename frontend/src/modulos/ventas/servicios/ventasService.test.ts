@@ -108,13 +108,13 @@ describe('ventasService', () => {
         customer_id: 'cliente-1', warehouse_id: 'warehouse-1', order_date: '2026-09-01', status: 'confirmado', prices_include_tax: true, notes: '', created_at: '2026-09-01T12:00:00.000Z',
         customers: { document_type: 'RUC', document_number: '20548796321', legal_name: 'Cliente Uno' },
         warehouses: { code: 'MAIN', name: 'Almacén principal' },
-        order_items: [{ id: 'linea-1', product_id: 'producto-1', product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', quantity: 2, unit_price: 10 }],
+        order_items: [{ id: 'linea-1', product_id: 'producto-1', product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', tax_affectation: 'gravado', quantity: 2, unit_price: 10 }],
       }],
       error: null,
     }))
 
     await expect(listarPedidosPersistentes('org-1')).resolves.toEqual([
-      expect.objectContaining({ id: 'pedido-1', numero: 'PED-000001', clienteNombre: 'Cliente Uno', almacenId: 'warehouse-1', almacenNombre: 'Almacén principal', lineas: [expect.objectContaining({ cantidad: 2 })] }),
+      expect.objectContaining({ id: 'pedido-1', numero: 'PED-000001', clienteNombre: 'Cliente Uno', almacenId: 'warehouse-1', almacenNombre: 'Almacén principal', lineas: [expect.objectContaining({ cantidad: 2, afectacionIgv: 'gravado' })] }),
     ])
   })
 
@@ -126,7 +126,7 @@ describe('ventasService', () => {
         document_type: 'factura', series: 'F001', document_number: '1', sale_date: '2026-09-01', warehouse: 'Principal', prices_include_tax: true,
         status: 'registrada', created_at: '2026-09-01T12:00:00.000Z', orders: { order_number: 'PED-000001' },
         customers: { document_type: 'RUC', document_number: '20548796321', legal_name: 'Cliente Uno' },
-        sale_items: [{ id: 'sale-linea-1', order_item_id: 'linea-1', product_id: 'producto-1', product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', quantity: 2, unit_price: 10 }],
+        sale_items: [{ id: 'sale-linea-1', order_item_id: 'linea-1', product_id: 'producto-1', product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', tax_affectation: 'exonerado', quantity: 2, unit_price: 10 }],
       }],
       error: null,
     }))
@@ -138,7 +138,7 @@ describe('ventasService', () => {
     await expect(listarVentasPersistentes('org-1')).resolves.toEqual([
       expect.objectContaining({
         pedidoId: 'pedido-1', pedidoNumero: 'PED-000001', numeroInterno: 'VEN-000001', clienteId: 'cliente-1',
-        lineas: [expect.objectContaining({ cantidadDespachada: 1, cantidadPendiente: 1 })],
+        lineas: [expect.objectContaining({ cantidadDespachada: 1, cantidadPendiente: 1, afectacionIgv: 'exonerado' })],
       }),
     ])
   })

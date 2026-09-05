@@ -15,6 +15,7 @@ interface LineaPedidoFila {
   product_code: string
   product_description: string
   unit_of_measure: string | null
+  tax_affectation: 'por-definir' | 'gravado' | 'exonerado' | 'inafecto' | null
   quantity: number | string
   unit_price: number | string
 }
@@ -79,7 +80,7 @@ const columnasPedido = [
   'prices_include_tax',
   'notes',
   'created_at',
-  'order_items(id,product_id,product_code,product_description,unit_of_measure,quantity,unit_price,products(product_type))',
+  'order_items(id,product_id,product_code,product_description,unit_of_measure,tax_affectation,quantity,unit_price,products(product_type))',
   'warehouses!orders_warehouse_same_organization(code,name)',
   'customers!orders_customer_same_organization(document_type,document_number,legal_name)',
 ].join(',')
@@ -100,7 +101,7 @@ const columnasVenta = [
   'created_at',
   'orders!sales_order_same_organization(order_number)',
   'customers!sales_customer_same_organization(document_type,document_number,legal_name)',
-  'sale_items(id,order_item_id,product_id,product_code,product_description,unit_of_measure,quantity,unit_price,products(product_type))',
+  'sale_items(id,order_item_id,product_id,product_code,product_description,unit_of_measure,tax_affectation,quantity,unit_price,products(product_type))',
 ].join(',')
 
 function primerCliente(cliente: ClienteFila | ClienteFila[] | null) {
@@ -127,6 +128,7 @@ function mapearLinea(fila: LineaPedidoFila) {
     precioUnitario: Number(fila.unit_price),
     lote: '',
     fechaVencimiento: '',
+    afectacionIgv: fila.tax_affectation,
   }
 }
 
