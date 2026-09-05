@@ -80,6 +80,7 @@ export interface FilaImportacionObservada {
   codigo: string
   estado: EstadoFilaImportacion
   motivo: string
+  tipoAviso?: 'sin-precio' | 'precio-cero' | 'minimo-sin-precio'
 }
 
 export interface FilaImportacionRechazada {
@@ -609,6 +610,35 @@ export function analizarFilasImportacion(
     }
   }
 
+  const preciosMinimosSinPrecio = precios.filter((fila) => {
+    return Boolean((fila.PrecioMinimo ?? '').trim()) && !(fila.Precio_venta ?? '').trim()
+  })
+  if (preciosMinimosSinPrecio.length) {
+    hallazgos.push({
+      id: 'minimos-sin-precio',
+      nivel: 'advertencia',
+      titulo: 'Precios mínimos sin precio de venta en el archivo',
+      detalle:
+        'Solo se conservarán si el SKU existente ya tiene un precio de venta efectivo; en productos nuevos serán rechazados.',
+      cantidad: preciosMinimosSinPrecio.length,
+      unidad: 'fila',
+      ejemplos: ejemplosLimitados(
+        preciosMinimosSinPrecio.map((fila) => fila.CodigoProducto ?? ''),
+      ),
+    })
+    for (const [indice, fila] of precios.entries()) {
+      if (!preciosMinimosSinPrecio.includes(fila)) continue
+      filasObservadas.push({
+        tipo: 'precio',
+        fila: indice + 2,
+        codigo: normalizar(fila.CodigoProducto ?? ''),
+        estado: 'advertencia',
+        motivo: 'El precio mínimo requiere un precio de venta efectivo.',
+        tipoAviso: 'minimo-sin-precio',
+      })
+    }
+  }
+
   const preciosEnCero = precios.filter((fila) => {
     const precio = (fila.Precio_venta ?? '').trim()
     return precio !== '' && Number(precio.replace(',', '.')) === 0
@@ -634,6 +664,7 @@ export function analizarFilasImportacion(
         codigo: normalizar(fila.CodigoProducto ?? ''),
         estado: 'advertencia',
         motivo: 'El precio es cero y quedará pendiente de revisión.',
+        tipoAviso: 'precio-cero',
       })
     }
   }
@@ -735,7 +766,7 @@ export function analizarFilasImportacion(
       nivel: 'advertencia',
       titulo: 'Productos sin filas de precio',
       detalle:
-        'Pueden mantenerse en el catálogo, pero quedarán sin precio ni unidad comercial.',
+        'El producto se importará sin precio de venta y deberá configurarse antes de utilizarlo comercialmente.',
       cantidad: codigosSinPrecio.length,
       unidad: 'producto',
       ejemplos: ejemplosLimitados(codigosSinPrecio),
@@ -747,8 +778,16 @@ export function analizarFilasImportacion(
       (fila) => fila.Codigo ?? '',
       new Set(codigosSinPrecio),
       'advertencia',
-      'El producto no tiene una fila de precio relacionada.',
+      'El producto se importará sin precio de venta y deberá configurarse antes de utilizarlo comercialmente.',
     )
+    for (const observacion of filasObservadas) {
+      if (observacion.tipo === 'producto'
+        && codigosSinPrecio.includes(observacion.codigo)
+        && observacion.estado === 'advertencia'
+        && observacion.motivo === 'El producto se importará sin precio de venta y deberá configurarse antes de utilizarlo comercialmente.') {
+        observacion.tipoAviso = 'sin-precio'
+      }
+    }
   }
 
   const coincidencias = [...codigosPrecio].filter((codigo) =>

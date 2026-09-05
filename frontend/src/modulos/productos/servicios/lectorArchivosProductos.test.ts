@@ -21,7 +21,7 @@ const encabezadosPrecios = [
 function crearArchivo(
   nombre: string,
   encabezados: string[],
-  fila: string[],
+  fila: string[] = [],
   nombreHoja = 'data',
 ) {
   const libro = utils.book_new()
@@ -97,6 +97,20 @@ describe('analizarArchivosProductos', () => {
     expect(resultado.resumen.codigosProducto).toBe(1)
     expect(resultado.resumen.codigosConPrecio).toBe(1)
     expect(resultado.resumen.coincidencias).toBe(1)
+  })
+
+  it('permite una hoja de precios sin filas para importar productos sin precio', async () => {
+    const resultado = await analizarArchivosProductos(
+      archivoProductosValido(),
+      crearArchivo('Precios.xlsx', encabezadosPrecios),
+    )
+
+    expect(resultado.tieneBloqueos).toBe(false)
+    expect(resultado.datos.precios).toHaveLength(0)
+    expect(resultado.datos.productos).toHaveLength(1)
+    expect(resultado.hallazgos).toContainEqual(
+      expect.objectContaining({ id: 'productos-sin-precio', nivel: 'advertencia' }),
+    )
   })
 
   it('lee las columnas extendidas cuando están presentes', async () => {

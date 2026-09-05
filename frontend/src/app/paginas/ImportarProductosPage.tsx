@@ -174,7 +174,13 @@ function FilasObservadas({ filas }: { filas: FilaImportacionObservada[] }) {
                     {fila.codigo || 'Sin código'}
                   </span>
                   <span className="status-label" data-tone={configuracion.tono}>
-                    {configuracion.etiqueta}
+                    {fila.tipoAviso === 'sin-precio'
+                      ? 'Sin precio'
+                      : fila.tipoAviso === 'precio-cero'
+                        ? 'Precio 0'
+                        : fila.tipoAviso === 'minimo-sin-precio'
+                          ? 'Mínimo sin venta'
+                          : configuracion.etiqueta}
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">{fila.motivo}</p>
@@ -198,6 +204,8 @@ function traducirMotivoRechazo(motivo: string) {
       'El código de precio no corresponde a un producto del archivo.',
     PRODUCT_EXISTING_CONFLICT:
       'El código ya existe con datos diferentes en el catálogo.',
+    PRODUCT_IMPORT_MINIMUM_SALE_PRICE_INVALID:
+      'El precio mínimo requiere un precio de venta efectivo y no puede superarlo.',
   }[motivo] ?? 'La fila no cumple las reglas de importación.'
 }
 

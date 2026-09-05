@@ -92,6 +92,43 @@ describe('analizarFilasImportacion', () => {
     )
   })
 
+  it('mantiene sin bloqueo un catálogo completamente sin filas de precio', () => {
+    const resultado = analizarFilasImportacion(
+      [{ Codigo: 'SIN-PRECIO', Producto: 'Producto sin precio' }],
+      [],
+    )
+
+    expect(resultado.tieneBloqueos).toBe(false)
+    expect(resultado.datos.productos).toHaveLength(1)
+    expect(resultado.datos.precios).toHaveLength(0)
+    expect(resultado.filasObservadas).toContainEqual(
+      expect.objectContaining({ tipoAviso: 'sin-precio', codigo: 'SIN-PRECIO' }),
+    )
+  })
+
+  it('distingue mínimo sin precio efectivo y precio cero', () => {
+    const resultado = analizarFilasImportacion(
+      [{ Codigo: 'SKU-1', Producto: 'Producto uno' }],
+      [
+        { CodigoProducto: 'SKU-1', Medida: 'UND', Precio_venta: '', PrecioMinimo: '2' },
+        { CodigoProducto: 'SKU-1', Medida: 'CAJA', Precio_venta: '0' },
+      ],
+    )
+
+    expect(resultado.hallazgos).toContainEqual(
+      expect.objectContaining({ id: 'minimos-sin-precio', nivel: 'advertencia' }),
+    )
+    expect(resultado.filasObservadas).toContainEqual(
+      expect.objectContaining({ tipoAviso: 'minimo-sin-precio' }),
+    )
+    expect(resultado.hallazgos).toContainEqual(
+      expect.objectContaining({ id: 'precios-en-cero', nivel: 'advertencia' }),
+    )
+    expect(resultado.filasObservadas).toContainEqual(
+      expect.objectContaining({ tipoAviso: 'precio-cero' }),
+    )
+  })
+
   it('prepara una fila por código y expone duplicados y conflictos por fila', () => {
     const resultado = analizarFilasImportacion(
       [
