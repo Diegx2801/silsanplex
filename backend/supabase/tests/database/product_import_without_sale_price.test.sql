@@ -209,7 +209,7 @@ select is(
   (pg_temp.import_one(
     'P1D-NEW-ZERO',
     'Producto nuevo con precio cero',
-    jsonb_build_array(pg_temp.price_row('P1D-NEW-ZERO', '0'))
+    jsonb_build_array(pg_temp.price_row('P1D-NEW-ZERO', '0', null, 'SI'))
   ) ->> 'estado'),
   'completado',
   'el precio cero explícito se importa'
@@ -224,7 +224,7 @@ select is(
   (pg_temp.import_one(
     'P1D-NEW-MIN',
     'Producto nuevo con mínimo',
-    jsonb_build_array(pg_temp.price_row('P1D-NEW-MIN', '10', '8'))
+    jsonb_build_array(pg_temp.price_row('P1D-NEW-MIN', '10', '8', 'SI'))
   ) ->> 'estado'),
   'completado',
   'un mínimo válido con precio efectivo se importa'
@@ -239,7 +239,7 @@ select is(
   (pg_temp.import_one(
     'P1D-NEW-MIN-BAD',
     'Producto nuevo con mínimo sin venta',
-    jsonb_build_array(pg_temp.price_row('P1D-NEW-MIN-BAD', '', '1'))
+    jsonb_build_array(pg_temp.price_row('P1D-NEW-MIN-BAD', '', '1', 'SI'))
   ) ->> 'estado'),
   'rechazado',
   'un mínimo sin precio efectivo rechaza únicamente el SKU'
@@ -249,7 +249,7 @@ select is(
     pg_temp.import_one(
       'P1D-NEW-MIN-BAD-ERROR',
       'Producto nuevo con mínimo inválido',
-      jsonb_build_array(pg_temp.price_row('P1D-NEW-MIN-BAD-ERROR', '', '1'))
+      jsonb_build_array(pg_temp.price_row('P1D-NEW-MIN-BAD-ERROR', '', '1', 'SI'))
     ) -> 'filas_rechazadas' -> 0 ->> 'motivo'
   ),
   'PRODUCT_IMPORT_MINIMUM_SALE_PRICE_INVALID',
@@ -306,7 +306,7 @@ select is(
     jsonb_build_array(pg_temp.price_row('P1D-MIN-EXIST', '', '15'))
   ) ->> 'estado'),
   'completado',
-  'un mínimo puede actualizarse contra el precio efectivo existente'
+  'un mínimo sin IncIGV explícito conserva el valor existente'
 );
 select results_eq(
   $$
@@ -314,22 +314,22 @@ select results_eq(
     from public.products
     where code = 'P1D-MIN-EXIST'
   $$,
-  $$values (20::numeric, 15::numeric)$$,
-  'el mínimo usa el precio histórico efectivo si la venta viene vacía'
+  $$values (20::numeric, 10::numeric)$$,
+  'un mínimo ambiguo conserva el mínimo existente'
 );
 
 select is(
   (pg_temp.import_one(
     'P1D-MIN-EXIST',
     'Producto mínimo existente inválido',
-    jsonb_build_array(pg_temp.price_row('P1D-MIN-EXIST', '', '21'))
+    jsonb_build_array(pg_temp.price_row('P1D-MIN-EXIST', '', '21', 'SI'))
   ) ->> 'estado'),
   'rechazado',
   'un mínimo superior al precio efectivo se rechaza'
 );
 select is(
   (select minimum_sale_price from public.products where code = 'P1D-MIN-EXIST'),
-  15::numeric,
+  10::numeric,
   'un rechazo de mínimo no modifica el SKU existente'
 );
 
@@ -420,7 +420,7 @@ select is(
           jsonb_build_object('fila', 3, 'codigo', 'P1D-MIX-OK', 'descripcion', 'SKU válido sin precio')
         ),
         'precios', jsonb_build_array(
-          pg_temp.price_row('P1D-MIX-BAD', '', '1')
+          pg_temp.price_row('P1D-MIX-BAD', '', '1', 'SI')
         )
       )
     ) ->> 'estado'

@@ -129,6 +129,29 @@ describe('analizarFilasImportacion', () => {
     )
   })
 
+  it('advierte que IncIGV no permite inferir la afectación tributaria', () => {
+    const resultado = analizarFilasImportacion(
+      [
+        { Codigo: 'NO-IGV', Producto: 'Precio neto' },
+        { Codigo: 'PEND-IGV', Producto: 'Precio pendiente' },
+        { Codigo: 'EMPTY-IGV', Producto: 'Precio vacío' },
+      ],
+      [
+        { CodigoProducto: 'NO-IGV', Medida: 'UND', Precio_venta: '10', IncIGV: ' No ' },
+        { CodigoProducto: 'PEND-IGV', Medida: 'UND', Precio_venta: '11', IncIGV: 'Pendiente' },
+        { CodigoProducto: 'EMPTY-IGV', Medida: 'UND', Precio_venta: '12', IncIGV: '' },
+      ],
+    )
+
+    expect(resultado.tieneBloqueos).toBe(false)
+    expect(resultado.hallazgos).toContainEqual(
+      expect.objectContaining({ id: 'inc-igv-ambiguo', nivel: 'advertencia', cantidad: 3 }),
+    )
+    expect(resultado.filasObservadas).toContainEqual(
+      expect.objectContaining({ tipoAviso: 'inc-igv-ambiguo', codigo: 'NO-IGV' }),
+    )
+  })
+
   it('prepara una fila por código y expone duplicados y conflictos por fila', () => {
     const resultado = analizarFilasImportacion(
       [

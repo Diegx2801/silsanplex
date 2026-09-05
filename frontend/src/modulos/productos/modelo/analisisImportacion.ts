@@ -80,7 +80,7 @@ export interface FilaImportacionObservada {
   codigo: string
   estado: EstadoFilaImportacion
   motivo: string
-  tipoAviso?: 'sin-precio' | 'precio-cero' | 'minimo-sin-precio'
+  tipoAviso?: 'sin-precio' | 'precio-cero' | 'minimo-sin-precio' | 'inc-igv-ambiguo'
 }
 
 export interface FilaImportacionRechazada {
@@ -635,6 +635,39 @@ export function analizarFilasImportacion(
         estado: 'advertencia',
         motivo: 'El precio mínimo requiere un precio de venta efectivo.',
         tipoAviso: 'minimo-sin-precio',
+      })
+    }
+  }
+
+  const preciosConIncIgvAmbiguo = precios.filter((fila) => {
+    const incIgv = normalizar(fila.IncIGV ?? '')
+    const precio = (fila.Precio_venta ?? '').trim()
+    const precioMinimo = (fila.PrecioMinimo ?? '').trim()
+    return ['NO', 'PENDIENTE', ''].includes(incIgv) && (precio !== '' || precioMinimo !== '')
+  })
+  if (preciosConIncIgvAmbiguo.length) {
+    const detalle =
+      'La afectación tributaria no puede determinarse con IncIGV. El producto se importará sin precio de venta y deberá completarse antes de utilizarlo comercialmente.'
+    hallazgos.push({
+      id: 'inc-igv-ambiguo',
+      nivel: 'advertencia',
+      titulo: 'IncIGV no determina la afectación tributaria',
+      detalle,
+      cantidad: preciosConIncIgvAmbiguo.length,
+      unidad: 'fila',
+      ejemplos: ejemplosLimitados(
+        preciosConIncIgvAmbiguo.map((fila) => fila.CodigoProducto ?? ''),
+      ),
+    })
+    for (const [indice, fila] of precios.entries()) {
+      if (!preciosConIncIgvAmbiguo.includes(fila)) continue
+      filasObservadas.push({
+        tipo: 'precio',
+        fila: indice + 2,
+        codigo: normalizar(fila.CodigoProducto ?? ''),
+        estado: 'advertencia',
+        motivo: detalle,
+        tipoAviso: 'inc-igv-ambiguo',
       })
     }
   }

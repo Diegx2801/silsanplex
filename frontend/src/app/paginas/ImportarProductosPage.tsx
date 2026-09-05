@@ -180,6 +180,8 @@ function FilasObservadas({ filas }: { filas: FilaImportacionObservada[] }) {
                         ? 'Precio 0'
                         : fila.tipoAviso === 'minimo-sin-precio'
                           ? 'Mínimo sin venta'
+                          : fila.tipoAviso === 'inc-igv-ambiguo'
+                            ? 'IncIGV ambiguo'
                           : configuracion.etiqueta}
                   </span>
                 </div>
@@ -575,7 +577,7 @@ export function ImportarProductosPage({ integrado = false, alCompletar, alCerrar
       <form onSubmit={analizar}>
         <section className="border">
           <div className="grid lg:grid-cols-[minmax(0,1fr)_17rem]">
-            <div className="lg:border-e"><div className="border-b px-4 py-3"><h2 className="font-semibold">Archivos de origen</h2><p className="mt-1 text-sm text-muted-foreground">Selecciona las exportaciones de productos y precios de Codeplex.</p></div><SelectorArchivo key={`productos-${versionSelectores}`} id="archivo-productos" titulo="Catálogo de productos" descripcion="Código, producto, línea, sublínea y marca." archivo={archivoProductos} alCambiar={cambiarProductos} /><SelectorArchivo key={`precios-${versionSelectores}`} id="archivo-precios" titulo="Precios de los productos" descripcion="Código del producto, medida, precio e IGV." archivo={archivoPrecios} alCambiar={cambiarPrecios} /></div>
+            <div className="lg:border-e"><div className="border-b px-4 py-3"><h2 className="font-semibold">Archivos de origen</h2><p className="mt-1 text-sm text-muted-foreground">Selecciona las exportaciones de productos y precios de Codeplex.</p></div><SelectorArchivo key={`productos-${versionSelectores}`} id="archivo-productos" titulo="Catálogo de productos" descripcion="Código, producto, línea, sublínea y marca." archivo={archivoProductos} alCambiar={cambiarProductos} /><SelectorArchivo key={`precios-${versionSelectores}`} id="archivo-precios" titulo="Precios de los productos" descripcion="Código, medida, precio e IGV. IncIGV: Sí = precio con IGV; No = precio fuente sin IGV; Pendiente/vacío = información insuficiente." archivo={archivoPrecios} alCambiar={cambiarPrecios} /></div>
             <div className="flex flex-col justify-between gap-4 p-4"><label><span className="field-label">Si el SKU ya existe</span><select className="field-control" value={modo} onChange={(evento) => setModo(evento.target.value as ModoImportacionProductos)} disabled={importando || Boolean(resultadoPersistencia)}><option value="SKIP">Omitir el producto</option><option value="UPDATE">Actualizar datos disponibles</option></select></label><div className="flex flex-col gap-2">{archivoProductos || archivoPrecios ? <Button type="button" variant="outline" onClick={reiniciar} disabled={analizando || importando}><RotateCcw aria-hidden="true" />Limpiar</Button> : null}<Button type="submit" disabled={!archivoProductos || !archivoPrecios || analizando || Boolean(resultadoPersistencia)}>{analizando ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}{analizando ? 'Analizando…' : 'Analizar archivos'}</Button></div></div>
           </div>
         </section>
