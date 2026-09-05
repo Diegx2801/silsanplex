@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
+import { crearConReintentoPersistente, leerCreacionPendiente } from './creacionPendiente'
 import type {
   ConsultaReparaciones,
   ResultadoReparacionesPaginado,
@@ -65,9 +66,10 @@ function mensajeDeError(error: unknown, fallback: string) {
 export function useReparaciones(
   configuracion: ConfiguracionConsultaReparaciones = {},
 ) {
-  const { access } = useAuth()
+  const { access, user } = useAuth()
   const queryClient = useQueryClient()
   const organizationId = access?.organizationId ?? ''
+  const ambitoCreacion = `${organizationId}:${user?.id ?? ''}`
   const consulta = configuracion.consulta ?? consultaInicial
   const pagina = configuracion.pagina ?? 1
   const tamanioPagina = configuracion.tamanioPagina ?? 10
@@ -309,9 +311,11 @@ export function useReparaciones(
     registrandoPrueba: pruebaMutation.isPending,
     entregando: entregaMutation.isPending,
     cancelando: cancelacionMutation.isPending,
+    recuperarCreacionPendiente: () => leerCreacionPendiente(ambitoCreacion)?.datos,
     crear: async (datos: DatosReparacion, operationKey: string) => {
       try {
-        await crearMutation.mutateAsync({ datos, operationKey })
+        await crearConReintentoPersistente(ambitoCreacion, datos, operationKey,
+          (datosPendientes, clave) => crearMutation.mutateAsync({ datos: datosPendientes, operationKey: clave }))
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo registrar la reparación.')

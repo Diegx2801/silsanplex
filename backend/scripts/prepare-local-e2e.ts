@@ -41,7 +41,7 @@ function assertStrictlyLocalSupabase(url: string) {
 }
 
 function loadIdentity(
-  prefix: 'E2E_ADMIN' | 'E2E_MEMBER' | 'E2E_RECOVERY',
+  prefix: 'E2E_ADMIN' | 'E2E_MEMBER' | 'E2E_RECOVERY' | 'E2E_REPAIRS',
   fullName: string,
   roleCodes: string[],
 ): E2eIdentity {
@@ -49,6 +49,7 @@ function loadIdentity(
     E2E_ADMIN: 'e2e.admin@silsan.local',
     E2E_MEMBER: 'e2e.ventas@silsan.local',
     E2E_RECOVERY: 'e2e.recuperacion@silsan.local',
+    E2E_REPAIRS: 'e2e.reparaciones@silsan.local',
   } as const
   const email = (process.env[`${prefix}_EMAIL`]?.trim() || defaultEmails[prefix]).toLowerCase()
   const password = process.env[`${prefix}_PASSWORD`]?.trim() || randomBytes(24).toString('base64url')
@@ -147,6 +148,7 @@ function writePlaywrightEnvironment(
   member: E2eIdentity,
   recovery: E2eIdentity,
   inventory: InventoryE2eFixture,
+  repairs: E2eIdentity,
 ) {
   const target = resolve(process.cwd(), '..', 'frontend', '.env.e2e.local')
   const contents = [
@@ -157,6 +159,8 @@ function writePlaywrightEnvironment(
     `E2E_MEMBER_PASSWORD=${JSON.stringify(member.password)}`,
     `E2E_RECOVERY_EMAIL=${JSON.stringify(recovery.email)}`,
     `E2E_RECOVERY_PASSWORD=${JSON.stringify(recovery.password)}`,
+    `E2E_REPAIRS_EMAIL=${JSON.stringify(repairs.email)}`,
+    `E2E_REPAIRS_PASSWORD=${JSON.stringify(repairs.password)}`,
     `E2E_INVENTORY_PRODUCT_CODE=${JSON.stringify(inventory.productCode)}`,
     `E2E_INVENTORY_PRODUCT_DESCRIPTION=${JSON.stringify(inventory.productDescription)}`,
     `E2E_INVENTORY_SOURCE_WAREHOUSE_CODE=${JSON.stringify(inventory.sourceWarehouseCode)}`,
@@ -304,6 +308,7 @@ async function prepareLocalE2e() {
 
   const adminIdentity = loadIdentity('E2E_ADMIN', 'Administrador E2E', ['ADMIN'])
   const memberIdentity = loadIdentity('E2E_MEMBER', 'Miembro de Ventas E2E', ['VENTAS'])
+  const repairsIdentity = loadIdentity('E2E_REPAIRS', 'Técnico Reparaciones E2E', ['ADMIN'])
   const recoveryIdentity = loadIdentity(
     'E2E_RECOVERY',
     'Usuario de Recuperación E2E',
@@ -314,7 +319,8 @@ async function prepareLocalE2e() {
       adminIdentity.email,
       memberIdentity.email,
       recoveryIdentity.email,
-    ]).size !== 3
+      repairsIdentity.email,
+    ]).size !== 4
   ) {
     throw new Error('Las identidades E2E deben utilizar correos diferentes.')
   }
@@ -338,6 +344,8 @@ async function prepareLocalE2e() {
   const adminUser = await upsertAuthIdentity(supabase, adminIdentity)
   const memberUser = await upsertAuthIdentity(supabase, memberIdentity)
   const recoveryUser = await upsertAuthIdentity(supabase, recoveryIdentity)
+  const repairsUser = await upsertAuthIdentity(supabase, repairsIdentity)
+  await assignFixtureMembership(supabase, organization.id, repairsUser, repairsIdentity.roleCodes)
 
   await assignFixtureMembership(
     supabase,
@@ -377,6 +385,7 @@ async function prepareLocalE2e() {
     memberIdentity,
     recoveryIdentity,
     inventoryFixture,
+    repairsIdentity,
   )
 
   console.info('Usuarios E2E locales preparados y frontend/.env.e2e.local actualizado.')

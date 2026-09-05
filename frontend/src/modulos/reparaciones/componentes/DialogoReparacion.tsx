@@ -111,6 +111,7 @@ interface DialogoReparacionProps {
   clientes: readonly OpcionClienteReparacion[]
   productos: readonly OpcionProductoReparacion[]
   cargandoOpciones?: boolean
+  datosCreacionPendiente?: DatosReparacion
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (
     datos: DatosReparacion,
@@ -128,6 +129,7 @@ export function DialogoReparacion({
   clientes,
   productos,
   cargandoOpciones = false,
+  datosCreacionPendiente,
   alCambiarApertura,
   alGuardar,
   alRestaurarFoco,
@@ -144,7 +146,7 @@ export function DialogoReparacion({
     formState: { errors, isSubmitting },
   } = useForm<DatosReparacion>({
     resolver: zodResolver(esquemaDatosReparacion),
-    defaultValues: datosReparacionInicial(reparacion),
+    defaultValues: reparacion ? datosReparacionInicial(reparacion) : datosCreacionPendiente ?? datosReparacionInicial(null),
   })
   const productoId = watch('productoId')
   const numeroSerie = watch('numeroSerie')
@@ -241,6 +243,7 @@ export function DialogoReparacion({
             alRestaurarFoco()
           }}
         >
+          {!reparacion && datosCreacionPendiente ? <p role="status" className="border-b bg-muted px-5 py-3 text-sm">Se recuperó un registro pendiente de confirmar. Reintenta con estos datos antes de iniciar otra reparación.</p> : null}
           <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7">
             <div>
               <DialogPrimitive.Title className="text-xl font-semibold tracking-[-0.025em]">
