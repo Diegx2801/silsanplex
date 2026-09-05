@@ -1,4 +1,4 @@
-name: Inventario E2E
+name: Flujos E2E
 
 on:
   pull_request:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   playwright:
-    name: FEFO, transferencia, kardex y valorización
+    name: Inventario y Reparaciones E2E
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -53,8 +53,16 @@ jobs:
         working-directory: frontend
 
       - name: Ejecutar pruebas E2E
-        run: npm run test:e2e:local
+        run: npm run test:e2e:typecheck && npm run test:e2e:local
         working-directory: frontend
+
+      - name: Conservar diagnóstico de fallos E2E
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: frontend/test-results/
+          retention-days: 7
 
       - name: Detener Supabase local
         if: always()

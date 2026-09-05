@@ -64,6 +64,16 @@ productos se acepta la columna opcional `ControlSerie`.
 
 ## Validación local
 
+Los E2E de Reparaciones están en `frontend/tests/e2e/repairs.spec.ts`. Desde
+`frontend`, ejecutar `npm run test:e2e:local -- repairs.spec.ts` para preparar
+identidades locales y probar el flujo en Chromium, o `npm run test:e2e:local`
+para ejecutar toda la suite. El preparador genera `E2E_REPAIRS_EMAIL` y
+`E2E_REPAIRS_PASSWORD` en `.env.e2e.local`; no se versionan credenciales.
+`npm run test:e2e:typecheck` comprueba los tipos de las pruebas.
+
+La cobertura y los pendientes de liberación se detallan en
+`AUDITORIA_REPARACIONES_2026-09-05.md`.
+
 Desde `frontend`:
 
 ```bash

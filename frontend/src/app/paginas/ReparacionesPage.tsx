@@ -174,6 +174,7 @@ export function ReparacionesPage() {
   const [formularioAbierto, setFormularioAbierto] = useState(false)
   const [reparacionEnEdicion, setReparacionEnEdicion] = useState<Reparacion | null>(null)
   const [identidadEditableEnEdicion, setIdentidadEditableEnEdicion] = useState(true)
+  const [datosCreacionPendiente, setDatosCreacionPendiente] = useState<DatosReparacion>()
   const [mensaje, setMensaje] = useState('')
   const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
   const disparadorFormulario = useRef<HTMLButtonElement | null>(null)
@@ -208,6 +209,12 @@ export function ReparacionesPage() {
   }
 
   const abrirRegistro = (evento: ReactMouseEvent<HTMLButtonElement>) => {
+    try {
+      setDatosCreacionPendiente(operaciones.recuperarCreacionPendiente())
+    } catch {
+      setMensaje('No se pudo recuperar el registro pendiente. No se abrirá otra creación hasta recuperar el almacenamiento de esta pestaña.')
+      return
+    }
     disparadorFormulario.current = evento.currentTarget
     setReparacionEnEdicion(null)
     setIdentidadEditableEnEdicion(true)
@@ -285,7 +292,7 @@ export function ReparacionesPage() {
         {!operaciones.cargando && !operaciones.error ? <PaginacionReparaciones inicio={operaciones.reparaciones.length ? (paginaActual - 1) * tamanioPagina + 1 : 0} fin={operaciones.reparaciones.length ? (paginaActual - 1) * tamanioPagina + operaciones.reparaciones.length : 0} total={operaciones.totalFiltrado} pagina={paginaActual} totalPaginas={totalPaginas} alCambiarPagina={setPagina} /> : null}
       </section>
 
-      {formularioAbierto && (puedeCrear || (puedeEditar && reparacionEnEdicion)) ? <DialogoReparacion key={reparacionEnEdicion?.id ?? 'nueva-reparacion'} abierto={formularioAbierto} reparacion={reparacionEnEdicion} identidadEditable={identidadEditableEnEdicion} clientes={opciones.clientes} productos={opciones.productos} cargandoOpciones={opciones.cargando} alCambiarApertura={setFormularioAbierto} alGuardar={guardarReparacion} alRestaurarFoco={() => disparadorFormulario.current?.focus()} /> : null}
+      {formularioAbierto && (puedeCrear || (puedeEditar && reparacionEnEdicion)) ? <DialogoReparacion datosCreacionPendiente={datosCreacionPendiente} key={reparacionEnEdicion?.id ?? 'nueva-reparacion'} abierto={formularioAbierto} reparacion={reparacionEnEdicion} identidadEditable={identidadEditableEnEdicion} clientes={opciones.clientes} productos={opciones.productos} cargandoOpciones={opciones.cargando} alCambiarApertura={setFormularioAbierto} alGuardar={guardarReparacion} alRestaurarFoco={() => disparadorFormulario.current?.focus()} /> : null}
 
       {reparacionId ? <DetalleReparacion
         key={reparacionId}
