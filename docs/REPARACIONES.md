@@ -26,6 +26,14 @@ usan sus propias RPC:
 - `record_repair_diagnosis` para cada diagnóstico.
 - `save_repair_quote` para borradores, envío y nuevas versiones.
 - `approve_repair_quote` y `reject_repair_quote` para la respuesta del cliente.
+
+  Estos dos RPC requieren el JWT de un usuario `authenticated`, una sesión activa
+  y el permiso `REPAIRS_APPROVE_QUOTE` en la organización solicitada. El actor de
+  aprobación o rechazo se obtiene de `auth.uid()` y queda registrado en la
+  cotización y su historial. `service_role` no tiene permiso de ejecución, incluso
+  si su JWT incluye `sub`; no existe un contrato de actor delegado para estos RPC.
+  Las integraciones deben transmitir la sesión del usuario autorizado. Esta regla
+  también mantiene el control de versión mediante `requested_expected_lock_version`.
 - `reserve_repair_part`, `consume_repair_part` y `cancel_repair_part` para repuestos.
 - `record_repair_test` para las pruebas previas a la entrega.
 - `deliver_repair` y `cancel_repair` para cerrar la orden.
