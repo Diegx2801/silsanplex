@@ -62,6 +62,15 @@ serie y la base de datos vuelve a validar esa regla. El campo también aparece e
 el detalle del producto y en la exportación del catálogo. En la importación de
 productos se acepta la columna opcional `ControlSerie`.
 
+## Precio mínimo pendiente
+
+P1C no aplica `products.minimum_sale_price` a las cotizaciones de Reparaciones.
+El catálogo expresa ese mínimo como precio final por unidad base en PEN, mientras
+que Reparaciones admite cotizaciones en PEN y USD y todavía no conserva un
+snapshot de tipo de cambio adecuado. El enforcement debe abordarse en una fase
+separada después de definir y persistir ese snapshot; no se debe comparar usando
+un tipo de cambio vigente ni convertir documentos históricos.
+
 ## Validación local
 
 Los E2E de Reparaciones están en `frontend/tests/e2e/repairs.spec.ts`. Desde

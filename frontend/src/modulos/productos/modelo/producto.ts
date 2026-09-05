@@ -69,6 +69,8 @@ export const esquemaProducto = z.object({
   unidadMedida: textoOpcional(40),
   afectacionIgv: z.enum(['', 'gravado', 'exonerado', 'inafecto']),
   costo: importeOpcional,
+  // Ambos importes son precios finales por unidad base en PEN e incluyen IGV
+  // cuando la afectación tributaria lo requiere.
   precioVenta: importeOpcional,
   precioMinimo: importeOpcional,
   stockMaximo: decimalOpcional(3, false),
@@ -92,7 +94,7 @@ export const esquemaProducto = z.object({
     contexto.addIssue({
       code: 'custom',
       path: ['precioMinimo'],
-      message: 'No puede superar el precio de venta base',
+      message: 'No puede superar el precio de venta final',
     })
   }
 

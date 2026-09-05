@@ -102,6 +102,16 @@ describe('ventasService', () => {
       .rejects.toThrow('No hay stock asignable suficiente en el almacén seleccionado')
   })
 
+  it('expone la violación autoritativa del precio mínimo', async () => {
+    supabaseMock.rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'P0001', message: 'ORDER_MINIMUM_SALE_PRICE_VIOLATION' },
+    })
+
+    await expect(crearPedidoPersistente('org-1', cotizacion, 'warehouse-1'))
+      .rejects.toThrow('El precio unitario no puede ser menor al precio mínimo final del producto')
+  })
+
   it('mapea pedidos persistentes con cliente y líneas', async () => {
     supabaseMock.from
       .mockReturnValueOnce(cadena({

@@ -8,6 +8,7 @@ import type { Cliente } from '@/modulos/clientes/modelo/cliente'
 import type { Producto } from '@/modulos/productos/modelo/producto'
 import {
   calcularTotalesCotizacion,
+  obtenerPrecioMinimoCotizacion,
   cotizacionAFormulario,
   esquemaDatosCotizacion,
   type Cotizacion,
@@ -302,12 +303,13 @@ export function DialogoCotizacion({
                               {erroresLinea.precioUnitario.message}
                             </p>
                           ) : null}
-                          {productoSeleccionado?.precioMinimo ? (
+                          {productoSeleccionado && obtenerPrecioMinimoCotizacion(productoSeleccionado, preciosIncluyenIgv) !== null ? (
                             <p className="mt-1 text-xs text-muted-foreground">
                               Mínimo permitido:{' '}
                               {formatoMoneda.format(
-                                Number(productoSeleccionado.precioMinimo),
+                                obtenerPrecioMinimoCotizacion(productoSeleccionado, preciosIncluyenIgv)!,
                               )}
+                              {productoSeleccionado.afectacionIgv === 'gravado' && !preciosIncluyenIgv ? ' sin IGV' : ' final'}
                             </p>
                           ) : null}
                         </div>

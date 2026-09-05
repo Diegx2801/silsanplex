@@ -69,6 +69,22 @@ describe('esquemaProducto', () => {
     expect(resultado.success).toBe(false)
   })
 
+  it.each([
+    { tipo: 'good' as const, precioVenta: '', precioMinimo: '' },
+    { tipo: 'good' as const, precioVenta: '0', precioMinimo: '0' },
+    { tipo: 'service' as const, precioVenta: '10', precioMinimo: '10' },
+  ])('acepta mínimo vacío, cero o igual al precio final en $tipo', (precios) => {
+    const resultado = esquemaProducto.safeParse({
+      ...productoInicial,
+      ...precios,
+      codigo: 'PROD-001',
+      descripcion: 'Producto de prueba',
+      unidadBaseId,
+    })
+
+    expect(resultado.success).toBe(true)
+  })
+
   it('permite controlar lote y vencimiento de manera independiente', () => {
     const resultado = esquemaProducto.parse({
       ...productoInicial,

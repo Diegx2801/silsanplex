@@ -25,6 +25,7 @@ vi.mock('@/modulos/productos/estado/useProductoDetalle', () => ({
 }))
 
 import { DetalleProducto } from './DetalleProducto'
+import { DialogoProducto } from './DialogoProducto'
 import { GestorImagenesProducto } from './GestorImagenesProducto'
 import { DialogoConfirmacionEstado } from './DialogoConfirmacionEstado'
 import { productoInicial, type Producto } from '../modelo/producto'
@@ -83,6 +84,7 @@ describe('DetalleProducto', () => {
     expect(screen.getByText('Laboratorio Central')).toBeInTheDocument()
     expect(screen.getByText('Analgésicos adultos')).toBeInTheDocument()
     expect(screen.getByText(/S\/\s*12[.,]50/)).toBeInTheDocument()
+    expect(screen.getByText(/S\/\s*10[.,]00/)).toBeInTheDocument()
     expect(screen.getByText('Gravado')).toBeInTheDocument()
     expect(screen.getByText('RS-12345')).toBeInTheDocument()
     expect(screen.getByText(/se administran en Inventario/i)).toBeInTheDocument()
@@ -144,6 +146,43 @@ describe('DetalleProducto', () => {
     expect(screen.getAllByRole('img')).toHaveLength(2)
     expect(screen.queryByRole('button', { name: /imagen principal/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /retirar/i })).not.toBeInTheDocument()
+  })
+
+  it('muestra Sin mínimo cuando el catálogo no lo configura', () => {
+    render(
+      <DetalleProducto
+        abierto
+        producto={{ ...producto, precioMinimo: '' }}
+        alCambiarApertura={vi.fn()}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Sin mínimo')).toBeInTheDocument()
+  })
+})
+
+describe('DialogoProducto', () => {
+  const unidades = [{ id: '11111111-1111-4111-8111-111111111111', codigo: 'UND', nombre: 'Unidad' }]
+
+  it.each([
+    { nombre: 'creación', productoEditado: null },
+    { nombre: 'edición', productoEditado: producto },
+  ])('expone el precio mínimo final en $nombre', ({ productoEditado }) => {
+    render(
+      <DialogoProducto
+        abierto
+        producto={productoEditado}
+        unidadesMedida={unidades}
+        alCambiarApertura={vi.fn()}
+        alGuardar={vi.fn()}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    const campo = screen.getByRole('textbox', { name: 'Precio mínimo final (S/)' })
+    expect(campo).toHaveValue(productoEditado?.precioMinimo ?? '')
+    expect(screen.getByText('Incluye IGV cuando corresponda. Déjalo vacío para no establecer mínimo.')).toBeInTheDocument()
   })
 })
 

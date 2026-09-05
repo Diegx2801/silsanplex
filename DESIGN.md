@@ -350,7 +350,7 @@ Los bordes son finos y estructurales. No introducir contenedores redondeados ani
 - **Don't** depender solo del color, del hover o de una disposición de escritorio para comunicar o completar una tarea.
 - **Don't** confundir `sessionStorage` usado por módulos temporales con persistencia definitiva, ni prometer sincronización para dominios que todavía no estén conectados a Supabase.
 - **Don't** convertir el formulario esencial en una ficha multipestaña ni hacer obligatorios los campos opcionales antes de confirmar la regla empresarial.
-- **Don't** inferir si el precio base incluye IGV ni inventar catálogos controlados de clasificación o presentación.
+- **Don't** tratar `sale_price` o `minimum_sale_price` como importes sin IGV: ambos son precios finales por unidad base en PEN e incluyen IGV cuando corresponde. No inventar catálogos controlados de clasificación o presentación.
 - **Don't** introducir logotipo, fotografía, ilustración o recursos de marca hasta recibir activos y autorización de Droguería SILSAN S.A.C.
 
 ### Pending Brand Decisions
@@ -360,4 +360,4 @@ Los bordes son finos y estructurales. No introducir contenedores redondeados ani
 - Tipografía corporativa, si difiere de Geist.
 - Iconografía, fotografía, ilustración y tono verbal de marca.
 - Validación empresarial de las prioridades de navegación y de las acciones administrativas frecuentes.
-- Definición de si el precio base incluye IGV, catálogos controlados para clasificación y presentación, y campos opcionales que pasarán a ser obligatorios.
+- Catálogos controlados para clasificación y presentación, y campos opcionales que pasarán a ser obligatorios.

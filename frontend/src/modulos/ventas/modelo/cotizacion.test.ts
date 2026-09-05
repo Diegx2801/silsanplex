@@ -7,6 +7,7 @@ import {
   calcularTotalesCotizacion,
   crearCotizacion,
   esquemaDatosCotizacion,
+  obtenerPrecioMinimoCotizacion,
   validarCotizacion,
   type DatosCotizacion,
 } from './cotizacion'
@@ -99,7 +100,48 @@ describe('cotizaciones', () => {
         },
         [producto],
       ),
-    ).toContain('no puede ser menor a S/ 20.00')
+    ).toContain('no puede ser menor a S/ 20.0000')
+  })
+
+  it('convierte el mínimo final gravado cuando los precios no incluyen IGV', () => {
+    expect(obtenerPrecioMinimoCotizacion(producto, false)).toBeCloseTo(16.94915254)
+    expect(validarCotizacion({
+      ...datos,
+      preciosIncluyenIgv: false,
+      lineas: [{ ...datos.lineas[0], precioUnitario: '16.9491' }],
+    }, [producto])).toContain('S/ 16.9492')
+    expect(validarCotizacion({
+      ...datos,
+      preciosIncluyenIgv: false,
+      lineas: [{ ...datos.lineas[0], precioUnitario: '16.9492' }],
+    }, [producto])).toBeUndefined()
+  })
+
+  it.each(['exonerado', 'inafecto'] as const)(
+    'compara directamente el mínimo de un producto %s',
+    (afectacionIgv) => {
+      const productoSinIgv = { ...producto, afectacionIgv }
+      expect(validarCotizacion({
+        ...datos,
+        preciosIncluyenIgv: false,
+        lineas: [{ ...datos.lineas[0], precioUnitario: '19.9999' }],
+      }, [productoSinIgv])).toContain('S/ 20.0000')
+    },
+  )
+
+  it('distingue entre sin mínimo y mínimo cero para bienes y servicios', () => {
+    const servicioConMinimoCero = {
+      ...producto,
+      tipo: 'service',
+      precioMinimo: '0',
+    } satisfies Producto
+
+    expect(obtenerPrecioMinimoCotizacion({ ...producto, precioMinimo: '' }, true)).toBeNull()
+    expect(obtenerPrecioMinimoCotizacion(servicioConMinimoCero, true)).toBe(0)
+    expect(esquemaDatosCotizacion.safeParse({
+      ...datos,
+      lineas: [{ ...datos.lineas[0], precioUnitario: '0' }],
+    }).success).toBe(true)
   })
 
   it('crea un borrador con instantáneas comerciales', () => {

@@ -237,6 +237,7 @@ function mensajeError(error: { code?: string; message?: string }) {
   const message = error.message ?? ''
   if (message.includes('ORDER_TAX_AFFECTATION_LEGACY_UNKNOWN')) return 'El pedido histórico no tiene afectación tributaria reconstruible'
   if (message.includes('ORDER_TAX_AFFECTATION_UNDEFINED')) return 'No se puede crear o modificar un pedido con productos por definir tributariamente'
+  if (message.includes('ORDER_MINIMUM_SALE_PRICE_VIOLATION')) return 'El precio unitario no puede ser menor al precio mínimo final del producto'
   if (message.includes('SALE_TAX_AFFECTATION_LEGACY_UNKNOWN')) return 'El pedido histórico no tiene afectación tributaria reconstruible para registrar la venta'
   if (message.includes('SALE_TAX_AFFECTATION_UNDEFINED')) return 'No se puede registrar una venta con afectación tributaria por definir'
   if (message.includes('ORDER_TAX_CALCULATION_REQUIRED')) return 'No se puede despachar una venta sin cálculo tributario válido'
