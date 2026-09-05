@@ -402,7 +402,7 @@ select throws_ok($$
 $$, 'P0001', 'REPAIR_ASSIGNED_TECHNICIAN_REQUIRED', 'la regla actual de tecnico bloquea ready');
 
 select lives_ok($$
-  select public.reserve_repair_part(pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","product_id":"e1500000-0000-4000-8000-000000000001","warehouse_id":"e1600000-0000-4000-8000-000000000001","location_id":"e1700000-0000-4000-8000-000000000001","stock_status":"available","quantity_requested":1}'::jsonb))
+  select public.reserve_repair_part(pg_temp.with_repair_version('{"organization_id":"e1100000-0000-4000-8000-000000000001","operation_key":"e1910000-0000-4000-8000-000000000001","repair_id":"e1800000-0000-4000-8000-000000000005","product_id":"e1500000-0000-4000-8000-000000000001","warehouse_id":"e1600000-0000-4000-8000-000000000001","location_id":"e1700000-0000-4000-8000-000000000001","stock_status":"available","quantity_requested":1}'::jsonb))
 $$, 'reserva un repuesto por el flujo P1-05');
 select lives_ok($$
   select public.change_repair_status('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005', 'testing', null, pg_temp.repair_lock_version('e1100000-0000-4000-8000-000000000001', 'e1800000-0000-4000-8000-000000000005'))

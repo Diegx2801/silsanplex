@@ -10,6 +10,9 @@ select plan(19);
 
 begin;
 drop schema if exists repair_quote_concurrency_test cascade;
+alter table public.repair_command_operations disable trigger repair_command_operations_immutable;
+delete from public.repair_command_operations where organization_id = 'bd140000-0000-4000-8000-000000000001';
+alter table public.repair_command_operations enable trigger repair_command_operations_immutable;
 alter table public.audit_events disable trigger audit_events_immutable;
 delete from public.audit_events where organization_id = 'bd140000-0000-4000-8000-000000000001';
 alter table public.audit_events enable trigger audit_events_immutable;
@@ -319,6 +322,7 @@ select set_config(
 );
 select public.save_repair_quote(jsonb_build_object(
   'organization_id', 'bd140000-0000-4000-8000-000000000001',
+  'operation_key', 'bd910000-0000-4000-8000-000000000001',
   'repair_id', 'bd640000-0000-4000-8000-000000000001',
   'expected_lock_version', (select lock_version from public.repairs where organization_id = 'bd140000-0000-4000-8000-000000000001' and id = 'bd640000-0000-4000-8000-000000000001'),
   'id', (select id from public.repair_quotes where repair_id = 'bd640000-0000-4000-8000-000000000001' and is_current),
@@ -438,6 +442,9 @@ select * from finish();
 
 begin;
 drop schema repair_quote_concurrency_test cascade;
+alter table public.repair_command_operations disable trigger repair_command_operations_immutable;
+delete from public.repair_command_operations where organization_id = 'bd140000-0000-4000-8000-000000000001';
+alter table public.repair_command_operations enable trigger repair_command_operations_immutable;
 alter table public.audit_events disable trigger audit_events_immutable;
 delete from public.audit_events where organization_id = 'bd140000-0000-4000-8000-000000000001';
 alter table public.audit_events enable trigger audit_events_immutable;

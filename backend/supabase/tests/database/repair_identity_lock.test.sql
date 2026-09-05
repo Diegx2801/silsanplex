@@ -168,16 +168,17 @@ begin
   perform public.assign_repair('b1040000-0000-4000-8000-000000000001', 'b8040000-0000-4000-8000-000000000023', 'b2040000-0000-4000-8000-000000000003', (select lock_version from public.repairs where organization_id = 'b1040000-0000-4000-8000-000000000001' and id = 'b8040000-0000-4000-8000-000000000023'));
   perform public.record_repair_solution(pg_temp.with_repair_version('{"organization_id":"b1040000-0000-4000-8000-000000000001","repair_id":"b8040000-0000-4000-8000-000000000004","applied_solution":"Substantive solution"}'::jsonb));
   perform public.record_repair_diagnosis(pg_temp.with_repair_version('{"organization_id":"b1040000-0000-4000-8000-000000000001","repair_id":"b8040000-0000-4000-8000-000000000005","technician_id":"b2040000-0000-4000-8000-000000000003","symptoms":"Does not start","cause_found":"Power board","recommended_solution":"Replace board"}'::jsonb));
-  quote_id := public.save_repair_quote(pg_temp.with_repair_version('{"organization_id":"b1040000-0000-4000-8000-000000000001","repair_id":"b8040000-0000-4000-8000-000000000006","items":[{"line_type":"labor","description":"Diagnosis","quantity":1,"unit_price":20}]}'::jsonb));
+  quote_id := public.save_repair_quote(pg_temp.with_repair_version('{"organization_id":"b1040000-0000-4000-8000-000000000001","operation_key":"b9140000-0000-4000-8000-000000000001","repair_id":"b8040000-0000-4000-8000-000000000006","items":[{"line_type":"labor","description":"Diagnosis","quantity":1,"unit_price":20}]}'::jsonb));
   perform public.save_repair_quote(jsonb_build_object(
     'organization_id', 'b1040000-0000-4000-8000-000000000001',
+    'operation_key', 'b9140000-0000-4000-8000-000000000002',
     'repair_id', 'b8040000-0000-4000-8000-000000000006',
     'expected_lock_version', (select lock_version from public.repairs where organization_id = 'b1040000-0000-4000-8000-000000000001' and id = 'b8040000-0000-4000-8000-000000000006'),
     'id', quote_id,
     'submit', true,
     'items', '[{"line_type":"labor","description":"Diagnosis submitted","quantity":1,"unit_price":20}]'::jsonb
   ));
-  part_id := public.reserve_repair_part(pg_temp.with_repair_version('{"organization_id":"b1040000-0000-4000-8000-000000000001","repair_id":"b8040000-0000-4000-8000-000000000007","product_id":"b5040000-0000-4000-8000-000000000001","warehouse_id":"b6040000-0000-4000-8000-000000000001","location_id":"b7040000-0000-4000-8000-000000000001","quantity_requested":1}'::jsonb));
+  part_id := public.reserve_repair_part(pg_temp.with_repair_version('{"organization_id":"b1040000-0000-4000-8000-000000000001","operation_key":"b9140000-0000-4000-8000-000000000003","repair_id":"b8040000-0000-4000-8000-000000000007","product_id":"b5040000-0000-4000-8000-000000000001","warehouse_id":"b6040000-0000-4000-8000-000000000001","location_id":"b7040000-0000-4000-8000-000000000001","quantity_requested":1}'::jsonb));
   perform public.consume_repair_part(jsonb_build_object(
     'organization_id', 'b1040000-0000-4000-8000-000000000001',
     'repair_part_id', part_id,
@@ -218,7 +219,7 @@ select set_config('request.jwt.claims', '{"sub":"b2040000-0000-4000-8000-0000000
 
 -- 1: received correction updates active tenant references, snapshots and traceability.
 select lives_ok($$
-  select public.create_repair('{"organization_id":"b1040000-0000-4000-8000-000000000001","customer_id":"b4040000-0000-4000-8000-000000000001","product_id":"b5040000-0000-4000-8000-000000000002","serial_number":"  CREATED-SERIAL  ","problem_description":"Normal identity creation","customer_reference":"IDENTITY_CREATE"}'::jsonb)
+  select public.create_repair('{"organization_id":"b1040000-0000-4000-8000-000000000001","operation_key":"b9140000-0000-4000-8000-000000000004","customer_id":"b4040000-0000-4000-8000-000000000001","product_id":"b5040000-0000-4000-8000-000000000002","serial_number":"  CREATED-SERIAL  ","problem_description":"Normal identity creation","customer_reference":"IDENTITY_CREATE"}'::jsonb)
 $$, 'normal repair creation still accepts customer, product and serial identity');
 select results_eq(
   $$ select customer_id, product_id, serial_number, serial_control_snapshot from public.repairs where customer_reference = 'IDENTITY_CREATE' $$,

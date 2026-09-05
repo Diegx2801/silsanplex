@@ -201,6 +201,7 @@ $$, 'prepara el stock fisico del bucket');
 select lives_ok($$
   select public.reserve_repair_part('{
     "organization_id":"b1000000-0000-4000-8000-000000000001",
+    "operation_key":"b9100000-0000-4000-8000-000000000001",
     "repair_id":"b8000000-0000-4000-8000-000000000001",
     "product_id":"b5000000-0000-4000-8000-000000000001",
     "warehouse_id":"b6000000-0000-4000-8000-000000000001",
@@ -565,6 +566,7 @@ select results_eq(
 select lives_ok($$
   select public.reserve_repair_part('{
     "organization_id":"b1000000-0000-4000-8000-000000000001",
+    "operation_key":"b9100000-0000-4000-8000-000000000002",
     "repair_id":"b8000000-0000-4000-8000-000000000002",
     "product_id":"b5000000-0000-4000-8000-000000000001",
     "warehouse_id":"b6000000-0000-4000-8000-000000000001",
@@ -622,6 +624,7 @@ select results_eq(
 select lives_ok($$
   select public.reserve_repair_part('{
     "organization_id":"b1000000-0000-4000-8000-000000000001",
+    "operation_key":"b9100000-0000-4000-8000-000000000003",
     "repair_id":"b8000000-0000-4000-8000-000000000003",
     "product_id":"b5000000-0000-4000-8000-000000000001",
     "warehouse_id":"b6000000-0000-4000-8000-000000000001",

@@ -252,7 +252,7 @@ select lives_ok($$
     "warehouse_id":"d6000000-0000-4000-8000-000000000001",
     "location_id":"d7000000-0000-4000-8000-000000000001",
     "stock_status":"available","quantity_requested":4
-  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000001')))
+  }'::jsonb || jsonb_build_object('operation_key', 'dc100000-0000-4000-8000-000000000001'::uuid, 'expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000001')))
 $$, 'reserva stock available por el flujo normal');
 
 select results_eq(
@@ -277,7 +277,7 @@ select throws_ok($$
     "warehouse_id":"d6000000-0000-4000-8000-000000000001",
     "location_id":"d7000000-0000-4000-8000-000000000001",
     "stock_status":"damaged","quantity_requested":2
-  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000002')))
+  }'::jsonb || jsonb_build_object('operation_key', 'dc100000-0000-4000-8000-000000000002'::uuid, 'expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000002')))
 $$, 'P0001', 'REPAIR_PART_STOCK_NOT_ASSIGNABLE', 'rechaza reservar stock damaged');
 
 select throws_ok($$
@@ -288,7 +288,7 @@ select throws_ok($$
     "warehouse_id":"d6000000-0000-4000-8000-000000000001",
     "location_id":"d7000000-0000-4000-8000-000000000001",
     "stock_status":"quarantine","quantity_requested":2
-  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000003')))
+  }'::jsonb || jsonb_build_object('operation_key', 'dc100000-0000-4000-8000-000000000003'::uuid, 'expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000003')))
 $$, 'P0001', 'REPAIR_PART_STOCK_NOT_ASSIGNABLE', 'rechaza reservar stock quarantine');
 
 select results_eq(
@@ -609,7 +609,7 @@ select throws_ok($$
     "warehouse_id":"d6000000-0000-4000-8000-000000000001",
     "location_id":"d7000000-0000-4000-8000-000000000001",
     "stock_status":"available","quantity_requested":1
-  }'::jsonb || jsonb_build_object('expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000002')))
+  }'::jsonb || jsonb_build_object('operation_key', 'dc100000-0000-4000-8000-000000000004'::uuid, 'expected_lock_version', pg_temp.repair_lock_version('d1000000-0000-4000-8000-000000000001', 'd8000000-0000-4000-8000-000000000002')))
 $$, 'P0001', 'REPAIR_PART_PRODUCT_UNAVAILABLE', 'una reserva nueva sigue exigiendo producto activo');
 
 select lives_ok($$

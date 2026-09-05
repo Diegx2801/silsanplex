@@ -122,6 +122,7 @@ describe('DialogoReparacion', () => {
       }),
       'repair-1',
       false,
+      undefined,
     ))
   })
 
@@ -152,6 +153,7 @@ describe('DialogoReparacion', () => {
       }),
       'repair-1',
       true,
+      undefined,
     ))
   })
 
@@ -168,6 +170,7 @@ describe('DialogoReparacion', () => {
       expect.objectContaining({ numeroSerie: 'SER-ORIGINAL' }),
       'repair-1',
       true,
+      undefined,
     ))
   })
 
@@ -198,6 +201,39 @@ describe('DialogoReparacion', () => {
       }),
       'repair-1',
       true,
+      undefined,
     ))
+  })
+
+  it('reutiliza la clave de creación al reintentar los mismos datos', async () => {
+    const alGuardar = vi.fn()
+      .mockResolvedValueOnce('Tiempo de espera agotado')
+      .mockResolvedValueOnce(undefined)
+    render(
+      <DialogoReparacion
+        abierto
+        reparacion={null}
+        identidadEditable
+        clientes={clientes}
+        productos={productos}
+        alCambiarApertura={vi.fn()}
+        alGuardar={alGuardar}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+    fireEvent.change(screen.getByLabelText('Cliente *'), { target: { value: clienteId } })
+    fireEvent.change(screen.getByLabelText('Producto o equipo *'), { target: { value: productoId } })
+    fireEvent.change(screen.getByLabelText('Problema reportado *'), {
+      target: { value: 'No enciende después del transporte' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar reparación' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Tiempo de espera agotado')
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar reparación' }))
+
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledTimes(2))
+    const primeraClave = alGuardar.mock.calls[0][3]
+    expect(primeraClave).toEqual(expect.any(String))
+    expect(alGuardar.mock.calls[1][3]).toBe(primeraClave)
   })
 })

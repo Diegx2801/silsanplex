@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Plus, Trash2, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useFieldArray, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
@@ -52,7 +52,7 @@ interface DialogoCotizacionProps {
   esRevision?: boolean
   productos: readonly OpcionProductoReparacion[]
   alCambiarApertura: (abierto: boolean) => void
-  alGuardar: (datos: DatosCotizacion, enviar: boolean) => Promise<string | undefined>
+  alGuardar: (datos: DatosCotizacion, enviar: boolean, operationKey: string) => Promise<string | undefined>
 }
 
 export function DialogoCotizacion({
@@ -65,6 +65,7 @@ export function DialogoCotizacion({
   alGuardar,
 }: DialogoCotizacionProps) {
   const [mensaje, setMensaje] = useState('')
+  const operacion = useRef<{ firma: string; clave: string } | null>(null)
   const {
     control,
     register,
@@ -101,12 +102,19 @@ export function DialogoCotizacion({
   const total = redondear(subtotal + impuesto)
 
   useEffect(() => {
+    // Conservar la intención enviada si los datos se refrescan tras un timeout.
+    if (abierto && operacion.current) return
+    operacion.current = null
     if (abierto) reset(datosIniciales(cotizacion))
   }, [abierto, cotizacion, reset])
 
   const guardar = async (datos: DatosCotizacion, enviar: boolean) => {
     setMensaje('')
-    const error = await alGuardar(datos, enviar)
+    const firma = JSON.stringify({ datos, enviar })
+    if (operacion.current?.firma !== firma) {
+      operacion.current = { firma, clave: crypto.randomUUID() }
+    }
+    const error = await alGuardar(datos, enviar, operacion.current.clave)
     if (error) {
       setMensaje(error)
       return

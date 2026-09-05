@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { type ComponentProps, useEffect, useId, useState } from 'react'
+import { type ComponentProps, useEffect, useId, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
@@ -116,6 +116,7 @@ interface DialogoReparacionProps {
     datos: DatosReparacion,
     reparacionId: string | undefined,
     identidadEditable: boolean,
+    operationKey: string | undefined,
   ) => Promise<string | undefined>
   alRestaurarFoco: () => void
 }
@@ -133,6 +134,7 @@ export function DialogoReparacion({
 }: DialogoReparacionProps) {
   const [mensaje, setMensaje] = useState('')
   const [productoSeleccionadoExplicitamente, setProductoSeleccionadoExplicitamente] = useState(false)
+  const operacionCreacion = useRef<{ firma: string; clave: string } | null>(null)
   const {
     register,
     handleSubmit,
@@ -181,6 +183,10 @@ export function DialogoReparacion({
     setValue,
   ])
 
+  useEffect(() => {
+    operacionCreacion.current = null
+  }, [abierto, reparacion?.id])
+
   const guardar = async (datos: DatosReparacion) => {
     if (identidadEditable && !productoEsConocido) {
       setError('productoId', { message: 'Selecciona un producto activo' })
@@ -202,7 +208,16 @@ export function DialogoReparacion({
           ? ''
           : datos.numeroSerie,
     }
-    const error = await alGuardar(datosNormalizados, reparacion?.id, identidadEditable)
+    const firma = JSON.stringify(datosNormalizados)
+    if (!reparacion && operacionCreacion.current?.firma !== firma) {
+      operacionCreacion.current = { firma, clave: crypto.randomUUID() }
+    }
+    const error = await alGuardar(
+      datosNormalizados,
+      reparacion?.id,
+      identidadEditable,
+      reparacion ? undefined : operacionCreacion.current!.clave,
+    )
     if (error) {
       if (error.toLocaleLowerCase('es-PE').includes('serie')) {
         setError('numeroSerie', { message: error })
