@@ -38,7 +38,7 @@ async function expectStock(
 }
 
 function kardexRow(kardexRegion: Locator, reason: string, warehouse: string, lot: string) {
-  return kardexRegion.getByRole('row').filter({ hasText: reason }).filter({ hasText: warehouse }).filter({ hasText: lot })
+  return kardexRegion.getByRole('row').filter({ hasText: productCode }).filter({ hasText: reason }).filter({ hasText: warehouse }).filter({ hasText: lot })
 }
 
 async function expectKardex(
@@ -69,6 +69,11 @@ test('aplica FEFO multilote y conserva kardex y valorización por almacén', asy
   const sourceWarehouseLabel = `${sourceWarehouseCode} · ${sourceWarehouseName}`
   const stockRegion = page.getByRole('region', { name: 'Stock por almacén, ubicación y lote' })
   const kardexRegion = page.getByRole('region', { name: 'Kardex valorizado' })
+
+  // Acota las páginas al fixture aunque existan datos de ejecuciones anteriores.
+  await stockRegion.getByRole('searchbox', { name: 'Buscar', exact: true }).fill(productCode)
+  await kardexRegion.getByRole('searchbox', { name: 'Buscar', exact: true }).fill(productCode)
+  await expect(stockRegion.getByRole('row')).toHaveCount(4)
 
   await expectStock(stockRegion, sourceWarehouseName, 'LOTE-E2E-A', '3', '30.00')
   await expectStock(stockRegion, sourceWarehouseName, 'LOTE-E2E-B', '6', '120.00')
@@ -110,5 +115,7 @@ test('aplica FEFO multilote y conserva kardex y valorización por almacén', asy
   await expectKardex(kardexRegion, transferReason, destinationWarehouseName, 'LOTE-E2E-B', '4', '—', '20.00', '4', '80.00')
   await expectKardex(kardexRegion, transferReason, sourceWarehouseName, 'LOTE-E2E-C', '—', '2', '30.00', '2', '60.00')
   await expectKardex(kardexRegion, transferReason, destinationWarehouseName, 'LOTE-E2E-C', '2', '—', '30.00', '6', '140.00')
-  await expect(page.getByRole('region', { name: 'Historial de transferencias' })).toContainText(transferReference)
+  const transfersRegion = page.getByRole('region', { name: 'Historial de transferencias' })
+  await transfersRegion.getByRole('searchbox', { name: 'Buscar', exact: true }).fill(transferReference)
+  await expect(transfersRegion.getByRole('article').filter({ hasText: transferReference })).toHaveCount(1)
 })
