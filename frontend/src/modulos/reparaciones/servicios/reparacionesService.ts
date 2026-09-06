@@ -683,6 +683,80 @@ export async function obtenerResumenReparaciones(organizationId: string) {
   }
 }
 
+const tamanioPaginaDetalle = 500
+const tamanioLoteIdsDetalle = 100
+
+interface ResultadoPaginaDetalle<T> {
+  data: T[] | null
+  error: ErrorSupabase | null
+  count: number | null
+}
+
+async function consultarPaginasDetalle<T>(
+  consultar: (inicio: number, fin: number) => PromiseLike<ResultadoPaginaDetalle<T>>,
+  nombreColeccion: string,
+) {
+  const filas: T[] = []
+  let totalEsperado: number | null = null
+
+  for (let inicio = 0; ; inicio += tamanioPaginaDetalle) {
+    const resultado = await consultar(inicio, inicio + tamanioPaginaDetalle - 1)
+    if (resultado.error) throw crearErrorReparacion(resultado.error, 'consultar')
+    const pagina = resultado.data ?? []
+    if (totalEsperado === null && resultado.count !== null) totalEsperado = resultado.count
+    filas.push(...pagina)
+
+    if (totalEsperado !== null && filas.length >= totalEsperado) break
+    if (pagina.length < tamanioPaginaDetalle) break
+  }
+
+  if (totalEsperado !== null && filas.length !== totalEsperado) {
+    throw new ErrorReparacion(
+      `La carga paginada de ${nombreColeccion} quedó incompleta. Inténtalo nuevamente.`,
+    )
+  }
+  return filas
+}
+
+export async function obtenerLineasCotizacionReparacion(
+  organizationId: string,
+  quoteId: string,
+) {
+  const filas = await consultarPaginasDetalle<FilaLineaCotizacion>(
+    (inicio, fin) => supabase
+      .from('repair_quote_items')
+      .select('id,organization_id,quote_id,line_type,product_id,description,quantity,unit_price,taxable,line_subtotal,created_at', { count: 'exact' })
+      .eq('organization_id', organizationId)
+      .eq('quote_id', quoteId)
+      .order('id', { ascending: true })
+      .range(inicio, fin),
+    'líneas de cotización',
+  )
+  return filas.map(mapearLineaCotizacion)
+}
+
+async function obtenerConsumosPartesReparacion(
+  organizationId: string,
+  parteIds: readonly string[],
+) {
+  const filas: FilaConsumoParte[] = []
+  for (let inicioLote = 0; inicioLote < parteIds.length; inicioLote += tamanioLoteIdsDetalle) {
+    const loteIds = parteIds.slice(inicioLote, inicioLote + tamanioLoteIdsDetalle)
+    filas.push(...await consultarPaginasDetalle<FilaConsumoParte>(
+      (inicio, fin) => supabase
+        .from('repair_part_consumptions')
+        .select('id,organization_id,repair_part_id,quantity,warehouse_id,location_id,stock_status,lot,expiration_date,unit_cost,inventory_movement_id,operation_key,consumed_by,consumed_at,created_at', { count: 'exact' })
+        .eq('organization_id', organizationId)
+        .in('repair_part_id', loteIds)
+        .order('consumed_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(inicio, fin),
+      'consumos de repuestos',
+    ))
+  }
+  return filas
+}
+
 export async function obtenerDetalleReparacion(
   organizationId: string,
   repairId: string,
@@ -702,99 +776,57 @@ export async function obtenerDetalleReparacion(
     if (!repairResult.data) throw new Error('No se encontró la reparación solicitada.')
 
     const reparacion = mapearReparacion(repairResult.data as FilaReparacion)
-    const [quotesResult, diagnosticsResult, partsResult, testsResult, eventsResult] =
+    const [filasCotizaciones, filasDiagnosticos, filasPartes, filasPruebas, filasEventos] =
       await Promise.all([
-      supabase
+      consultarPaginasDetalle<FilaCotizacion>((inicio, fin) => supabase
         .from('repair_quotes')
-        .select('id,organization_id,repair_id,version_number,is_current,status,currency,prices_include_tax,tax_rate,subtotal,tax,total,approved_by,approved_at,approval_observation,rejected_by,rejected_at,rejection_observation,created_by,updated_by,created_at,updated_at')
-        .eq('organization_id', organizationId)
-        .eq('repair_id', repairId)
-        .order('version_number', { ascending: false })
-        .order('id', { ascending: false }),
-      supabase
+        .select('id,organization_id,repair_id,version_number,is_current,status,currency,prices_include_tax,tax_rate,subtotal,tax,total,approved_by,approved_at,approval_observation,rejected_by,rejected_at,rejection_observation,created_by,updated_by,created_at,updated_at', { count: 'exact' })
+        .eq('organization_id', organizationId).eq('repair_id', repairId)
+        .order('version_number', { ascending: false }).order('id', { ascending: false })
+        .range(inicio, fin), 'cotizaciones'),
+      consultarPaginasDetalle<FilaDiagnostico>((inicio, fin) => supabase
         .from('repair_diagnostics')
-        .select('id,organization_id,repair_id,diagnosed_at,technician_id,symptoms,cause_found,recommended_solution,notes,created_by,created_at')
-        .eq('organization_id', organizationId)
-        .eq('repair_id', repairId)
-        .order('diagnosed_at', { ascending: false })
-        .order('id', { ascending: false }),
-      supabase
+        .select('id,organization_id,repair_id,diagnosed_at,technician_id,symptoms,cause_found,recommended_solution,notes,created_by,created_at', { count: 'exact' })
+        .eq('organization_id', organizationId).eq('repair_id', repairId)
+        .order('diagnosed_at', { ascending: false }).order('id', { ascending: false })
+        .range(inicio, fin), 'diagnósticos'),
+      consultarPaginasDetalle<FilaParte>((inicio, fin) => supabase
         .from('repair_parts')
-        .select('id,organization_id,repair_id,product_id,product_code_snapshot,product_description_snapshot,warehouse_id,location_id,stock_status,lot,expiration_date,quantity_requested,quantity_consumed,status,notes,created_by,updated_by,created_at,updated_at')
-        .eq('organization_id', organizationId)
-        .eq('repair_id', repairId)
-        .order('created_at', { ascending: true })
-        .order('id', { ascending: true }),
-      supabase
+        .select('id,organization_id,repair_id,product_id,product_code_snapshot,product_description_snapshot,warehouse_id,location_id,stock_status,lot,expiration_date,quantity_requested,quantity_consumed,status,notes,created_by,updated_by,created_at,updated_at', { count: 'exact' })
+        .eq('organization_id', organizationId).eq('repair_id', repairId)
+        .order('created_at', { ascending: true }).order('id', { ascending: true })
+        .range(inicio, fin), 'repuestos'),
+      consultarPaginasDetalle<FilaPrueba>((inicio, fin) => supabase
         .from('repair_tests')
-        .select('id,organization_id,repair_id,test_cycle_number,test_type,result,passed,performed_by,notes,completed_at,created_by,created_at')
-        .eq('organization_id', organizationId)
-        .eq('repair_id', repairId)
-        .order('completed_at', { ascending: false })
-        .order('id', { ascending: false }),
-      supabase
+        .select('id,organization_id,repair_id,test_cycle_number,test_type,result,passed,performed_by,notes,completed_at,created_by,created_at', { count: 'exact' })
+        .eq('organization_id', organizationId).eq('repair_id', repairId)
+        .order('completed_at', { ascending: false }).order('id', { ascending: false })
+        .range(inicio, fin), 'pruebas'),
+      consultarPaginasDetalle<FilaEvento>((inicio, fin) => supabase
         .from('repair_events')
         .select('id,organization_id,repair_id,event_type,from_status,to_status,actor_user_id,observation,metadata,created_at', { count: 'exact' })
-        .eq('organization_id', organizationId)
-        .eq('repair_id', repairId)
-        .order('created_at', { ascending: false })
-        .order('id', { ascending: false }),
+        .eq('organization_id', organizationId).eq('repair_id', repairId)
+        .order('created_at', { ascending: false }).order('id', { ascending: false })
+        .range(inicio, fin), 'eventos'),
       ])
 
-    const fallo = [
-      quotesResult,
-      diagnosticsResult,
-      partsResult,
-      testsResult,
-      eventsResult,
-    ].find((resultado) => resultado.error)
-    if (fallo?.error) {
-      throw crearErrorReparacion(fallo.error, 'consultar')
-    }
-
-    const quotes = (quotesResult.data as FilaCotizacion[]).map((fila) =>
+    const cotizacionesSinLineas = filasCotizaciones.map((fila) =>
       mapearCotizacion(fila, []),
     )
-    const quoteIds = quotes.map((quote) => quote.id)
-    const lineasResult = quoteIds.length
-      ? await supabase
-        .from('repair_quote_items')
-        .select('id,organization_id,quote_id,line_type,product_id,description,quantity,unit_price,taxable,line_subtotal,created_at')
-        .eq('organization_id', organizationId)
-        .in('quote_id', quoteIds)
-        .order('id', { ascending: true })
-      : { data: [], error: null }
-    if (lineasResult.error) {
-      throw crearErrorReparacion(lineasResult.error, 'consultar')
-    }
+    const cotizacionSeleccionada = seleccionarCotizacionActual(cotizacionesSinLineas)
+    const lineasSeleccionadas = cotizacionSeleccionada
+      ? await obtenerLineasCotizacionReparacion(organizationId, cotizacionSeleccionada.id)
+      : []
+    const cotizaciones = cotizacionesSinLineas.map((cotizacion) => cotizacion.id === cotizacionSeleccionada?.id
+      ? { ...cotizacion, lineas: lineasSeleccionadas } : cotizacion)
 
-    const lineasPorCotizacion = new Map<string, LineaCotizacionReparacion[]>()
-    for (const fila of (lineasResult.data as FilaLineaCotizacion[])) {
-      const lineas = lineasPorCotizacion.get(fila.quote_id) ?? []
-      lineas.push(mapearLineaCotizacion(fila))
-      lineasPorCotizacion.set(fila.quote_id, lineas)
-    }
-    const cotizaciones = (quotesResult.data as FilaCotizacion[]).map((fila) =>
-      mapearCotizacion(fila, lineasPorCotizacion.get(fila.id) ?? []),
+    const filasConsumos = await obtenerConsumosPartesReparacion(
+      organizationId,
+      filasPartes.map((parte) => parte.id),
     )
 
-    const partes = partsResult.data as FilaParte[]
-    const parteIds = partes.map((parte) => parte.id)
-    const consumosResult = parteIds.length
-      ? await supabase
-        .from('repair_part_consumptions')
-        .select('id,organization_id,repair_part_id,quantity,warehouse_id,location_id,stock_status,lot,expiration_date,unit_cost,inventory_movement_id,operation_key,consumed_by,consumed_at,created_at')
-        .eq('organization_id', organizationId)
-        .in('repair_part_id', parteIds)
-        .order('consumed_at', { ascending: false })
-        .order('id', { ascending: false })
-      : { data: [], error: null }
-    if (consumosResult.error) {
-      throw crearErrorReparacion(consumosResult.error, 'consultar')
-    }
-
     const consumosPorParte = new Map<string, ConsumoParteReparacion[]>()
-    for (const fila of (consumosResult.data as FilaConsumoParte[])) {
+    for (const fila of filasConsumos) {
       const consumos = consumosPorParte.get(fila.repair_part_id) ?? []
       consumos.push(mapearConsumo(fila))
       consumosPorParte.set(fila.repair_part_id, consumos)
@@ -816,19 +848,19 @@ export async function obtenerDetalleReparacion(
     if (lockVersionFinal !== reparacion.lockVersion) continue
 
     const cotizacionActiva = seleccionarCotizacionActual(cotizaciones)
-    const eventos = ((eventsResult.data ?? []) as FilaEvento[]).map(mapearEvento)
+    const eventos = filasEventos.map(mapearEvento)
     return {
       cicloPruebasActual: (versionResult.data as { current_test_cycle_number: number }).current_test_cycle_number,
       reparacion,
-      diagnosticos: (diagnosticsResult.data as FilaDiagnostico[]).map(mapearDiagnostico),
+      diagnosticos: filasDiagnosticos.map(mapearDiagnostico),
       cotizaciones,
       cotizacionActiva,
-      partes: partes.map((parte) =>
+      partes: filasPartes.map((parte) =>
         mapearParte(parte, consumosPorParte.get(parte.id) ?? []),
       ),
-      pruebas: (testsResult.data as FilaPrueba[]).map(mapearPrueba),
+      pruebas: filasPruebas.map(mapearPrueba),
       eventos,
-      eventosCompletos: eventsResult.count === eventos.length,
+      eventosCompletos: true,
     }
   }
 

@@ -7,6 +7,13 @@ la recepción del equipo hasta la entrega. La lista usa paginación y filtros
 server-side sobre `public.repair_list`; el detalle consulta diagnósticos,
 versiones de cotización, repuestos, consumos, pruebas y eventos.
 
+Las colecciones del detalle se recorren en páginas de 500 filas con conteo
+exacto y orden estable. Si el número recuperado no coincide con el conteo, la
+carga falla de forma explícita. Los consumos agrupan hasta 100 IDs de repuesto
+por consulta. Las cotizaciones cargan todas sus cabeceras, pero las líneas se
+solicitan únicamente para la versión vigente seleccionada y se paginan por su
+`quote_id`.
+
 La ruta es `/reparaciones` y se carga de forma lazy. La navegación y la ruta
 requieren `REPAIRS_VIEW`.
 

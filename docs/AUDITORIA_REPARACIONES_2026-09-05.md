@@ -3,9 +3,8 @@
 ## Dictamen
 
 No recomendar todavía la liberación general a producción. El flujo principal
-funciona localmente y R-AUD-01, R-AUD-02, R-AUD-04 y R-AUD-05 ya están
-corregidos y cubiertos por regresiones. R-AUD-03 continúa pendiente para
-historiales operativos que puedan superar 1.000 filas.
+funciona localmente y R-AUD-01 a R-AUD-05 ya están corregidos y cubiertos por
+regresiones.
 
 Alcance: código de Reparaciones, contratos RPC, permisos, inventario asociado,
 cotizaciones, historial, concurrencia y pruebas locales. No se evaluaron otros
@@ -67,20 +66,32 @@ del mismo producto como repuesto con stock FEFO. Las pruebas unitarias validan
 los rangos de la página 41, filtros remotos, resolución directa de referencias
 inactivas y conservación de la selección entre respuestas.
 
-### R-AUD-03 — P2: detalle e historial pueden quedar incompletos
+### R-AUD-03 — P2 corregido: detalle e historial completos
 
-Las consultas de diagnósticos, repuestos, pruebas, eventos, líneas de todas las
-cotizaciones y consumos no recorren páginas. La API local tiene `max_rows=1000`.
-En particular, las líneas se consultan para todas las versiones juntas: al
-superar el límite, una versión puede mostrar menos líneas que las que explican
-sus totales. El control de versión consistente no detecta esta truncación.
+El problema original consultaba diagnósticos, repuestos, pruebas, eventos,
+líneas y consumos sin recorrer páginas. La API local tiene `max_rows=1000`, por
+lo que una respuesta exitosa podía omitir filas. Además, las líneas se pedían
+para todas las versiones de cotización en un único `in(...)`.
 
-Referencias: `frontend/src/modulos/reparaciones/servicios/reparacionesService.ts:694`,
-`:754`, `:779`; `backend/supabase/config.toml:19`.
+Corrección implementada: las colecciones del detalle se leen en páginas de 500
+filas con orden estable y conteo exacto. El servicio exige que la suma de las
+páginas coincida con el conteo; una respuesta incompleta genera error en vez de
+presentar un historial truncado. Los IDs de repuestos se agrupan en lotes de 100
+para paginar consumos sin construir un filtro de URL excesivo.
 
-Corrección: paginar historiales y cargar las líneas por cotización seleccionada,
-con conteos que permitan detectar resultados incompletos. Hallazgo estático;
-no se ejecutó una prueba de volumen de historial.
+Las cabeceras de cotización se conservan como historial, pero solo se consultan
+las líneas de la cotización vigente seleccionada. La consulta de líneas también
+es paginada y queda disponible por organización e ID para una selección concreta.
+
+La prueba de volumen simula el límite de página y exige recuperar la fila 1.001
+en diagnósticos, repuestos, pruebas, eventos, consumos y líneas. También comprueba
+que la cotización histórica no provoque otra carga de líneas y que la consulta
+use `quote_id`, no un `in(...)` con todas las versiones.
+
+Validación final de R-AUD-03: **1.941 pruebas SQL**, **320 pruebas unitarias del
+frontend** —incluidas **66 de Reparaciones**— y los **6 E2E de Reparaciones**
+aprobados. También pasaron build, lint, tipos del frontend y de los E2E, y tipos
+de los scripts del backend.
 
 ### R-AUD-04 — P2 corregido: identificación del ciclo vigente
 
@@ -161,6 +172,7 @@ E2E de catálogo usa Supabase y Chromium reales con 1.001 registros por maestro.
 
 - R-AUD-01 resuelto para cierre/reapertura del diálogo y recarga de la pestaña.
 - R-AUD-02 resuelto para clientes, productos, cotizaciones y repuestos.
+- R-AUD-03 resuelto mediante páginas verificadas y líneas por cotización vigente.
 - Resolver o aceptar explícitamente los pendientes P2 según volumen y operación.
 - Revisar y subir estos cambios, ejecutar CI sobre el commit final y comprobar
   que el resultado sea obligatorio para integrar la rama.
