@@ -147,7 +147,7 @@ function writePlaywrightEnvironment(
   admin: E2eIdentity,
   member: E2eIdentity,
   recovery: E2eIdentity,
-  inventory: InventoryE2eFixture,
+  inventory: InventoryE2eFixture[],
   repairs: E2eIdentity,
 ) {
   const target = resolve(process.cwd(), '..', 'frontend', '.env.e2e.local')
@@ -161,13 +161,7 @@ function writePlaywrightEnvironment(
     `E2E_RECOVERY_PASSWORD=${JSON.stringify(recovery.password)}`,
     `E2E_REPAIRS_EMAIL=${JSON.stringify(repairs.email)}`,
     `E2E_REPAIRS_PASSWORD=${JSON.stringify(repairs.password)}`,
-    `E2E_INVENTORY_PRODUCT_CODE=${JSON.stringify(inventory.productCode)}`,
-    `E2E_INVENTORY_PRODUCT_DESCRIPTION=${JSON.stringify(inventory.productDescription)}`,
-    `E2E_INVENTORY_SOURCE_WAREHOUSE_CODE=${JSON.stringify(inventory.sourceWarehouseCode)}`,
-    `E2E_INVENTORY_SOURCE_WAREHOUSE_NAME=${JSON.stringify(inventory.sourceWarehouseName)}`,
-    `E2E_INVENTORY_DESTINATION_WAREHOUSE_CODE=${JSON.stringify(inventory.destinationWarehouseCode)}`,
-    `E2E_INVENTORY_DESTINATION_WAREHOUSE_NAME=${JSON.stringify(inventory.destinationWarehouseName)}`,
-    `E2E_INVENTORY_TRANSFER_REFERENCE=${JSON.stringify(inventory.transferReference)}`,
+    `E2E_INVENTORY_FIXTURES_BASE64=${Buffer.from(JSON.stringify(inventory)).toString('base64url')}`,
     '',
   ].join('\n')
 
@@ -186,7 +180,7 @@ async function createInventoryFixture(
   organizationId: string,
   actorId: string,
 ): Promise<InventoryE2eFixture> {
-  const suffix = `${Date.now()}`.slice(-10)
+  const suffix = randomBytes(5).toString('hex').toUpperCase()
   const productCode = `E2E-FEFO-${suffix}`
   const productDescription = `Producto control E2E FEFO ${suffix}`
   const sourceWarehouseCode = `E2O-${suffix.slice(-8)}`
@@ -423,16 +417,19 @@ async function prepareLocalE2e() {
     password: adminIdentity.password,
   })
   if (signInError) throw signInError
-  const inventoryFixture = await createInventoryFixture(
-    inventoryClient,
-    organization.id,
-    adminUser.id,
-  )
+  const inventoryFixtures: InventoryE2eFixture[] = []
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    inventoryFixtures.push(await createInventoryFixture(
+      inventoryClient,
+      organization.id,
+      adminUser.id,
+    ))
+  }
   writePlaywrightEnvironment(
     adminIdentity,
     memberIdentity,
     recoveryIdentity,
-    inventoryFixture,
+    inventoryFixtures,
     repairsIdentity,
   )
 
