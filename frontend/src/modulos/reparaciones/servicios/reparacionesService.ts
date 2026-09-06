@@ -9,6 +9,7 @@ import {
   normalizarBusquedaReparaciones,
   normalizarTextoOpcional,
   limitarEnteroSeguro,
+  type ConsultaCatalogoReparacion,
   type CotizacionReparacion,
   type DatosCotizacion,
   type DatosConsumoParte,
@@ -27,6 +28,7 @@ import {
   type ParteReparacion,
   type PruebaReparacion,
   type Reparacion,
+  type ResultadoCatalogoReparacion,
   type ConsumoParteReparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
 
@@ -75,6 +77,7 @@ interface FilaClienteReparacion {
   document_number: string
   legal_name: string
   trade_name: string | null
+  is_active: boolean
 }
 
 interface FilaProductoReparacion {
@@ -85,6 +88,7 @@ interface FilaProductoReparacion {
   serial_control: boolean | null
   batch_control: boolean | null
   expiration_control: boolean | null
+  is_active: boolean
 }
 
 interface FilaDiagnostico {
@@ -831,48 +835,72 @@ export async function obtenerDetalleReparacion(
   throw new Error('La reparación cambió durante la carga. Inténtalo nuevamente.')
 }
 
+function mapearOpcionCliente(fila: FilaClienteReparacion): OpcionClienteReparacion {
+  return { id: fila.id, nombre: fila.legal_name, nombreComercial: fila.trade_name ?? '',
+    documento: `${fila.document_type} ${fila.document_number}`, activo: fila.is_active }
+}
+
+function mapearOpcionProducto(fila: FilaProductoReparacion): OpcionProductoReparacion {
+  return { id: fila.id, codigo: fila.code, descripcion: fila.description,
+    unidadMedida: fila.unit_of_measure ?? '', serialControl: fila.serial_control ?? false,
+    controlLote: fila.batch_control ?? false, controlVencimiento: fila.expiration_control ?? false,
+    activo: fila.is_active }
+}
+
+function rangoCatalogo(consulta: ConsultaCatalogoReparacion) {
+  const pagina = limitarEnteroSeguro(consulta.pagina, 1, 100_000)
+  const tamanio = limitarEnteroSeguro(consulta.tamanioPagina, 1, 50)
+  return { inicio: (pagina - 1) * tamanio, fin: pagina * tamanio - 1 }
+}
+
 export async function listarOpcionesClientesReparacion(
   organizationId: string,
-): Promise<OpcionClienteReparacion[]> {
-  const { data, error } = await supabase
-    .from('customers')
-    .select('id,document_type,document_number,legal_name,trade_name')
-    .eq('organization_id', organizationId)
-    .eq('is_active', true)
-    .order('legal_name', { ascending: true })
-    .limit(1000)
+  consulta: ConsultaCatalogoReparacion,
+): Promise<ResultadoCatalogoReparacion<OpcionClienteReparacion>> {
+  const rango = rangoCatalogo(consulta)
+  let query = supabase.from('customers')
+    .select('id,document_type,document_number,legal_name,trade_name,is_active', { count: 'exact' })
+    .eq('organization_id', organizationId).eq('is_active', true)
+  const termino = escaparPatronIlike(normalizarBusquedaReparaciones(consulta.busqueda))
+  if (termino) query = query.or(['document_number', 'legal_name', 'trade_name']
+    .map((columna) => `${columna}.ilike.%${termino}%`).join(','))
+  const { data, error, count } = await query.order('legal_name', { ascending: true })
+    .order('id', { ascending: true }).range(rango.inicio, rango.fin)
   if (error) throw crearErrorReparacion(error, 'opciones')
-
-  return ((data ?? []) as FilaClienteReparacion[]).map((fila) => ({
-    id: fila.id,
-    nombre: fila.legal_name,
-    nombreComercial: fila.trade_name ?? '',
-    documento: `${fila.document_type} ${fila.document_number}`,
-  }))
+  return { elementos: ((data ?? []) as FilaClienteReparacion[]).map(mapearOpcionCliente), total: count ?? 0 }
 }
 
 export async function listarOpcionesProductosReparacion(
   organizationId: string,
-): Promise<OpcionProductoReparacion[]> {
-  const { data, error } = await supabase
-    .from('products')
-    .select('id,code,description,unit_of_measure,serial_control,batch_control,expiration_control')
-    .eq('organization_id', organizationId)
-    .eq('is_active', true)
-    .order('description', { ascending: true })
-    .order('code', { ascending: true })
-    .limit(1000)
+  consulta: ConsultaCatalogoReparacion,
+): Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>> {
+  const rango = rangoCatalogo(consulta)
+  let query = supabase.from('products')
+    .select('id,code,description,unit_of_measure,serial_control,batch_control,expiration_control,is_active', { count: 'exact' })
+    .eq('organization_id', organizationId).eq('is_active', true)
+  const termino = escaparPatronIlike(normalizarBusquedaReparaciones(consulta.busqueda))
+  if (termino) query = query.or(`code.ilike.%${termino}%,description.ilike.%${termino}%`)
+  const { data, error, count } = await query.order('description', { ascending: true })
+    .order('code', { ascending: true }).order('id', { ascending: true })
+    .range(rango.inicio, rango.fin)
   if (error) throw crearErrorReparacion(error, 'opciones')
+  return { elementos: ((data ?? []) as FilaProductoReparacion[]).map(mapearOpcionProducto), total: count ?? 0 }
+}
 
-  return ((data ?? []) as FilaProductoReparacion[]).map((fila) => ({
-    id: fila.id,
-    codigo: fila.code,
-    descripcion: fila.description,
-    unidadMedida: fila.unit_of_measure ?? '',
-    serialControl: fila.serial_control ?? false,
-    controlLote: fila.batch_control ?? false,
-    controlVencimiento: fila.expiration_control ?? false,
-  }))
+export async function obtenerOpcionClienteReparacion(organizationId: string, id: string) {
+  const { data, error } = await supabase.from('customers')
+    .select('id,document_type,document_number,legal_name,trade_name,is_active')
+    .eq('organization_id', organizationId).eq('id', id).maybeSingle()
+  if (error) throw crearErrorReparacion(error, 'opciones')
+  return data ? mapearOpcionCliente(data as FilaClienteReparacion) : null
+}
+
+export async function obtenerOpcionProductoReparacion(organizationId: string, id: string) {
+  const { data, error } = await supabase.from('products')
+    .select('id,code,description,unit_of_measure,serial_control,batch_control,expiration_control,is_active')
+    .eq('organization_id', organizationId).eq('id', id).maybeSingle()
+  if (error) throw crearErrorReparacion(error, 'opciones')
+  return data ? mapearOpcionProducto(data as FilaProductoReparacion) : null
 }
 
 export async function listarAlmacenesReparacion(

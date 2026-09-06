@@ -50,9 +50,14 @@ las lecturas del módulo filtran explícitamente por organización. Las escritur
 se realizan mediante RPC protegidas por los permisos `REPAIRS_*`; no se deben
 añadir mutaciones directas sobre las tablas del módulo.
 
-Los catálogos de clientes, productos, almacenes y ubicaciones solo muestran
-registros activos de la organización actual. Los técnicos se obtienen mediante
-`list_repair_technicians`.
+Los selectores de clientes y productos consultan el catálogo activo de la
+organización mediante búsqueda remota y páginas de 25 registros. El servicio
+limita cada petición a 50 filas. Al editar, la referencia guardada se resuelve
+por organización e ID aunque esté fuera de la página actual o se encuentre
+inactiva; permanece visible como referencia histórica, pero no se ofrece como
+nueva selección. Esta misma consulta paginada se usa en cotizaciones y reservas
+de repuestos. Almacenes y ubicaciones muestran registros activos. Los técnicos
+se obtienen mediante `list_repair_technicians`.
 
 ## Productos serializados
 
@@ -96,6 +101,11 @@ separados del historial. Al volver a entrar en pruebas después de un retrabajo,
 el nuevo ciclo empieza sin resultados. Las aprobaciones anteriores no habilitan
 la entrega; las pruebas antiguas sin ciclo identificado se conservan como
 historial. El E2E principal verifica fallo, retrabajo, nuevo ciclo y entrega.
+
+El E2E de catálogos prepara 1.001 clientes y productos deterministas y verifica
+que la pantalla cargue solo una página, permita avanzar y buscar en el servidor,
+registre el elemento 1.001, resuelva un cliente histórico inactivo al editar y
+encuentre el producto desde el selector de repuestos.
 
 Los E2E de Reparaciones están en `frontend/tests/e2e/repairs.spec.ts`. Desde
 `frontend`, ejecutar `npm run test:e2e:local -- repairs.spec.ts` para preparar

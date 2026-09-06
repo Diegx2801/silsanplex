@@ -189,6 +189,8 @@ export function ReparacionesPage() {
     cargarClientes: puedeCrear || puedeEditar,
     cargarProductos: puedeCrear || puedeUsarPartes || puedeEditar,
     cargarAlmacenes: puedeUsarPartes,
+    clienteIdActual: reparacionEnEdicion?.clienteId ?? datosCreacionPendiente?.clienteId,
+    productoIdActual: reparacionEnEdicion?.productoId ?? datosCreacionPendiente?.productoId,
   })
   const detalleConsulta = useReparacionDetalle(reparacionId, Boolean(reparacionId))
 
@@ -292,7 +294,7 @@ export function ReparacionesPage() {
         {!operaciones.cargando && !operaciones.error ? <PaginacionReparaciones inicio={operaciones.reparaciones.length ? (paginaActual - 1) * tamanioPagina + 1 : 0} fin={operaciones.reparaciones.length ? (paginaActual - 1) * tamanioPagina + operaciones.reparaciones.length : 0} total={operaciones.totalFiltrado} pagina={paginaActual} totalPaginas={totalPaginas} alCambiarPagina={setPagina} /> : null}
       </section>
 
-      {formularioAbierto && (puedeCrear || (puedeEditar && reparacionEnEdicion)) ? <DialogoReparacion datosCreacionPendiente={datosCreacionPendiente} key={reparacionEnEdicion?.id ?? 'nueva-reparacion'} abierto={formularioAbierto} reparacion={reparacionEnEdicion} identidadEditable={identidadEditableEnEdicion} clientes={opciones.clientes} productos={opciones.productos} cargandoOpciones={opciones.cargando} alCambiarApertura={setFormularioAbierto} alGuardar={guardarReparacion} alRestaurarFoco={() => disparadorFormulario.current?.focus()} /> : null}
+      {formularioAbierto && (puedeCrear || (puedeEditar && reparacionEnEdicion)) ? <DialogoReparacion datosCreacionPendiente={datosCreacionPendiente} key={reparacionEnEdicion?.id ?? 'nueva-reparacion'} abierto={formularioAbierto} reparacion={reparacionEnEdicion} identidadEditable={identidadEditableEnEdicion} clientes={opciones.clientes} productos={opciones.productos} totalClientes={opciones.totalClientes} totalProductos={opciones.totalProductos} clienteActual={opciones.clienteActual} productoActual={opciones.productoActual} buscarClientes={opciones.buscarClientes} buscarProductos={opciones.buscarProductos} resolverCliente={opciones.resolverCliente} resolverProducto={opciones.resolverProducto} cargandoOpciones={opciones.cargando} alCambiarApertura={setFormularioAbierto} alGuardar={guardarReparacion} alRestaurarFoco={() => disparadorFormulario.current?.focus()} /> : null}
 
       {reparacionId ? <DetalleReparacion
         key={reparacionId}
@@ -301,6 +303,9 @@ export function ReparacionesPage() {
         cargando={detalleConsulta.cargando}
         error={detalleConsulta.error}
         productos={opciones.productos}
+        totalProductos={opciones.totalProductos}
+        buscarProductos={opciones.buscarProductos}
+        resolverProducto={opciones.resolverProducto}
         almacenes={opciones.almacenes}
         ubicaciones={opciones.ubicaciones}
         puedeEditar={puedeEditar}

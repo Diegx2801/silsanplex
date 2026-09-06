@@ -302,6 +302,53 @@ async function createInventoryFixture(
   }
 }
 
+async function prepareRepairCatalogFixture(
+  admin: SupabaseClient,
+  organizationId: string,
+  actorId: string,
+) {
+  const customers = Array.from({ length: 1001 }, (_, offset) => {
+    const index = offset + 1
+    const suffix = index.toString().padStart(4, '0')
+    return {
+      id: `e0000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
+      organization_id: organizationId,
+      document_type: 'OTHER',
+      document_number: `E2ECAT${suffix}`,
+      legal_name: `ZZZZ E2E Cliente catálogo ${suffix}`,
+      is_active: true,
+      created_by: actorId,
+      updated_by: actorId,
+    }
+  })
+  const products = Array.from({ length: 1001 }, (_, offset) => {
+    const index = offset + 1
+    const suffix = index.toString().padStart(4, '0')
+    return {
+      id: `f0000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
+      organization_id: organizationId,
+      code: `E2ECAT${suffix}`,
+      description: `ZZZZ E2E Producto catálogo ${suffix}`,
+      unit_of_measure: 'UND',
+      batch_control: false,
+      expiration_control: false,
+      serial_control: false,
+      sale_price: 10,
+      is_active: true,
+      created_by: actorId,
+      updated_by: actorId,
+    }
+  })
+  for (let inicio = 0; inicio < customers.length; inicio += 250) {
+    const { error: customersError } = await admin.from('customers')
+      .upsert(customers.slice(inicio, inicio + 250), { onConflict: 'id' })
+    if (customersError) throw customersError
+    const { error: productsError } = await admin.from('products')
+      .upsert(products.slice(inicio, inicio + 250), { onConflict: 'id' })
+    if (productsError) throw productsError
+  }
+}
+
 async function prepareLocalE2e() {
   const { url, secretKey } = loadSupabaseEnvironment()
   assertStrictlyLocalSupabase(url)
@@ -365,6 +412,7 @@ async function prepareLocalE2e() {
     recoveryUser,
     recoveryIdentity.roleCodes,
   )
+  await prepareRepairCatalogFixture(supabase, organization.id, repairsUser.id)
 
   const publishableKey = requiredEnvironment('VITE_SUPABASE_PUBLISHABLE_KEY')
   const inventoryClient = createClient(url, publishableKey, {
