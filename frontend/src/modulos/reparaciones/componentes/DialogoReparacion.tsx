@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { type ComponentProps, useEffect, useId, useRef, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -11,10 +11,13 @@ import {
   prioridadesReparacion,
   validarNumeroSerie,
   type DatosReparacion,
+  type ConsultaCatalogoReparacion,
   type OpcionClienteReparacion,
   type OpcionProductoReparacion,
+  type ResultadoCatalogoReparacion,
   type Reparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
+import { SelectorCatalogoReparacion } from './SelectorCatalogoReparacion'
 
 interface CampoTextoProps extends ComponentProps<'input'> {
   etiqueta: string
@@ -111,6 +114,14 @@ interface DialogoReparacionProps {
   clientes: readonly OpcionClienteReparacion[]
   productos: readonly OpcionProductoReparacion[]
   cargandoOpciones?: boolean
+  totalClientes?: number
+  totalProductos?: number
+  clienteActual?: OpcionClienteReparacion | null
+  productoActual?: OpcionProductoReparacion | null
+  buscarClientes?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionClienteReparacion>>
+  buscarProductos?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>>
+  resolverCliente?: (id: string) => Promise<OpcionClienteReparacion | null>
+  resolverProducto?: (id: string) => Promise<OpcionProductoReparacion | null>
   datosCreacionPendiente?: DatosReparacion
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (
@@ -129,6 +140,14 @@ export function DialogoReparacion({
   clientes,
   productos,
   cargandoOpciones = false,
+  totalClientes = clientes.length,
+  totalProductos = productos.length,
+  clienteActual,
+  productoActual,
+  buscarClientes,
+  buscarProductos,
+  resolverCliente,
+  resolverProducto,
   datosCreacionPendiente,
   alCambiarApertura,
   alGuardar,
@@ -136,11 +155,13 @@ export function DialogoReparacion({
 }: DialogoReparacionProps) {
   const [mensaje, setMensaje] = useState('')
   const [productoSeleccionadoExplicitamente, setProductoSeleccionadoExplicitamente] = useState(false)
+  const [productoRemoto, setProductoRemoto] = useState<OpcionProductoReparacion | null>(null)
   const operacionCreacion = useRef<{ firma: string; clave: string } | null>(null)
   const {
     register,
     handleSubmit,
     watch,
+    control,
     setValue,
     setError,
     formState: { errors, isSubmitting },
@@ -150,7 +171,11 @@ export function DialogoReparacion({
   })
   const productoId = watch('productoId')
   const numeroSerie = watch('numeroSerie')
-  const producto = productos.find((item) => item.id === productoId)
+  const productosDisponibles = productoActual && !productos.some((item) => item.id === productoActual.id)
+    ? [productoActual, ...productos] : productos
+  const producto = productoRemoto?.id === productoId
+    ? productoRemoto
+    : productosDisponibles.find((item) => item.id === productoId)
   const productoEsReferenciaOriginal = Boolean(
     reparacion && productoId === reparacion.productoId,
   )
@@ -158,13 +183,16 @@ export function DialogoReparacion({
   const controlaSerie = productoEsReferenciaOriginal
     ? reparacion?.serialControlSnapshot ?? false
     : producto?.serialControl ?? false
-  const clienteHistorico = reparacion && !clientes.some((cliente) => cliente.id === reparacion.clienteId)
-    ? reparacion
+  const clienteHistorico: OpcionClienteReparacion | null = reparacion
+    ? { id: reparacion.clienteId, nombre: reparacion.clienteNombreSnapshot,
+      nombreComercial: '', documento: reparacion.clienteDocumentoSnapshot, activo: false }
     : null
-  const productoHistorico = reparacion && !productos.some((item) => item.id === reparacion.productoId)
-    ? reparacion
+  const productoHistorico: OpcionProductoReparacion | null = reparacion
+    ? { id: reparacion.productoId, codigo: reparacion.productoCodigoSnapshot,
+      descripcion: reparacion.productoDescripcionSnapshot, unidadMedida: '',
+      serialControl: reparacion.serialControlSnapshot, controlLote: false,
+      controlVencimiento: false, activo: false }
     : null
-  const registroProducto = register('productoId')
 
   useEffect(() => {
     if (
@@ -187,6 +215,8 @@ export function DialogoReparacion({
 
   useEffect(() => {
     operacionCreacion.current = null
+    setProductoRemoto(null)
+    setProductoSeleccionadoExplicitamente(false)
   }, [abierto, reparacion?.id])
 
   const guardar = async (datos: DatosReparacion) => {
@@ -307,49 +337,31 @@ export function DialogoReparacion({
                 </>
               ) : (
                 <div className="grid gap-5 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="reparacion-cliente" className="field-label">Cliente *</label>
-                  <select id="reparacion-cliente" className="field-control" aria-invalid={Boolean(errors.clienteId)} {...register('clienteId')}>
-                    <option value="">{cargandoOpciones ? 'Cargando clientes…' : 'Selecciona un cliente'}</option>
-                    {clientes.map((cliente) => (
-                      <option key={cliente.id} value={cliente.id}>
-                        {cliente.nombre} · {cliente.documento}
-                      </option>
-                    ))}
-                    {clienteHistorico ? (
-                      <option value={clienteHistorico.clienteId}>
-                        {clienteHistorico.clienteNombreSnapshot} · {clienteHistorico.clienteDocumentoSnapshot} (referencia de la orden)
-                      </option>
-                    ) : null}
-                  </select>
-                  {errors.clienteId ? <p className="field-error">{errors.clienteId.message}</p> : null}
-                </div>
-                <div>
-                  <label htmlFor="reparacion-producto" className="field-label">Producto o equipo *</label>
-                  <select
-                    id="reparacion-producto"
-                    className="field-control"
-                    aria-invalid={Boolean(errors.productoId)}
-                    {...registroProducto}
-                    onChange={(evento) => {
+                <Controller name="clienteId" control={control} render={({ field }) =>
+                  <SelectorCatalogoReparacion id="reparacion-cliente" etiqueta="Cliente *"
+                    etiquetaBusqueda="Buscar cliente" valor={field.value}
+                    opcionesIniciales={clientes} totalInicial={totalClientes}
+                    opcionActual={clienteActual ?? clienteHistorico} buscar={buscarClientes}
+                    resolver={resolverCliente}
+                    representar={(cliente) => `${cliente.nombre} · ${cliente.documento}${cliente.activo === false ? ' (referencia histórica)' : ''}`}
+                    alCambiar={field.onChange} error={errors.clienteId?.message}
+                    deshabilitado={cargandoOpciones} textoVacio="Selecciona un cliente" />
+                } />
+                <Controller name="productoId" control={control} render={({ field }) =>
+                  <SelectorCatalogoReparacion id="reparacion-producto" etiqueta="Producto o equipo *"
+                    etiquetaBusqueda="Buscar producto o equipo" valor={field.value}
+                    opcionesIniciales={productos} totalInicial={totalProductos}
+                    opcionActual={productoActual ?? productoHistorico} buscar={buscarProductos}
+                    resolver={resolverProducto}
+                    representar={(item) => `${item.codigo} · ${item.descripcion}${item.activo === false ? ' (referencia histórica)' : ''}`}
+                    alCambiar={(valor, opcion) => {
+                      setProductoRemoto(opcion)
                       setProductoSeleccionadoExplicitamente(true)
-                      void registroProducto.onChange(evento)
+                      field.onChange(valor)
                     }}
-                  >
-                    <option value="">{cargandoOpciones ? 'Cargando productos…' : 'Selecciona un producto'}</option>
-                    {productos.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.codigo} · {item.descripcion}
-                      </option>
-                    ))}
-                    {productoHistorico ? (
-                      <option value={productoHistorico.productoId}>
-                        {productoHistorico.productoCodigoSnapshot} · {productoHistorico.productoDescripcionSnapshot} (referencia de la orden)
-                      </option>
-                    ) : null}
-                  </select>
-                  {errors.productoId ? <p className="field-error">{errors.productoId.message}</p> : null}
-                </div>
+                    error={errors.productoId?.message} deshabilitado={cargandoOpciones}
+                    textoVacio="Selecciona un producto" />
+                } />
                 {controlaSerie || (productoEsReferenciaOriginal && Boolean(numeroSerie)) ? (
                   <CampoTexto
                     etiqueta={`Número de serie${controlaSerie ? ' *' : ''}`}

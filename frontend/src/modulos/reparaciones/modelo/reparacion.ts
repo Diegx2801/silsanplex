@@ -100,6 +100,7 @@ export interface OpcionClienteReparacion {
   nombre: string
   nombreComercial: string
   documento: string
+  activo?: boolean
 }
 
 export interface OpcionProductoReparacion {
@@ -110,6 +111,18 @@ export interface OpcionProductoReparacion {
   serialControl: boolean
   controlLote: boolean
   controlVencimiento: boolean
+  activo?: boolean
+}
+
+export interface ConsultaCatalogoReparacion {
+  busqueda: string
+  pagina: number
+  tamanioPagina: number
+}
+
+export interface ResultadoCatalogoReparacion<T> {
+  elementos: T[]
+  total: number
 }
 
 export interface Reparacion {

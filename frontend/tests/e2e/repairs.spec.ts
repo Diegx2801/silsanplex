@@ -5,6 +5,10 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 // A dedicated identity avoids auth/recovery tests revoking our session.
 test.describe.configure({ mode: 'default' })
 test.setTimeout(120_000)
+const catalogCustomerId = 'e0000000-0000-4000-8000-0000000003e9'
+const catalogProductId = 'f0000000-0000-4000-8000-0000000003e9'
+const catalogCustomerName = 'ZZZZ E2E Cliente catálogo 1001'
+const catalogProductName = 'ZZZZ E2E Producto catálogo 1001'
 
 function env(name: string) {
   const value = process.env[name]?.trim()
@@ -61,7 +65,8 @@ async function fixture(page: Page) {
     stock_status: 'available', operation_date: new Date().toISOString().slice(0, 10), reason: reference,
   } }))
   return { api, organizationId, customerId, productId: product.id as string,
-    warehouseId: warehouse.id as string, reference, userId: session.user.id as string }
+    warehouseId: warehouse.id as string, locationId: location.id as string,
+    reference, userId: session.user.id as string }
 }
 
 type Fixture = Awaited<ReturnType<typeof fixture>>
@@ -69,8 +74,8 @@ type Fixture = Awaited<ReturnType<typeof fixture>>
 async function openRepair(page: Page, reference: string) {
   await page.goto('/reparaciones')
   await page.getByLabel('Buscar reparación').fill(reference)
-  await page.getByRole('row').filter({ hasText: reference })
-    .getByRole('button', { name: 'Ver detalle', exact: true }).click()
+  await expect(page.getByText('1 de 1 órdenes visibles')).toBeVisible()
+  await page.getByRole('button', { name: 'Ver detalle', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Cerrar detalle de reparación' })).toBeVisible()
 }
 
@@ -83,7 +88,11 @@ async function createRepair(page: Page, f: Fixture) {
   await page.goto('/reparaciones')
   await page.getByRole('button', { name: 'Registrar reparación', exact: true }).first().click()
   const dialog = page.getByRole('dialog', { name: 'Registrar reparación', exact: true })
+  await dialog.getByLabel('Buscar cliente').fill(f.reference)
+  await expect(dialog.getByLabel('Cliente *', { exact: true }).locator(`option[value="${f.customerId}"]`)).toHaveCount(1)
   await dialog.getByLabel('Cliente *', { exact: true }).selectOption(f.customerId)
+  await dialog.getByLabel('Buscar producto o equipo').fill(f.reference)
+  await expect(dialog.getByLabel('Producto o equipo *').locator(`option[value="${f.productId}"]`)).toHaveCount(1)
   await dialog.getByLabel('Producto o equipo *').selectOption(f.productId)
   await dialog.getByLabel('Problema reportado *').fill('Equipo no enciende')
   await dialog.getByLabel('Referencia del cliente').fill(f.reference)
@@ -243,6 +252,84 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   expect(parts).toHaveLength(1)
   expect(await checked(f.api.from('repair_part_consumptions').select('id').eq('repair_part_id', parts[0].id))).toHaveLength(1)
   expect(await checked(f.api.from('repair_quotes').select('id').eq('repair_id', persisted.id))).toHaveLength(1)
+})
+
+test('catálogos remotos permiten seleccionar después del registro 1000 y resolver históricos', async ({ page }) => {
+  const f = await fixture(page)
+  const customerPosition = await f.api.from('customers').select('id', { count: 'exact', head: true })
+    .eq('organization_id', f.organizationId).eq('is_active', true).lt('legal_name', catalogCustomerName)
+  const productPosition = await f.api.from('products').select('id', { count: 'exact', head: true })
+    .eq('organization_id', f.organizationId).eq('is_active', true).lt('description', catalogProductName)
+  expect(customerPosition.error).toBeNull()
+  expect(productPosition.error).toBeNull()
+  expect(customerPosition.count).toBeGreaterThanOrEqual(1000)
+  expect(productPosition.count).toBeGreaterThanOrEqual(1000)
+
+  await page.goto('/reparaciones')
+  await page.getByRole('button', { name: 'Registrar reparación', exact: true }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Registrar reparación', exact: true })
+  expect(await dialog.getByLabel('Cliente *').getByRole('option').count()).toBeLessThanOrEqual(26)
+  expect(await dialog.getByLabel('Producto o equipo *').getByRole('option').count()).toBeLessThanOrEqual(26)
+  await dialog.getByRole('button', { name: 'Siguiente', exact: true }).first().click()
+  await expect(dialog.getByText(/página 2 de/).first()).toBeVisible()
+  await dialog.getByLabel('Buscar cliente').fill('E2ECAT1001')
+  await expect(dialog.getByLabel('Cliente *').locator(`option[value="${catalogCustomerId}"]`)).toHaveCount(1)
+  await dialog.getByLabel('Cliente *').selectOption(catalogCustomerId)
+  await dialog.getByLabel('Buscar producto o equipo').fill('E2ECAT1001')
+  await expect(dialog.getByLabel('Producto o equipo *').locator(`option[value="${catalogProductId}"]`)).toHaveCount(1)
+  await dialog.getByLabel('Producto o equipo *').selectOption(catalogProductId)
+  await dialog.getByLabel('Problema reportado *').fill('Catálogo remoto verificable')
+  await dialog.getByLabel('Referencia del cliente').fill(f.reference)
+  await dialog.getByRole('button', { name: 'Registrar reparación', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  expect(await repair(f)).toMatchObject({ customer_id: catalogCustomerId, product_id: catalogProductId })
+
+  await checked(f.api.rpc('set_customer_status', {
+    requested_customer_id: catalogCustomerId, requested_active: false,
+  }))
+  await openRepair(page, f.reference)
+  await page.getByRole('button', { name: 'Editar', exact: true }).click()
+  const edit = page.getByRole('dialog', { name: /Editar REP-/ })
+  await expect(edit.getByLabel('Cliente *')).toHaveValue(catalogCustomerId)
+  await expect(edit.getByLabel('Cliente *').locator(`option[value="${catalogCustomerId}"]`))
+    .toContainText('referencia histórica')
+  await expect(edit.getByLabel('Producto o equipo *')).toHaveValue(catalogProductId)
+  await edit.getByRole('button', { name: 'Cancelar', exact: true }).click()
+
+  await checked(f.api.rpc('record_inventory_movement', { payload: {
+    organization_id: f.organizationId, product_id: catalogProductId,
+    warehouse_id: f.warehouseId, location_id: f.locationId, movement_type: 'entrada',
+    quantity: 2, unit_cost: 10, stock_status: 'available',
+    operation_date: new Date().toISOString().slice(0, 10), reason: f.reference,
+  } }))
+  await openRepair(page, f.reference)
+  await page.getByRole('button', { name: 'Asignar técnico', exact: true }).click()
+  const assignment = page.getByRole('dialog', { name: 'Asignar técnico', exact: true })
+  await assignment.getByLabel('Técnico *').selectOption(f.userId)
+  await assignment.getByRole('button', { name: 'Guardar asignación' }).click()
+  await expect(assignment).toBeHidden()
+  await changeState(page, 'diagnosis')
+  await page.getByRole('button', { name: 'Registrar diagnóstico', exact: true }).click()
+  const diagnosis = page.getByRole('dialog', { name: 'Registrar diagnóstico' })
+  await diagnosis.getByLabel('Síntomas observados *').fill('Prueba de catálogo remoto')
+  await diagnosis.getByRole('button', { name: 'Guardar diagnóstico' }).click()
+  await expect(diagnosis).toBeHidden()
+  const quotation = await quote(page)
+  await quotation.getByRole('button', { name: 'Enviar a aprobación' }).click()
+  await expect(quotation).toBeHidden()
+  await page.getByRole('button', { name: 'Aprobar cotización', exact: true }).click()
+  const approval = page.getByRole('dialog', { name: 'Aprobar cotización', exact: true })
+  await approval.getByRole('button', { name: 'Aprobar cotización', exact: true }).click()
+  await expect(approval).toBeHidden()
+  await changeState(page, 'in_repair')
+  await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
+  const reservation = page.getByRole('dialog', { name: 'Reservar repuesto' })
+  await reservation.getByLabel('Buscar repuesto').fill('E2ECAT1001')
+  await expect(reservation.getByLabel('Producto *').locator(`option[value="${catalogProductId}"]`)).toHaveCount(1)
+  await reservation.getByLabel('Producto *').selectOption(catalogProductId)
+  await reservation.getByLabel('Almacén *').selectOption(f.warehouseId)
+  await expect(reservation.getByText(/2 asignables/)).toBeVisible()
+  await reservation.getByRole('button', { name: 'Cancelar', exact: true }).click()
 })
 
 for (const recovery of ['reabrir', 'recargar'] as const) {

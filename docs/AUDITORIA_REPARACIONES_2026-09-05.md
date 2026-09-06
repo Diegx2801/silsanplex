@@ -3,9 +3,9 @@
 ## Dictamen
 
 No recomendar todavía la liberación general a producción. El flujo principal
-funciona localmente y la duplicación R-AUD-01 ya está corregida y cubierta con
-regresiones de cierre y recarga. Los catálogos todavía tienen un
-límite que impide operar con registros válidos fuera de la primera página.
+funciona localmente y R-AUD-01, R-AUD-02, R-AUD-04 y R-AUD-05 ya están
+corregidos y cubiertos por regresiones. R-AUD-03 continúa pendiente para
+historiales operativos que puedan superar 1.000 filas.
 
 Alcance: código de Reparaciones, contratos RPC, permisos, inventario asociado,
 cotizaciones, historial, concurrencia y pruebas locales. No se evaluaron otros
@@ -44,19 +44,28 @@ intenciones. El alcance de persistencia es la pestaña actual y sus recargas;
 no cubre cerrar definitivamente la pestaña, borrar su almacenamiento ni otro
 dispositivo. Reservas y cotizaciones conservan su implementación anterior.
 
-### R-AUD-02 — P1 para catálogos grandes: clientes y productos truncados
+### R-AUD-02 — P1 corregido: clientes y productos paginados
 
-Las opciones se ordenan y limitan a 1.000 registros. Los selectores filtran las
-opciones ya descargadas; no existe una búsqueda remota que permita alcanzar el
-registro 1.001. Un cliente o producto activo puede quedar fuera del registro de
-reparaciones y de la selección de repuestos, aunque exista stock.
+El problema original ordenaba y limitaba las opciones a 1.000 registros. Los
+selectores filtraban solo lo descargado y no podían alcanzar el registro 1.001.
 
-Referencias: `frontend/src/modulos/reparaciones/servicios/reparacionesService.ts:839`
-y `:860`. Verificación por lectura del contrato de consulta; no se cargó un
-catálogo de 1.001 registros durante esta auditoría.
+Corrección implementada: clientes y productos usan búsqueda remota y páginas de
+25 elementos, con un máximo de 50 por petición en el servicio. Las consultas
+ordenan de forma estable, devuelven el total y aplican `range`; la carga inicial
+ya no descarga el catálogo completo. El selector compartido se usa al registrar
+o editar una reparación, en productos de cotización y al reservar repuestos.
 
-Corrección: selectores con búsqueda remota paginada y resolución por ID de la
-opción actual. Validar el registro 1.001 y referencias históricas inactivas.
+La opción actual se consulta directamente por organización e ID, sin exigir que
+siga activa. Así una reparación o cotización histórica conserva y muestra su
+referencia aunque esté fuera de la primera página o haya sido desactivada. Las
+nuevas selecciones continúan limitadas a registros activos.
+
+Verificado con 1.001 clientes y 1.001 productos reales en Supabase local: el E2E
+comprueba posición mayor a 1.000, carga inicial acotada, cambio de página,
+búsqueda remota, creación, edición después de desactivar el cliente y selección
+del mismo producto como repuesto con stock FEFO. Las pruebas unitarias validan
+los rangos de la página 41, filtros remotos, resolución directa de referencias
+inactivas y conservación de la selección entre respuestas.
 
 ### R-AUD-03 — P2: detalle e historial pueden quedar incompletos
 
@@ -116,7 +125,7 @@ la migración, desplegar `admin-users` y publicar el frontend.
 
 ## Cobertura P1-10 incorporada durante este trabajo
 
-`frontend/tests/e2e/repairs.spec.ts` ejecuta cinco escenarios contra Supabase real:
+`frontend/tests/e2e/repairs.spec.ts` ejecuta seis escenarios contra Supabase real:
 
 1. Creación, asignación, diagnóstico, borrador, envío, aprobación, reserva,
    consumo, solución, prueba y entrega. Simula respuesta perdida **después** de
@@ -129,6 +138,8 @@ la migración, desplegar `admin-users` y publicar el frontend.
    una sola cotización vigente.
 4. Creación con respuesta perdida y cierre/reapertura sin duplicación.
 5. Creación con respuesta perdida y recarga sin duplicación.
+6. Catálogos de 1.001 clientes y productos con carga inicial acotada, búsqueda,
+   paginación, edición histórica inactiva y selección remota de repuesto.
 
 Cada caso crea datos nuevos y usa una identidad local exclusiva de Reparaciones.
 La suite se integra en el workflow E2E existente. Los historiales persistidos de
@@ -136,21 +147,20 @@ las ejecuciones locales se conservan; los UUID/referencias nuevos evitan que los
 casos dependan de limpiarlos o de un orden entre casos.
 
 Esta cobertura no equivale a todos los escenarios de negocio: cancelación y
-liberación de reservas, catálogos grandes, restricciones
-de técnicos y contrato service_role también deben mantenerse en la matriz de
+liberación de reservas, restricciones de técnicos y contrato service_role
+también deben mantenerse en la matriz de
 regresión. Existen pruebas SQL para varias de esas reglas, pero no todas tienen
 recorrido de navegador.
 
 ## Condiciones para liberar
 
-Validación ejecutada en este trabajo: **1.640 pruebas SQL aprobadas**, **15 E2E
-aprobados (3 de Reparaciones)**, comprobación de tipos E2E y scripts del backend,
-lint y build del frontend correctos. Después de corregir R-AUD-01 se volvieron a
-ejecutar los cinco E2E de Reparaciones y sus seis nuevas pruebas unitarias:
-todos aprobados. Las regresiones ahora exigen ausencia de duplicación.
+Validación final de R-AUD-02: **1.661 pruebas SQL**, **295 pruebas unitarias del
+frontend** y los **6 E2E de Reparaciones** aprobados. También pasaron build,
+lint, tipos del frontend y de los E2E, y tipos de los scripts del backend. El
+E2E de catálogo usa Supabase y Chromium reales con 1.001 registros por maestro.
 
 - R-AUD-01 resuelto para cierre/reapertura del diálogo y recarga de la pestaña.
-- Resolver R-AUD-02 antes de admitir catálogos mayores de 1.000 registros.
+- R-AUD-02 resuelto para clientes, productos, cotizaciones y repuestos.
 - Resolver o aceptar explícitamente los pendientes P2 según volumen y operación.
 - Revisar y subir estos cambios, ejecutar CI sobre el commit final y comprobar
   que el resultado sea obligatorio para integrar la rama.

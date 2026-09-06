@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Plus, Trash2, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
-import { useFieldArray, useForm } from 'react-hook-form'
+import { Controller, useFieldArray, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -10,10 +10,13 @@ import {
   lineaCotizacionInicial,
   tiposLineaCotizacion,
   type CotizacionReparacion,
+  type ConsultaCatalogoReparacion,
   type DatosCotizacion,
   type OpcionProductoReparacion,
+  type ResultadoCatalogoReparacion,
   type Reparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
+import { SelectorCatalogoReparacion } from './SelectorCatalogoReparacion'
 
 function formatoMoneda(valor: number, moneda: 'PEN' | 'USD') {
   return new Intl.NumberFormat('es-PE', {
@@ -51,6 +54,9 @@ interface DialogoCotizacionProps {
   cotizacion: CotizacionReparacion | null
   esRevision?: boolean
   productos: readonly OpcionProductoReparacion[]
+  totalProductos?: number
+  buscarProductos?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>>
+  resolverProducto?: (id: string) => Promise<OpcionProductoReparacion | null>
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (datos: DatosCotizacion, enviar: boolean, operationKey: string) => Promise<string | undefined>
 }
@@ -61,6 +67,9 @@ export function DialogoCotizacion({
   cotizacion,
   esRevision = false,
   productos,
+  totalProductos = productos.length,
+  buscarProductos,
+  resolverProducto,
   alCambiarApertura,
   alGuardar,
 }: DialogoCotizacionProps) {
@@ -186,12 +195,15 @@ export function DialogoCotizacion({
                         </div>
                         {tipo === 'part' ? (
                           <div className="sm:col-span-1 lg:col-span-1">
-                            <label htmlFor={`cotizacion-producto-${field.id}`} className="field-label">Producto *</label>
-                            <select id={`cotizacion-producto-${field.id}`} className="field-control" aria-invalid={Boolean(errorLinea?.productoId)} {...register(`lineas.${indice}.productoId`, { onChange: (evento) => { const producto = productos.find((item) => item.id === evento.target.value); if (!lineas[indice]?.descripcion && producto) setValue(`lineas.${indice}.descripcion`, producto.descripcion) } })}>
-                              <option value="">Selecciona repuesto</option>
-                              {productos.map((producto) => <option key={producto.id} value={producto.id}>{producto.codigo} · {producto.descripcion}</option>)}
-                            </select>
-                            {errorLinea?.productoId ? <p className="field-error">{errorLinea.productoId.message}</p> : null}
+                            <Controller name={`lineas.${indice}.productoId`} control={control} render={({ field: productoField }) =>
+                              <SelectorCatalogoReparacion id={`cotizacion-producto-${field.id}`} etiqueta="Producto *"
+                                etiquetaBusqueda={`Buscar producto para línea ${indice + 1}`}
+                                valor={productoField.value} opcionesIniciales={productos}
+                                totalInicial={totalProductos} buscar={buscarProductos} resolver={resolverProducto}
+                                representar={(producto) => `${producto.codigo} · ${producto.descripcion}${producto.activo === false ? ' (inactivo)' : ''}`}
+                                alCambiar={(valor, producto) => { productoField.onChange(valor); if (!lineas[indice]?.descripcion && producto) setValue(`lineas.${indice}.descripcion`, producto.descripcion) }}
+                                error={errorLinea?.productoId?.message} textoVacio="Selecciona repuesto" />
+                            } />
                           </div>
                         ) : null}
                         <div className={tipo === 'part' ? 'sm:col-span-2 lg:col-span-1' : 'sm:col-span-2 lg:col-span-2'}>

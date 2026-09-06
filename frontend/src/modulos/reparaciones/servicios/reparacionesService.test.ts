@@ -20,9 +20,12 @@ import {
   ErrorReparacion,
   esConflictoVersionReparacion,
   guardarCotizacionReparacion,
+  listarOpcionesClientesReparacion,
   listarOpcionesProductosReparacion,
   listarReparacionesPaginadas,
   obtenerDetalleReparacion,
+  obtenerOpcionClienteReparacion,
+  obtenerOpcionProductoReparacion,
   obtenerMensajeErrorReparacion,
   rechazarCotizacionReparacion,
   registrarDiagnosticoReparacion,
@@ -202,7 +205,9 @@ describe('reparacionesService', () => {
       error: null,
     }
 
-    await expect(listarOpcionesProductosReparacion('org-1')).resolves.toEqual([{
+    await expect(listarOpcionesProductosReparacion('org-1', {
+      busqueda: '', pagina: 1, tamanioPagina: 25,
+    })).resolves.toEqual({ elementos: [{
       id: 'product-1',
       codigo: 'PROD-1',
       descripcion: 'Equipo de prueba',
@@ -210,9 +215,47 @@ describe('reparacionesService', () => {
       serialControl: true,
       controlLote: false,
       controlVencimiento: false,
-    }])
+      activo: undefined,
+    }], total: 0 })
     expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
     expect(cadena.eq).toHaveBeenCalledWith('is_active', true)
+    expect(cadena.range).toHaveBeenCalledWith(0, 24)
+    expect(cadena.limit).not.toHaveBeenCalled()
+  })
+
+  it('busca y pagina clientes y productos después del registro 1000 sin cargar el catálogo completo', async () => {
+    respuesta = { data: [{ id: 'after-1000', document_type: 'DNI', document_number: '99999999',
+      legal_name: 'Objetivo 1001', trade_name: null, is_active: true }], error: null, count: 1001 }
+    await expect(listarOpcionesClientesReparacion('org-1', {
+      busqueda: 'Objetivo 1001', pagina: 41, tamanioPagina: 25,
+    })).resolves.toMatchObject({ total: 1001, elementos: [{ id: 'after-1000' }] })
+    expect(cadena.or).toHaveBeenLastCalledWith(expect.stringContaining('legal_name.ilike.%Objetivo 1001%'))
+    expect(cadena.range).toHaveBeenLastCalledWith(1000, 1024)
+    expect(cadena.limit).not.toHaveBeenCalled()
+
+    respuesta = { data: [{ id: 'product-after-1000', code: 'P-1001', description: 'Objetivo producto',
+      unit_of_measure: 'UND', serial_control: false, batch_control: false,
+      expiration_control: false, is_active: true }], error: null, count: 1001 }
+    await expect(listarOpcionesProductosReparacion('org-1', {
+      busqueda: 'P-1001', pagina: 41, tamanioPagina: 25,
+    })).resolves.toMatchObject({ total: 1001, elementos: [{ id: 'product-after-1000' }] })
+    expect(cadena.or).toHaveBeenLastCalledWith(expect.stringContaining('code.ilike.%P-1001%'))
+    expect(cadena.range).toHaveBeenLastCalledWith(1000, 1024)
+  })
+
+  it('resuelve por ID referencias actuales inactivas fuera de cualquier página', async () => {
+    respuesta = { data: { id: 'inactive-customer', document_type: 'RUC', document_number: '20123456789',
+      legal_name: 'Cliente histórico', trade_name: null, is_active: false }, error: null }
+    await expect(obtenerOpcionClienteReparacion('org-1', 'inactive-customer'))
+      .resolves.toMatchObject({ id: 'inactive-customer', activo: false })
+    expect(cadena.eq).toHaveBeenCalledWith('id', 'inactive-customer')
+
+    respuesta = { data: { id: 'inactive-product', code: 'OLD', description: 'Producto histórico',
+      unit_of_measure: 'UND', serial_control: true, batch_control: false,
+      expiration_control: false, is_active: false }, error: null }
+    await expect(obtenerOpcionProductoReparacion('org-1', 'inactive-product'))
+      .resolves.toMatchObject({ id: 'inactive-product', activo: false, serialControl: true })
+    expect(cadena.eq).toHaveBeenCalledWith('id', 'inactive-product')
   })
 
   it('crea y actualiza una reparación sin campos técnicos en el payload general', async () => {

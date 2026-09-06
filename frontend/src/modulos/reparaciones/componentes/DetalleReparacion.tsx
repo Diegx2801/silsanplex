@@ -51,11 +51,13 @@ import {
   type DatosReservaParte,
   type DatosSolucionReparacion,
   type CotizacionReparacion,
+  type ConsultaCatalogoReparacion,
   type DetalleReparacion as DatosDetalleReparacion,
   type EstadoReparacion,
   type OpcionProductoReparacion,
   type ParteReparacion,
   type Reparacion,
+  type ResultadoCatalogoReparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
 
 const formatoFecha = new Intl.DateTimeFormat('es-PE', {
@@ -134,6 +136,9 @@ interface DetalleReparacionProps {
   cargando: boolean
   error: unknown
   productos: readonly OpcionProductoReparacion[]
+  totalProductos?: number
+  buscarProductos?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>>
+  resolverProducto?: (id: string) => Promise<OpcionProductoReparacion | null>
   almacenes: readonly Almacen[]
   ubicaciones: readonly UbicacionAlmacen[]
   puedeEditar: boolean
@@ -205,6 +210,9 @@ export function DetalleReparacion({
   cargando,
   error,
   productos,
+  totalProductos = productos.length,
+  buscarProductos,
+  resolverProducto,
   almacenes,
   ubicaciones,
   puedeEditar,
@@ -344,6 +352,9 @@ export function DetalleReparacion({
             cotizacion={accion.cotizacion?.estado === 'draft' || accion.reparacion.estado === 'rejected' ? accion.cotizacion : null}
             esRevision={accion.reparacion.estado === 'rejected'}
             productos={productos}
+            totalProductos={totalProductos}
+            buscarProductos={buscarProductos}
+            resolverProducto={resolverProducto}
             alCambiarApertura={cerrarDialogo}
             alGuardar={(datos, enviar, operationKey) => accion.reparacion.estado === 'rejected' && accion.cotizacion
               ? ejecutar(() => alRevisarCotizacion(accion.reparacion.id, accion.cotizacion!.id, datos, enviar, operationKey, accion.reparacion.lockVersion), enviar ? 'Revisión enviada a aprobación.' : 'Revisión guardada como borrador.')
@@ -375,6 +386,9 @@ export function DetalleReparacion({
             abierto={accion.tipo === 'reserva'}
             reparacion={accion.reparacion}
             productos={productos}
+            totalProductos={totalProductos}
+            buscarProductos={buscarProductos}
+            resolverProducto={resolverProducto}
             almacenes={almacenes}
             ubicaciones={ubicaciones}
             alCambiarApertura={cerrarDialogo}

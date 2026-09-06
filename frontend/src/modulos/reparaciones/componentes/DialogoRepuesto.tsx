@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useEffect, useRef, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
 import { useCandidatosFefo } from '@/modulos/inventario/estado/useCandidatosFefo'
@@ -11,17 +11,23 @@ import type { CandidatoFefo } from '@/modulos/inventario/modelo/inventario'
 import {
   esquemaDatosConsumoParte,
   esquemaDatosReservaParte,
+  type ConsultaCatalogoReparacion,
   type DatosConsumoParte,
   type DatosReservaParte,
   type OpcionProductoReparacion,
+  type ResultadoCatalogoReparacion,
   type ParteReparacion,
   type Reparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
+import { SelectorCatalogoReparacion } from './SelectorCatalogoReparacion'
 
 interface DialogoReservaParteProps {
   abierto: boolean
   reparacion: Reparacion
   productos: readonly OpcionProductoReparacion[]
+  totalProductos?: number
+  buscarProductos?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>>
+  resolverProducto?: (id: string) => Promise<OpcionProductoReparacion | null>
   almacenes: readonly Almacen[]
   ubicaciones: readonly UbicacionAlmacen[]
   alCambiarApertura: (abierto: boolean) => void
@@ -32,6 +38,9 @@ export function DialogoReservaParte({
   abierto,
   reparacion,
   productos,
+  totalProductos = productos.length,
+  buscarProductos,
+  resolverProducto,
   almacenes,
   ubicaciones,
   alCambiarApertura,
@@ -40,6 +49,7 @@ export function DialogoReservaParte({
   const primerAlmacen = almacenes[0]?.id ?? ''
   const primeraUbicacion = ubicaciones.find((item) => item.almacenId === primerAlmacen)?.id ?? ''
   const [mensaje, setMensaje] = useState('')
+  const [productoRemoto, setProductoRemoto] = useState<OpcionProductoReparacion | null>(null)
   const operacion = useRef<{ firma: string; clave: string } | null>(null)
   const [seleccionEnviada, setSeleccionEnviada] = useState<{
     productoId: string; almacenId: string; candidato: CandidatoFefo
@@ -48,6 +58,7 @@ export function DialogoReservaParte({
     register,
     handleSubmit,
     watch,
+    control,
     setValue,
     setError,
     reset,
@@ -66,7 +77,8 @@ export function DialogoReservaParte({
     },
   })
   const productoId = watch('productoId')
-  const producto = productos.find((item) => item.id === productoId)
+  const producto = productoRemoto?.id === productoId
+    ? productoRemoto : productos.find((item) => item.id === productoId)
   const almacenId = watch('almacenId')
   const { candidatos, cargando: cargandoFefo, error: errorFefo } =
     useCandidatosFefo(productoId, almacenId, abierto)
@@ -79,6 +91,7 @@ export function DialogoReservaParte({
     if (abierto && operacion.current) return
     operacion.current = null
     setSeleccionEnviada(null)
+    setProductoRemoto(null)
     if (abierto) {
       reset({
         productoId: productos[0]?.id ?? '',
@@ -151,11 +164,16 @@ export function DialogoReservaParte({
           </header>
           <form id="formulario-reserva-parte" className="grid gap-5 px-5 py-6 sm:grid-cols-2 sm:px-7" onSubmit={handleSubmit(guardar)}>
             <div className="sm:col-span-2">
-              <label htmlFor="reserva-producto" className="field-label">Producto *</label>
-              <select id="reserva-producto" className="field-control" aria-invalid={Boolean(errors.productoId)} {...register('productoId')}>
-                {productos.length ? productos.map((item) => <option key={item.id} value={item.id}>{item.codigo} · {item.descripcion}</option>) : <option value="">No hay productos activos</option>}
-              </select>
-              {errors.productoId ? <p className="field-error">{errors.productoId.message}</p> : null}
+              <Controller name="productoId" control={control} render={({ field }) =>
+                <SelectorCatalogoReparacion id="reserva-producto" etiqueta="Producto *"
+                  etiquetaBusqueda="Buscar repuesto" valor={field.value}
+                  opcionesIniciales={productos} totalInicial={totalProductos}
+                  opcionActual={productoRemoto} buscar={buscarProductos}
+                  resolver={resolverProducto}
+                  representar={(item) => `${item.codigo} · ${item.descripcion}`}
+                  alCambiar={(valor, opcion) => { setProductoRemoto(opcion); field.onChange(valor) }}
+                  error={errors.productoId?.message} textoVacio="Selecciona un producto" />
+              } />
             </div>
             <div>
               <label htmlFor="reserva-cantidad" className="field-label">Cantidad solicitada *</label>

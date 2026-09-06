@@ -130,10 +130,10 @@ describe('DialogoReparacion', () => {
     const alGuardar = renderizarDialogo(reparacion, true, [], [])
 
     expect(screen.getByRole('option', {
-      name: 'Cliente prueba · DNI 00000001 (referencia de la orden)',
+      name: 'Cliente prueba · DNI 00000001 (referencia histórica)',
     })).toBeInTheDocument()
     expect(screen.getByRole('option', {
-      name: 'PROD-1 · Equipo prueba (referencia de la orden)',
+      name: 'PROD-1 · Equipo prueba (referencia histórica)',
     })).toBeInTheDocument()
     expect(screen.getByLabelText('Cliente *')).toHaveValue(clienteId)
     expect(screen.getByLabelText('Producto o equipo *')).toHaveValue(productoId)
@@ -202,6 +202,51 @@ describe('DialogoReparacion', () => {
       'repair-1',
       true,
       undefined,
+    ))
+  })
+
+  it('acepta un producto encontrado por búsqueda remota aunque no esté en la página inicial', async () => {
+    const productoRemoto = {
+      ...productos[0],
+      id: '00000000-0000-4000-8000-000000001001',
+      codigo: 'PROD-1001',
+      descripcion: 'Equipo fuera de la primera página',
+      activo: true,
+    }
+    const alGuardar = vi.fn().mockResolvedValue(undefined)
+    render(
+      <DialogoReparacion
+        abierto
+        reparacion={null}
+        identidadEditable
+        clientes={clientes}
+        productos={[]}
+        totalProductos={1001}
+        buscarProductos={vi.fn().mockResolvedValue({ elementos: [productoRemoto], total: 1 })}
+        alCambiarApertura={vi.fn()}
+        alGuardar={alGuardar}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText('Cliente *'), { target: { value: clienteId } })
+    fireEvent.change(screen.getByLabelText('Buscar producto o equipo'), {
+      target: { value: 'PROD-1001' },
+    })
+    await screen.findByRole('option', { name: /PROD-1001/ })
+    fireEvent.change(screen.getByLabelText('Producto o equipo *'), {
+      target: { value: productoRemoto.id },
+    })
+    fireEvent.change(screen.getByLabelText('Problema reportado *'), {
+      target: { value: 'No enciende' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar reparación' }))
+
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(
+      expect.objectContaining({ productoId: productoRemoto.id }),
+      undefined,
+      true,
+      expect.any(String),
     ))
   })
 
