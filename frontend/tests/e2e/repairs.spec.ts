@@ -179,6 +179,8 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   await changeState(page, 'in_repair')
   await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
   const reservation = page.getByRole('dialog', { name: 'Reservar repuesto' })
+  await reservation.getByLabel('Buscar repuesto').fill(f.reference)
+  await expect(reservation.getByLabel('Producto *').locator(`option[value="${f.productId}"]`)).toHaveCount(1)
   await reservation.getByLabel('Producto *', { exact: true }).selectOption(f.productId)
   await reservation.getByLabel('Almacén *', { exact: true }).selectOption(f.warehouseId)
   await expect(reservation.getByText(/2 asignables/)).toBeVisible()

@@ -71,6 +71,24 @@ function crearCadena(respuestaActual: () => RespuestaSupabase) {
   return cadena
 }
 
+function crearCadenaPaginada(
+  obtenerFilas: () => unknown[],
+  obtenerTotal: (filas: unknown[]) => number = (filas) => filas.length,
+) {
+  let inicio = 0
+  let fin = 499
+  const cadena = crearCadena(() => {
+    const filas = obtenerFilas()
+    return { data: filas.slice(inicio, fin + 1), error: null, count: obtenerTotal(filas) }
+  })
+  cadena.range.mockImplementation((siguienteInicio: number, siguienteFin: number) => {
+    inicio = siguienteInicio
+    fin = siguienteFin
+    return cadena
+  })
+  return cadena
+}
+
 function crearFilaReparacion(lockVersion: number) {
   return {
     id: 'repair-1',
@@ -502,6 +520,133 @@ describe('reparacionesService', () => {
     expect(ordenConsultas.filter((tabla) => tabla === 'repair_list')).toHaveLength(2)
     expect(ordenConsultas.filter((tabla) => tabla === 'repairs')).toHaveLength(2)
     expect(ordenConsultas.filter((tabla) => tabla === 'repair_quotes')).toHaveLength(2)
+  })
+
+  it('recorre más de 1000 filas de cada historial y carga líneas solo para la cotización vigente', async () => {
+    const cantidad = 1001
+    const fecha = '2026-09-06T12:00:00Z'
+    const diagnosticos = Array.from({ length: cantidad }, (_, indice) => ({
+      id: `diagnostic-${indice}`, organization_id: 'org-1', repair_id: 'repair-1',
+      diagnosed_at: fecha, technician_id: null, symptoms: `Síntoma ${indice}`,
+      cause_found: null, recommended_solution: null, notes: null, created_by: null,
+      created_at: fecha,
+    }))
+    const partes = Array.from({ length: cantidad }, (_, indice) => ({
+      id: `part-${indice}`, organization_id: 'org-1', repair_id: 'repair-1',
+      product_id: 'product-1', product_code_snapshot: 'PROD-1',
+      product_description_snapshot: `Repuesto ${indice}`, warehouse_id: 'warehouse-1',
+      location_id: 'location-1', stock_status: 'available', lot: null,
+      expiration_date: null, quantity_requested: 1001, quantity_consumed: 0,
+      status: 'reserved', notes: null, created_by: null, updated_by: null,
+      created_at: fecha, updated_at: fecha,
+    }))
+    const pruebas = Array.from({ length: cantidad }, (_, indice) => ({
+      id: `test-${indice}`, organization_id: 'org-1', repair_id: 'repair-1',
+      test_cycle_number: 1, test_type: `Prueba ${indice}`, result: 'Correcto',
+      passed: true, performed_by: 'user-1', notes: null, completed_at: fecha,
+      created_by: null, created_at: fecha,
+    }))
+    const eventos = Array.from({ length: cantidad }, (_, indice) => ({
+      id: indice + 1, organization_id: 'org-1', repair_id: 'repair-1',
+      event_type: 'UPDATED', from_status: 'received', to_status: 'received',
+      actor_user_id: null, observation: `Evento ${indice}`, metadata: {}, created_at: fecha,
+    }))
+    const consumos = Array.from({ length: cantidad }, (_, indice) => ({
+      id: `consumption-${indice}`, organization_id: 'org-1', repair_part_id: 'part-0',
+      quantity: 1, warehouse_id: 'warehouse-1', location_id: 'location-1',
+      stock_status: 'available', lot: null, expiration_date: null, unit_cost: 1,
+      inventory_movement_id: `movement-${indice}`, operation_key: `operation-${indice}`,
+      consumed_by: null, consumed_at: fecha, created_at: fecha,
+    }))
+    const lineas = Array.from({ length: cantidad }, (_, indice) => ({
+      id: `line-${indice}`, organization_id: 'org-1', quote_id: 'quote-current',
+      line_type: 'labor', product_id: null, description: `Línea ${indice}`,
+      quantity: 1, unit_price: 1, taxable: true, line_subtotal: 1, created_at: fecha,
+    }))
+    const cotizaciones = [{
+      id: 'quote-current', organization_id: 'org-1', repair_id: 'repair-1',
+      version_number: 1, is_current: true, status: 'draft', currency: 'PEN',
+      prices_include_tax: false, tax_rate: 18, subtotal: 1001, tax: 180.18,
+      total: 1181.18, approved_by: null, approved_at: null, approval_observation: null,
+      rejected_by: null, rejected_at: null, rejection_observation: null,
+      created_by: null, updated_by: null, created_at: fecha, updated_at: fecha,
+    }, {
+      id: 'quote-history', organization_id: 'org-1', repair_id: 'repair-1',
+      version_number: 2, is_current: false, status: 'rejected', currency: 'PEN',
+      prices_include_tax: false, tax_rate: 18, subtotal: 10, tax: 1.8,
+      total: 11.8, approved_by: null, approved_at: null, approval_observation: null,
+      rejected_by: null, rejected_at: fecha, rejection_observation: 'Histórica',
+      created_by: null, updated_by: null, created_at: fecha, updated_at: fecha,
+    }]
+    const cadenasPorTabla = new Map<string, ReturnType<typeof crearCadena>[]>()
+    supabaseMock.from.mockImplementation((tabla: string) => {
+      if (tabla === 'repair_list') return crearCadena(() => ({ data: crearFilaReparacion(1), error: null }))
+      if (tabla === 'repairs') return crearCadena(() => ({
+        data: { lock_version: 1, current_test_cycle_number: 1 }, error: null,
+      }))
+      let idsPartes: string[] | null = null
+      const obtenerFilas = () => ({
+        repair_quotes: cotizaciones,
+        repair_diagnostics: diagnosticos,
+        repair_parts: partes,
+        repair_tests: pruebas,
+        repair_events: eventos,
+        repair_quote_items: lineas,
+        repair_part_consumptions: idsPartes
+          ? consumos.filter((consumo) => idsPartes!.includes(consumo.repair_part_id)) : consumos,
+      })[tabla as 'repair_quotes'] ?? []
+      const cadenaTabla = crearCadenaPaginada(obtenerFilas)
+      cadenaTabla.in.mockImplementation((_columna: string, ids: string[]) => {
+        idsPartes = ids
+        return cadenaTabla
+      })
+      cadenasPorTabla.set(tabla, [...(cadenasPorTabla.get(tabla) ?? []), cadenaTabla])
+      return cadenaTabla
+    })
+
+    const detalle = await obtenerDetalleReparacion('org-1', 'repair-1')
+
+    expect(detalle.diagnosticos).toHaveLength(cantidad)
+    expect(detalle.diagnosticos.at(-1)?.id).toBe('diagnostic-1000')
+    expect(detalle.partes).toHaveLength(cantidad)
+    expect(detalle.partes[0].consumos).toHaveLength(cantidad)
+    expect(detalle.partes[0].consumos.at(-1)?.id).toBe('consumption-1000')
+    expect(detalle.pruebas).toHaveLength(cantidad)
+    expect(detalle.eventos).toHaveLength(cantidad)
+    expect(detalle.cotizacionActiva?.lineas).toHaveLength(cantidad)
+    expect(detalle.cotizacionActiva?.lineas.at(-1)?.id).toBe('line-1000')
+    expect(detalle.cotizaciones.find((item) => item.id === 'quote-history')?.lineas).toEqual([])
+    expect(cadenasPorTabla.get('repair_quote_items')?.[0].eq)
+      .toHaveBeenCalledWith('quote_id', 'quote-current')
+    expect(cadenasPorTabla.get('repair_quote_items')?.[0].in).not.toHaveBeenCalled()
+    for (const tabla of ['repair_diagnostics', 'repair_parts', 'repair_tests', 'repair_events', 'repair_quote_items']) {
+      expect(cadenasPorTabla.get(tabla)?.map((consulta) => consulta.range.mock.calls[0]))
+        .toEqual([[0, 499], [500, 999], [1000, 1499]])
+    }
+    expect(cadenasPorTabla.get('repair_part_consumptions')?.slice(0, 3)
+      .map((consulta) => consulta.range.mock.calls[0]))
+      .toEqual([[0, 499], [500, 999], [1000, 1499]])
+  })
+
+  it('rechaza una colección cuyo conteo demuestra que falta una página', async () => {
+    const eventosTruncados = Array.from({ length: 1000 }, (_, indice) => ({
+      id: indice + 1, organization_id: 'org-1', repair_id: 'repair-1',
+      event_type: 'UPDATED', from_status: 'received', to_status: 'received',
+      actor_user_id: null, observation: '', metadata: {},
+      created_at: '2026-09-06T12:00:00Z',
+    }))
+    supabaseMock.from.mockImplementation((tabla: string) => {
+      if (tabla === 'repair_list') return crearCadena(() => ({ data: crearFilaReparacion(1), error: null }))
+      if (tabla === 'repairs') return crearCadena(() => ({
+        data: { lock_version: 1, current_test_cycle_number: 1 }, error: null,
+      }))
+      return tabla === 'repair_events'
+        ? crearCadenaPaginada(() => eventosTruncados, () => 1001)
+        : crearCadenaPaginada(() => [])
+    })
+
+    await expect(obtenerDetalleReparacion('org-1', 'repair-1'))
+      .rejects.toThrow('La carga paginada de eventos quedó incompleta')
   })
 
   it('envía la versión esperada en todas las formas de mutación restantes', async () => {
