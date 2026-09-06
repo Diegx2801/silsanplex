@@ -154,7 +154,7 @@ recorrido de navegador.
 
 ## Condiciones para liberar
 
-Validación final de R-AUD-02: **1.661 pruebas SQL**, **295 pruebas unitarias del
+Validación final de R-AUD-02: **1.941 pruebas SQL**, **318 pruebas unitarias del
 frontend** y los **6 E2E de Reparaciones** aprobados. También pasaron build,
 lint, tipos del frontend y de los E2E, y tipos de los scripts del backend. El
 E2E de catálogo usa Supabase y Chromium reales con 1.001 registros por maestro.
