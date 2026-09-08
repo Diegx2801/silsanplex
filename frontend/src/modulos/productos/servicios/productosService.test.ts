@@ -32,7 +32,7 @@ import {
 
 interface RespuestaSupabase {
   data: unknown
-  error: { code: string } | null
+  error: { code: string; message?: string } | null
   count?: number | null
 }
 
@@ -419,6 +419,27 @@ describe('productosService', () => {
         descripcion: 'Producto actualizado',
       }),
     ).rejects.toThrow('No se pudo actualizar el producto')
+  })
+
+  it('explica cómo resolver un conflicto al convertir un producto en servicio', async () => {
+    respuesta = {
+      data: null,
+      error: {
+        code: 'P0001',
+        message: 'PRODUCT_TYPE_CHANGE_INVENTORY_CONFLICT',
+      },
+    }
+
+    await expect(
+      editarProducto('org-1', 'user-1', 'producto-1', {
+        ...productoInicial,
+        codigo: 'MED-001',
+        descripcion: 'Producto actualizado',
+        tipo: 'service',
+      }),
+    ).rejects.toThrow(
+      'Primero deja el producto sin stock ni reservas activas antes de convertirlo en servicio',
+    )
   })
 
   it('cambia el estado usando el id y la organización', async () => {

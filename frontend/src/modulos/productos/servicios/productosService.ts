@@ -159,6 +159,12 @@ function mapearProducto(fila: ProductoFila): Producto {
 
 function mensajeError(error: PostgrestError, contexto: ContextoError) {
   if (error.code === '23505') return 'Ya existe un producto con este código o código de barras'
+  if (
+    error.code === 'P0001' &&
+    error.message === 'PRODUCT_TYPE_CHANGE_INVENTORY_CONFLICT'
+  ) {
+    return 'Primero deja el producto sin stock ni reservas activas antes de convertirlo en servicio'
+  }
   if (error.code === '42501') {
     return contexto === 'consultar'
       ? 'No tienes permiso para consultar productos'
