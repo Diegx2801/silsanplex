@@ -52,6 +52,7 @@ export function DialogoCompra({
   const almacenesDisponibles = almacenes.filter(
     (almacen) => almacen.activo || almacen.id === compra?.almacenId,
   )
+  const productosActivos = productos.filter((producto) => producto.activo)
   const valoresIniciales: DatosCompra = compra
     ? compraAFormulario(compra)
     : {
@@ -68,7 +69,7 @@ export function DialogoCompra({
         observacion: '',
         lineas: [
           {
-            productoId: productos[0]?.id ?? '',
+            productoId: productosActivos[0]?.id ?? '',
             cantidad: '1',
             costoUnitario: '',
             lote: '',
@@ -323,7 +324,7 @@ export function DialogoCompra({
                   variant="outline"
                   onClick={() =>
                     append({
-                      productoId: productos[0]?.id ?? '',
+                      productoId: productosActivos[0]?.id ?? '',
                       cantidad: '1',
                       costoUnitario: '',
                       lote: '',
@@ -369,15 +370,22 @@ export function DialogoCompra({
                             aria-invalid={Boolean(erroresLinea?.productoId)}
                             {...register(`lineas.${indice}.productoId`)}
                           >
-                            {productos.map((item) => (
-                              <option key={item.id} value={item.id}>
+                            {productos
+                              .filter((item) => item.activo || item.id === lineas[indice]?.productoId)
+                              .map((item) => (
+                                <option key={item.id} value={item.id} disabled={!item.activo}>
                                 {item.codigo} · {item.descripcion}
                               </option>
-                            ))}
+                              ))}
                           </select>
                           {producto ? <p className="mt-1 text-xs text-muted-foreground">
                             Tipo: {producto.tipo === 'service' ? 'Servicio (atención administrativa)' : 'Producto físico (recepción e inventario)'}
-                          </p> : null}
+                           </p> : null}
+                           {producto && !producto.activo ? (
+                             <p className="mt-1 text-xs text-amber-700">
+                               Producto actualmente inactivo. Reemplázalo o reactívalo antes de emitir.
+                             </p>
+                           ) : null}
                         </div>
                         <div>
                           <label className="field-label">Cantidad *</label>

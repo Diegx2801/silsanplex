@@ -65,6 +65,10 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
         setError(`Regulariza el tipo de producto de ${linea.productoDescripcion} antes de recibirla.`)
         return
       }
+      if (linea.controlVencimiento === null) {
+        setError(`Regulariza el control de vencimiento de ${linea.productoDescripcion} antes de recibirla.`)
+        return
+      }
       if (linea.controlLote && !fila.lote.trim()) {
         setError(`Ingresa el lote de ${linea.productoDescripcion}.`)
         return
@@ -101,6 +105,11 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
           <div className="mt-5 space-y-5">
             {compra.lineas.filter((linea) => linea.cantidadPendiente > 0).map((linea) => (
               <section key={linea.id} className="border p-4">
+                {linea.productoActivo === false ? (
+                  <p className="mb-3 border-s-4 border-amber-500 bg-amber-500/10 px-3 py-2 text-xs text-amber-900">
+                    Producto actualmente inactivo. La recepción usa el snapshot de la orden emitida.
+                  </p>
+                ) : null}
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div><h3 className="font-medium">{linea.productoDescripcion}</h3><p className="mt-1 font-mono text-xs text-muted-foreground">{linea.productoCodigo} · {linea.tipoProducto === 'service' ? 'Servicio' : linea.tipoProducto === 'good' ? 'Producto físico' : 'Tipo no regularizado'} · pendiente {linea.cantidadPendiente}</p></div>
                   <Button type="button" variant="outline" size="sm" onClick={() => agregarPartida(linea.id)}><Plus /> {linea.tipoProducto === 'service' ? 'Dividir atención' : 'Dividir lote'}</Button>

@@ -89,7 +89,7 @@ export const esquemaLineaCompra = z.object({
   productoDescripcion: z.string().min(1),
   unidadMedida: z.string(),
   controlLote: z.boolean(),
-  controlVencimiento: z.boolean(),
+  controlVencimiento: z.boolean().nullable(),
   cantidad: z.number().positive(),
   cantidadRecibida: z.number().nonnegative(),
   cantidadPendiente: z.number().nonnegative(),
@@ -97,6 +97,7 @@ export const esquemaLineaCompra = z.object({
   lote: z.string(),
   fechaVencimiento: z.string(),
   tipoProducto: z.enum(['good', 'service']).nullable().optional(),
+  productoActivo: z.boolean().optional(),
   // NULL identifica líneas históricas anteriores a P1B-1 sin dato reconstruible.
   afectacionIgv: z.enum(['por-definir', 'gravado', 'exonerado', 'inafecto']).nullable().optional(),
 })

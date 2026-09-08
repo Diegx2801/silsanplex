@@ -625,7 +625,7 @@ export function ComprasPage() {
           abierto={dialogoCompraAbierto}
           compra={compraSeleccionada}
           proveedores={proveedoresActivos}
-          productos={productosActivos}
+          productos={productos}
           almacenes={almacenes}
           alCambiarApertura={setDialogoCompraAbierto}
           alGuardar={guardarNuevaCompra}

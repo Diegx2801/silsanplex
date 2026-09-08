@@ -11,7 +11,8 @@ interface LineaCompraFila {
   product_type: 'good' | 'service' | null
   tax_affectation: 'por-definir' | 'gravado' | 'exonerado' | 'inafecto' | null
   batch_control: boolean
-  products: { expiration_control: boolean }[] | null
+  expiration_control: boolean | null
+  products: { expiration_control: boolean; is_active: boolean }[] | null
   quantity: number
   unit_cost: number
   lot: string | null
@@ -49,7 +50,7 @@ interface CompraFila {
 }
 
 const columnasCompra =
-  'id,supplier_id,supplier_document,supplier_name,document_type,series,document_number,issue_date,payment_due_date,expected_delivery_date,warehouse_id,warehouse,prices_include_tax,taxable_base,exempt_amount,unaffected_amount,subtotal,tax,total,tax_calculation_status,notes,status,issued_at,received_at,created_at,purchase_order_items(id,product_id,product_code,product_description,unit_of_measure,product_type,tax_affectation,batch_control,quantity,unit_cost,lot,expiration_date,products(expiration_control),purchase_receipt_items(quantity,fulfillment_mode))' as const
+  'id,supplier_id,supplier_document,supplier_name,document_type,series,document_number,issue_date,payment_due_date,expected_delivery_date,warehouse_id,warehouse,prices_include_tax,taxable_base,exempt_amount,unaffected_amount,subtotal,tax,total,tax_calculation_status,notes,status,issued_at,received_at,created_at,purchase_order_items(id,product_id,product_code,product_description,unit_of_measure,product_type,tax_affectation,batch_control,expiration_control,quantity,unit_cost,lot,expiration_date,products(expiration_control,is_active),purchase_receipt_items(quantity,fulfillment_mode))' as const
 
 const estados: Record<CompraFila['status'], EstadoCompra> = {
   draft: 'borrador',
@@ -72,7 +73,8 @@ function mapearLinea(fila: LineaCompraFila): LineaCompra {
     unidadMedida: fila.unit_of_measure ?? '',
     tipoProducto: fila.product_type,
     controlLote: fila.batch_control,
-    controlVencimiento: fila.products?.[0]?.expiration_control ?? false,
+    controlVencimiento: fila.expiration_control,
+    productoActivo: fila.products?.[0]?.is_active ?? true,
     cantidad: Number(fila.quantity),
     cantidadRecibida,
     cantidadPendiente: Math.max(0, Number(fila.quantity) - cantidadRecibida),
@@ -129,6 +131,7 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (mensaje.includes('PURCHASE_RECEIPT_EXCEEDS_ORDERED_QUANTITY')) return 'La cantidad supera el saldo pendiente de la orden'
   if (mensaje.includes('PURCHASE_RECEIPT_LOCATION_INVALID')) return 'Selecciona una ubicación activa del almacén de la compra'
   if (mensaje.includes('PURCHASE_RECEIPT_PRODUCT_TYPE_UNKNOWN')) return 'Esta línea histórica no tiene tipo de producto; regularízala antes de recibirla'
+  if (mensaje.includes('PURCHASE_RECEIPT_EXPIRATION_CONTROL_UNKNOWN')) return 'Esta línea histórica no tiene control de vencimiento reconstruible; regularízala antes de recibirla'
   if (mensaje.includes('PURCHASE_ORDER_PRODUCT_TYPE_CHANGED')) return 'El tipo actual del producto ya no coincide con la línea de la orden'
   if (mensaje.includes('PURCHASE_RECEIPT_SERVICE_PHYSICAL_FORBIDDEN')) return 'Los servicios se atienden administrativamente y no generan inventario'
   if (mensaje.includes('PURCHASE_RECEIPT_GOOD_ADMINISTRATIVE_FORBIDDEN')) return 'Los bienes deben recibirse físicamente en una ubicación'
