@@ -1,6 +1,6 @@
 begin;
 
-select plan(51);
+select plan(57);
 
 select has_table('public', 'distribution_deliveries', 'existe la tabla persistente de distribución');
 select has_column('public', 'distribution_deliveries', 'delivery_status', 'existe el estado operativo');
@@ -168,7 +168,7 @@ select lives_ok($$
     'guide_number', 'g-n-001',
     'transport_type', 'externo',
     'tracking_status', 'en_curso',
-    'delivery_status', 'en_curso',
+    'delivery_status', 'programado',
     'direction', 'Av. Nueva 123',
     'numero_despacho', 'DES-N-001',
     'modalidad', 'movilidad_externa',
@@ -184,7 +184,7 @@ select lives_ok($$
 $$, 'el RPC guarda una entrega con todos los campos nuevos');
 
 select is((select count(*) from public.distribution_deliveries where guide_number = 'G-N-001'), 1::bigint, 'la guía nueva se normaliza a mayúsculas');
-select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'en_curso', 'persiste el estado operativo');
+select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'programado', 'una entrega nueva inicia programada');
 select is((select direction from public.distribution_deliveries where guide_number = 'G-N-001'), 'Av. Nueva 123', 'persiste la dirección');
 select is((select numero_despacho from public.distribution_deliveries where guide_number = 'G-N-001'), 'DES-N-001', 'persiste el número de despacho');
 select is((select modalidad from public.distribution_deliveries where guide_number = 'G-N-001'), 'movilidad_externa', 'persiste la modalidad');
@@ -200,20 +200,74 @@ select is((select order_items -> 0 ->> 'id' from public.distribution_deliveries 
 
 select lives_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
+    'id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
+    'issue_date', '2026-09-01', 'delivery_date', '2026-09-02', 'guide_number', 'G-N-001',
+    'transport_type', 'externo', 'tracking_status', 'en_curso', 'delivery_status', 'preparando',
+    'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001', 'modalidad', 'movilidad_externa',
+    'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
+    'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
+    'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+  ));
+$$, 'permite una transición válida de programado a preparando');
+select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'preparando', 'persiste la transición a preparación');
+
+select lives_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
+    'issue_date', '2026-09-01', 'delivery_date', '2026-09-02', 'guide_number', 'G-N-001',
+    'transport_type', 'externo', 'tracking_status', 'en_curso', 'delivery_status', 'en_curso',
+    'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001', 'modalidad', 'movilidad_externa',
+    'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
+    'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
+    'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+  ));
+$$, 'permite una transición válida de preparando a en curso');
+select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'en_curso', 'persiste la transición a en curso');
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
+    'issue_date', '2026-09-01', 'delivery_date', '2026-09-02', 'guide_number', 'G-N-001',
+    'transport_type', 'externo', 'tracking_status', 'en_curso', 'delivery_status', 'devuelto',
+    'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001', 'modalidad', 'movilidad_externa',
+    'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
+    'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
+    'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+  ));
+$$, 'P0001', 'DISTRIBUTION_INVALID_TRANSITION', 'rechaza saltar de en curso a devuelto');
+select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'en_curso', 'una transición inválida no modifica la entrega');
+
+select lives_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
     'id', 'f3111111-1111-4111-8111-111111111111',
     'organization_id', 'd3111111-1111-4111-8111-111111111111',
     'order_id', 'a3111111-1111-4111-8111-111111111111',
     'order_number', 'PED-H-001', 'customer_name', 'Cliente histórico',
     'issue_date', '2026-08-30', 'delivery_date', '2026-08-31',
     'guide_number', 'G-H-001', 'transport_type', 'interno',
-    'tracking_status', 'en_destino', 'delivery_status', 'en_destino',
+    'tracking_status', 'en_curso', 'delivery_status', 'preparando',
     'direction', '', 'numero_despacho', '', 'modalidad', 'movilidad_propia',
     'transportista', '', 'conductor', '', 'vehiculo', '', 'placa', '',
     'evidencia', '', 'incidencias', '[]'::jsonb, 'observations', '',
     'items', jsonb_build_array(jsonb_build_object('id', 'linea-h', 'cantidad', 1))
   ));
 $$, 'una actualización de seguimiento no rompe filas históricas');
-select is((select delivery_status from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), 'en_destino', 'actualiza el estado histórico');
+select is((select delivery_status from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), 'preparando', 'actualiza el estado histórico mediante una transición válida');
 
 select throws_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
