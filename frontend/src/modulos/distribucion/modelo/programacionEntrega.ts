@@ -130,6 +130,36 @@ export type ResumenEntregas = {
   conIncidencias: number
 }
 
+export type EntregaAtrasada = ProgramacionEntrega & {
+  diasAtraso: number
+}
+
+export function estaAtrasada(entrega: ProgramacionEntrega, fechaReferencia: string): boolean {
+  if (!entrega.fechaProgramada) return false
+  if (entrega.estado === 'entregado' || entrega.estado === 'cancelado') return false
+
+  const fechaProgramada = new Date(`${entrega.fechaProgramada}T12:00:00`)
+  const referencia = new Date(`${fechaReferencia}T12:00:00`)
+
+  return fechaProgramada < referencia
+}
+
+export function listarEntregasAtrasadas(
+  programaciones: readonly ProgramacionEntrega[],
+  fechaReferencia: string,
+): EntregaAtrasada[] {
+  return programaciones
+    .filter((entrega) => estaAtrasada(entrega, fechaReferencia))
+    .map((entrega) => {
+      const fechaProgramada = new Date(`${entrega.fechaProgramada}T12:00:00`)
+      const referencia = new Date(`${fechaReferencia}T12:00:00`)
+      const diasAtraso = Math.max(1, Math.ceil((referencia.getTime() - fechaProgramada.getTime()) / (1000 * 60 * 60 * 24)))
+
+      return { ...entrega, diasAtraso }
+    })
+    .sort((a, b) => b.diasAtraso - a.diasAtraso)
+}
+
 export function resumirEntregas(
   programaciones: readonly ProgramacionEntrega[],
   fechaReferencia: string,

@@ -9,6 +9,7 @@ import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgr
 import {
   esquemaDatosProgramacionEntrega,
   filtrarProgramacionesEntrega,
+  listarEntregasAtrasadas,
   resumirEntregas,
   type DatosProgramacionEntrega,
   type ProgramacionEntrega,
@@ -89,6 +90,7 @@ export function DistribucionPage() {
     fecha: filtroFecha,
   })
   const resumen = resumirEntregas(programaciones, hoy)
+  const entregasAtrasadas = listarEntregasAtrasadas(programaciones, hoy)
 
   const pedidoPorId = (pedidoId: string) => pedidos.find((pedido) => pedido.id === pedidoId)
   const ventaPorPedidoId = (pedidoId: string) => ventaPorPedido.get(pedidoId)
@@ -390,6 +392,27 @@ export function DistribucionPage() {
           <span>No se pudieron cargar los pedidos, ventas o entregas persistentes.</span>
           <Button type="button" variant="outline" onClick={() => { void reintentarPedidos(); void reintentarVentas(); void reintentarProgramaciones() }}>Reintentar</Button>
         </aside>
+      ) : null}
+      {entregasAtrasadas.length ? (
+        <section aria-label="Alertas de entregas atrasadas" className="ledger-sheet border border-amber-200 bg-amber-50/80">
+          <div className="border-b border-amber-200 px-5 py-4 sm:px-6">
+            <h2 className="text-base font-semibold text-amber-900">Alertas operativas</h2>
+          </div>
+          <div className="divide-y divide-amber-200">
+            {entregasAtrasadas.slice(0, 4).map((entrega) => (
+              <article key={entrega.id} className="flex flex-col gap-2 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div>
+                  <p className="font-mono text-xs text-amber-700">{entrega.pedidoNumero}</p>
+                  <p className="font-medium text-amber-900">{entrega.clienteNombre}</p>
+                </div>
+                <div className="text-amber-800">
+                  <span className="font-semibold">{entrega.diasAtraso} día{entrega.diasAtraso === 1 ? '' : 's'} de retraso</span>
+                  {entrega.incidencias.length ? <span className="ml-2">· {entrega.incidencias[0]}</span> : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
       ) : null}
       <section aria-labelledby="pendientes-programacion-title" className="ledger-sheet">
         <div className="border-b px-5 py-5 sm:px-6">
