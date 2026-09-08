@@ -76,6 +76,127 @@ function renderPanel(props: Partial<React.ComponentProps<typeof PanelOperaciones
 }
 
 describe('PanelOperacionesVenta', () => {
+  it('mantiene pendiente una venta solo de servicios y conserva la accion A5', () => {
+    const servicioPendiente = {
+      ...venta.lineas[0],
+      tipoProducto: 'service' as const,
+      cantidadDespachada: 0,
+      cantidadCompletadaServicio: 0,
+      cantidadPendiente: 10,
+    }
+    renderPanel({
+      pedidos: [pedido],
+      ventas: [{ ...venta, lineas: [servicioPendiente] }],
+      alCompletarServicios: vi.fn(),
+    })
+
+    expect(screen.getByRole('button', { name: 'Completar servicios' })).toBeVisible()
+    expect(screen.queryByText('Servicio completado')).not.toBeInTheDocument()
+    expect(screen.queryByText('Stock descontado')).not.toBeInTheDocument()
+  })
+
+  it('muestra cumplimiento administrativo para una venta solo de servicios completada', () => {
+    renderPanel({
+      pedidos: [pedido],
+      ventas: [{
+        ...venta,
+        estado: 'despachada',
+        lineas: [{
+          ...venta.lineas[0],
+          tipoProducto: 'service',
+          cantidadDespachada: 0,
+          cantidadCompletadaServicio: 10,
+          cantidadPendiente: 0,
+        }],
+      }],
+    })
+
+    expect(screen.getByText('Servicio completado')).toBeVisible()
+    expect(screen.queryByText('Stock descontado')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Kardex/i)).not.toBeInTheDocument()
+  })
+
+  it('mantiene la etiqueta fisica para una venta solo de bienes despachada', () => {
+    renderPanel({
+      pedidos: [pedido],
+      ventas: [{
+        ...venta,
+        estado: 'despachada',
+        lineas: [{ ...venta.lineas[0], cantidadDespachada: 10, cantidadPendiente: 0 }],
+      }],
+    })
+
+    expect(screen.getByText('Stock descontado')).toBeVisible()
+    expect(screen.queryByText('Servicio completado')).not.toBeInTheDocument()
+  })
+
+  it('describe por separado bienes y servicios en una venta mixta completada', () => {
+    renderPanel({
+      pedidos: [pedido],
+      ventas: [{
+        ...venta,
+        estado: 'despachada',
+        lineas: [
+          { ...venta.lineas[0], cantidadDespachada: 10, cantidadPendiente: 0 },
+          {
+            ...venta.lineas[0],
+            id: 'servicio',
+            pedidoLineaId: 'servicio-pedido',
+            tipoProducto: 'service',
+            cantidad: 2,
+            cantidadDespachada: 0,
+            cantidadCompletadaServicio: 2,
+            cantidadPendiente: 0,
+          },
+        ],
+      }],
+    })
+
+    expect(screen.getByText('Bienes despachados y servicios completados')).toBeVisible()
+    expect(screen.queryByText('Stock descontado')).not.toBeInTheDocument()
+  })
+
+  it('no presenta un servicio parcial como totalmente completado', () => {
+    renderPanel({
+      pedidos: [pedido],
+      ventas: [{
+        ...venta,
+        estado: 'despachada',
+        lineas: [{
+          ...venta.lineas[0],
+          tipoProducto: 'service',
+          cantidadDespachada: 0,
+          cantidadCompletadaServicio: 4,
+          cantidadPendiente: 6,
+        }],
+      }],
+    })
+
+    expect(screen.getByText('Servicio pendiente')).toBeVisible()
+    expect(screen.queryByText('Servicio completado')).not.toBeInTheDocument()
+  })
+
+  it('clasifica el cumplimiento con el snapshot de tipo de la linea', () => {
+    renderPanel({
+      pedidos: [pedido],
+      ventas: [{
+        ...venta,
+        estado: 'despachada',
+        lineas: [{
+          ...venta.lineas[0],
+          productoDescripcion: 'Producto reclasificado actualmente como bien',
+          tipoProducto: 'service',
+          cantidadDespachada: 0,
+          cantidadCompletadaServicio: 10,
+          cantidadPendiente: 0,
+        }],
+      }],
+    })
+
+    expect(screen.getByText('Servicio completado')).toBeVisible()
+    expect(screen.queryByText('Stock descontado')).not.toBeInTheDocument()
+  })
+
   it('no permite registrar ni modificar un pedido con cálculo fiscal pendiente', () => {
     renderPanel({ pedidos: [{ ...pedido, estadoCalculoTributario: 'pending' }], alActualizarPedido: vi.fn() })
     expect(screen.queryByRole('button', { name: 'Registrar venta' })).not.toBeInTheDocument()

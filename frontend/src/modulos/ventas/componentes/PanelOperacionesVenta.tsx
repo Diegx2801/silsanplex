@@ -19,6 +19,26 @@ import type { CantidadCumplimientoServicio } from '@/modulos/ventas/servicios/ve
 const formatoMoneda = new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' })
 const formatoFecha = new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
 
+function etiquetaCumplimiento(
+  bienes: Venta['lineas'],
+  servicios: Venta['lineas'],
+) {
+  const bienesDespachados = bienes.length > 0
+    && bienes.every((linea) => (linea.cantidadDespachada ?? 0) >= linea.cantidad)
+  const serviciosCompletados = servicios.length > 0
+    && servicios.every((linea) => (linea.cantidadCompletadaServicio ?? 0) >= linea.cantidad)
+
+  if (bienes.length > 0 && servicios.length > 0) {
+    if (bienesDespachados && serviciosCompletados) return 'Bienes despachados y servicios completados'
+    if (bienesDespachados) return 'Bienes despachados y servicios pendientes'
+    if (serviciosCompletados) return 'Servicios completados y bienes pendientes'
+    return 'Cumplimiento pendiente'
+  }
+  if (servicios.length > 0) return serviciosCompletados ? 'Servicio completado' : 'Servicio pendiente'
+  if (bienes.length > 0) return bienesDespachados ? 'Stock descontado' : 'Despacho pendiente'
+  return 'Cumplimiento registrado'
+}
+
 interface PanelOperacionesVentaProps {
   pedidos: readonly PedidoVenta[]
   ventas: readonly Venta[]
@@ -75,7 +95,7 @@ export function PanelOperacionesVenta({
         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
           <span className="border px-2.5 py-1.5">{pedidos.length} pedidos</span>
           <span className="border px-2.5 py-1.5">{ventas.filter((item) => item.estado === 'registrada').length} por despachar</span>
-          <span className="border px-2.5 py-1.5">{ventas.filter((item) => item.estado === 'despachada').length} despachadas</span>
+          <span className="border px-2.5 py-1.5">{ventas.filter((item) => item.estado === 'despachada').length} completadas</span>
         </div>
       </div>
 
@@ -101,6 +121,8 @@ export function PanelOperacionesVenta({
             const servicios = venta?.lineas.filter((linea) => linea.tipoProducto === 'service') ?? []
             const totalCumplido = (lineas: Venta['lineas']) => lineas.reduce((totalLinea, linea) => totalLinea + (linea.tipoProducto === 'service' ? (linea.cantidadCompletadaServicio ?? 0) : (linea.cantidadDespachada ?? 0)), 0)
             const totalPendiente = (lineas: Venta['lineas']) => lineas.reduce((totalLinea, linea) => totalLinea + (linea.cantidadPendiente ?? linea.cantidad), 0)
+            const cumplimiento = venta ? etiquetaCumplimiento(bienes, servicios) : ''
+            const soloServicios = servicios.length > 0 && bienes.length === 0
             return (
               <article key={pedido.id} className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(15rem,1fr)_minmax(20rem,1.35fr)_auto] lg:items-center">
                 <div>
@@ -150,7 +172,12 @@ export function PanelOperacionesVenta({
                       ) : null}
                     </div>
                   ) : venta?.estado === 'despachada' ? (
-                    <span className="inline-flex items-center gap-2 text-sm font-medium text-primary"><PackageCheck aria-hidden="true" className="size-4" /> Stock descontado</span>
+                    <span className="inline-flex items-center gap-2 text-sm font-medium text-primary">
+                      {soloServicios
+                        ? <ClipboardCheck aria-hidden="true" className="size-4" />
+                        : <PackageCheck aria-hidden="true" className="size-4" />}
+                      {cumplimiento}
+                    </span>
                   ) : (
                     <span className="text-sm font-medium text-muted-foreground">Pedido cancelado</span>
                   )}
