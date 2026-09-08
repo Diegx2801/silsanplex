@@ -1,9 +1,10 @@
 begin;
 
-select plan(57);
+select plan(60);
 
 select has_table('public', 'distribution_deliveries', 'existe la tabla persistente de distribución');
 select has_column('public', 'distribution_deliveries', 'delivery_status', 'existe el estado operativo');
+select has_column('public', 'distribution_deliveries', 'lock_version', 'existe la versión de concurrencia');
 select has_column('public', 'distribution_deliveries', 'direction', 'existe la dirección de entrega');
 select has_column('public', 'distribution_deliveries', 'numero_despacho', 'existe el número de despacho');
 select has_column('public', 'distribution_deliveries', 'modalidad', 'existe la modalidad');
@@ -201,6 +202,7 @@ select is((select order_items -> 0 ->> 'id' from public.distribution_deliveries 
 select lives_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
     'id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expected_lock_version', 1,
     'organization_id', 'd3111111-1111-4111-8111-111111111111',
     'order_id', 'a3111111-1111-4111-8111-111111111112',
     'sale_id', 'a3111111-1111-4111-8111-111111111152',
@@ -215,10 +217,12 @@ select lives_ok($$
   ));
 $$, 'permite una transición válida de programado a preparando');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'preparando', 'persiste la transición a preparación');
+select is((select lock_version from public.distribution_deliveries where guide_number = 'G-N-001'), 2::bigint, 'incrementa la versión al actualizar');
 
 select lives_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
     'id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expected_lock_version', 2,
     'organization_id', 'd3111111-1111-4111-8111-111111111111',
     'order_id', 'a3111111-1111-4111-8111-111111111112',
     'sale_id', 'a3111111-1111-4111-8111-111111111152',
@@ -240,6 +244,25 @@ select throws_ok($$
     'organization_id', 'd3111111-1111-4111-8111-111111111111',
     'order_id', 'a3111111-1111-4111-8111-111111111112',
     'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'expected_lock_version', 1,
+    'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
+    'issue_date', '2026-09-01', 'delivery_date', '2026-09-02', 'guide_number', 'G-N-001',
+    'transport_type', 'externo', 'tracking_status', 'en_curso', 'delivery_status', 'en_curso',
+    'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001', 'modalidad', 'movilidad_externa',
+    'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
+    'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
+    'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+  ));
+$$, 'P0001', 'DISTRIBUTION_VERSION_CONFLICT', 'rechaza una versión obsoleta');
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'expected_lock_version', 3,
     'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
     'issue_date', '2026-09-01', 'delivery_date', '2026-09-02', 'guide_number', 'G-N-001',
     'transport_type', 'externo', 'tracking_status', 'en_curso', 'delivery_status', 'devuelto',
@@ -255,6 +278,7 @@ select is((select delivery_status from public.distribution_deliveries where guid
 select lives_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
     'id', 'f3111111-1111-4111-8111-111111111111',
+    'expected_lock_version', 1,
     'organization_id', 'd3111111-1111-4111-8111-111111111111',
     'order_id', 'a3111111-1111-4111-8111-111111111111',
     'order_number', 'PED-H-001', 'customer_name', 'Cliente histórico',

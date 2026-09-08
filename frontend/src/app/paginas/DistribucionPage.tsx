@@ -101,6 +101,7 @@ export function DistribucionPage() {
     setDatos(programacion
       ? {
           pedidoId: programacion.pedidoId,
+          lockVersion: programacion.lockVersion,
           pedidoNumero: programacion.pedidoNumero,
           ventaId: programacion.ventaId ?? '',
           ventaNumero: programacion.ventaNumero ?? '',

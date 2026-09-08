@@ -158,6 +158,7 @@ describe('programación de entrega', () => {
       estado: 'en_curso',
       seguimiento: 'en_curso',
       incidencias: ['Se confirma horario', 'Parada no programada'],
+      lockVersion: 7,
       lineas: [],
     }
 
@@ -171,9 +172,10 @@ describe('programación de entrega', () => {
       lote: 'L-001',
       fechaVencimiento: '2026-12-31',
       precioUnitario: 10,
-    }])
+    }], 'entrega-1')
 
     expect(payload).toMatchObject({
+      expected_lock_version: 7,
       organization_id: 'org-1',
       order_id: 'pedido-1',
       order_number: 'PED-001',

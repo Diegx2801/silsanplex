@@ -11,6 +11,7 @@ import { listarPedidosPersistentes, listarVentasPersistentes } from '@/modulos/v
 
 interface EntregaFila {
   id: string
+  lock_version?: number | null
   order_id: string
   sale_id?: string | null
   sale_number?: string | null
@@ -36,7 +37,7 @@ interface EntregaFila {
   created_at: string
 }
 
-const columnas = 'id,order_id,sale_id,sale_number,order_number,customer_name,issue_date,delivery_date,guide_number,transport_type,tracking_status,delivery_status,direction,numero_despacho,modalidad,transportista,conductor,vehiculo,placa,evidencia,incidencias,observations,order_items,created_at' as const
+const columnas = 'id,lock_version,order_id,sale_id,sale_number,order_number,customer_name,issue_date,delivery_date,guide_number,transport_type,tracking_status,delivery_status,direction,numero_despacho,modalidad,transportista,conductor,vehiculo,placa,evidencia,incidencias,observations,order_items,created_at' as const
 
 export function prepararPayloadEntrega(
   organizationId: string,
@@ -46,6 +47,7 @@ export function prepararPayloadEntrega(
 ) {
   return {
     ...(id ? { id } : {}),
+    ...(id && datos.lockVersion ? { expected_lock_version: datos.lockVersion } : {}),
     organization_id: organizationId,
     order_id: datos.pedidoId,
     sale_id: datos.ventaId || null,
@@ -81,6 +83,7 @@ export function mapearEntrega(fila: EntregaFila): ProgramacionEntrega {
 
   return esquemaProgramacionEntrega.parse({
     id: fila.id,
+    lockVersion: fila.lock_version ?? 1,
     pedidoId: fila.order_id,
     ventaId: fila.sale_id ?? '',
     ventaNumero: fila.sale_number ?? '',
@@ -138,6 +141,7 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (error.code === '23505' || mensaje.includes('DISTRIBUTION_DUPLICATE')) return 'Ya existe una entrega para este pedido o guía de remisión'
   if (error.code === '42501' || mensaje.includes('DISTRIBUTION_FORBIDDEN')) return 'No tienes permiso para administrar distribución'
   if (mensaje.includes('DISTRIBUTION_NOT_FOUND')) return 'La entrega ya no existe'
+  if (mensaje.includes('DISTRIBUTION_VERSION_REQUIRED') || mensaje.includes('DISTRIBUTION_VERSION_CONFLICT')) return 'La entrega cambió mientras la editabas. Actualiza la lista e inténtalo nuevamente.'
   if (mensaje.includes('DISTRIBUTION_DIRECTION_REQUIRED')) return 'Ingresa la dirección de entrega'
   if (mensaje.includes('DISTRIBUTION_ORDER_NOT_FOUND')) return 'El pedido persistente no existe en esta organización'
   if (mensaje.includes('DISTRIBUTION_ORDER_NOT_AVAILABLE')) return 'El pedido cancelado no puede programarse'

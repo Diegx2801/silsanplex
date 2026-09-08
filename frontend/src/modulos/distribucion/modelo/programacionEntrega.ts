@@ -45,6 +45,7 @@ export const esquemaLineaProgramacionEntrega = esquemaLineaOperacionVenta
 
 export const esquemaProgramacionEntrega = z.object({
   id: z.string().min(1),
+  lockVersion: z.number().int().positive().default(1),
   pedidoId: z.string().min(1),
   pedidoNumero: z.string().min(1),
   ventaId: z.string().optional().default(''),
@@ -75,6 +76,7 @@ export const esquemaProgramacionEntrega = z.object({
 export type ProgramacionEntrega = z.infer<typeof esquemaProgramacionEntrega>
 
 export const esquemaDatosProgramacionEntrega = z.object({
+  lockVersion: z.number().int().positive().optional(),
   pedidoId: z.string().min(1),
   pedidoNumero: z.string().min(1),
   ventaId: z.string().optional().default(''),
@@ -110,6 +112,7 @@ export function crearProgramacionEntrega(
   return {
     ...datos,
     id: crypto.randomUUID(),
+    lockVersion: datos.lockVersion ?? 1,
     fechaEmision: datos.fechaEmision || fechaEmision,
     fechaEntrega: datos.fechaEntrega ?? '',
     seguimiento: datos.estado === 'en_curso' || datos.estado === 'en_destino' ? datos.estado : undefined,
