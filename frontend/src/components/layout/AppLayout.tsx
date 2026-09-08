@@ -1,9 +1,9 @@
-import { LogOut, Menu, X } from 'lucide-react'
+import { ChevronDown, LogOut, Menu, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 
-import { elementosNavegacion, seccionesNavegacion } from '@/app/navegacion'
+import { seccionesNavegacion, todosElementosNavegacion } from '@/app/navegacion'
 import { Button } from '@/components/ui/button'
 import type { Permission } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
@@ -22,6 +22,34 @@ function ContenidoNavegacion({
   organizationName,
   hasPermission,
 }: ContenidoNavegacionProps) {
+  const { pathname } = useLocation()
+  const idNavegacion = useId()
+  const [gruposAbiertos, setGruposAbiertos] = useState<string[]>(() =>
+    seccionesNavegacion
+      .flatMap((seccion) => seccion.elementos)
+      .filter((elemento) => elemento.hijos?.length && pathname.startsWith(`${elemento.ruta}/`))
+      .map((elemento) => elemento.ruta),
+  )
+
+  useEffect(() => {
+    const padreActivo = seccionesNavegacion
+      .flatMap((seccion) => seccion.elementos)
+      .find((elemento) => elemento.hijos?.some((hijo) => hijo.ruta === pathname))
+    if (padreActivo) {
+      setGruposAbiertos((actuales) =>
+        actuales.includes(padreActivo.ruta) ? actuales : [...actuales, padreActivo.ruta],
+      )
+    }
+  }, [pathname])
+
+  const alternarGrupo = (ruta: string) => {
+    setGruposAbiertos((actuales) =>
+      actuales.includes(ruta)
+        ? actuales.filter((item) => item !== ruta)
+        : [...actuales, ruta],
+    )
+  }
+
   return (
     <>
       <div className="flex min-h-20 items-center justify-between border-b px-5">
@@ -59,40 +87,81 @@ function ContenidoNavegacion({
                 )
                 .map((elemento) => {
                   const Icono = elemento.icono
+                  const hijosVisibles = (elemento.hijos ?? []).filter(
+                    (hijo) => !hijo.permission || hasPermission(hijo.permission),
+                  )
+                  const grupoActivo = pathname === elemento.ruta
+                    || pathname.startsWith(`${elemento.ruta}/`)
+                  const grupoAbierto = gruposAbiertos.includes(elemento.ruta)
+                  const idSubmenu = `${idNavegacion}-${elemento.ruta.replace(/\W/g, '-')}`
 
                   return (
                     <li key={elemento.ruta}>
-                      <NavLink
-                        to={elemento.ruta}
-                        end={elemento.ruta === '/'}
-                        onClick={alNavegar}
-                        className={({ isActive }) =>
-                          cn(
-                            'group flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
-                            isActive &&
-                              'bg-sidebar-accent text-sidebar-accent-foreground',
-                          )
-                        }
-                      >
-                        {({ isActive }) => (
-                          <>
+                      <div className={cn('flex min-h-10 items-center rounded-md', grupoActivo && 'bg-sidebar-accent')}>
+                        <NavLink
+                          to={elemento.ruta}
+                          end
+                          onClick={alNavegar}
+                          className={({ isActive }) => cn(
+                            'group flex min-h-10 min-w-0 flex-1 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
+                            (isActive || grupoActivo) && 'text-sidebar-accent-foreground',
+                          )}
+                        >
+                          {({ isActive }) => <>
                             <Icono
                               aria-hidden="true"
                               className={cn(
                                 'size-4.5 shrink-0',
-                                isActive && 'text-sidebar-primary',
+                                (isActive || grupoActivo) && 'text-sidebar-primary',
                               )}
                             />
-                            <span>{elemento.titulo}</span>
-                            {isActive ? (
+                            <span className="truncate">{elemento.titulo}</span>
+                            {isActive && !hijosVisibles.length ? (
                               <span
                                 aria-hidden="true"
                                 className="ms-auto size-1.5 rounded-full bg-sidebar-primary"
                               />
                             ) : null}
-                          </>
-                        )}
-                      </NavLink>
+                          </>}
+                        </NavLink>
+                        {hijosVisibles.length ? (
+                          <button
+                            type="button"
+                            aria-label={`${grupoAbierto ? 'Contraer' : 'Expandir'} opciones de ${elemento.titulo}`}
+                            aria-expanded={grupoAbierto}
+                            aria-controls={idSubmenu}
+                            className="me-1 grid size-9 shrink-0 place-items-center rounded-md text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                            onClick={() => alternarGrupo(elemento.ruta)}
+                          >
+                            <ChevronDown aria-hidden="true" className={cn('size-4 transition-transform', grupoAbierto && 'rotate-180')} />
+                          </button>
+                        ) : null}
+                      </div>
+                      {hijosVisibles.length && grupoAbierto ? (
+                        <ul id={idSubmenu} className="ms-5 mt-1 space-y-1 border-s ps-2">
+                          {hijosVisibles.map((hijo) => {
+                            const IconoHijo = hijo.icono
+                            return (
+                              <li key={hijo.ruta}>
+                                <NavLink
+                                  to={hijo.ruta}
+                                  onClick={alNavegar}
+                                  className={({ isActive }) => cn(
+                                    'flex min-h-9 items-center gap-2 rounded-md px-3 text-xs font-medium text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
+                                    isActive && 'bg-sidebar-accent text-sidebar-accent-foreground',
+                                  )}
+                                >
+                                  {({ isActive }) => <>
+                                    <IconoHijo aria-hidden="true" className={cn('size-4 shrink-0', isActive && 'text-sidebar-primary')} />
+                                    <span className="min-w-0 flex-1">{hijo.titulo}</span>
+                                    {isActive ? <span aria-hidden="true" className="size-1.5 rounded-full bg-sidebar-primary" /> : null}
+                                  </>}
+                                </NavLink>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      ) : null}
                     </li>
                   )
                 })}
@@ -110,10 +179,9 @@ export function AppLayout() {
   const { user, access, hasPermission, signOut } = useAuth()
   const { pathname } = useLocation()
   const paginaActual =
-    elementosNavegacion.find(
-      (elemento) =>
-        elemento.ruta === pathname ||
-        (elemento.ruta !== '/' && pathname.startsWith(`${elemento.ruta}/`)),
+    todosElementosNavegacion.find((elemento) => elemento.ruta === pathname)?.titulo ??
+    todosElementosNavegacion.find(
+      (elemento) => elemento.ruta !== '/' && pathname.startsWith(`${elemento.ruta}/`),
     )?.titulo ??
     'Página no encontrada'
 

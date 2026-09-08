@@ -551,8 +551,6 @@ export function InventarioPage() {
         ubicaciones={gestionAlmacenes.ubicaciones}
         productos={productos}
         puedeGestionar={puedeGestionar}
-        crearAlmacen={gestionAlmacenes.crearAlmacen}
-        crearUbicacion={gestionAlmacenes.crearUbicacion}
         transferir={gestionAlmacenes.transferir}
         reclasificar={gestionAlmacenes.reclasificar}
         configurar={gestionAlmacenes.configurar}

@@ -1,6 +1,7 @@
 import {
   Boxes,
   ChartNoAxesCombined,
+  MapPinned,
   ContactRound,
   Handshake,
   House,
@@ -22,6 +23,7 @@ export interface ElementoNavegacion {
   descripcion: string
   icono: LucideIcon
   permission?: Permission
+  hijos?: ElementoNavegacion[]
 }
 
 interface SeccionNavegacion {
@@ -57,6 +59,15 @@ export const seccionesNavegacion: SeccionNavegacion[] = [
         descripcion: 'Stock, lotes y movimientos',
         icono: Boxes,
         permission: PERMISSIONS.INVENTORY_VIEW,
+        hijos: [
+          {
+            titulo: 'Almacenes y ubicaciones',
+            ruta: '/inventario/almacenes',
+            descripcion: 'Estructura física del inventario',
+            icono: MapPinned,
+            permission: PERMISSIONS.INVENTORY_VIEW,
+          },
+        ],
       },
       {
         titulo: 'Proveedores',
@@ -130,4 +141,8 @@ export const seccionesNavegacion: SeccionNavegacion[] = [
 
 export const elementosNavegacion = seccionesNavegacion.flatMap(
   (seccion) => seccion.elementos,
+)
+
+export const todosElementosNavegacion = elementosNavegacion.flatMap(
+  (elemento) => [elemento, ...(elemento.hijos ?? [])],
 )

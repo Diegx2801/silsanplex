@@ -111,6 +111,22 @@ export const router = createBrowserRouter([
         },
       },
       {
+        path: 'inventario/almacenes',
+        lazy: async () => {
+          const { AlmacenesPage } = await import(
+            '@/app/paginas/AlmacenesPage'
+          )
+
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.INVENTORY_VIEW}>
+                <AlmacenesPage />
+              </PermissionRoute>
+            ),
+          }
+        },
+      },
+      {
         path: 'proveedores',
         lazy: async () => {
           const { ProveedoresPage } = await import(

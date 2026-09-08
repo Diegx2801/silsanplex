@@ -416,6 +416,10 @@ select is(
     select count(*)
     from public.audit_events
     where entity_type = 'supplier'
+      and organization_id in (
+        'a1111111-1111-4111-8111-111111111111',
+        'a2222222-2222-4222-8222-222222222222'
+      )
   ),
   3::bigint,
   'altas y modificaciones generan auditoría inmutable'
@@ -426,6 +430,10 @@ select is(
     select count(*)
     from public.audit_events
     where entity_type = 'supplier'
+      and organization_id in (
+        'a1111111-1111-4111-8111-111111111111',
+        'a2222222-2222-4222-8222-222222222222'
+      )
       and new_values ? 'bank_account'
   ),
   0::bigint,

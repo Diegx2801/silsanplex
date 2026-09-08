@@ -114,15 +114,21 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '82000000-0000-4000-8000-000000000001', true);
 
 select lives_ok($$
-  insert into public.warehouses (id, organization_id, code, name, address, created_by, updated_by) values
-    ('84000000-0000-4000-8000-000000000001', '81000000-0000-4000-8000-000000000001', 'CENTRAL', 'Almacen central', 'Trujillo', '82000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000001'),
-    ('84000000-0000-4000-8000-000000000002', '81000000-0000-4000-8000-000000000001', 'NORTE', 'Almacen norte', 'Chiclayo', '82000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000001')
+  select public.save_warehouse(
+    '{"id":"84000000-0000-4000-8000-000000000001","organization_id":"81000000-0000-4000-8000-000000000001","operation_key":"86000000-0000-4000-8000-000000000001","code":"CENTRAL","name":"Almacen central","address":"Trujillo"}'::jsonb
+  );
+  select public.save_warehouse(
+    '{"id":"84000000-0000-4000-8000-000000000002","organization_id":"81000000-0000-4000-8000-000000000001","operation_key":"86000000-0000-4000-8000-000000000002","code":"NORTE","name":"Almacen norte","address":"Chiclayo"}'::jsonb
+  )
 $$, 'ALMACEN crea maestros persistentes');
 
 select lives_ok($$
-  insert into public.warehouse_locations (id, organization_id, warehouse_id, code, name, created_by, updated_by) values
-    ('85000000-0000-4000-8000-000000000001', '81000000-0000-4000-8000-000000000001', '84000000-0000-4000-8000-000000000001', 'A-01', 'Pasillo A nivel 1', '82000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000001'),
-    ('85000000-0000-4000-8000-000000000002', '81000000-0000-4000-8000-000000000001', '84000000-0000-4000-8000-000000000002', 'B-01', 'Pasillo B nivel 1', '82000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000001')
+  select public.save_warehouse_location(
+    '{"id":"85000000-0000-4000-8000-000000000001","organization_id":"81000000-0000-4000-8000-000000000001","operation_key":"86000000-0000-4000-8000-000000000003","warehouse_id":"84000000-0000-4000-8000-000000000001","code":"A-01","name":"Pasillo A nivel 1"}'::jsonb
+  );
+  select public.save_warehouse_location(
+    '{"id":"85000000-0000-4000-8000-000000000002","organization_id":"81000000-0000-4000-8000-000000000001","operation_key":"86000000-0000-4000-8000-000000000004","warehouse_id":"84000000-0000-4000-8000-000000000002","code":"B-01","name":"Pasillo B nivel 1"}'::jsonb
+  )
 $$, 'ALMACEN crea ubicaciones fisicas');
 
 select lives_ok($$
