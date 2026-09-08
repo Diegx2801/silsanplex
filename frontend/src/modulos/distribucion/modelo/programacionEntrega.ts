@@ -17,6 +17,30 @@ export const ESTADOS_DISTRIBUCION = [
   'cancelado',
 ] as const
 
+export const TRANSICIONES_DISTRIBUCION: Record<ProgramacionEntrega['estado'], readonly ProgramacionEntrega['estado'][]> = {
+  programado: ['preparando', 'reprogramado', 'cancelado'],
+  preparando: ['en_curso', 'reprogramado', 'cancelado'],
+  en_curso: ['en_destino', 'entrega_parcial', 'reprogramado', 'rechazado'],
+  en_destino: ['entregado', 'entrega_parcial', 'rechazado', 'devuelto'],
+  entregado: [],
+  entrega_parcial: ['en_curso', 'en_destino', 'entregado', 'reprogramado', 'devuelto'],
+  reprogramado: ['preparando', 'cancelado'],
+  rechazado: ['reprogramado', 'devuelto'],
+  devuelto: ['reprogramado'],
+  cancelado: [],
+}
+
+export function obtenerEstadosSiguientes(estado: ProgramacionEntrega['estado']) {
+  return TRANSICIONES_DISTRIBUCION[estado]
+}
+
+export function puedeTransicionarEntrega(
+  estadoActual: ProgramacionEntrega['estado'],
+  estadoSiguiente: ProgramacionEntrega['estado'],
+) {
+  return estadoActual === estadoSiguiente || obtenerEstadosSiguientes(estadoActual).includes(estadoSiguiente)
+}
+
 export const esquemaLineaProgramacionEntrega = esquemaLineaOperacionVenta
 
 export const esquemaProgramacionEntrega = z.object({

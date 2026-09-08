@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
-import type { DatosProgramacionEntrega, ProgramacionEntrega } from '@/modulos/distribucion/modelo/programacionEntrega'
+import { puedeTransicionarEntrega, type DatosProgramacionEntrega, type ProgramacionEntrega } from '@/modulos/distribucion/modelo/programacionEntrega'
 import { guardarEntrega, listarEntregas } from '@/modulos/distribucion/servicios/distribucionService'
 
 export function useProgramacionesEntrega() {
@@ -31,6 +31,9 @@ export function useProgramacionesEntrega() {
   }
 
   const actualizarEstado = (entrega: ProgramacionEntrega, estado: ProgramacionEntrega['estado']) => {
+    if (!puedeTransicionarEntrega(entrega.estado, estado)) {
+      return Promise.resolve(`No se puede pasar de ${entrega.estado} a ${estado}`)
+    }
     const siguiente = { ...entrega, estado, seguimiento: estado === 'en_curso' || estado === 'en_destino' ? estado : undefined }
     return guardar({ ...siguiente, estado, incidencias: entrega.incidencias }, entrega.id, entrega.lineas)
   }

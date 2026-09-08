@@ -6,6 +6,8 @@ import {
   esquemaProgramacionEntrega,
   filtrarProgramacionesEntrega,
   listarEntregasAtrasadas,
+  obtenerEstadosSiguientes,
+  puedeTransicionarEntrega,
   resumirEntregas,
   type DatosProgramacionEntrega,
 } from './programacionEntrega'
@@ -93,6 +95,15 @@ describe('programación de entrega', () => {
 
       expect(resultado.success).toBe(true)
     })
+  })
+
+  it('aplica la matriz de transiciones operativas', () => {
+    expect(obtenerEstadosSiguientes('programado')).toEqual(['preparando', 'reprogramado', 'cancelado'])
+    expect(puedeTransicionarEntrega('programado', 'preparando')).toBe(true)
+    expect(puedeTransicionarEntrega('preparando', 'en_curso')).toBe(true)
+    expect(puedeTransicionarEntrega('programado', 'devuelto')).toBe(false)
+    expect(puedeTransicionarEntrega('entregado', 'en_curso')).toBe(false)
+    expect(puedeTransicionarEntrega('en_destino', 'en_destino')).toBe(true)
   })
 
   it('reconoce los campos del formulario de programación', () => {

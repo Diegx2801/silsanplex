@@ -10,6 +10,7 @@ import {
   esquemaDatosProgramacionEntrega,
   filtrarProgramacionesEntrega,
   listarEntregasAtrasadas,
+  obtenerEstadosSiguientes,
   resumirEntregas,
   type DatosProgramacionEntrega,
   type ProgramacionEntrega,
@@ -467,8 +468,8 @@ export function DistribucionPage() {
                 <p className="text-sm">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</p>
                 {puedeGestionarDistribucion ? (
                   <select aria-label={`Estado de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado'])} className="field-control mt-2">
-                    {Object.entries(etiquetasEstado).map(([valor, etiqueta]) => (
-                      <option key={valor} value={valor}>{etiqueta}</option>
+                    {[item.estado, ...obtenerEstadosSiguientes(item.estado)].map((valor) => (
+                      <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>
                     ))}
                   </select>
                 ) : <p className="mt-2 text-sm text-muted-foreground">Solo consulta</p>}
@@ -499,7 +500,7 @@ export function DistribucionPage() {
               <div><label htmlFor="conductor" className="field-label">Conductor</label><input id="conductor" value={datos.conductor} onChange={(evento) => setDatos({ ...datos, conductor: evento.target.value })} className="field-control" /></div>
               <div><label htmlFor="vehiculo" className="field-label">Vehículo</label><input id="vehiculo" value={datos.vehiculo} onChange={(evento) => setDatos({ ...datos, vehiculo: evento.target.value })} className="field-control" /></div>
               <div><label htmlFor="placa" className="field-label">Placa</label><input id="placa" value={datos.placa} onChange={(evento) => setDatos({ ...datos, placa: evento.target.value })} className="field-control" /></div>
-              <div><label htmlFor="estado-distribucion" className="field-label">Estado</label><select id="estado-distribucion" value={datos.estado} onChange={(evento) => setDatos({ ...datos, estado: evento.target.value as DatosProgramacionEntrega['estado'] })} className="field-control">{Object.entries(etiquetasEstado).map(([valor, etiqueta]) => <option key={valor} value={valor}>{etiqueta}</option>)}</select></div>
+              <div><label htmlFor="estado-distribucion" className="field-label">Estado</label><select id="estado-distribucion" value={datos.estado} onChange={(evento) => setDatos({ ...datos, estado: evento.target.value as DatosProgramacionEntrega['estado'] })} className="field-control">{(edicion ? [edicion.estado, ...obtenerEstadosSiguientes(edicion.estado)] : ['programado']).map((valor) => <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>)}</select></div>
               <div><label htmlFor="evidencia" className="field-label">Evidencia</label><input id="evidencia" value={datos.evidencia} onChange={(evento) => setDatos({ ...datos, evidencia: evento.target.value })} className="field-control" placeholder="Ej. foto entrega, nombre de archivo o URL" /></div>
               <div className="sm:col-span-2"><label htmlFor="incidencias" className="field-label">Incidencias</label><textarea id="incidencias" rows={2} value={datos.incidencias.join('; ')} onChange={(evento) => setDatos({ ...datos, incidencias: evento.target.value ? evento.target.value.split(';').map((valor) => valor.trim()).filter(Boolean) : [] })} className="field-control" placeholder="Separadas por punto y coma" /></div>
               <div className="sm:col-span-2"><label htmlFor="observaciones-entrega" className="field-label">Observaciones</label><textarea id="observaciones-entrega" rows={3} value={datos.observaciones} onChange={(evento) => setDatos({ ...datos, observaciones: evento.target.value })} className="field-control" /></div>
