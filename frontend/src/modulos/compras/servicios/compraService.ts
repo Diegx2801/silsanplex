@@ -116,6 +116,9 @@ function mapearCompra(fila: CompraFila): Compra {
 
 function mensajeError(error: { code?: string; message?: string }) {
   const mensaje = error.message ?? ''
+  if (mensaje.includes('PURCHASE_RECEIPT_IDEMPOTENCY_CONFLICT')) return 'La clave de recepción ya fue usada con datos diferentes; inicia una nueva operación'
+  if (mensaje.includes('PURCHASE_RECEIPT_IDEMPOTENCY_LEGACY_UNVERIFIABLE')) return 'No se puede verificar el reintento de una recepción histórica; inicia una nueva operación'
+  if (mensaje.includes('PURCHASE_RECEIPT_KEY_CONFLICT')) return 'La clave de recepción ya pertenece a otra orden'
   if (mensaje.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no pueden recibirse como mercadería ni ingresar a inventario.'
   if (error.code === '23505') return mensaje.includes('DUPLICATE_PRODUCT') ? 'Cada producto debe aparecer una sola vez' : 'Ya existe una compra con este documento'
   if (mensaje.includes('PURCHASE_ORDER_NOT_EDITABLE')) return 'Solo se pueden editar órdenes en borrador'

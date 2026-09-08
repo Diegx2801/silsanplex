@@ -137,12 +137,12 @@ $$, 'registra la primera recepción parcial');
 select is((select status from public.purchase_orders where document_number = '2002'), 'partially_received', 'la orden queda parcialmente recibida');
 select is((select sum(receipt_item.quantity) from public.purchase_receipt_items receipt_item join public.purchase_order_items item on item.id = receipt_item.purchase_order_item_id join public.purchase_orders purchase on purchase.id = item.purchase_order_id where purchase.document_number = '2002'), 1.000::numeric, 'registra solo la cantidad efectivamente recibida');
 select is((select count(*) from public.purchase_receipts receipt join public.purchase_orders purchase on purchase.id = receipt.purchase_order_id where purchase.document_number = '2002'), 1::bigint, 'crea una cabecera de recepción');
-select lives_ok($$
+select throws_ok($$
   select public.receive_purchase_order_partial(jsonb_build_object(
     'organization_id','d1111111-1111-4111-8111-111111111111','purchase_order_id',(select id from public.purchase_orders where document_number = '2002'),
     'operation_key','c1111111-1111-4111-8111-111111111111','items','[]'::jsonb
   ))
-$$, 'un reintento con la misma clave es idempotente');
+$$, 'P0001', 'PURCHASE_RECEIPT_IDEMPOTENCY_CONFLICT', 'un payload diferente con la misma clave entra en conflicto');
 select is((select count(*) from public.purchase_receipts receipt join public.purchase_orders purchase on purchase.id = receipt.purchase_order_id where purchase.document_number = '2002'), 1::bigint, 'el reintento no duplica la recepción');
 select is((select count(*) from public.inventory_movements movement join public.purchase_receipt_items receipt_item on receipt_item.id = movement.source_id join public.purchase_order_items item on item.id = receipt_item.purchase_order_item_id join public.purchase_orders purchase on purchase.id = item.purchase_order_id where purchase.document_number = '2002'), 1::bigint, 'el reintento tampoco duplica inventario');
 select throws_ok($$
@@ -168,12 +168,12 @@ select is((select sum(receipt_item.quantity) from public.purchase_receipt_items 
 select is((select count(*) from public.inventory_movements movement join public.purchase_receipt_items receipt_item on receipt_item.id = movement.source_id join public.purchase_order_items item on item.id = receipt_item.purchase_order_item_id join public.purchase_orders purchase on purchase.id = item.purchase_order_id where purchase.document_number = '2002'), 3::bigint, 'cada partida crea su movimiento trazable');
 select is((select count(distinct receipt_item.location_id) from public.purchase_receipt_items receipt_item join public.purchase_order_items item on item.id = receipt_item.purchase_order_item_id join public.purchase_orders purchase on purchase.id = item.purchase_order_id where purchase.document_number = '2002'), 2::bigint, 'conserva las ubicaciones exactas');
 select is((select count(distinct receipt_item.lot) from public.purchase_receipt_items receipt_item join public.purchase_order_items item on item.id = receipt_item.purchase_order_item_id join public.purchase_orders purchase on purchase.id = item.purchase_order_id where purchase.document_number = '2002'), 3::bigint, 'conserva los lotes exactos');
-select lives_ok($$
+select throws_ok($$
   select public.receive_purchase_order_partial(jsonb_build_object(
     'organization_id','d1111111-1111-4111-8111-111111111111','purchase_order_id',(select id from public.purchase_orders where document_number = '2002'),
     'operation_key','c3333333-3333-4333-8333-333333333333','items','[]'::jsonb
   ))
-$$, 'el reintento sigue siendo idempotente después de completar la orden');
+$$, 'P0001', 'PURCHASE_RECEIPT_IDEMPOTENCY_CONFLICT', 'el payload vacío distinto entra en conflicto después de completar la orden');
 select is((select count(*) from public.inventory_movements movement join public.purchase_receipt_items receipt_item on receipt_item.id = movement.source_id join public.purchase_order_items item on item.id = receipt_item.purchase_order_item_id join public.purchase_orders purchase on purchase.id = item.purchase_order_id where purchase.document_number = '2002'), 3::bigint, 'el reintento final no duplica movimientos');
 
 select lives_ok($$

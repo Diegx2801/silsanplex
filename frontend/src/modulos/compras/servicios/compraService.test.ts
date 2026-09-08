@@ -138,6 +138,18 @@ describe('compraService', () => {
     })
   })
 
+  it('mapea los conflictos de idempotencia de recepción a mensajes claros', async () => {
+    supabaseMock.rpc.mockResolvedValue({ error: { code: 'P0001', message: 'PURCHASE_RECEIPT_IDEMPOTENCY_CONFLICT' } })
+    await expect(recibirCompraPersistente('org-1', 'compra-1', {
+      operationKey: 'c1111111-1111-4111-8111-111111111113', observacion: '', lineas: [],
+    })).rejects.toThrow('La clave de recepción ya fue usada con datos diferentes')
+
+    supabaseMock.rpc.mockResolvedValue({ error: { code: 'P0001', message: 'PURCHASE_RECEIPT_IDEMPOTENCY_LEGACY_UNVERIFIABLE' } })
+    await expect(recibirCompraPersistente('org-1', 'compra-1', {
+      operationKey: 'c1111111-1111-4111-8111-111111111114', observacion: '', lineas: [],
+    })).rejects.toThrow('No se puede verificar el reintento de una recepción histórica')
+  })
+
   it('cierra el saldo mediante una RPC con motivo auditable', async () => {
     supabaseMock.rpc.mockResolvedValue({ error: null })
     await anularCompraPersistente('org-1', 'compra-1', 'Proveedor canceló el saldo')
