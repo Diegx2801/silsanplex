@@ -1,6 +1,6 @@
 begin;
 
-select plan(64);
+select plan(68);
 
 select has_table('public', 'distribution_deliveries', 'existe la tabla persistente de distribución');
 select has_table('public', 'distribution_command_operations', 'existe el registro de operaciones idempotentes');
@@ -18,6 +18,7 @@ select has_column('public', 'distribution_deliveries', 'incidencias', 'existe el
 select has_column('public', 'distribution_deliveries', 'sale_id', 'existe el vínculo persistente con la venta');
 select has_column('public', 'distribution_deliveries', 'sale_number', 'existe el número de venta persistente');
 select has_function('public', 'save_distribution_delivery', array['jsonb'], 'existe el RPC de persistencia');
+select has_function('public', 'record_distribution_status_transition', '{}', 'existe la auditoría de transiciones');
 select is((select count(*) from pg_constraint where conname = 'distribution_deliveries_order_same_organization'), 1::bigint, 'la FK pedido-distribución conserva la organización');
 select ok((select relrowsecurity from pg_class where oid = 'public.distribution_deliveries'::regclass), 'la tabla mantiene RLS');
 select is(has_table_privilege('authenticated', 'public.distribution_deliveries', 'SELECT'), true, 'authenticated consulta distribución');
@@ -274,6 +275,14 @@ select lives_ok($$
   ));
 $$, 'permite una transición válida de preparando a en curso');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'en_curso', 'persiste la transición a en curso');
+
+reset role;
+select is((select count(*) from public.audit_events where action = 'DISTRIBUTION_STATUS_CHANGED' and entity_id = (select id::text from public.distribution_deliveries where guide_number = 'G-N-001')), 2::bigint, 'registra cada transición válida una sola vez');
+select is((select old_values ->> 'delivery_status' from public.audit_events where action = 'DISTRIBUTION_STATUS_CHANGED' and entity_id = (select id::text from public.distribution_deliveries where guide_number = 'G-N-001') order by id desc limit 1), 'preparando', 'audita el estado anterior');
+select is((select new_values ->> 'delivery_status' from public.audit_events where action = 'DISTRIBUTION_STATUS_CHANGED' and entity_id = (select id::text from public.distribution_deliveries where guide_number = 'G-N-001') order by id desc limit 1), 'en_curso', 'audita el estado nuevo');
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'e3111111-1111-4111-8111-111111111111', true);
 
 select throws_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
