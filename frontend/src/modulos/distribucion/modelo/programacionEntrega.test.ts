@@ -165,6 +165,7 @@ describe('programación de entrega', () => {
     const payload = prepararPayloadEntrega('org-1', datos, [{
       id: 'linea-1',
       productoId: 'prod-1',
+      tipoProducto: 'good',
       productoCodigo: 'P-001',
       productoDescripcion: 'Producto',
       cantidad: 1,

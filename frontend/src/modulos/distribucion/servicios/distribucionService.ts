@@ -71,7 +71,7 @@ export function prepararPayloadEntrega(
     evidencia: datos.evidencia,
     incidencias: Array.isArray(datos.incidencias) ? datos.incidencias : [],
     observations: datos.observaciones,
-    items: lineas,
+    items: lineas.filter((linea) => linea.tipoProducto === 'good'),
   }
 }
 
@@ -119,7 +119,7 @@ function enriquecerEntrega(
 ) {
   if (!pedido) return entrega
 
-  const lineas = pedido.lineas.map((linea) => {
+  const lineas = pedido.lineas.filter((linea) => linea.tipoProducto === 'good').map((linea) => {
     const lineaVenta = venta?.lineas.find((item) => item.pedidoLineaId === linea.id)
     return {
       ...linea,
@@ -151,6 +151,8 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (mensaje.includes('DISTRIBUTION_ORDER_ITEMS_REQUIRED')) return 'El pedido no tiene líneas persistentes'
   if (mensaje.includes('DISTRIBUTION_SALE_REQUIRED')) return 'El pedido todavía no tiene una venta persistente'
   if (mensaje.includes('DISTRIBUTION_SALE_MISMATCH')) return 'La venta no corresponde al pedido seleccionado'
+  if (mensaje.includes('DISTRIBUTION_GOODS_REQUIRED')) return 'Solo se pueden programar entregas para bienes físicos'
+  if (mensaje.includes('ORDER_SERVICE_PRODUCT_TYPE_UNKNOWN')) return 'El pedido histórico no tiene tipo de producto reconstruible'
   if (mensaje.includes('DISTRIBUTION_DISPATCH_NUMBER_REQUIRED')) return 'Ingresa el número de despacho'
   if (mensaje.includes('DISTRIBUTION_GUIDE_REQUIRED')) return 'Ingresa el número de guía de remisión'
   if (mensaje.includes('DISTRIBUTION_TRANSPORT_INVALID')) return 'Selecciona un tipo de transporte válido'

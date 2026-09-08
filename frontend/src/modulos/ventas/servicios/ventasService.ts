@@ -11,7 +11,8 @@ interface ClienteFila {
 interface LineaPedidoFila {
   id: string
   product_id: string
-  products?: { product_type: 'good' | 'service' } | null
+  product_type: 'good' | 'service' | null
+  service_completed_quantity: number | string | null
   product_code: string
   product_description: string
   unit_of_measure: string | null
@@ -76,7 +77,7 @@ interface VentaFila {
   status: Venta['estado']
   created_at: string
   sales_order?: { order_number: string } | { order_number: string }[] | null
-  orders?: { order_number: string } | { order_number: string }[] | null
+  orders?: { order_number: string; order_items: LineaPedidoFila[] } | { order_number: string; order_items: LineaPedidoFila[] }[] | null
   customers: ClienteFila | ClienteFila[] | null
   sale_items: LineaVentaFila[]
 }
@@ -101,7 +102,7 @@ const columnasPedido = [
   'tax_calculation_status',
   'notes',
   'created_at',
-  'order_items(id,product_id,product_code,product_description,unit_of_measure,tax_affectation,quantity,unit_price,products(product_type))',
+  'order_items(id,product_id,product_code,product_description,unit_of_measure,tax_affectation,quantity,unit_price,product_type,service_completed_quantity)',
   'warehouses!orders_warehouse_same_organization(code,name)',
   'customers!orders_customer_same_organization(document_type,document_number,legal_name)',
 ].join(',')
@@ -127,9 +128,9 @@ const columnasVenta = [
   'tax_calculation_status',
   'status',
   'created_at',
-  'orders!sales_order_same_organization(order_number)',
+  'orders!sales_order_same_organization(order_number,order_items(id,product_type,service_completed_quantity))',
   'customers!sales_customer_same_organization(document_type,document_number,legal_name)',
-  'sale_items(id,order_item_id,product_id,product_code,product_description,unit_of_measure,tax_affectation,quantity,unit_price,products(product_type))',
+  'sale_items(id,order_item_id,product_id,product_code,product_description,unit_of_measure,tax_affectation,quantity,unit_price)',
 ].join(',')
 
 function primerCliente(cliente: ClienteFila | ClienteFila[] | null) {
@@ -152,7 +153,7 @@ function mapearLinea(fila: LineaPedidoFila) {
   return {
     id: fila.id,
     productoId: fila.product_id,
-    tipoProducto: fila.products?.product_type ?? 'good',
+    tipoProducto: fila.product_type ?? undefined,
     productoCodigo: fila.product_code,
     productoDescripcion: fila.product_description,
     unidadMedida: fila.unit_of_measure ?? '',
@@ -161,6 +162,7 @@ function mapearLinea(fila: LineaPedidoFila) {
     lote: '',
     fechaVencimiento: '',
     afectacionIgv: fila.tax_affectation,
+    cantidadCompletadaServicio: Number(fila.service_completed_quantity ?? 0),
   }
 }
 
@@ -205,6 +207,8 @@ function mapearVenta(fila: VentaFila): Venta {
   const cliente = primerCliente(fila.customers)
   const pedido = primerPedido(fila.orders)
   if (!cliente || !pedido) throw new Error('La venta no tiene relaciones comerciales válidas')
+  const pedidoLineas = (Array.isArray(fila.orders) ? fila.orders[0] : fila.orders)?.order_items ?? []
+  const tipoPorLinea = new Map(pedidoLineas.map((linea) => [linea.id, linea]))
   return {
     id: fila.id,
     numeroInterno: fila.internal_number,
@@ -226,7 +230,12 @@ function mapearVenta(fila: VentaFila): Venta {
     igv: Number(fila.tax),
     total: Number(fila.total),
     estadoCalculoTributario: fila.tax_calculation_status,
-    lineas: fila.sale_items.map((linea) => ({ ...mapearLineaVenta(linea), id: linea.id })),
+    lineas: fila.sale_items.map((linea) => ({
+      ...mapearLineaVenta(linea),
+      id: linea.id,
+      tipoProducto: tipoPorLinea.get(linea.order_item_id)?.product_type ?? undefined,
+      cantidadCompletadaServicio: Number(tipoPorLinea.get(linea.order_item_id)?.service_completed_quantity ?? 0),
+    })),
     estado: fila.status,
     fechaRegistro: fila.created_at,
     fechaDespacho: null,
@@ -242,6 +251,15 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (message.includes('SALE_TAX_AFFECTATION_UNDEFINED')) return 'No se puede registrar una venta con afectación tributaria por definir'
   if (message.includes('ORDER_TAX_CALCULATION_REQUIRED')) return 'No se puede despachar una venta sin cálculo tributario válido'
   if (message.includes('ORDER_SERVICE_COMPLETION_QUANTITY_INVALID')) return 'Los servicios se atienden por la cantidad completa al cerrar la venta'
+  if (message.includes('ORDER_SERVICE_PRODUCT_TYPE_UNKNOWN')) return 'El pedido histórico no tiene tipo de producto reconstruible'
+  if (message.includes('ORDER_SERVICE_FORBIDDEN')) return 'No tienes permiso para completar servicios'
+  if (message.includes('ORDER_SERVICE_QUANTITY_INVALID')) return 'La cantidad de servicio debe ser positiva y tener como máximo tres decimales'
+  if (message.includes('ORDER_SERVICE_ITEMS_REQUIRED')) return 'Selecciona al menos un servicio pendiente'
+  if (message.includes('ORDER_SERVICE_QUANTITY_EXCEEDED')) return 'La cantidad supera el saldo pendiente del servicio'
+  if (message.includes('ORDER_SERVICE_ITEM_INVALID') || message.includes('ORDER_SERVICE_ITEM_REQUIRED')) return 'La línea de servicio ya no es válida; recarga el documento'
+  if (message.includes('ORDER_SERVICE_NOT_PENDING')) return 'El pedido ya no tiene servicios pendientes'
+  if (message.includes('ORDER_OPERATION_KEY_REUSED')) return 'La clave de operación ya fue usada con datos diferentes'
+  if (message.includes('ORDER_DISPATCH_SERVICE_FORBIDDEN')) return 'Los servicios deben completarse desde Ventas, no mediante despacho físico'
   if (message.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no generan reservas ni pueden despacharse como inventario.'
   if (error.code === '42501' || /_FORBIDDEN|AUTHENTICATION_REQUIRED/.test(message)) return 'No tienes permiso para gestionar operaciones comerciales'
   if (message.includes('ORDER_CUSTOMER_UNAVAILABLE')) return 'El cliente seleccionado ya no está disponible'
@@ -321,8 +339,9 @@ export async function listarVentasPersistentes(organizationId: string) {
       if (linea.tipoProducto === 'service') {
         return {
           ...linea,
-          cantidadDespachada: venta.estado === 'despachada' ? linea.cantidad : 0,
-          cantidadPendiente: venta.estado === 'despachada' ? 0 : linea.cantidad,
+          cantidadDespachada: 0,
+          cantidadCompletadaServicio: linea.cantidadCompletadaServicio ?? 0,
+          cantidadPendiente: Math.max(linea.cantidad - (linea.cantidadCompletadaServicio ?? 0), 0),
         }
       }
       const saldo = linea.pedidoLineaId ? saldos.get(linea.pedidoLineaId) : undefined
@@ -432,6 +451,34 @@ export async function cancelarPedidoPersistente(
 export interface CantidadDespacho {
   orderItemId: string
   quantity: number
+}
+
+export interface CantidadCumplimientoServicio {
+  orderItemId: string
+  quantity: number
+}
+
+export async function completarServiciosPersistente(
+  organizationId: string,
+  pedidoId: string,
+  ventaId: string,
+  lineas: readonly CantidadCumplimientoServicio[],
+  operationKey?: string,
+) {
+  const { data, error } = await supabase.rpc('complete_order_services', {
+    payload: {
+      organization_id: organizationId,
+      order_id: pedidoId,
+      sale_id: ventaId,
+      operation_key: operationKeyOrNew(operationKey),
+      items: lineas.map((linea) => ({
+        order_item_id: linea.orderItemId,
+        quantity_to_complete: linea.quantity,
+      })),
+    },
+  })
+  if (error) throw new Error(mensajeError(error))
+  return data as string
 }
 
 export async function despacharVentaPersistente(

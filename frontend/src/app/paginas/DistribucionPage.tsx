@@ -79,11 +79,12 @@ export function DistribucionPage() {
   const busquedaDiferida = useDeferredValue(busqueda)
   const ventaPorPedido = new Map(ventas.map((venta) => [venta.pedidoId, venta]))
   const pedidoTieneVenta = (pedidoId: string) => ventaPorPedido.has(pedidoId)
+  const pedidoTieneBienes = (pedido: typeof pedidos[number]) => pedido.lineas.some((linea) => linea.tipoProducto === 'good')
   const pedidosDisponibles = pedidos.filter((pedido) =>
-    pedidoTieneVenta(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id && item.id !== edicion?.id),
+    pedidoTieneBienes(pedido) && pedidoTieneVenta(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id && item.id !== edicion?.id),
   )
   const pedidosPorProgramar = pedidos.filter(
-    (pedido) => pedido.estado !== 'cancelado' && pedidoTieneVenta(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id),
+    (pedido) => pedido.estado !== 'cancelado' && pedidoTieneBienes(pedido) && pedidoTieneVenta(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id),
   )
   const filtradas = filtrarProgramacionesEntrega(programaciones, {
     busqueda: busquedaDiferida,

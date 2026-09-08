@@ -6,6 +6,7 @@ import type { DatosVenta } from '@/modulos/ventas/modelo/operacionVenta'
 import {
   actualizarCantidadesPedidoPersistente,
   cancelarPedidoPersistente,
+  completarServiciosPersistente,
   crearPedidoPersistente,
   despacharVentaPersistente,
   listarPedidosPersistentes,
@@ -13,6 +14,7 @@ import {
   registrarVentaPersistente,
   type CantidadLineaPedido,
   type CantidadDespacho,
+  type CantidadCumplimientoServicio,
 } from '@/modulos/ventas/servicios/ventasService'
 
 interface UseOperacionesVentaProps {
@@ -127,6 +129,21 @@ export function useOperacionesVenta({
     },
   })
 
+  const completarServiciosMutation = useMutation({
+    mutationFn: ({ pedidoId, ventaId, lineas, operationKey }: {
+      pedidoId: string
+      ventaId: string
+      lineas: readonly CantidadCumplimientoServicio[]
+      operationKey?: string
+    }) => completarServiciosPersistente(organizationId, pedidoId, ventaId, lineas, operationKey),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ventasQueryKey }),
+        queryClient.invalidateQueries({ queryKey: pedidosQueryKey }),
+      ])
+    },
+  })
+
   const crearPedido = async (cotizacionId: string, warehouseId: string) => {
     try {
       await crearPedidoMutation.mutateAsync({ cotizacionId, warehouseId })
@@ -182,6 +199,20 @@ export function useOperacionesVenta({
     }
   }
 
+  const completarServicios = async (
+    pedidoId: string,
+    ventaId: string,
+    lineas: readonly CantidadCumplimientoServicio[],
+    operationKey?: string,
+  ) => {
+    try {
+      await completarServiciosMutation.mutateAsync({ pedidoId, ventaId, lineas, operationKey })
+      return undefined
+    } catch (error) {
+      return error instanceof Error ? error.message : 'No se pudieron completar los servicios'
+    }
+  }
+
   const reintentar = async () => {
     await Promise.all([pedidosQuery.refetch(), ventasQuery.refetch()])
   }
@@ -194,11 +225,13 @@ export function useOperacionesVenta({
     actualizarPedido,
     cancelarPedido,
     despacharVenta,
+    completarServicios,
     creandoPedido: crearPedidoMutation.isPending,
     registrandoVenta: registrarVentaMutation.isPending,
     actualizandoPedido: actualizarPedidoMutation.isPending,
     cancelandoPedido: cancelarPedidoMutation.isPending,
     despachandoVenta: despacharVentaMutation.isPending,
+    completandoServicios: completarServiciosMutation.isPending,
     cargando: pedidosQuery.isLoading || ventasQuery.isLoading,
     error: pedidosQuery.error ?? ventasQuery.error,
     reintentar,

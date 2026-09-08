@@ -12,6 +12,7 @@ delete from public.inventory_movements where organization_id = 'd5b00000-0000-40
 alter table public.inventory_movements enable trigger inventory_movements_immutable;
 delete from public.inventory_reservations where organization_id = 'd5b00000-0000-4000-8000-000000000001';
 delete from public.sales where organization_id = 'd5b00000-0000-4000-8000-000000000001';
+delete from public.order_service_completion_operations where organization_id = 'd5b00000-0000-4000-8000-000000000001';
 delete from public.orders where organization_id = 'd5b00000-0000-4000-8000-000000000001';
 delete from public.warehouse_locations where organization_id = 'd5b00000-0000-4000-8000-000000000001';
 delete from public.warehouses where organization_id = 'd5b00000-0000-4000-8000-000000000001';
@@ -73,10 +74,10 @@ begin
   perform pg_catalog.set_config('request.jwt.claims', pg_catalog.format('{"sub":"%s","role":"authenticated"}', user_id), true);
   perform pg_catalog.pg_advisory_xact_lock_shared(gate);
   begin
-    result_id := public.dispatch_order_from_reservations(jsonb_build_object(
+    result_id := (public.complete_order_services(jsonb_build_object(
       'organization_id','d5b00000-0000-4000-8000-000000000001', 'order_id',requested_order, 'sale_id',requested_sale,
-      'operation_key',operation, 'items',jsonb_build_array(jsonb_build_object('order_item_id',requested_item,'quantity',10))
-    ));
+      'operation_key',operation, 'items',jsonb_build_array(jsonb_build_object('order_item_id',requested_item,'quantity_to_complete',10))
+    )) ->> 'order_id')::uuid;
     return 'ok:' || result_id::text;
   exception when others then
     return 'error:' || sqlstate || ':' || sqlerrm;
@@ -101,7 +102,7 @@ select ok(pg_catalog.pg_advisory_unlock(907290100000000023), 'se libera la barre
 insert into service_only_concurrency_results select 'a', result from extensions.dblink_get_result('service_only_worker_a') as response(result text);
 insert into service_only_concurrency_results select 'b', result from extensions.dblink_get_result('service_only_worker_b') as response(result text);
 select is((select count(*) from service_only_concurrency_results where result like 'ok:%'),2::bigint,'dos retries concurrentes completan la misma operacion');
-select is((select count(*) from public.audit_events where action='ORDER_DISPATCHED' and entity_id=:'order_id'),1::bigint,'un solo evento de atencion comercial');
+select is((select count(*) from public.audit_events where action='ORDER_SERVICES_COMPLETED' and entity_id=:'order_id'),1::bigint,'un solo evento de atencion comercial');
 select is((select count(*) from public.inventory_movements where organization_id='d5b00000-0000-4000-8000-000000000001'),0::bigint,'cierre concurrente no crea movimientos');
 select is((select count(*) from public.inventory_reservations where organization_id='d5b00000-0000-4000-8000-000000000001'),0::bigint,'cierre concurrente no crea reservas');
 select is((select status from public.orders where id=:'order_id'),'atendido','servicio se atiende una sola vez');
@@ -115,6 +116,7 @@ delete from public.inventory_movements where organization_id = 'd5b00000-0000-40
 alter table public.inventory_movements enable trigger inventory_movements_immutable;
 delete from public.inventory_reservations where organization_id = 'd5b00000-0000-4000-8000-000000000001';
 delete from public.sales where organization_id = 'd5b00000-0000-4000-8000-000000000001';
+delete from public.order_service_completion_operations where organization_id = 'd5b00000-0000-4000-8000-000000000001';
 delete from public.orders where organization_id = 'd5b00000-0000-4000-8000-000000000001';
 delete from public.warehouse_locations where organization_id = 'd5b00000-0000-4000-8000-000000000001';
 delete from public.warehouses where organization_id = 'd5b00000-0000-4000-8000-000000000001';

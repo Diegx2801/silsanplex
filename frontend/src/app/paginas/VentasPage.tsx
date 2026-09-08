@@ -124,10 +124,12 @@ export function VentasPage() {
     actualizarPedido,
     cancelarPedido,
     despacharVenta,
+    completarServicios,
     creandoPedido,
     actualizandoPedido,
     cancelandoPedido,
     despachandoVenta,
+    completandoServicios,
     cargando: cargandoOperaciones,
     error: errorOperaciones,
     reintentar: reintentarOperaciones,
@@ -518,6 +520,7 @@ export function VentasPage() {
         alActualizarPedido={puedeGestionarVentas ? actualizarPedido : undefined}
         alCancelarPedido={puedeGestionarVentas ? cancelarPedido : undefined}
         alDespacharVenta={puedeDespachar ? despacharVenta : undefined}
+        alCompletarServicios={puedeGestionarVentas ? completarServicios : undefined}
         alNotificar={setMensaje}
         cargando={cargandoOperaciones}
         error={errorOperaciones}
@@ -525,6 +528,7 @@ export function VentasPage() {
         actualizandoPedido={actualizandoPedido}
         cancelandoPedido={cancelandoPedido}
         despachandoVenta={despachandoVenta}
+        completandoServicios={completandoServicios}
       />
 
       {puedeGestionarVentas && dialogoAbierto ? (

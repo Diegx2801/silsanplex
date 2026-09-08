@@ -7,6 +7,7 @@ import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
 import {
   actualizarCantidadesPedidoPersistente,
   cancelarPedidoPersistente,
+  completarServiciosPersistente,
   crearPedidoPersistente,
   despacharVentaPersistente,
   listarPedidosPersistentes,
@@ -46,11 +47,14 @@ describe('ventasService', () => {
         internal_number: 'VEN-000001', status,
         prices_include_tax: true, taxable_base: 200, exempt_amount: 0, unaffected_amount: 0,
         subtotal: 200, tax: 36, total: 236, tax_calculation_status: 'calculated',
-        orders: { order_number: 'PED-000001' },
+         orders: { order_number: 'PED-000001', order_items: [
+           { id: 'servicio', product_id: 's', product_type: 'service', service_completed_quantity: status === 'despachada' ? 2 : 0 },
+           { id: 'bien', product_id: 'g', product_type: 'good', service_completed_quantity: 0 },
+         ] },
         customers: { document_number: '12345678', legal_name: 'Cliente' },
         sale_items: [
-          { id: 's', order_item_id: 'servicio', product_id: 's', quantity: 2, unit_price: 100, products: { product_type: 'service' } },
-          { id: 'g', order_item_id: 'bien', product_id: 'g', quantity: 10, unit_price: 10, products: { product_type: 'good' } },
+           { id: 's', order_item_id: 'servicio', product_id: 's', quantity: 2, unit_price: 100 },
+           { id: 'g', order_item_id: 'bien', product_id: 'g', quantity: 10, unit_price: 10 },
         ],
       }], error: null,
     })).mockReturnValueOnce(cadena({
@@ -59,7 +63,8 @@ describe('ventasService', () => {
     const [resultado] = await listarVentasPersistentes('org-1')
     expect(resultado.lineas[0]).toMatchObject({
       tipoProducto: 'service',
-      cantidadDespachada: status === 'despachada' ? 2 : 0,
+       cantidadDespachada: 0,
+       cantidadCompletadaServicio: status === 'despachada' ? 2 : 0,
       cantidadPendiente: status === 'despachada' ? 0 : 2,
     })
     expect(resultado.lineas[1]).toMatchObject({
@@ -121,7 +126,7 @@ describe('ventasService', () => {
         taxable_base: 16.95, exempt_amount: 0, unaffected_amount: 0, subtotal: 16.95, tax: 3.05, total: 20, tax_calculation_status: 'calculated', notes: '', created_at: '2026-09-01T12:00:00.000Z',
         customers: { document_type: 'RUC', document_number: '20548796321', legal_name: 'Cliente Uno' },
         warehouses: { code: 'MAIN', name: 'Almacén principal' },
-        order_items: [{ id: 'linea-1', product_id: 'producto-1', product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', tax_affectation: 'gravado', quantity: 2, unit_price: 10 }],
+           order_items: [{ id: 'linea-1', product_id: 'producto-1', product_type: 'good', service_completed_quantity: 0, product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', tax_affectation: 'gravado', quantity: 2, unit_price: 10 }],
       }],
       error: null,
     }))
@@ -138,7 +143,7 @@ describe('ventasService', () => {
         id: 'venta-1', organization_id: 'org-1', order_id: 'pedido-1', customer_id: 'cliente-1', internal_number: 'VEN-000001',
         document_type: 'factura', series: 'F001', document_number: '1', sale_date: '2026-09-01', warehouse: 'Principal', prices_include_tax: true,
         taxable_base: 16.95, exempt_amount: 0, unaffected_amount: 0, subtotal: 16.95, tax: 3.05, total: 20, tax_calculation_status: 'calculated',
-        status: 'registrada', created_at: '2026-09-01T12:00:00.000Z', orders: { order_number: 'PED-000001' },
+         status: 'registrada', created_at: '2026-09-01T12:00:00.000Z', orders: { order_number: 'PED-000001', order_items: [{ id: 'linea-1', product_id: 'producto-1', product_type: 'good', service_completed_quantity: 0 }] },
         customers: { document_type: 'RUC', document_number: '20548796321', legal_name: 'Cliente Uno' },
         sale_items: [{ id: 'sale-linea-1', order_item_id: 'linea-1', product_id: 'producto-1', product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', tax_affectation: 'exonerado', quantity: 2, unit_price: 10 }],
       }],
@@ -219,6 +224,24 @@ describe('ventasService', () => {
         operation_key: '00000000-0000-4000-8000-000000000004',
         operation_date: '2026-09-01',
         items: [{ order_item_id: 'linea-1', quantity: 1 }],
+      },
+    })
+  })
+
+  it('completa servicios mediante la RPC administrativa y no solicita efectos físicos', async () => {
+    supabaseMock.rpc.mockResolvedValue({ data: 'pedido-1', error: null })
+
+    await expect(completarServiciosPersistente(
+      'org-1', 'pedido-1', 'venta-1', [{ orderItemId: 'linea-servicio', quantity: 2 }],
+      '00000000-0000-4000-8000-000000000005',
+    )).resolves.toBe('pedido-1')
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('complete_order_services', {
+      payload: {
+        organization_id: 'org-1',
+        order_id: 'pedido-1',
+        sale_id: 'venta-1',
+        operation_key: '00000000-0000-4000-8000-000000000005',
+        items: [{ order_item_id: 'linea-servicio', quantity_to_complete: 2 }],
       },
     })
   })

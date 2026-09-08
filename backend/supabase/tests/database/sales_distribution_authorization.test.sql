@@ -1,6 +1,6 @@
 begin;
 
-select plan(57);
+select plan(62);
 
 -- -------------------------------------------------------------------------
 -- Catálogo, matriz, RLS y superficie RPC
@@ -31,6 +31,7 @@ select has_function('public', 'create_sale_from_order', array['uuid', 'uuid', 'j
 select has_function('public', 'update_order_quantities', array['jsonb'], 'existe el endpoint protegido de modificar pedido');
 select has_function('public', 'cancel_order', array['jsonb'], 'existe el endpoint protegido de cancelar pedido');
 select has_function('public', 'dispatch_order_from_reservations', array['jsonb'], 'existe el endpoint protegido de despachar');
+select has_function('public', 'complete_order_services', array['jsonb'], 'existe el endpoint protegido de completar servicios');
 select has_function('public', 'save_distribution_delivery', array['jsonb'], 'existe el endpoint protegido de guardar entrega');
 
 select ok(position('has_organization_permission' in pg_get_functiondef('public.create_order(jsonb)'::regprocedure)) > 0, 'crear pedido valida permiso en backend');
@@ -38,18 +39,21 @@ select ok(position('has_organization_permission' in pg_get_functiondef('public.c
 select ok(position('has_organization_permission' in pg_get_functiondef('public.update_order_quantities(jsonb)'::regprocedure)) > 0, 'modificar pedido valida permiso en backend');
 select ok(position('has_organization_permission' in pg_get_functiondef('public.cancel_order(jsonb)'::regprocedure)) > 0, 'cancelar pedido valida permiso en backend');
 select ok(position('has_organization_permission' in pg_get_functiondef('public.dispatch_order_from_reservations(jsonb)'::regprocedure)) > 0, 'despachar valida permiso en backend');
+select ok(position('has_organization_permission' in pg_get_functiondef('public.complete_order_services(jsonb)'::regprocedure)) > 0, 'completar servicios valida permiso en backend');
 
 select is(has_function_privilege('anon', 'public.create_order(jsonb)', 'EXECUTE'), false, 'anon no puede crear pedidos');
 select is(has_function_privilege('anon', 'public.create_sale_from_order(uuid, uuid, jsonb)', 'EXECUTE'), false, 'anon no puede crear ventas');
 select is(has_function_privilege('anon', 'public.update_order_quantities(jsonb)', 'EXECUTE'), false, 'anon no puede modificar pedidos');
 select is(has_function_privilege('anon', 'public.cancel_order(jsonb)', 'EXECUTE'), false, 'anon no puede cancelar pedidos');
 select is(has_function_privilege('anon', 'public.dispatch_order_from_reservations(jsonb)', 'EXECUTE'), false, 'anon no puede despachar');
+select is(has_function_privilege('anon', 'public.complete_order_services(jsonb)', 'EXECUTE'), false, 'anon no puede completar servicios');
 select is(has_function_privilege('anon', 'public.save_distribution_delivery(jsonb)', 'EXECUTE'), false, 'anon no puede guardar entregas');
 select is(has_function_privilege('authenticated', 'public.create_order(jsonb)', 'EXECUTE'), true, 'authenticated llega al guard de crear pedido');
 select is(has_function_privilege('authenticated', 'public.create_sale_from_order(uuid, uuid, jsonb)', 'EXECUTE'), true, 'authenticated llega al guard de crear venta');
 select is(has_function_privilege('authenticated', 'public.update_order_quantities(jsonb)', 'EXECUTE'), true, 'authenticated llega al guard de modificar pedido');
 select is(has_function_privilege('authenticated', 'public.cancel_order(jsonb)', 'EXECUTE'), true, 'authenticated llega al guard de cancelar pedido');
 select is(has_function_privilege('authenticated', 'public.dispatch_order_from_reservations(jsonb)', 'EXECUTE'), true, 'authenticated llega al guard de despachar');
+select is(has_function_privilege('authenticated', 'public.complete_order_services(jsonb)', 'EXECUTE'), true, 'authenticated llega al guard de completar servicios');
 select is(has_function_privilege('authenticated', 'public.save_distribution_delivery(jsonb)', 'EXECUTE'), true, 'authenticated llega al guard de guardar entrega');
 
 -- -------------------------------------------------------------------------
@@ -108,6 +112,7 @@ select throws_ok($$select public.create_sale_from_order('d4a00000-0000-4000-8000
 select throws_ok($$select public.update_order_quantities('{"organization_id":"d4a00000-0000-4000-8000-000000000001"}'::jsonb)$$, '42501', 'ORDER_FORBIDDEN', 'SALES_VIEW no modifica pedidos');
 select throws_ok($$select public.cancel_order('{"organization_id":"d4a00000-0000-4000-8000-000000000001"}'::jsonb)$$, '42501', 'ORDER_FORBIDDEN', 'SALES_VIEW no cancela pedidos');
 select throws_ok($$select public.dispatch_order_from_reservations('{"organization_id":"d4a00000-0000-4000-8000-000000000001"}'::jsonb)$$, '42501', 'ORDER_DISPATCH_FORBIDDEN', 'SALES_VIEW no despacha');
+select throws_ok($$select public.complete_order_services('{"organization_id":"d4a00000-0000-4000-8000-000000000001"}'::jsonb)$$, '42501', 'ORDER_SERVICE_FORBIDDEN', 'SALES_VIEW no completa servicios');
 select throws_ok($$select public.save_distribution_delivery('{"organization_id":"d4a00000-0000-4000-8000-000000000001"}'::jsonb)$$, '42501', 'DISTRIBUTION_FORBIDDEN', 'sin permiso de distribución no guarda entregas');
 select is((select count(*) from public.orders), 1::bigint, 'las RPCs rechazadas no modifican pedidos');
 select is((select count(*) from public.sales), 1::bigint, 'las RPCs rechazadas no modifican ventas');

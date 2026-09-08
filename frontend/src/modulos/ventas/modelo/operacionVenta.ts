@@ -33,6 +33,7 @@ export const esquemaLineaOperacionVenta = z.object({
   pedidoLineaId: z.string().uuid().optional(),
   cantidadDespachada: z.number().nonnegative().optional(),
   cantidadPendiente: z.number().nonnegative().optional(),
+  cantidadCompletadaServicio: z.number().nonnegative().optional(),
 })
 
 export type LineaOperacionVenta = z.infer<typeof esquemaLineaOperacionVenta>

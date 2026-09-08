@@ -47,8 +47,8 @@ describe('lectura persistente de distribución', () => {
           customers: { document_type: 'RUC', document_number: '20111111111', legal_name: 'Cliente SQL' },
           warehouses: { code: 'MAIN', name: 'Almacén principal' },
           order_items: [
-            { id: 'order-item-1', product_id: 'product-1', product_code: 'P-1', product_description: 'Producto parcial', unit_of_measure: 'UND', quantity: 2, unit_price: 10 },
-            { id: 'order-item-2', product_id: 'product-2', product_code: 'P-2', product_description: 'Producto completo', unit_of_measure: 'CAJA', quantity: 3, unit_price: 12 },
+             { id: 'order-item-1', product_id: 'product-1', product_type: 'good', service_completed_quantity: 0, product_code: 'P-1', product_description: 'Producto parcial', unit_of_measure: 'UND', quantity: 2, unit_price: 10 },
+             { id: 'order-item-2', product_id: 'product-2', product_type: 'good', service_completed_quantity: 0, product_code: 'P-2', product_description: 'Producto completo', unit_of_measure: 'CAJA', quantity: 3, unit_price: 12 },
           ],
         }],
         error: null,

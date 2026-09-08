@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { DialogoDespachoPersistente } from '@/modulos/ventas/componentes/DialogoDespachoPersistente'
+import { DialogoCumplimientoServicios } from '@/modulos/ventas/componentes/DialogoCumplimientoServicios'
 import { DialogoModificacionPedido } from '@/modulos/ventas/componentes/DialogoModificacionPedido'
 import { DialogoRegistroVenta } from '@/modulos/ventas/componentes/DialogoRegistroVenta'
 import type {
@@ -13,6 +14,7 @@ import type {
 } from '@/modulos/ventas/modelo/operacionVenta'
 import type { CantidadLineaPedido } from '@/modulos/ventas/servicios/ventasService'
 import type { CantidadDespacho } from '@/modulos/ventas/servicios/ventasService'
+import type { CantidadCumplimientoServicio } from '@/modulos/ventas/servicios/ventasService'
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' })
 const formatoFecha = new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -24,6 +26,7 @@ interface PanelOperacionesVentaProps {
   alActualizarPedido?: (pedidoId: string, lineas: readonly CantidadLineaPedido[], operationKey: string) => string | undefined | Promise<string | undefined>
   alCancelarPedido?: (pedidoId: string, operationKey: string) => string | undefined | Promise<string | undefined>
   alDespacharVenta?: (pedidoId: string, ventaId: string, lineas: readonly CantidadDespacho[], operationKey: string, operationDate: string) => string | undefined | Promise<string | undefined>
+  alCompletarServicios?: (pedidoId: string, ventaId: string, lineas: readonly CantidadCumplimientoServicio[], operationKey: string) => string | undefined | Promise<string | undefined>
   alNotificar: (mensaje: string) => void
   cargando?: boolean
   error?: unknown
@@ -31,6 +34,7 @@ interface PanelOperacionesVentaProps {
   actualizandoPedido?: boolean
   cancelandoPedido?: boolean
   despachandoVenta?: boolean
+  completandoServicios?: boolean
 }
 
 export function PanelOperacionesVenta({
@@ -40,6 +44,7 @@ export function PanelOperacionesVenta({
   alActualizarPedido,
   alCancelarPedido,
   alDespacharVenta,
+  alCompletarServicios,
   alNotificar,
   cargando = false,
   error,
@@ -47,12 +52,14 @@ export function PanelOperacionesVenta({
   actualizandoPedido = false,
   cancelandoPedido = false,
   despachandoVenta = false,
+  completandoServicios = false,
 }: PanelOperacionesVentaProps) {
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState<PedidoVenta | null>(null)
   const [pedidoPorModificar, setPedidoPorModificar] = useState<PedidoVenta | null>(null)
   const [pedidoPorCancelar, setPedidoPorCancelar] = useState<PedidoVenta | null>(null)
   const [errorCancelacion, setErrorCancelacion] = useState('')
   const [ventaPorDespachar, setVentaPorDespachar] = useState<Venta | null>(null)
+  const [ventaPorCompletarServicios, setVentaPorCompletarServicios] = useState<Venta | null>(null)
   const claveCancelacion = useRef<string | null>(null)
   const ventasPorPedido = new Map(ventas.map((venta) => [venta.pedidoId, venta]))
   const pedidosOrdenados = pedidos.toSorted((a, b) => b.fechaRegistro.localeCompare(a.fechaRegistro))
@@ -90,6 +97,10 @@ export function PanelOperacionesVenta({
           {pedidosOrdenados.map((pedido) => {
             const venta = ventasPorPedido.get(pedido.id)
             const fiscalCalculado = pedido.estadoCalculoTributario === 'calculated'
+            const bienes = venta?.lineas.filter((linea) => linea.tipoProducto === 'good') ?? []
+            const servicios = venta?.lineas.filter((linea) => linea.tipoProducto === 'service') ?? []
+            const totalCumplido = (lineas: Venta['lineas']) => lineas.reduce((totalLinea, linea) => totalLinea + (linea.tipoProducto === 'service' ? (linea.cantidadCompletadaServicio ?? 0) : (linea.cantidadDespachada ?? 0)), 0)
+            const totalPendiente = (lineas: Venta['lineas']) => lineas.reduce((totalLinea, linea) => totalLinea + (linea.cantidadPendiente ?? linea.cantidad), 0)
             return (
               <article key={pedido.id} className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(15rem,1fr)_minmax(20rem,1.35fr)_auto] lg:items-center">
                 <div>
@@ -109,7 +120,7 @@ export function PanelOperacionesVenta({
                     <p className="mt-1 truncate font-mono text-xs">{venta ? `${venta.serie}-${venta.numeroDocumento}` : 'Pendiente'}</p>
                     {venta ? (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Despachado {venta.lineas.reduce((totalLinea, linea) => totalLinea + (linea.cantidadDespachada ?? 0), 0)} · pendiente {venta.lineas.reduce((totalLinea, linea) => totalLinea + (linea.cantidadPendiente ?? linea.cantidad), 0)}
+                        Bienes {totalCumplido(bienes)} / pendiente {totalPendiente(bienes)} · servicios {totalCumplido(servicios)} / pendiente {totalPendiente(servicios)}
                       </p>
                     ) : null}
                   </div>
@@ -124,15 +135,20 @@ export function PanelOperacionesVenta({
                   ) : venta?.estado === 'registrada' && venta.estadoCalculoTributario !== 'calculated' ? (
                     <span className="text-sm font-medium text-muted-foreground">Cálculo tributario {venta.estadoCalculoTributario === 'pending' ? 'pendiente' : 'no reconstruible'}</span>
                   ) : venta?.estado === 'registrada' ? (
-                    alDespacharVenta ? (
-                      <Button
-                        type="button"
-                        disabled={despachandoVenta || venta.lineas.every((linea) => (linea.cantidadPendiente ?? linea.cantidad) <= 0)}
-                        onClick={() => setVentaPorDespachar(venta)}
-                      >
-                        <PackageCheck aria-hidden="true" /> Despachar venta
-                      </Button>
-                    ) : <Button type="button" disabled title="El despacho canónico requiere configuración"> <PackageCheck aria-hidden="true" /> Despacho pendiente</Button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {alCompletarServicios && venta.lineas.some((linea) => linea.tipoProducto === 'service' && (linea.cantidadPendiente ?? linea.cantidad) > 0) ? (
+                        <Button type="button" variant="outline" disabled={completandoServicios} onClick={() => setVentaPorCompletarServicios(venta)}>
+                          <ClipboardCheck aria-hidden="true" /> Completar servicios
+                        </Button>
+                      ) : null}
+                      {venta.lineas.some((linea) => linea.tipoProducto === 'good' && (linea.cantidadPendiente ?? linea.cantidad) > 0) ? (
+                        alDespacharVenta ? (
+                          <Button type="button" disabled={despachandoVenta} onClick={() => setVentaPorDespachar(venta)}>
+                            <PackageCheck aria-hidden="true" /> Despachar bienes
+                          </Button>
+                        ) : <Button type="button" disabled title="El despacho canónico requiere configuración"><PackageCheck aria-hidden="true" /> Despacho pendiente</Button>
+                      ) : null}
+                    </div>
                   ) : venta?.estado === 'despachada' ? (
                     <span className="inline-flex items-center gap-2 text-sm font-medium text-primary"><PackageCheck aria-hidden="true" className="size-4" /> Stock descontado</span>
                   ) : (
@@ -201,6 +217,20 @@ export function PanelOperacionesVenta({
                 && ventaPorDespachar.lineas.every((linea) => linea.tipoProducto === 'service')
               alNotificar(`${ventaPorDespachar.numeroInterno}: ${soloServicios ? 'atención comercial registrada.' : 'despacho registrado y stock actualizado.'}`)
             }
+            return error
+          }}
+        />
+      ) : null}
+
+      {ventaPorCompletarServicios && alCompletarServicios ? (
+        <DialogoCumplimientoServicios
+          abierto
+          venta={ventaPorCompletarServicios}
+          guardando={completandoServicios}
+          alCambiarApertura={(abierto) => { if (!abierto && !completandoServicios) setVentaPorCompletarServicios(null) }}
+          alGuardar={async (lineas, operationKey) => {
+            const error = await alCompletarServicios(ventaPorCompletarServicios.pedidoId, ventaPorCompletarServicios.id, lineas, operationKey)
+            if (!error) alNotificar(`${ventaPorCompletarServicios.numeroInterno}: cumplimiento de servicios registrado.`)
             return error
           }}
         />

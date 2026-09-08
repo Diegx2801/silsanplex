@@ -54,7 +54,7 @@ const venta = {
   total: 100,
   estadoCalculoTributario: 'calculated',
   lineas: [{
-    id: 'sale-linea-1', pedidoLineaId: 'linea-1', productoId: 'producto-1', productoCodigo: 'P-1',
+    id: 'sale-linea-1', pedidoLineaId: 'linea-1', productoId: 'producto-1', tipoProducto: 'good', productoCodigo: 'P-1',
     productoDescripcion: 'Producto', unidadMedida: 'UND', cantidad: 10, cantidadDespachada: 0,
     cantidadPendiente: 10, precioUnitario: 10, lote: '', fechaVencimiento: '',
   }],
@@ -84,19 +84,19 @@ describe('PanelOperacionesVenta', () => {
   })
 
   it('confirma servicios sin pedir cantidades de inventario', async () => {
-    const alDespacharVenta = vi.fn().mockResolvedValue(undefined)
+    const alCompletarServicios = vi.fn().mockResolvedValue(undefined)
     renderPanel({
       pedidos: [pedido],
       ventas: [{ ...venta, lineas: [{ ...venta.lineas[0], tipoProducto: 'service' }] }],
-      alDespacharVenta,
+      alCompletarServicios,
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Despachar venta' }))
-    expect(screen.getByText(/No se modificará el inventario/)).toBeVisible()
-    expect(screen.queryByLabelText('Cantidad a despachar')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar atención' }))
-    await waitFor(() => expect(alDespacharVenta).toHaveBeenCalledWith(
+    fireEvent.click(screen.getByRole('button', { name: 'Completar servicios' }))
+    expect(screen.getByText(/sin efectos físicos/)).toBeVisible()
+    expect(screen.getByLabelText('Cantidad a completar')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cumplimiento' }))
+    await waitFor(() => expect(alCompletarServicios).toHaveBeenCalledWith(
       'pedido-1', 'venta-1', [{ orderItemId: 'linea-1', quantity: 10 }],
-      expect.any(String), expect.any(String),
+      expect.any(String),
     ))
   })
 
@@ -110,7 +110,7 @@ describe('PanelOperacionesVenta', () => {
       ] }],
       alDespacharVenta,
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Despachar venta' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Despachar bienes' }))
     expect(screen.getAllByLabelText('Cantidad a despachar')).toHaveLength(1)
     fireEvent.change(screen.getByLabelText('Cantidad a despachar'), { target: { value: '4' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar despacho' }))
@@ -174,7 +174,7 @@ describe('PanelOperacionesVenta', () => {
   it('permite un despacho parcial y bloquea el doble submit', async () => {
     const alDespacharVenta = vi.fn().mockResolvedValue(undefined)
     renderPanel({ pedidos: [pedido], ventas: [venta], alDespacharVenta })
-    fireEvent.click(screen.getByRole('button', { name: 'Despachar venta' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Despachar bienes' }))
     fireEvent.change(screen.getByLabelText('Cantidad a despachar'), { target: { value: '6' } })
     const confirmar = screen.getByRole('button', { name: 'Confirmar despacho' })
     fireEvent.click(confirmar)
