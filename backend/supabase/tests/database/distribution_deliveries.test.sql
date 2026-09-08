@@ -1,8 +1,9 @@
 begin;
 
-select plan(60);
+select plan(64);
 
 select has_table('public', 'distribution_deliveries', 'existe la tabla persistente de distribución');
+select has_table('public', 'distribution_command_operations', 'existe el registro de operaciones idempotentes');
 select has_column('public', 'distribution_deliveries', 'delivery_status', 'existe el estado operativo');
 select has_column('public', 'distribution_deliveries', 'lock_version', 'existe la versión de concurrencia');
 select has_column('public', 'distribution_deliveries', 'direction', 'existe la dirección de entrega');
@@ -170,6 +171,7 @@ select lives_ok($$
     'transport_type', 'externo',
     'tracking_status', 'en_curso',
     'delivery_status', 'programado',
+    'operation_key', '31111111-1111-4111-8111-111111111111',
     'direction', 'Av. Nueva 123',
     'numero_despacho', 'DES-N-001',
     'modalidad', 'movilidad_externa',
@@ -198,6 +200,41 @@ select is((select incidencias from public.distribution_deliveries where guide_nu
 select is((select sale_id from public.distribution_deliveries where guide_number = 'G-N-001'), 'a3111111-1111-4111-8111-111111111152'::uuid, 'la entrega queda ligada a la venta real');
 select is((select sale_number from public.distribution_deliveries where guide_number = 'G-N-001'), 'VEN-000002', 'persiste el número real de venta');
 select is((select order_items -> 0 ->> 'id' from public.distribution_deliveries where guide_number = 'G-N-001'), 'a3111111-1111-4111-8111-111111111142', 'las líneas se reconstruyen desde order_items y no desde el payload');
+
+select lives_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'order_number', 'PED-N-001', 'customer_name', 'Cliente nuevo',
+    'issue_date', '2026-09-01', 'delivery_date', '2026-09-02', 'guide_number', 'g-n-001',
+    'transport_type', 'externo', 'tracking_status', 'en_curso', 'delivery_status', 'programado',
+    'operation_key', '31111111-1111-4111-8111-111111111111',
+    'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001', 'modalidad', 'movilidad_externa',
+    'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
+    'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
+    'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+  ));
+$$, 'repite sin duplicar una operación equivalente');
+select is((select count(*) from public.distribution_deliveries where guide_number = 'G-N-001'), 1::bigint, 'el retry idempotente conserva una sola entrega');
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'order_number', 'PED-N-001', 'customer_name', 'Cliente cambiado',
+    'issue_date', '2026-09-01', 'delivery_date', '2026-09-02', 'guide_number', 'g-n-001',
+    'transport_type', 'externo', 'tracking_status', 'en_curso', 'delivery_status', 'programado',
+    'operation_key', '31111111-1111-4111-8111-111111111111',
+    'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001', 'modalidad', 'movilidad_externa',
+    'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
+    'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
+    'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+  ));
+$$, 'P0001', 'DISTRIBUTION_OPERATION_KEY_REUSED', 'rechaza reutilizar la clave con otro payload');
 
 select lives_ok($$
   select public.save_distribution_delivery(jsonb_build_object(

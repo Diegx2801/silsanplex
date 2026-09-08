@@ -11,7 +11,7 @@ export function useProgramacionesEntrega() {
   const organizationId = access?.organizationId ?? ''
   const queryKey = ['distribution-deliveries', organizationId] as const
   const query = useQuery({ queryKey, queryFn: () => listarEntregas(organizationId), enabled: Boolean(organizationId) })
-  const guardarMutation = useMutation({ mutationFn: ({ datos, lineas, id }: { datos: DatosProgramacionEntrega; lineas: ProgramacionEntrega['lineas']; id?: string }) => guardarEntrega(organizationId, datos, lineas, id), onSuccess: () => queryClient.invalidateQueries({ queryKey }) })
+  const guardarMutation = useMutation({ mutationFn: ({ datos, lineas, id, operationKey }: { datos: DatosProgramacionEntrega; lineas: ProgramacionEntrega['lineas']; id?: string; operationKey: string }) => guardarEntrega(organizationId, datos, lineas, id, operationKey), onSuccess: () => queryClient.invalidateQueries({ queryKey }) })
 
   const ejecutar = async (operacion: () => Promise<unknown>) => {
     try {
@@ -27,7 +27,7 @@ export function useProgramacionesEntrega() {
   const guardar = (datos: DatosProgramacionEntrega, id?: string, lineas: ProgramacionEntrega['lineas'] = []) => {
     if (!puedeGestionarDistribucion) return Promise.resolve('No tienes permiso para administrar distribución')
     if (programaciones.some((item) => item.pedidoId === datos.pedidoId && item.id !== id)) return Promise.resolve('Este pedido ya tiene una entrega programada')
-    return ejecutar(() => guardarMutation.mutateAsync({ datos, lineas, id }))
+    return ejecutar(() => guardarMutation.mutateAsync({ datos, lineas, id, operationKey: crypto.randomUUID() }))
   }
 
   const actualizarEstado = (entrega: ProgramacionEntrega, estado: ProgramacionEntrega['estado']) => {

@@ -44,10 +44,12 @@ export function prepararPayloadEntrega(
   datos: DatosProgramacionEntrega,
   lineas: ProgramacionEntrega['lineas'],
   id?: string,
+  operationKey?: string,
 ) {
   return {
     ...(id ? { id } : {}),
     ...(id && datos.lockVersion ? { expected_lock_version: datos.lockVersion } : {}),
+    ...(operationKey ? { operation_key: operationKey } : {}),
     organization_id: organizationId,
     order_id: datos.pedidoId,
     sale_id: datos.ventaId || null,
@@ -190,9 +192,10 @@ export async function guardarEntrega(
   datos: DatosProgramacionEntrega,
   lineas: ProgramacionEntrega['lineas'],
   id?: string,
+  operationKey: string = crypto.randomUUID(),
 ) {
   const { error } = await supabase.rpc('save_distribution_delivery', {
-    payload: prepararPayloadEntrega(organizationId, datos, lineas, id),
+    payload: prepararPayloadEntrega(organizationId, datos, lineas, id, operationKey),
   })
   if (error) throw new Error(mensajeError(error))
 }

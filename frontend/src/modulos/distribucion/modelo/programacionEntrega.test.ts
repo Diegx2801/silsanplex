@@ -172,10 +172,11 @@ describe('programación de entrega', () => {
       lote: 'L-001',
       fechaVencimiento: '2026-12-31',
       precioUnitario: 10,
-    }], 'entrega-1')
+    }], 'entrega-1', '11111111-1111-4111-8111-111111111111')
 
     expect(payload).toMatchObject({
       expected_lock_version: 7,
+      operation_key: '11111111-1111-4111-8111-111111111111',
       organization_id: 'org-1',
       order_id: 'pedido-1',
       order_number: 'PED-001',
