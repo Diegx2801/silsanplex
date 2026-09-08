@@ -3,7 +3,7 @@ insert into service_only_concurrency_extension_state
 select exists (select 1 from pg_catalog.pg_extension where extname = 'dblink');
 create extension if not exists dblink with schema extensions;
 
-select plan(10);
+select plan(31);
 
 begin;
 drop schema if exists service_only_concurrency_test cascade;
@@ -63,22 +63,31 @@ select public.create_sale_from_order(
   'd5b00000-0000-4000-8000-000000000001', :'order_id',
   jsonb_build_object('operation_key','d5200000-0000-4000-8000-000000000001','document_type','boleta','series','B001','document_number','1','warehouse','Almacen despacho concurrente')
 ) as sale_id \gset
+select public.create_order(jsonb_build_object(
+  'organization_id','d5b00000-0000-4000-8000-000000000001', 'operation_key','d5100000-0000-4000-8000-000000000002',
+  'customer_id','d5d00000-0000-4000-8000-000000000001', 'warehouse_id','d5f00000-0000-4000-8000-000000000001',
+  'items',jsonb_build_array(jsonb_build_object('product_id','d5e00000-0000-4000-8000-000000000001','quantity',10,'unit_price',8))
+)) as conflict_order_id \gset
+select public.create_sale_from_order(
+  'd5b00000-0000-4000-8000-000000000001', :'conflict_order_id',
+  jsonb_build_object('operation_key','d5200000-0000-4000-8000-000000000002','document_type','boleta','series','B001','document_number','2','warehouse','Almacen despacho concurrente')
+) as conflict_sale_id \gset
 commit;
 
 create schema service_only_concurrency_test;
-create function service_only_concurrency_test.worker(gate bigint, operation uuid, user_id uuid, requested_order uuid, requested_sale uuid, requested_item uuid)
+create function service_only_concurrency_test.worker(gate bigint, operation uuid, user_id uuid, requested_order uuid, requested_sale uuid, requested_item uuid, requested_quantity numeric)
 returns text language plpgsql security definer set search_path = '' as $$
-declare result_id uuid;
+declare result_payload jsonb;
 begin
   perform pg_catalog.set_config('request.jwt.claim.sub', user_id::text, true);
   perform pg_catalog.set_config('request.jwt.claims', pg_catalog.format('{"sub":"%s","role":"authenticated"}', user_id), true);
   perform pg_catalog.pg_advisory_xact_lock_shared(gate);
   begin
-    result_id := (public.complete_order_services(jsonb_build_object(
+    result_payload := public.complete_order_services(jsonb_build_object(
       'organization_id','d5b00000-0000-4000-8000-000000000001', 'order_id',requested_order, 'sale_id',requested_sale,
-      'operation_key',operation, 'items',jsonb_build_array(jsonb_build_object('order_item_id',requested_item,'quantity_to_complete',10))
-    )) ->> 'order_id')::uuid;
-    return 'ok:' || result_id::text;
+      'operation_key',operation, 'items',jsonb_build_array(jsonb_build_object('order_item_id',requested_item,'quantity_to_complete',requested_quantity))
+    ));
+    return 'ok:' || result_payload::text;
   exception when others then
     return 'error:' || sqlstate || ':' || sqlerrm;
   end;
@@ -94,18 +103,56 @@ insert into service_only_concurrency_workers select 'b', process_id from extensi
 select isnt((select process_id from service_only_concurrency_workers where worker_name = 'a'), (select process_id from service_only_concurrency_workers where worker_name = 'b'), 'los despachos concurrentes usan sesiones distintas');
 
 select pg_catalog.pg_advisory_lock(907290100000000023);
-select is(extensions.dblink_send_query('service_only_worker_a', $$select service_only_concurrency_test.worker(907290100000000023, 'd5300000-0000-4000-8000-000000000001', 'd5c00000-0000-4000-8000-000000000001', (select id from public.orders where order_number = 'PED-000001'), (select id from public.sales where internal_number = 'VEN-000001'), (select id from public.order_items where order_id = (select id from public.orders where order_number = 'PED-000001')))$$), 1, 'se inicia el despacho A');
-select is(extensions.dblink_send_query('service_only_worker_b', $$select service_only_concurrency_test.worker(907290100000000023, 'd5300000-0000-4000-8000-000000000001', 'd5c00000-0000-4000-8000-000000000002', (select id from public.orders where order_number = 'PED-000001'), (select id from public.sales where internal_number = 'VEN-000001'), (select id from public.order_items where order_id = (select id from public.orders where order_number = 'PED-000001')))$$), 1, 'se inicia el despacho B');
+select is(extensions.dblink_send_query('service_only_worker_a', $$select service_only_concurrency_test.worker(907290100000000023, 'd5300000-0000-4000-8000-000000000001', 'd5c00000-0000-4000-8000-000000000001', (select id from public.orders where order_number = 'PED-000001'), (select id from public.sales where internal_number = 'VEN-000001'), (select id from public.order_items where order_id = (select id from public.orders where order_number = 'PED-000001')), 10)$$), 1, 'se inicia el retry exacto A');
+select is(extensions.dblink_send_query('service_only_worker_b', $$select service_only_concurrency_test.worker(907290100000000023, 'd5300000-0000-4000-8000-000000000001', 'd5c00000-0000-4000-8000-000000000002', (select id from public.orders where order_number = 'PED-000001'), (select id from public.sales where internal_number = 'VEN-000001'), (select id from public.order_items where order_id = (select id from public.orders where order_number = 'PED-000001')), 10)$$), 1, 'se inicia el retry exacto B');
 do $$ begin for attempt in 1..100 loop exit when (select count(*) from pg_catalog.pg_locks lock where lock.locktype = 'advisory' and not lock.granted and lock.pid in (select process_id from service_only_concurrency_workers)) = 2; perform pg_catalog.pg_sleep(0.02); end loop; end; $$;
-select ok((select count(*) from pg_catalog.pg_locks lock where lock.locktype = 'advisory' and not lock.granted and lock.pid in (select process_id from service_only_concurrency_workers)) = 2, 'ambos despachos esperan la barrera');
+select ok((select count(*) from pg_catalog.pg_locks lock where lock.locktype = 'advisory' and not lock.granted and lock.pid in (select process_id from service_only_concurrency_workers)) = 2, 'ambos retries exactos esperan la barrera');
 select ok(pg_catalog.pg_advisory_unlock(907290100000000023), 'se libera la barrera');
 insert into service_only_concurrency_results select 'a', result from extensions.dblink_get_result('service_only_worker_a') as response(result text);
 insert into service_only_concurrency_results select 'b', result from extensions.dblink_get_result('service_only_worker_b') as response(result text);
 select is((select count(*) from service_only_concurrency_results where result like 'ok:%'),2::bigint,'dos retries concurrentes completan la misma operacion');
-select is((select count(*) from public.audit_events where action='ORDER_SERVICES_COMPLETED' and entity_id=:'order_id'),1::bigint,'un solo evento de atencion comercial');
+select is((select min(result) from service_only_concurrency_results), (select max(result) from service_only_concurrency_results), 'los retries exactos devuelven el mismo resultado');
+select is((select count(*) from public.order_service_completion_operations where organization_id='d5b00000-0000-4000-8000-000000000001' and operation_key='d5300000-0000-4000-8000-000000000001'),1::bigint,'retry exacto conserva una sola operacion idempotente');
+select is((select service_completed_quantity from public.order_items where order_id=:'order_id'),10::numeric,'retry exacto incrementa el servicio una sola vez');
+select ok((select service_completed_quantity <= quantity from public.order_items where order_id=:'order_id'),'retry exacto no supera la cantidad ordenada');
+select is((select count(*) from public.audit_events where action='ORDER_SERVICES_COMPLETED' and entity_id=:'order_id' and metadata->>'operation_key'='d5300000-0000-4000-8000-000000000001'),1::bigint,'un solo evento de atencion comercial');
 select is((select count(*) from public.inventory_movements where organization_id='d5b00000-0000-4000-8000-000000000001'),0::bigint,'cierre concurrente no crea movimientos');
 select is((select count(*) from public.inventory_reservations where organization_id='d5b00000-0000-4000-8000-000000000001'),0::bigint,'cierre concurrente no crea reservas');
+select is((select count(*) from public.inventory_kardex where organization_id='d5b00000-0000-4000-8000-000000000001' and product_id='d5e00000-0000-4000-8000-000000000001'),0::bigint,'cierre concurrente no crea Kardex');
 select is((select status from public.orders where id=:'order_id'),'atendido','servicio se atiende una sola vez');
+select is((select status from public.sales where id=:'sale_id'),'despachada','venta queda completada una sola vez');
+
+select extensions.dblink_disconnect('service_only_worker_a');
+select extensions.dblink_disconnect('service_only_worker_b');
+select extensions.dblink_connect('service_only_worker_a', 'host=supabase_db_backend port=5432 dbname=postgres user=postgres password=postgres');
+select extensions.dblink_connect('service_only_worker_b', 'host=supabase_db_backend port=5432 dbname=postgres user=postgres password=postgres');
+truncate service_only_concurrency_workers;
+insert into service_only_concurrency_workers select 'a', process_id from extensions.dblink('service_only_worker_a', 'select pg_backend_pid()') as worker(process_id integer);
+insert into service_only_concurrency_workers select 'b', process_id from extensions.dblink('service_only_worker_b', 'select pg_backend_pid()') as worker(process_id integer);
+truncate service_only_concurrency_results;
+select pg_catalog.pg_advisory_lock(907290100000000024);
+select is(extensions.dblink_send_query('service_only_worker_a', $$select service_only_concurrency_test.worker(907290100000000024, 'd5300000-0000-4000-8000-000000000002', 'd5c00000-0000-4000-8000-000000000001', (select id from public.orders where order_number = 'PED-000002'), (select id from public.sales where internal_number = 'VEN-000002'), (select id from public.order_items where order_id = (select id from public.orders where order_number = 'PED-000002')), 4)$$), 1, 'se inicia el payload ganador potencial');
+select is(extensions.dblink_send_query('service_only_worker_b', $$select service_only_concurrency_test.worker(907290100000000024, 'd5300000-0000-4000-8000-000000000002', 'd5c00000-0000-4000-8000-000000000002', (select id from public.orders where order_number = 'PED-000002'), (select id from public.sales where internal_number = 'VEN-000002'), (select id from public.order_items where order_id = (select id from public.orders where order_number = 'PED-000002')), 6)$$), 1, 'se inicia el payload conflictivo potencial');
+do $$ begin for attempt in 1..100 loop exit when (select count(*) from pg_catalog.pg_locks lock where lock.locktype = 'advisory' and not lock.granted and lock.pid in (select process_id from service_only_concurrency_workers)) = 2; perform pg_catalog.pg_sleep(0.02); end loop; end; $$;
+select ok((select count(*) from pg_catalog.pg_locks lock where lock.locktype = 'advisory' and not lock.granted and lock.pid in (select process_id from service_only_concurrency_workers)) = 2, 'ambos payloads conflictivos esperan la barrera');
+select ok(pg_catalog.pg_advisory_unlock(907290100000000024), 'se libera la barrera de conflicto');
+insert into service_only_concurrency_results select 'a', result from extensions.dblink_get_result('service_only_worker_a') as response(result text);
+insert into service_only_concurrency_results select 'b', result from extensions.dblink_get_result('service_only_worker_b') as response(result text);
+select is((select count(*) from service_only_concurrency_results where result like 'ok:%'),1::bigint,'payload distinto deja una sola operacion ganadora');
+select is((select count(*) from service_only_concurrency_results where result like 'error:P0001:ORDER_OPERATION_KEY_REUSED%'),1::bigint,'payload distinto devuelve el conflicto estable');
+select is((select count(*) from public.order_service_completion_operations where organization_id='d5b00000-0000-4000-8000-000000000001' and operation_key='d5300000-0000-4000-8000-000000000002'),1::bigint,'conflicto conserva una sola operacion idempotente');
+select is(
+  (select service_completed_quantity from public.order_items where order_id=:'conflict_order_id'),
+  (select (canonical_payload->'items'->0->>'quantity_to_complete')::numeric from public.order_service_completion_operations where organization_id='d5b00000-0000-4000-8000-000000000001' and operation_key='d5300000-0000-4000-8000-000000000002'),
+  'conflicto aplica solamente la cantidad del payload ganador'
+);
+select ok((select service_completed_quantity <= quantity from public.order_items where order_id=:'conflict_order_id'),'conflicto no supera la cantidad ordenada');
+select is((select count(*) from public.audit_events where action='ORDER_SERVICES_COMPLETED' and entity_id=:'conflict_order_id' and metadata->>'operation_key'='d5300000-0000-4000-8000-000000000002'),1::bigint,'conflicto deja una sola auditoria');
+select is((select status from public.orders where id=:'conflict_order_id'),'confirmado','cumplimiento parcial conflictivo mantiene el pedido pendiente');
+select is((select status from public.sales where id=:'conflict_sale_id'),'registrada','cumplimiento parcial conflictivo mantiene la venta pendiente');
+select is((select count(*) from public.inventory_movements where organization_id='d5b00000-0000-4000-8000-000000000001'),0::bigint,'conflicto concurrente no crea movimientos');
+select is((select count(*) from public.inventory_reservations where organization_id='d5b00000-0000-4000-8000-000000000001'),0::bigint,'conflicto concurrente no crea reservas');
+select is((select count(*) from public.inventory_kardex where organization_id='d5b00000-0000-4000-8000-000000000001' and product_id='d5e00000-0000-4000-8000-000000000001'),0::bigint,'conflicto concurrente no crea Kardex');
 
 select extensions.dblink_disconnect('service_only_worker_a');
 select extensions.dblink_disconnect('service_only_worker_b');
