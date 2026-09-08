@@ -96,6 +96,7 @@ export const esquemaLineaCompra = z.object({
   costoUnitario: z.number().positive(),
   lote: z.string(),
   fechaVencimiento: z.string(),
+  tipoProducto: z.enum(['good', 'service']).nullable().optional(),
   // NULL identifica líneas históricas anteriores a P1B-1 sin dato reconstruible.
   afectacionIgv: z.enum(['por-definir', 'gravado', 'exonerado', 'inafecto']).nullable().optional(),
 })
@@ -106,6 +107,7 @@ export type EstadoCompra = 'borrador' | 'emitida' | 'parcialmente-recibida' | 'r
 export interface LineaRecepcionCompra {
   purchaseOrderItemId: string
   cantidad: string
+  fulfillmentMode?: 'physical' | 'administrative'
   ubicacionId: string
   lote: string
   fechaVencimiento: string
@@ -286,6 +288,7 @@ export function crearCompra(
         productoCodigo: producto.codigo,
         productoDescripcion: producto.descripcion,
         unidadMedida: producto.unidadMedida,
+        tipoProducto: producto.tipo,
         controlLote: producto.controlLote,
         controlVencimiento: producto.controlVencimiento,
         cantidad: Number(linea.cantidad),

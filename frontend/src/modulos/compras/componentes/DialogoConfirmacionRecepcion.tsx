@@ -27,8 +27,11 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
     .filter((linea) => linea.cantidadPendiente > 0)
     .map((linea) => ({
       id: crypto.randomUUID(), purchaseOrderItemId: linea.id,
-      cantidad: String(linea.cantidadPendiente), ubicacionId: ubicacionesDestino[0]?.id ?? '',
-      lote: linea.lote, fechaVencimiento: linea.fechaVencimiento,
+      cantidad: String(linea.cantidadPendiente),
+      fulfillmentMode: linea.tipoProducto === 'service' ? 'administrative' : 'physical',
+      ubicacionId: linea.tipoProducto === 'service' ? '' : ubicacionesDestino[0]?.id ?? '',
+      lote: linea.tipoProducto === 'service' ? '' : linea.lote,
+      fechaVencimiento: linea.tipoProducto === 'service' ? '' : linea.fechaVencimiento,
     })))
   const [procesando, setProcesando] = useState(false)
   const [error, setError] = useState('')
@@ -39,8 +42,11 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
   const agregarPartida = (purchaseOrderItemId: string) => {
     const linea = compra.lineas.find((item) => item.id === purchaseOrderItemId)!
     setFilas((actuales) => [...actuales, {
-      id: crypto.randomUUID(), purchaseOrderItemId, cantidad: '', ubicacionId: ubicacionesDestino[0]?.id ?? '',
-      lote: linea.lote, fechaVencimiento: linea.fechaVencimiento,
+      id: crypto.randomUUID(), purchaseOrderItemId, cantidad: '',
+      fulfillmentMode: linea.tipoProducto === 'service' ? 'administrative' : 'physical',
+      ubicacionId: linea.tipoProducto === 'service' ? '' : ubicacionesDestino[0]?.id ?? '',
+      lote: linea.tipoProducto === 'service' ? '' : linea.lote,
+      fechaVencimiento: linea.tipoProducto === 'service' ? '' : linea.fechaVencimiento,
     }])
   }
 
@@ -49,11 +55,16 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
     const cantidades = new Map<string, number>()
     for (const fila of filas) {
       const cantidad = Number(fila.cantidad)
-      if (!Number.isFinite(cantidad) || cantidad <= 0 || !fila.ubicacionId) {
-        setError('Completa cantidad y ubicación en todas las partidas.')
+      const linea = compra.lineas.find((item) => item.id === fila.purchaseOrderItemId)!
+      const esServicio = linea.tipoProducto === 'service'
+      if (!Number.isFinite(cantidad) || cantidad <= 0 || (!esServicio && !fila.ubicacionId)) {
+        setError(esServicio ? 'Completa una cantidad válida en todas las atenciones.' : 'Completa cantidad y ubicación en todas las partidas.')
         return
       }
-      const linea = compra.lineas.find((item) => item.id === fila.purchaseOrderItemId)!
+      if (!linea.tipoProducto) {
+        setError(`Regulariza el tipo de producto de ${linea.productoDescripcion} antes de recibirla.`)
+        return
+      }
       if (linea.controlLote && !fila.lote.trim()) {
         setError(`Ingresa el lote de ${linea.productoDescripcion}.`)
         return
@@ -86,21 +97,23 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
         <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-70 max-h-[90vh] w-[calc(100%-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background p-5 shadow-xl outline-none sm:p-6" onCloseAutoFocus={(evento) => { evento.preventDefault(); alRestaurarFoco() }}>
           <div className="grid size-10 place-items-center rounded-full bg-accent text-primary"><PackageCheck aria-hidden="true" className="size-5" /></div>
           <DialogPrimitive.Title className="mt-4 text-xl font-semibold">Registrar recepción</DialogPrimitive.Title>
-          <DialogPrimitive.Description className="mt-2 text-sm leading-6 text-muted-foreground">Confirma solo lo recibido. Puedes dividir una línea entre varios lotes o ubicaciones; el saldo seguirá pendiente.</DialogPrimitive.Description>
+          <DialogPrimitive.Description className="mt-2 text-sm leading-6 text-muted-foreground">Confirma solo lo recibido. Los bienes entran a inventario; los servicios se marcan atendidos sin generar stock.</DialogPrimitive.Description>
           <div className="mt-5 space-y-5">
             {compra.lineas.filter((linea) => linea.cantidadPendiente > 0).map((linea) => (
               <section key={linea.id} className="border p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div><h3 className="font-medium">{linea.productoDescripcion}</h3><p className="mt-1 font-mono text-xs text-muted-foreground">{linea.productoCodigo} · pendiente {linea.cantidadPendiente}</p></div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => agregarPartida(linea.id)}><Plus /> Dividir lote</Button>
+                  <div><h3 className="font-medium">{linea.productoDescripcion}</h3><p className="mt-1 font-mono text-xs text-muted-foreground">{linea.productoCodigo} · {linea.tipoProducto === 'service' ? 'Servicio' : linea.tipoProducto === 'good' ? 'Producto físico' : 'Tipo no regularizado'} · pendiente {linea.cantidadPendiente}</p></div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => agregarPartida(linea.id)}><Plus /> {linea.tipoProducto === 'service' ? 'Dividir atención' : 'Dividir lote'}</Button>
                 </div>
                 <div className="mt-4 space-y-3">
                   {filas.filter((fila) => fila.purchaseOrderItemId === linea.id).map((fila, indice, partidas) => (
-                    <div key={fila.id} className="grid gap-3 border-t pt-3 md:grid-cols-[8rem_1fr_1fr_10rem_auto]">
+                    <div key={fila.id} className={`grid gap-3 border-t pt-3 ${linea.tipoProducto === 'service' ? 'md:grid-cols-[8rem_auto]' : 'md:grid-cols-[8rem_1fr_1fr_10rem_auto]'}`}>
                       <label><span className="field-label">Cantidad</span><input className="field-control" type="number" min="0.001" step="0.001" value={fila.cantidad} onChange={(e) => actualizar(fila.id, { cantidad: e.target.value })} /></label>
-                      <label><span className="field-label">Ubicación</span><select className="field-control" value={fila.ubicacionId} onChange={(e) => actualizar(fila.id, { ubicacionId: e.target.value })}><option value="">Selecciona</option>{ubicacionesDestino.map((u) => <option key={u.id} value={u.id}>{u.codigo} · {u.nombre}</option>)}</select></label>
-                      <label><span className="field-label">Lote{linea.controlLote ? ' *' : ''}</span><input className="field-control" maxLength={60} value={fila.lote} onChange={(e) => actualizar(fila.id, { lote: e.target.value })} /></label>
-                      <label><span className="field-label">Vencimiento{linea.controlVencimiento ? ' *' : ''}</span><input className="field-control" type="date" value={fila.fechaVencimiento} onChange={(e) => actualizar(fila.id, { fechaVencimiento: e.target.value })} /></label>
+                      {linea.tipoProducto === 'service' ? <p className="self-end pb-2 text-sm text-muted-foreground">Atención administrativa · sin inventario</p> : <>
+                        <label><span className="field-label">Ubicación</span><select className="field-control" value={fila.ubicacionId} onChange={(e) => actualizar(fila.id, { ubicacionId: e.target.value })}><option value="">Selecciona</option>{ubicacionesDestino.map((u) => <option key={u.id} value={u.id}>{u.codigo} · {u.nombre}</option>)}</select></label>
+                        <label><span className="field-label">Lote{linea.controlLote ? ' *' : ''}</span><input className="field-control" maxLength={60} value={fila.lote} onChange={(e) => actualizar(fila.id, { lote: e.target.value })} /></label>
+                        <label><span className="field-label">Vencimiento{linea.controlVencimiento ? ' *' : ''}</span><input className="field-control" type="date" value={fila.fechaVencimiento} onChange={(e) => actualizar(fila.id, { fechaVencimiento: e.target.value })} /></label>
+                      </>}
                       <Button type="button" variant="ghost" size="icon" className="self-end" disabled={indice === 0 && partidas.length === 1} aria-label="Quitar partida" onClick={() => setFilas((actuales) => actuales.filter((item) => item.id !== fila.id))}><Trash2 /></Button>
                     </div>
                   ))}
@@ -112,7 +125,7 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
           {error ? <p role="alert" className="mt-4 border-s-4 border-destructive bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p> : null}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <DialogPrimitive.Close asChild><Button type="button" variant="outline" size="lg" disabled={procesando}>Cancelar</Button></DialogPrimitive.Close>
-            <Button type="button" size="lg" disabled={procesando || !ubicacionesDestino.length || !filas.length} onClick={() => void confirmar()}>{procesando ? 'Recibiendo…' : 'Confirmar recepción'}</Button>
+            <Button type="button" size="lg" disabled={procesando || !filas.length || (compra.lineas.some((linea) => linea.tipoProducto !== 'service' && linea.cantidadPendiente > 0) && !ubicacionesDestino.length)} onClick={() => void confirmar()}>{procesando ? 'Procesando…' : 'Confirmar recepción'}</Button>
           </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

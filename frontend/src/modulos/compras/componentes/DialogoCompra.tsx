@@ -375,6 +375,9 @@ export function DialogoCompra({
                               </option>
                             ))}
                           </select>
+                          {producto ? <p className="mt-1 text-xs text-muted-foreground">
+                            Tipo: {producto.tipo === 'service' ? 'Servicio (atención administrativa)' : 'Producto físico (recepción e inventario)'}
+                          </p> : null}
                         </div>
                         <div>
                           <label className="field-label">Cantidad *</label>

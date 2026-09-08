@@ -231,4 +231,23 @@ describe('compras', () => {
       costoUnitario: 11.8,
     })
   })
+
+  it('conserva el tipo de servicio en la línea comercial', () => {
+    const servicio = {
+      ...producto,
+      id: 'servicio-1',
+      tipo: 'service' as const,
+      controlLote: false,
+      controlVencimiento: false,
+    }
+    const compra = crearCompra(
+      { ...compraBase, lineas: [{ ...compraBase.lineas[0], productoId: servicio.id, lote: '', fechaVencimiento: '' }] },
+      proveedor,
+      [servicio],
+      new Date('2026-08-19T17:00:00.000Z'),
+      'compra-servicio-1',
+    )
+
+    expect(compra.lineas[0].tipoProducto).toBe('service')
+  })
 })

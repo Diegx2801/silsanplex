@@ -41,7 +41,7 @@ describe('compraService', () => {
         notes: null, status: 'draft', issued_at: null,
         received_at: null, created_at: '2026-08-31T12:00:00.000Z', purchase_order_items: [{
           id: 'linea-1', product_id: 'producto-1', product_code: 'P-1',
-          product_description: 'Producto', unit_of_measure: 'UND', tax_affectation: 'exonerado', batch_control: false,
+          product_description: 'Producto', unit_of_measure: 'UND', product_type: 'service', tax_affectation: 'exonerado', batch_control: false,
           quantity: 2, unit_cost: 10, lot: null, expiration_date: null,
           products: [{ expiration_control: false }], purchase_receipt_items: [],
         }],
@@ -50,7 +50,7 @@ describe('compraService', () => {
     }))
 
     await expect(listarCompras('org-1')).resolves.toEqual([
-      expect.objectContaining({ almacenId: 'almacen-1', almacen: 'Principal', lineas: [expect.objectContaining({ afectacionIgv: 'exonerado' })] }),
+      expect.objectContaining({ almacenId: 'almacen-1', almacen: 'Principal', lineas: [expect.objectContaining({ afectacionIgv: 'exonerado', tipoProducto: 'service' })] }),
     ])
   })
 
@@ -121,6 +121,19 @@ describe('compraService', () => {
       payload: expect.objectContaining({
         purchase_order_id: 'compra-1', operation_key: 'c1111111-1111-4111-8111-111111111111',
         items: [expect.objectContaining({ purchase_order_item_id: 'linea-1', location_id: 'u-1' })],
+      }),
+    })
+  })
+
+  it('envía atención administrativa para servicios sin datos físicos', async () => {
+    supabaseMock.rpc.mockResolvedValue({ error: null })
+    await recibirCompraPersistente('org-1', 'compra-1', {
+      operationKey: 'c1111111-1111-4111-8111-111111111112', observacion: '',
+      lineas: [{ purchaseOrderItemId: 'linea-1', cantidad: '1', fulfillmentMode: 'administrative', ubicacionId: '', lote: '', fechaVencimiento: '' }],
+    })
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('receive_purchase_order_partial', {
+      payload: expect.objectContaining({
+        items: [expect.objectContaining({ fulfillment_mode: 'administrative', location_id: null, lot: null, expiration_date: null })],
       }),
     })
   })

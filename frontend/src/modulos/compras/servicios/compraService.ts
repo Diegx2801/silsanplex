@@ -8,6 +8,7 @@ interface LineaCompraFila {
   product_code: string
   product_description: string
   unit_of_measure: string | null
+  product_type: 'good' | 'service' | null
   tax_affectation: 'por-definir' | 'gravado' | 'exonerado' | 'inafecto' | null
   batch_control: boolean
   products: { expiration_control: boolean }[] | null
@@ -48,7 +49,7 @@ interface CompraFila {
 }
 
 const columnasCompra =
-  'id,supplier_id,supplier_document,supplier_name,document_type,series,document_number,issue_date,payment_due_date,expected_delivery_date,warehouse_id,warehouse,prices_include_tax,taxable_base,exempt_amount,unaffected_amount,subtotal,tax,total,tax_calculation_status,notes,status,issued_at,received_at,created_at,purchase_order_items(id,product_id,product_code,product_description,unit_of_measure,tax_affectation,batch_control,quantity,unit_cost,lot,expiration_date,products(expiration_control),purchase_receipt_items(quantity))' as const
+  'id,supplier_id,supplier_document,supplier_name,document_type,series,document_number,issue_date,payment_due_date,expected_delivery_date,warehouse_id,warehouse,prices_include_tax,taxable_base,exempt_amount,unaffected_amount,subtotal,tax,total,tax_calculation_status,notes,status,issued_at,received_at,created_at,purchase_order_items(id,product_id,product_code,product_description,unit_of_measure,product_type,tax_affectation,batch_control,quantity,unit_cost,lot,expiration_date,products(expiration_control),purchase_receipt_items(quantity,fulfillment_mode))' as const
 
 const estados: Record<CompraFila['status'], EstadoCompra> = {
   draft: 'borrador',
@@ -69,6 +70,7 @@ function mapearLinea(fila: LineaCompraFila): LineaCompra {
     productoCodigo: fila.product_code,
     productoDescripcion: fila.product_description,
     unidadMedida: fila.unit_of_measure ?? '',
+    tipoProducto: fila.product_type,
     controlLote: fila.batch_control,
     controlVencimiento: fila.products?.[0]?.expiration_control ?? false,
     cantidad: Number(fila.quantity),
@@ -123,6 +125,12 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (mensaje.includes('PURCHASE_ORDER_NOT_RECEIVABLE')) return 'La orden debe estar emitida y pendiente de recepción'
   if (mensaje.includes('PURCHASE_RECEIPT_EXCEEDS_ORDERED_QUANTITY')) return 'La cantidad supera el saldo pendiente de la orden'
   if (mensaje.includes('PURCHASE_RECEIPT_LOCATION_INVALID')) return 'Selecciona una ubicación activa del almacén de la compra'
+  if (mensaje.includes('PURCHASE_RECEIPT_PRODUCT_TYPE_UNKNOWN')) return 'Esta línea histórica no tiene tipo de producto; regularízala antes de recibirla'
+  if (mensaje.includes('PURCHASE_ORDER_PRODUCT_TYPE_CHANGED')) return 'El tipo actual del producto ya no coincide con la línea de la orden'
+  if (mensaje.includes('PURCHASE_RECEIPT_SERVICE_PHYSICAL_FORBIDDEN')) return 'Los servicios se atienden administrativamente y no generan inventario'
+  if (mensaje.includes('PURCHASE_RECEIPT_GOOD_ADMINISTRATIVE_FORBIDDEN')) return 'Los bienes deben recibirse físicamente en una ubicación'
+  if (mensaje.includes('PURCHASE_RECEIPT_ADMINISTRATIVE_FIELDS_FORBIDDEN')) return 'La atención administrativa no admite ubicación, lote ni vencimiento'
+  if (mensaje.includes('PURCHASE_RECEIPT_FULFILLMENT_MODE_INVALID')) return 'Selecciona un modo de atención válido para la línea'
   if (mensaje.includes('PURCHASE_RECEIPT_LOT_REQUIRED')) return 'Ingresa el lote requerido para el producto'
   if (mensaje.includes('PURCHASE_RECEIPT_QUANTITY_INVALID')) return 'Ingresa al menos una cantidad válida para recibir'
   if (mensaje.includes('INVENTORY_MAXIMUM_STOCK_EXCEEDED')) return 'La recepción superaría el stock máximo configurado para uno de los productos'
@@ -236,9 +244,10 @@ export async function recibirCompraPersistente(
       items: datos.lineas.map((linea) => ({
         purchase_order_item_id: linea.purchaseOrderItemId,
         quantity: linea.cantidad,
-        location_id: linea.ubicacionId,
-        lot: linea.lote,
-        expiration_date: linea.fechaVencimiento,
+        fulfillment_mode: linea.fulfillmentMode ?? 'physical',
+        location_id: linea.fulfillmentMode === 'administrative' ? null : linea.ubicacionId,
+        lot: linea.fulfillmentMode === 'administrative' ? null : linea.lote,
+        expiration_date: linea.fulfillmentMode === 'administrative' ? null : linea.fechaVencimiento,
       })),
     },
   })
