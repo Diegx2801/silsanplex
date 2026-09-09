@@ -165,6 +165,12 @@ function mensajeError(error: PostgrestError, contexto: ContextoError) {
   ) {
     return 'Primero deja el producto sin stock ni reservas activas antes de convertirlo en servicio'
   }
+  if (
+    error.code === 'P0001' &&
+    error.message === 'PRODUCT_SERVICE_SERIAL_CONTROL_FORBIDDEN'
+  ) {
+    return 'El control por número de serie solo está disponible para productos físicos'
+  }
   if (error.code === '42501') {
     return contexto === 'consultar'
       ? 'No tienes permiso para consultar productos'
@@ -468,7 +474,7 @@ function construirPayloadImportacion(datos: DatosImportacionProductos) {
       peso_kg: fila.pesoKg,
       control_lote: fila.controlLote,
       control_vencimiento: fila.controlVencimiento,
-      control_serie: fila.serialControl,
+      ...(fila.serialControl === undefined ? {} : { control_serie: fila.serialControl }),
       venta_receta: fila.ventaReceta,
     })),
     precios: datos.precios.map((fila) => ({

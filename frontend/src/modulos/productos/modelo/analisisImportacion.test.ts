@@ -3,6 +3,45 @@ import { describe, expect, it } from 'vitest'
 import { analizarFilasImportacion } from './analisisImportacion'
 
 describe('analizarFilasImportacion', () => {
+  it.each([
+    ['Sí', true],
+    ['si', true],
+    ['TRUE', true],
+    ['1', true],
+    ['No', false],
+    ['false', false],
+    ['0', false],
+  ])('preserva ControlSerie explícito %s', (valor, esperado) => {
+    const resultado = analizarFilasImportacion(
+      [{ Codigo: 'SER-1', Producto: 'Producto serial', ControlSerie: valor }],
+      [],
+    )
+
+    expect(resultado.tieneBloqueos).toBe(false)
+    expect(resultado.datos.productos[0]?.serialControl).toBe(esperado)
+  })
+
+  it('mantiene ControlSerie ausente como campo omitido', () => {
+    const resultado = analizarFilasImportacion(
+      [{ Codigo: 'SER-1', Producto: 'Producto serial', ControlSerie: '' }],
+      [],
+    )
+
+    expect(resultado.datos.productos[0]).not.toHaveProperty('serialControl')
+  })
+
+  it('rechaza un ControlSerie no reconocido', () => {
+    const resultado = analizarFilasImportacion(
+      [{ Codigo: 'SER-1', Producto: 'Producto serial', ControlSerie: 'quizá' }],
+      [],
+    )
+
+    expect(resultado.tieneBloqueos).toBe(true)
+    expect(resultado.hallazgos).toContainEqual(
+      expect.objectContaining({ id: 'productos-invalidos' }),
+    )
+  })
+
   it('conserva varias unidades comerciales del mismo producto', () => {
     const resultado = analizarFilasImportacion(
       [{ Codigo: 'SKU-1', Producto: 'Producto uno', Linea: '', SubLinea: '', Marca_Laboratorio: '' }],

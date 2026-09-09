@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const detalleMock = vi.hoisted(() => ({
@@ -41,6 +41,7 @@ const producto = {
   laboratorio: 'Laboratorio Central',
   presentacion: 'Caja x 20 tabletas',
   unidadMedida: 'Caja',
+  unidadBaseId: '11111111-1111-4111-8111-111111111111',
   afectacionIgv: 'gravado',
   costo: '5.50',
   precioVenta: '12.50',
@@ -52,6 +53,7 @@ const producto = {
   pesoKg: '0.5',
   registroSanitario: 'RS-12345',
   controlLote: true,
+  serialControl: true,
   ventaReceta: false,
   activo: true,
 } satisfies Producto
@@ -87,6 +89,7 @@ describe('DetalleProducto', () => {
     expect(screen.getByText(/S\/\s*10[.,]00/)).toBeInTheDocument()
     expect(screen.getByText('Gravado')).toBeInTheDocument()
     expect(screen.getByText('RS-12345')).toBeInTheDocument()
+    expect(screen.getByText('Control por serie')).toBeInTheDocument()
     expect(screen.getByText(/se administran en Inventario/i)).toBeInTheDocument()
     expect(screen.queryByText('Costo base')).not.toBeInTheDocument()
     expect(screen.queryByText('Stock máximo global')).not.toBeInTheDocument()
@@ -183,6 +186,33 @@ describe('DialogoProducto', () => {
     const campo = screen.getByRole('textbox', { name: 'Precio mínimo final (S/)' })
     expect(campo).toHaveValue(productoEditado?.precioMinimo ?? '')
     expect(screen.getByText('Incluye IGV cuando corresponda. Déjalo vacío para no establecer mínimo.')).toBeInTheDocument()
+  })
+
+  it('desactiva controles físicos y envía false al cambiar a servicio', async () => {
+    const alGuardar = vi.fn().mockResolvedValue({})
+    render(
+      <DialogoProducto
+        abierto
+        producto={producto}
+        unidadesMedida={unidades}
+        alCambiarApertura={vi.fn()}
+        alGuardar={alGuardar}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Tipo *' }), {
+      target: { value: 'service' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => expect(alGuardar).toHaveBeenCalled())
+    expect(alGuardar.mock.calls[0]?.[0]).toMatchObject({
+      tipo: 'service',
+      controlLote: false,
+      controlVencimiento: false,
+      serialControl: false,
+    })
   })
 })
 

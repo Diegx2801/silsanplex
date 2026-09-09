@@ -96,6 +96,7 @@ const productoFila = {
   health_registry: null,
   batch_control: true,
   expiration_control: false,
+  serial_control: true,
   prescription_sale: false,
   is_active: true,
 }
@@ -144,6 +145,7 @@ describe('productosService', () => {
       costo: '10',
       precioMinimo: '12',
       controlVencimiento: false,
+      serialControl: true,
     })
   })
 
@@ -376,7 +378,7 @@ describe('productosService', () => {
     expect(supabaseMock.rpc).toHaveBeenCalledWith('save_product_catalog', expect.objectContaining({
       requested_organization_id: 'org-1',
       requested_product_id: null,
-      payload: expect.objectContaining({ code: 'MED-001', cost: 10, sale_price: 15 }),
+      payload: expect.objectContaining({ code: 'MED-001', cost: 10, sale_price: 15, serial_control: false }),
     }))
   })
 
@@ -405,7 +407,7 @@ describe('productosService', () => {
     expect(supabaseMock.rpc).toHaveBeenCalledWith('save_product_catalog', expect.objectContaining({
       requested_organization_id: 'org-1',
       requested_product_id: 'producto-1',
-      payload: expect.objectContaining({ code: 'MED-001' }),
+      payload: expect.objectContaining({ code: 'MED-001', serial_control: false }),
     }))
   })
 
@@ -419,6 +421,33 @@ describe('productosService', () => {
         descripcion: 'Producto actualizado',
       }),
     ).rejects.toThrow('No se pudo actualizar el producto')
+  })
+
+  it('omite control_serie cuando la importación no recibió un valor explícito', async () => {
+    supabaseMock.rpc.mockResolvedValue({
+      data: {
+        estado: 'completado', hash: 'b'.repeat(64), id_lote: 'lote-2',
+        creados: 0, actualizados: 1, omitidos: 0, fallidos: 0,
+        sin_cambios: 0, filas_rechazadas: [],
+      },
+      error: null,
+    })
+
+    await importarProductos('org-1', {
+      productos: [{
+        fila: 2, codigo: 'MED-001', descripcion: 'Producto', categoria: '',
+        sublinea: '', laboratorio: '', descripcionAmpliada: '', codigoBarras: '',
+        presentacion: '', registroSanitario: '', stockMaximo: '', anchoCm: '',
+        altoCm: '', largoCm: '', pesoKg: '', controlLote: false,
+        controlVencimiento: false, ventaReceta: false,
+      }],
+      precios: [],
+    }, 'UPDATE')
+
+    const llamada = supabaseMock.rpc.mock.calls[0]?.[1] as {
+      payload: { productos: Array<Record<string, unknown>> }
+    }
+    expect(llamada.payload.productos[0]).not.toHaveProperty('control_serie')
   })
 
   it('explica cómo resolver un conflicto al convertir un producto en servicio', async () => {
@@ -439,6 +468,27 @@ describe('productosService', () => {
       }),
     ).rejects.toThrow(
       'Primero deja el producto sin stock ni reservas activas antes de convertirlo en servicio',
+    )
+  })
+
+  it('explica que un servicio no admite control por serie', async () => {
+    respuesta = {
+      data: null,
+      error: {
+        code: 'P0001',
+        message: 'PRODUCT_SERVICE_SERIAL_CONTROL_FORBIDDEN',
+      },
+    }
+
+    await expect(
+      editarProducto('org-1', 'user-1', 'producto-1', {
+        ...productoInicial,
+        codigo: 'MED-001',
+        descripcion: 'Servicio actualizado',
+        tipo: 'service',
+      }),
+    ).rejects.toThrow(
+      'El control por número de serie solo está disponible para productos físicos',
     )
   })
 

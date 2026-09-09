@@ -49,7 +49,7 @@ export interface FilaProductoImportacion {
   pesoKg: string
   controlLote: boolean
   controlVencimiento: boolean
-  serialControl: boolean
+  serialControl?: boolean
   ventaReceta: boolean
 }
 
@@ -181,6 +181,8 @@ function firmaPrecio(fila: FilaImportacion) {
 }
 
 function filaProducto(fila: FilaImportacion, indice: number): FilaProductoImportacion {
+  const serialControl = normalizarBooleanoOpcional(fila.ControlSerie ?? '')
+
   return {
     fila: indice + 2,
     codigo: (fila.Codigo ?? '').trim().toUpperCase(),
@@ -200,7 +202,7 @@ function filaProducto(fila: FilaImportacion, indice: number): FilaProductoImport
     controlLote: normalizarBooleano(fila.ControlLote ?? '') === true,
     controlVencimiento:
       normalizarBooleano(fila.ControlVencimiento ?? '') === true,
-    serialControl: normalizarBooleano(fila.ControlSerie ?? '') === true,
+    ...(serialControl === undefined ? {} : { serialControl }),
     ventaReceta: normalizarBooleano(fila.VentaReceta ?? '') === true,
   }
 }
@@ -232,6 +234,10 @@ function normalizarBooleano(valor: string) {
     default:
       return null
   }
+}
+
+function normalizarBooleanoOpcional(valor: string) {
+  return valor.trim() ? normalizarBooleano(valor) ?? undefined : undefined
 }
 
 function filaPrecio(fila: FilaImportacion, indice: number): FilaPrecioImportacion {
