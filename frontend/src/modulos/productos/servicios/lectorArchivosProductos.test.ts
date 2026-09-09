@@ -24,8 +24,22 @@ function crearArchivo(
   fila: string[] = [],
   nombreHoja = 'data',
 ) {
+  return crearArchivoConFilas(
+    nombre,
+    encabezados,
+    fila.length ? [fila] : [],
+    nombreHoja,
+  )
+}
+
+function crearArchivoConFilas(
+  nombre: string,
+  encabezados: string[],
+  filas: string[][],
+  nombreHoja = 'data',
+) {
   const libro = utils.book_new()
-  const hoja = utils.aoa_to_sheet([encabezados, fila])
+  const hoja = utils.aoa_to_sheet([encabezados, ...filas])
   utils.book_append_sheet(libro, hoja, nombreHoja)
   const contenido = write(libro, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
 
@@ -34,6 +48,21 @@ function crearArchivo(
     size: contenido.byteLength,
     arrayBuffer: async () => contenido,
   } as File
+}
+
+function filasProductos(cantidad: number) {
+  return Array.from({ length: cantidad }, (_, indice) => {
+    const codigo = `P-${String(indice + 1).padStart(5, '0')}`
+    return [codigo, `Producto ${indice + 1}`, 'Línea', 'SubLínea', 'Marca']
+  })
+}
+
+function filasPrecios(cantidad: number, productos = 1) {
+  return Array.from({ length: cantidad }, (_, indice) => {
+    const numeroProducto = (indice % productos) + 1
+    const codigo = `P-${String(numeroProducto).padStart(5, '0')}`
+    return [codigo, `Producto ${numeroProducto}`, 'UNIDAD', '10', 'Si']
+  })
 }
 
 const archivoProductosValido = () =>
@@ -138,5 +167,59 @@ describe('analizarArchivosProductos', () => {
       costoBase: '7.50',
       precioMinimo: '8.00',
     })
+  })
+
+  it('permite exactamente 1000 filas de productos', async () => {
+    const resultado = await analizarArchivosProductos(
+      crearArchivoConFilas('Productos.xlsx', encabezadosProductos, filasProductos(1000)),
+      crearArchivo('Precios.xlsx', encabezadosPrecios),
+    )
+
+    expect(resultado.resumen.productos).toBe(1000)
+  })
+
+  it('rechaza 1001 filas de productos', async () => {
+    await expect(
+      analizarArchivosProductos(
+        crearArchivoConFilas('Productos.xlsx', encabezadosProductos, filasProductos(1001)),
+        crearArchivo('Precios.xlsx', encabezadosPrecios),
+      ),
+    ).rejects.toThrow('máximo 1000 filas de productos. Se recibieron 1001')
+  })
+
+  it('permite exactamente 3000 filas de precios', async () => {
+    const resultado = await analizarArchivosProductos(
+      crearArchivoConFilas('Productos.xlsx', encabezadosProductos, filasProductos(1)),
+      crearArchivoConFilas('Precios.xlsx', encabezadosPrecios, filasPrecios(3000)),
+    )
+
+    expect(resultado.resumen.precios).toBe(3000)
+  })
+
+  it('rechaza 3001 filas de precios', async () => {
+    await expect(
+      analizarArchivosProductos(
+        crearArchivoConFilas('Productos.xlsx', encabezadosProductos, filasProductos(1)),
+        crearArchivoConFilas('Precios.xlsx', encabezadosPrecios, filasPrecios(3001)),
+      ),
+    ).rejects.toThrow('máximo 3000 filas de precios. Se recibieron 3001')
+  })
+
+  it('permite exactamente 4000 filas totales', async () => {
+    const resultado = await analizarArchivosProductos(
+      crearArchivoConFilas('Productos.xlsx', encabezadosProductos, filasProductos(1000)),
+      crearArchivoConFilas('Precios.xlsx', encabezadosPrecios, filasPrecios(3000, 1000)),
+    )
+
+    expect(resultado.resumen).toMatchObject({ productos: 1000, precios: 3000 })
+  })
+
+  it('prioriza el límite total para un XLSX comprimido con 4001 filas', async () => {
+    await expect(
+      analizarArchivosProductos(
+        crearArchivoConFilas('Productos.xlsx', encabezadosProductos, filasProductos(1001)),
+        crearArchivoConFilas('Precios.xlsx', encabezadosPrecios, filasPrecios(3000, 1000)),
+      ),
+    ).rejects.toThrow('máximo 4000 filas en total. Se recibieron 4001')
   })
 })

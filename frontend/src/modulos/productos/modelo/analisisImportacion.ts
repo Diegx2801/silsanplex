@@ -126,7 +126,9 @@ function agruparPor(
     const clave = obtenerClave(fila)
 
     if (!clave) continue
-    grupos.set(clave, [...(grupos.get(clave) ?? []), fila])
+    const grupo = grupos.get(clave)
+    if (grupo) grupo.push(fila)
+    else grupos.set(clave, [fila])
   }
 
   return grupos
@@ -332,6 +334,9 @@ export function analizarFilasImportacion(
   const codigosPrecio = new Set(preciosPorCodigo.keys())
   const hallazgos: HallazgoImportacion[] = []
   const filasObservadas: FilaImportacionObservada[] = []
+  const indiceProductoPorFila = new Map(
+    productos.map((fila, indice) => [fila, indice]),
+  )
 
   const codigosAmbiguos = [...productosPorCodigo.entries()].filter(
     ([, filas]) => new Set(filas.map(firmaProducto)).size > 1,
@@ -382,14 +387,9 @@ export function analizarFilasImportacion(
 
     for (const [codigo, filas] of codigosProductoDuplicados) {
       if (new Set(filas.map(firmaProducto)).size > 1) continue
-      const primera = filas[0]
-      let encontrada = false
-      for (const [indice, fila] of productos.entries()) {
-        if (normalizar(fila.Codigo ?? '') !== codigo) continue
-        if (!encontrada && fila === primera) {
-          encontrada = true
-          continue
-        }
+      for (const fila of filas.slice(1)) {
+        const indice = indiceProductoPorFila.get(fila)
+        if (indice === undefined) continue
         filasObservadas.push({
           tipo: 'producto',
           fila: indice + 2,
@@ -591,6 +591,7 @@ export function analizarFilasImportacion(
       || codigoBarras.length > 50
   })
   if (preciosInvalidos.length) {
+    const preciosInvalidosSet = new Set(preciosInvalidos)
     hallazgos.push({
       id: 'precios-invalidos',
       nivel: 'bloqueo',
@@ -604,7 +605,7 @@ export function analizarFilasImportacion(
       ),
     })
     for (const [indice, fila] of precios.entries()) {
-      if (!preciosInvalidos.includes(fila)) continue
+      if (!preciosInvalidosSet.has(fila)) continue
       filasObservadas.push({
         tipo: 'precio',
         fila: indice + 2,
@@ -620,6 +621,7 @@ export function analizarFilasImportacion(
     return Boolean((fila.PrecioMinimo ?? '').trim()) && !(fila.Precio_venta ?? '').trim()
   })
   if (preciosMinimosSinPrecio.length) {
+    const preciosMinimosSinPrecioSet = new Set(preciosMinimosSinPrecio)
     hallazgos.push({
       id: 'minimos-sin-precio',
       nivel: 'advertencia',
@@ -633,7 +635,7 @@ export function analizarFilasImportacion(
       ),
     })
     for (const [indice, fila] of precios.entries()) {
-      if (!preciosMinimosSinPrecio.includes(fila)) continue
+      if (!preciosMinimosSinPrecioSet.has(fila)) continue
       filasObservadas.push({
         tipo: 'precio',
         fila: indice + 2,
@@ -652,6 +654,7 @@ export function analizarFilasImportacion(
     return ['NO', 'PENDIENTE', ''].includes(incIgv) && (precio !== '' || precioMinimo !== '')
   })
   if (preciosConIncIgvAmbiguo.length) {
+    const preciosConIncIgvAmbiguoSet = new Set(preciosConIncIgvAmbiguo)
     const detalle =
       'La afectación tributaria no puede determinarse con IncIGV. El producto se importará sin precio de venta y deberá completarse antes de utilizarlo comercialmente.'
     hallazgos.push({
@@ -666,7 +669,7 @@ export function analizarFilasImportacion(
       ),
     })
     for (const [indice, fila] of precios.entries()) {
-      if (!preciosConIncIgvAmbiguo.includes(fila)) continue
+      if (!preciosConIncIgvAmbiguoSet.has(fila)) continue
       filasObservadas.push({
         tipo: 'precio',
         fila: indice + 2,
@@ -683,6 +686,7 @@ export function analizarFilasImportacion(
     return precio !== '' && Number(precio.replace(',', '.')) === 0
   })
   if (preciosEnCero.length) {
+    const preciosEnCeroSet = new Set(preciosEnCero)
     hallazgos.push({
       id: 'precios-en-cero',
       nivel: 'advertencia',
@@ -696,7 +700,7 @@ export function analizarFilasImportacion(
       ),
     })
     for (const [indice, fila] of precios.entries()) {
-      if (!preciosEnCero.includes(fila)) continue
+      if (!preciosEnCeroSet.has(fila)) continue
       filasObservadas.push({
         tipo: 'precio',
         fila: indice + 2,
@@ -716,6 +720,9 @@ export function analizarFilasImportacion(
       variantes.filter((variante) => unidadesPresentes.has(variante)).length > 1,
   )
   if (gruposConVariantes.length) {
+    const variantesEquivalentes = new Set(
+      gruposConVariantes.flatMap(([, variantes]) => variantes),
+    )
     hallazgos.push({
       id: 'unidades-equivalentes',
       nivel: 'advertencia',
@@ -736,11 +743,7 @@ export function analizarFilasImportacion(
       ),
     })
     for (const [indice, fila] of precios.entries()) {
-      if (
-        !gruposConVariantes.some(([, variantes]) =>
-          variantes.includes(normalizar(fila.Medida ?? '')),
-        )
-      ) continue
+      if (!variantesEquivalentes.has(normalizar(fila.Medida ?? ''))) continue
       filasObservadas.push({
         tipo: 'precio',
         fila: indice + 2,
@@ -756,6 +759,7 @@ export function analizarFilasImportacion(
     return nombre !== nombre.trim()
   })
   if (nombresConEspacios.length) {
+    const nombresConEspaciosSet = new Set(nombresConEspacios)
     hallazgos.push({
       id: 'espacios-en-nombres',
       nivel: 'advertencia',
@@ -769,7 +773,7 @@ export function analizarFilasImportacion(
       ),
     })
     for (const [indice, fila] of productos.entries()) {
-      if (!nombresConEspacios.includes(fila)) continue
+      if (!nombresConEspaciosSet.has(fila)) continue
       filasObservadas.push({
         tipo: 'producto',
         fila: indice + 2,
@@ -800,6 +804,7 @@ export function analizarFilasImportacion(
     (codigo) => !codigosPrecio.has(codigo),
   )
   if (codigosSinPrecio.length) {
+    const codigosSinPrecioSet = new Set(codigosSinPrecio)
     hallazgos.push({
       id: 'productos-sin-precio',
       nivel: 'advertencia',
@@ -821,7 +826,7 @@ export function analizarFilasImportacion(
     )
     for (const observacion of filasObservadas) {
       if (observacion.tipo === 'producto'
-        && codigosSinPrecio.includes(observacion.codigo)
+        && codigosSinPrecioSet.has(observacion.codigo)
         && observacion.estado === 'advertencia'
         && observacion.motivo === 'El producto se importará sin precio de venta y deberá configurarse antes de utilizarlo comercialmente.') {
         observacion.tipoAviso = 'sin-precio'

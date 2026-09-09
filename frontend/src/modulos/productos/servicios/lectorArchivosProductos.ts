@@ -36,6 +36,10 @@ const columnasPrecios = [
   'IncIGV',
 ]
 
+const maximoProductos = 1000
+const maximoPrecios = 3000
+const maximoFilasTotales = 4000
+
 export const columnasOpcionalesPrecios = ['CostoBase', 'PrecioMinimo', 'Equivalencia', 'CodigoBarra'] as const
 
 function validarExtension(archivo: File) {
@@ -113,6 +117,23 @@ export async function analizarArchivosProductos(
 
   if (!productos.length) {
     throw new Error('El archivo de productos debe contener al menos una fila de datos.')
+  }
+
+  const filasTotales = productos.length + precios.length
+  if (filasTotales > maximoFilasTotales) {
+    throw new Error(
+      `La importación admite como máximo ${maximoFilasTotales} filas en total. Se recibieron ${filasTotales}.`,
+    )
+  }
+  if (productos.length > maximoProductos) {
+    throw new Error(
+      `La importación admite como máximo ${maximoProductos} filas de productos. Se recibieron ${productos.length}.`,
+    )
+  }
+  if (precios.length > maximoPrecios) {
+    throw new Error(
+      `La importación admite como máximo ${maximoPrecios} filas de precios. Se recibieron ${precios.length}.`,
+    )
   }
 
   return analizarFilasImportacion(productos, precios)

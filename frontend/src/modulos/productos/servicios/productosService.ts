@@ -182,6 +182,20 @@ function mensajeError(error: PostgrestError, contexto: ContextoError) {
   ) {
     return 'La carga de importación no tiene un formato válido'
   }
+  if (error.code === 'P0001') {
+    const mensajesLimite: Record<string, string> = {
+      PRODUCT_IMPORT_TOO_MANY_PRODUCTS:
+        'La importación admite como máximo 1000 filas de productos',
+      PRODUCT_IMPORT_TOO_MANY_PRICES:
+        'La importación admite como máximo 3000 filas de precios',
+      PRODUCT_IMPORT_TOO_MANY_ROWS:
+        'La importación admite como máximo 4000 filas en total',
+      PRODUCT_IMPORT_PAYLOAD_TOO_LARGE:
+        'La carga supera el tamaño máximo permitido de 8 MiB',
+    }
+    const mensajeLimite = mensajesLimite[error.message]
+    if (mensajeLimite) return mensajeLimite
+  }
   if (error.code === '23514') return 'Los datos del producto no cumplen las reglas del catálogo'
 
   return {

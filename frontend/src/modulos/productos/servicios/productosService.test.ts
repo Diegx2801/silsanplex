@@ -361,6 +361,34 @@ describe('productosService', () => {
     })
   })
 
+  it.each([
+    [
+      'PRODUCT_IMPORT_TOO_MANY_PRODUCTS',
+      'La importación admite como máximo 1000 filas de productos',
+    ],
+    [
+      'PRODUCT_IMPORT_TOO_MANY_PRICES',
+      'La importación admite como máximo 3000 filas de precios',
+    ],
+    [
+      'PRODUCT_IMPORT_TOO_MANY_ROWS',
+      'La importación admite como máximo 4000 filas en total',
+    ],
+    [
+      'PRODUCT_IMPORT_PAYLOAD_TOO_LARGE',
+      'La carga supera el tamaño máximo permitido de 8 MiB',
+    ],
+  ])('mapea el error backend %s', async (message, expectedMessage) => {
+    supabaseMock.rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'P0001', message },
+    })
+
+    await expect(
+      importarProductos('org-1', { productos: [], precios: [] }),
+    ).rejects.toThrow(expectedMessage)
+  })
+
   it('crea el catálogo mediante la operación transaccional', async () => {
     respuesta = { data: 'producto-1', error: null }
     const datos = {
