@@ -1,6 +1,6 @@
 begin;
 
-select plan(8);
+select plan(15);
 select 1 from pg_catalog.pg_extension where extname = 'dblink';
 create extension if not exists dblink with schema extensions;
 
@@ -69,10 +69,27 @@ select is(extensions.dblink_connect('purchase_fulfillment_a', 'host=supabase_db_
 select is(extensions.dblink_connect('purchase_fulfillment_b', 'host=supabase_db_backend dbname=postgres user=postgres password=postgres'), 'OK', 'abre la sesion concurrente B');
 select is(extensions.dblink_send_query('purchase_fulfillment_a', $$select purchase_service_fulfillment_concurrency_test.receive_and_wait('a3600000-0000-4000-8000-000000000001')$$), 1, 'inicia la recepcion concurrente A');
 select is(extensions.dblink_send_query('purchase_fulfillment_b', $$select purchase_service_fulfillment_concurrency_test.receive_and_wait('a3600000-0000-4000-8000-000000000002')$$), 1, 'inicia la recepcion concurrente B');
-select ok((select result = 'ok' from extensions.dblink_get_result('purchase_fulfillment_a') as response(result text)), 'una sesion confirma exactamente una recepcion');
-select ok((select result like 'error:%PURCHASE_ORDER_NOT_RECEIVABLE%' from extensions.dblink_get_result('purchase_fulfillment_b') as response(result text)), 'la sesion concurrente restante observa el estado ya recibido');
-select is((select count(*) from public.purchase_receipt_items), 1::bigint, 'el bloqueo de orden evita duplicar partidas');
-select is((select count(*) from public.inventory_movements where source_type = 'purchase-receipt'), 1::bigint, 'el bloqueo de orden evita duplicar movimientos');
+create temp table purchase_fulfillment_results (
+  session_name text primary key,
+  result text not null
+);
+insert into purchase_fulfillment_results (session_name, result)
+select 'A', result
+from extensions.dblink_get_result('purchase_fulfillment_a') as response(result text)
+union all
+select 'B', result
+from extensions.dblink_get_result('purchase_fulfillment_b') as response(result text);
+select is((select count(*) from purchase_fulfillment_results where result = 'ok'), 1::bigint, 'exactamente una sesion confirma la recepcion');
+select is((select count(*) from purchase_fulfillment_results where result like 'error:%PURCHASE_ORDER_NOT_RECEIVABLE%'), 1::bigint, 'exactamente una sesion observa la orden ya recibida');
+select ok((select count(*) from purchase_fulfillment_results where result = 'ok') < 2, 'nunca hay dos sesiones ganadoras');
+select ok((select count(*) from purchase_fulfillment_results where result like 'error:%') < 2, 'nunca hay dos sesiones rechazadas');
+select is((select count(*) from public.purchase_receipt_items where organization_id = 'a3000000-0000-4000-8000-000000000001'), 1::bigint, 'el bloqueo de orden evita duplicar partidas');
+select is((select count(*) from public.inventory_movements where organization_id = 'a3000000-0000-4000-8000-000000000001' and source_type = 'purchase-receipt'), 1::bigint, 'el bloqueo de orden evita duplicar movimientos');
+select is((select sum(quantity) from public.purchase_receipt_items where organization_id = 'a3000000-0000-4000-8000-000000000001'), 1::numeric, 'la cantidad recibida es exactamente la solicitada');
+select is((select sum(quantity) from public.inventory_movements where organization_id = 'a3000000-0000-4000-8000-000000000001' and source_type = 'purchase-receipt'), 1::numeric, 'la cantidad inventariada es exactamente la recibida');
+select is((select status from public.purchase_orders where organization_id = 'a3000000-0000-4000-8000-000000000001' and document_number = '001'), 'received', 'la orden termina recibida');
+select is((select count(*) from public.purchase_receipts where organization_id = 'a3000000-0000-4000-8000-000000000001' and purchase_order_id = (select id from public.purchase_orders where organization_id = 'a3000000-0000-4000-8000-000000000001' and document_number = '001')), 1::bigint, 'la carrera crea una sola cabecera de recepcion');
+select is((select count(*) from public.audit_events where organization_id = 'a3000000-0000-4000-8000-000000000001' and action = 'PURCHASE_RECEIPT_CONFIRMED'), 1::bigint, 'la carrera crea una sola auditoria');
 
 select extensions.dblink_disconnect('purchase_fulfillment_a');
 select extensions.dblink_disconnect('purchase_fulfillment_b');
