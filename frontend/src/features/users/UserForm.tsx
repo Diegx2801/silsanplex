@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X } from 'lucide-react'
+import { ShieldCheck, SlidersHorizontal, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
@@ -8,8 +8,10 @@ import type { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { userFormSchema } from '@/features/users/userSchemas'
 import {
+  expandPermissionDependencies,
   type ManagedUser,
-  roleOptions,
+  operationalAccessModules,
+  removePermissionWithDependents,
   type UserInput,
 } from '@/features/users/userTypes'
 
@@ -20,173 +22,139 @@ interface UserFormProps {
   user: ManagedUser | null
   isSubmitting: boolean
   currentUserId: string | null
+  submitError?: string | null
   onOpenChange: (open: boolean) => void
   onSubmit: (values: UserInput) => Promise<void>
 }
 
 const emptyValues: UserFormValues = {
-  fullName: '',
-  email: '',
-  phone: '',
-  roleCodes: [],
+  fullName: '', email: '', phone: '', isAdmin: false, permissionCodes: [],
 }
 
 export function UserForm({
-  open,
-  user,
-  isSubmitting,
-  currentUserId,
-  onOpenChange,
-  onSubmit,
+  open, user, isSubmitting, currentUserId, submitError, onOpenChange, onSubmit,
 }: UserFormProps) {
-  const form = useForm<UserFormValues>({
-    resolver: zodResolver(userFormSchema),
-    defaultValues: emptyValues,
-  })
+  const form = useForm<UserFormValues>({ resolver: zodResolver(userFormSchema), defaultValues: emptyValues })
+  const isAdmin = form.watch('isAdmin')
+  const selectedPermissions = form.watch('permissionCodes')
+  const protectsOwnAdminAccess = user?.id === currentUserId && user.isAdmin
 
   useEffect(() => {
     if (!open) return
-
-    form.reset(
-      user
-        ? {
-            fullName: user.fullName,
-            email: user.email,
-            phone: user.phone ?? '',
-            roleCodes: user.roleCodes,
-          }
-        : emptyValues,
-    )
+    form.reset(user ? {
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone ?? '',
+      isAdmin: user.isAdmin,
+      permissionCodes: user.isAdmin ? [] : user.permissionCodes,
+    } : emptyValues)
   }, [form, open, user])
 
+  function setAccessType(nextIsAdmin: boolean) {
+    if (!nextIsAdmin && protectsOwnAdminAccess) return
+    form.setValue('isAdmin', nextIsAdmin, { shouldDirty: true, shouldValidate: true })
+    if (nextIsAdmin) form.setValue('permissionCodes', [], { shouldDirty: true, shouldValidate: true })
+  }
+
+  function toggleCapability(permissionCodes: readonly (typeof selectedPermissions)[number][], enabled: boolean) {
+    const current = form.getValues('permissionCodes')
+    const next = enabled
+      ? expandPermissionDependencies([...current, ...permissionCodes])
+      : removePermissionWithDependents(current, permissionCodes)
+    form.setValue('permissionCodes', next, { shouldDirty: true, shouldValidate: true })
+  }
+
   const submit = form.handleSubmit(async (values) => {
-    await onSubmit(values)
+    await onSubmit({ ...values, permissionCodes: values.isAdmin ? [] : expandPermissionDependencies(values.permissionCodes) })
   })
 
+  const fieldClass = 'mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-ring aria-[invalid=true]:border-destructive'
+
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+    <DialogPrimitive.Root open={open} onOpenChange={(nextOpen) => { if (!isSubmitting) onOpenChange(nextOpen) }}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/30" />
-        <DialogPrimitive.Content className="fixed inset-x-4 top-1/2 z-50 mx-auto max-h-[90svh] w-auto max-w-2xl -translate-y-1/2 overflow-y-auto border bg-card p-6 shadow-xl outline-none sm:p-8">
-          <div className="flex items-start justify-between gap-4">
+        <DialogPrimitive.Content className="fixed inset-0 z-50 m-auto flex h-dvh w-full flex-col bg-card shadow-xl outline-none sm:h-[min(92svh,900px)] sm:max-w-3xl sm:rounded-lg sm:border">
+          <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7">
             <div>
               <DialogPrimitive.Title className="text-2xl font-semibold tracking-[-0.03em]">
                 {user ? 'Editar usuario' : 'Invitar usuario'}
               </DialogPrimitive.Title>
-              <DialogPrimitive.Description className="mt-2 text-sm text-muted-foreground">
-                {user
-                  ? 'Actualiza los datos y roles de acceso.'
-                  : 'El usuario recibirá un correo para establecer su contraseña.'}
+              <DialogPrimitive.Description className="mt-1.5 text-sm text-muted-foreground">
+                {user ? 'Actualiza sus datos y define exactamente a qué módulos puede acceder.' : 'El usuario recibirá un correo para establecer su contraseña.'}
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close asChild>
-              <Button type="button" variant="ghost" size="icon" aria-label="Cerrar">
-                <X aria-hidden="true" />
-              </Button>
+              <Button type="button" variant="ghost" size="icon" aria-label="Cerrar" disabled={isSubmitting}><X aria-hidden="true" /></Button>
             </DialogPrimitive.Close>
-          </div>
+          </header>
 
-          <form className="mt-7 space-y-6" onSubmit={submit} noValidate>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <label className="block text-sm font-medium sm:col-span-2">
-                Nombre completo
-                <input
-                  className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-ring"
-                  autoComplete="name"
-                  {...form.register('fullName')}
-                />
-                {form.formState.errors.fullName ? (
-                  <span className="mt-1 block text-xs text-destructive">
-                    {form.formState.errors.fullName.message}
-                  </span>
-                ) : null}
-              </label>
-
-              <label className="block text-sm font-medium">
-                Correo
-                <input
-                  type="email"
-                  className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-ring"
-                  autoComplete="email"
-                  {...form.register('email')}
-                />
-                {form.formState.errors.email ? (
-                  <span className="mt-1 block text-xs text-destructive">
-                    {form.formState.errors.email.message}
-                  </span>
-                ) : null}
-              </label>
-
-              <label className="block text-sm font-medium">
-                Teléfono
-                <input
-                  type="tel"
-                  className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-ring"
-                  autoComplete="tel"
-                  {...form.register('phone')}
-                />
-                {form.formState.errors.phone ? (
-                  <span className="mt-1 block text-xs text-destructive">
-                    {form.formState.errors.phone.message}
-                  </span>
-                ) : null}
-              </label>
-            </div>
-
-            <fieldset>
-              <legend className="text-sm font-medium">Roles</legend>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {roleOptions.map((role) => (
-                  <label
-                    key={role.code}
-                    className="flex min-h-10 items-center gap-3 rounded-md border px-3 text-sm"
-                  >
-                    <input
-                      type="checkbox"
-                      value={role.code}
-                      className="size-4 accent-primary"
-                      aria-disabled={
-                        user?.id === currentUserId && role.code === 'ADMIN'
-                      }
-                      onClick={(event) => {
-                        if (user?.id === currentUserId && role.code === 'ADMIN') {
-                          event.preventDefault()
-                        }
-                      }}
-                      {...form.register('roleCodes')}
-                    />
-                    {role.label}
-                  </label>
-                ))}
+          <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit} noValidate>
+            <div className="min-h-0 flex-1 space-y-7 overflow-y-auto px-5 py-6 sm:px-7">
+              <div className="grid gap-5 sm:grid-cols-2">
+                <label className="block text-sm font-medium sm:col-span-2">
+                  Nombre completo *
+                  <input className={fieldClass} autoComplete="name" aria-invalid={Boolean(form.formState.errors.fullName)} {...form.register('fullName')} />
+                  {form.formState.errors.fullName ? <span className="mt-1 block text-xs text-destructive">{form.formState.errors.fullName.message}</span> : null}
+                </label>
+                <label className="block text-sm font-medium">
+                  Correo *
+                  <input type="email" className={fieldClass} autoComplete="email" aria-invalid={Boolean(form.formState.errors.email)} {...form.register('email')} />
+                  {form.formState.errors.email ? <span className="mt-1 block text-xs text-destructive">{form.formState.errors.email.message}</span> : null}
+                </label>
+                <label className="block text-sm font-medium">
+                  Teléfono <span className="font-normal text-muted-foreground">(opcional)</span>
+                  <input type="tel" className={fieldClass} autoComplete="tel" aria-invalid={Boolean(form.formState.errors.phone)} {...form.register('phone')} />
+                  {form.formState.errors.phone ? <span className="mt-1 block text-xs text-destructive">{form.formState.errors.phone.message}</span> : null}
+                </label>
               </div>
-              {form.formState.errors.roleCodes ? (
-                <span className="mt-2 block text-xs text-destructive">
-                  {form.formState.errors.roleCodes.message}
-                </span>
-              ) : null}
-              {user?.id === currentUserId && user.roleCodes.includes('ADMIN') ? (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  No puedes quitarte tu propio rol de administración.
-                </p>
-              ) : null}
-            </fieldset>
 
-            <div className="flex flex-col-reverse gap-2 border-t pt-5 sm:flex-row sm:justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting
-                  ? 'Guardando…'
-                  : user
-                    ? 'Guardar cambios'
-                    : 'Enviar invitación'}
-              </Button>
+              <fieldset>
+                <legend className="text-sm font-semibold">Tipo de acceso *</legend>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className={`flex cursor-pointer gap-3 rounded-md border p-4 ${isAdmin ? 'border-primary bg-accent/60' : ''}`}>
+                    <input type="radio" name="accessType" checked={isAdmin} onChange={() => setAccessType(true)} className="mt-1 size-4 accent-primary" />
+                    <span><span className="flex items-center gap-2 text-sm font-medium"><ShieldCheck className="size-4" aria-hidden="true" />Administrador total</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">Acceso completo, incluidos usuarios y configuración.</span></span>
+                  </label>
+                  <label className={`flex gap-3 rounded-md border p-4 ${!isAdmin ? 'border-primary bg-accent/60' : ''} ${protectsOwnAdminAccess ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+                    <input type="radio" name="accessType" checked={!isAdmin} disabled={protectsOwnAdminAccess} onChange={() => setAccessType(false)} className="mt-1 size-4 accent-primary" />
+                    <span><span className="flex items-center gap-2 text-sm font-medium"><SlidersHorizontal className="size-4" aria-hidden="true" />Acceso operativo personalizado</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">Solo los módulos y capacidades seleccionados.</span></span>
+                  </label>
+                </div>
+                {protectsOwnAdminAccess ? <p className="mt-2 text-xs text-muted-foreground">No puedes quitarte tu propio acceso de administrador.</p> : null}
+              </fieldset>
+
+              {!isAdmin ? (
+                <fieldset aria-describedby="permission-help permission-error">
+                  <legend className="text-sm font-semibold">Accesos operativos *</legend>
+                  <p id="permission-help" className="mt-1 text-xs leading-5 text-muted-foreground">Administrar u operar activa Consultar. Las dependencias necesarias entre módulos se agregan automáticamente.</p>
+                  <div className="mt-3 divide-y rounded-md border">
+                    {operationalAccessModules.map((module) => (
+                      <div key={module.code} className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                        <div><p className="text-sm font-medium">{module.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{module.description}</p></div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-2">
+                          {module.capabilities.map((capability) => {
+                            const checked = capability.permissionCodes.every((permission) => selectedPermissions.includes(permission))
+                            return <label key={capability.code} className="flex min-h-8 cursor-pointer items-center gap-2 text-sm">
+                              <input type="checkbox" aria-label={`${module.label}: ${capability.label}`} checked={checked} onChange={(event) => toggleCapability(capability.permissionCodes, event.target.checked)} className="size-4 accent-primary" />
+                              {capability.label}
+                            </label>
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {form.formState.errors.permissionCodes ? <span id="permission-error" className="mt-2 block text-xs text-destructive">{form.formState.errors.permissionCodes.message}</span> : null}
+                </fieldset>
+              ) : null}
+
+              {submitError ? <p role="alert" className="border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{submitError}</p> : null}
             </div>
+
+            <footer className="flex flex-col-reverse gap-2 border-t bg-card px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
+              <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => onOpenChange(false)}>Cancelar</Button>
+              <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Guardando…' : user ? 'Guardar cambios' : 'Enviar invitación'}</Button>
+            </footer>
           </form>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

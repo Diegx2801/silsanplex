@@ -28,7 +28,9 @@ const usuario: ManagedUser = {
   phone: null,
   isActive: true,
   authConfirmedAt: '2026-08-20T12:00:00.000Z',
-  roleCodes: ['VENTAS'],
+  isAdmin: false,
+  permissionCodes: ['SALES_VIEW'],
+  accessVersion: 1,
   createdAt: '2026-08-20T12:00:00.000Z',
   updatedAt: '2026-08-20T12:00:00.000Z',
 }
@@ -86,5 +88,19 @@ describe('UsersPage', () => {
 
     expect(await screen.findAllByText('Usuario Inactivo')).toHaveLength(2)
     expect(screen.queryAllByText('Usuario de Ventas')).toHaveLength(0)
+  })
+
+  it('confirma la desactivación con un diálogo accesible', async () => {
+    mocks.listUsers.mockResolvedValue([usuario])
+    mocks.setUserStatus.mockResolvedValue({ userId: usuario.id, isActive: false })
+    renderUsersPage()
+
+    const buttons = await screen.findAllByRole('button', { name: 'Desactivar a Usuario de Ventas' })
+    fireEvent.click(buttons[0])
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Desactivar usuario')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Desactivar' }))
+    await waitFor(() => expect(mocks.setUserStatus).toHaveBeenCalledWith(usuario.id, false))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
   })
 })

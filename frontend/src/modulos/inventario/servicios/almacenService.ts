@@ -38,7 +38,6 @@ function errorAlmacen(error: { code?: string; message?: string }) {
   if (mensaje.includes('WAREHOUSE_NAME_INVALID')) return 'Revisa el nombre del almacén.'
   if (mensaje.includes('WAREHOUSE_LOCATION_NAME_INVALID')) return 'Revisa el nombre de la ubicación.'
   if (mensaje.includes('WAREHOUSE_STALE_WRITE') || mensaje.includes('WAREHOUSE_LOCATION_STALE_WRITE')) return 'El registro cambió mientras lo editabas. Recarga los datos e inténtalo nuevamente.'
-  if (mensaje.includes('WAREHOUSE_LAST_ACTIVE')) return 'Debe permanecer al menos un almacén activo.'
   if (mensaje.includes('WAREHOUSE_ACTIVE_LOCATION_REQUIRED')) return 'El almacén necesita al menos una ubicación activa.'
   if (mensaje.includes('WAREHOUSE_HAS_STOCK')) return 'No puedes desactivar un almacén que todavía tiene stock.'
   if (mensaje.includes('WAREHOUSE_HAS_RESERVATIONS')) return 'No puedes desactivar un almacén con reservas activas.'

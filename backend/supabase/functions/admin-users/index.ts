@@ -20,8 +20,15 @@ const databaseErrorMessages: Record<string, string> = {
   ADMIN_ACCESS_REQUIRED: 'Solo un administrador activo puede realizar esta operación.',
   ADMIN_ORGANIZATION_AMBIGUOUS: 'El administrador pertenece a más de una organización.',
   ACTIVE_PROFILE_REQUIRED: 'El usuario no tiene un perfil activo.',
-  AT_LEAST_ONE_ROLE_REQUIRED: 'Selecciona al menos un rol.',
-  INVALID_OR_INACTIVE_ROLE: 'Uno de los roles seleccionados no es válido.',
+  USER_ACCESS_TYPE_REQUIRED: 'Selecciona el tipo de acceso del usuario.',
+  AT_LEAST_ONE_OPERATIONAL_PERMISSION_REQUIRED: 'Selecciona al menos un permiso operativo.',
+  INVALID_OR_INACTIVE_PERMISSION: 'Uno de los permisos seleccionados no es válido.',
+  DIRECT_ADMIN_PERMISSION_FORBIDDEN:
+    'El permiso para administrar usuarios solo puede concederse mediante acceso administrador.',
+  ADMIN_DIRECT_PERMISSIONS_FORBIDDEN:
+    'Una cuenta administradora no puede tener permisos operativos directos.',
+  USER_ACCESS_STALE_WRITE:
+    'Los accesos del usuario cambiaron en otra sesión. Recarga la información e inténtalo nuevamente.',
   USER_ALREADY_BELONGS_TO_ORGANIZATION: 'El usuario ya pertenece a la organización.',
   USER_NOT_FOUND_IN_ORGANIZATION: 'El usuario no pertenece a la organización.',
   SELF_ADMIN_ROLE_REMOVAL_FORBIDDEN: 'No puedes quitarte tu propio rol de administración.',
@@ -63,7 +70,7 @@ function databaseRequestError(message?: string) {
 }
 
 async function listUsers(adminClient: SupabaseClient, actor: User) {
-  const { data, error } = await adminClient.rpc('admin_list_users', {
+  const { data, error } = await adminClient.rpc('admin_list_user_access', {
     actor_user_id: actor.id,
   })
 
@@ -83,8 +90,16 @@ async function listUsers(adminClient: SupabaseClient, actor: User) {
   )
 
   return {
-    users: users.map((user: { user_id: string }) => ({
+    users: users.map((user: {
+      user_id: string
+      is_admin?: boolean | null
+      permission_codes?: string[] | null
+      access_version?: number | null
+    }) => ({
       ...user,
+      is_admin: user.is_admin ?? false,
+      permission_codes: user.permission_codes ?? [],
+      access_version: user.access_version ?? 0,
       auth_confirmed_at: confirmationByUser.get(user.user_id) ?? null,
     })),
   }
@@ -122,7 +137,8 @@ async function createUser(
     {
       actor_user_id: actor.id,
       target_user_id: data.user.id,
-      requested_role_codes: request.roleCodes,
+      requested_is_admin: request.isAdmin,
+      requested_permission_codes: request.permissionCodes,
     },
   )
 
@@ -131,7 +147,7 @@ async function createUser(
     throw databaseRequestError(membershipError.message)
   }
 
-  return { userId: data.user.id }
+  return { userId: data.user.id, accessVersion: 1 }
 }
 
 async function updateUser(
@@ -144,7 +160,9 @@ async function updateUser(
     {
       actor_user_id: actor.id,
       target_user_id: request.userId,
-      requested_role_codes: request.roleCodes,
+      requested_is_admin: request.isAdmin,
+      requested_permission_codes: request.permissionCodes,
+      expected_access_version: request.accessVersion,
     },
   )
 
@@ -189,7 +207,9 @@ async function updateUser(
       previous_email: previousUser.email,
       requested_full_name: request.fullName,
       requested_phone: request.phone,
-      requested_role_codes: request.roleCodes,
+      requested_is_admin: request.isAdmin,
+      requested_permission_codes: request.permissionCodes,
+      expected_access_version: request.accessVersion,
     },
   )
 
@@ -202,7 +222,7 @@ async function updateUser(
     throw databaseRequestError(profileUpdateError.message)
   }
 
-  return { userId: request.userId }
+  return { userId: request.userId, accessVersion: request.accessVersion + 1 }
 }
 
 async function setUserStatus(

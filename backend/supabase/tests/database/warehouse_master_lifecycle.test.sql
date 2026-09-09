@@ -246,12 +246,11 @@ select is(
   '94000000-0000-4000-8000-000000000001'::uuid,
   'reintentar el cambio de estado devuelve el resultado original'
 );
-select throws_ok(
+select lives_ok(
   $$select public.set_warehouse_status(
     '{"id":"94000000-0000-4000-8000-000000000002","organization_id":"91000000-0000-4000-8000-000000000001","operation_key":"96000000-0000-4000-8000-000000000013","expected_lock_version":1,"is_active":false}'::jsonb
   )$$,
-  'P0001', 'WAREHOUSE_LAST_ACTIVE',
-  'no desactiva el ultimo almacen activo'
+  'permite desactivar el ultimo almacen cuando no tiene dependencias'
 );
 select lives_ok(
   $$select public.set_warehouse_location_status(

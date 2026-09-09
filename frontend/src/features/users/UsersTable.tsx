@@ -1,7 +1,7 @@
 import { KeyRound, MailCheck, Pencil, Power, PowerOff } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import type { ManagedUser } from '@/features/users/userTypes'
+import { operationalAccessModules, type ManagedUser } from '@/features/users/userTypes'
 
 interface UsersTableProps {
   users: ManagedUser[]
@@ -22,6 +22,13 @@ const dateFormatter = new Intl.DateTimeFormat('es-PE', {
 
 type UserActionsProps = Omit<UsersTableProps, 'users' | 'hasActiveFilters'> & {
   user: ManagedUser
+}
+
+function accessLabels(user: ManagedUser) {
+  if (user.isAdmin) return ['Administrador total']
+  return operationalAccessModules
+    .filter((module) => module.capabilities.some((capability) => capability.permissionCodes.some((permission) => user.permissionCodes.includes(permission))))
+    .map((module) => module.label)
 }
 
 function UserActions({
@@ -156,9 +163,9 @@ export function UsersTable({
                 </div>
               </dl>
               <div className="flex flex-wrap gap-1">
-                {user.roleCodes.map((role) => (
-                  <span key={role} className="rounded-full bg-secondary px-2 py-1 text-xs">
-                    {role}
+                {accessLabels(user).map((access) => (
+                  <span key={access} className="rounded-full bg-secondary px-2 py-1 text-xs">
+                    {access}
                   </span>
                 ))}
               </div>
@@ -182,7 +189,7 @@ export function UsersTable({
           <tr>
             <th scope="col" className="px-5 py-3 font-medium">Usuario</th>
             <th scope="col" className="px-5 py-3 font-medium">Teléfono</th>
-            <th scope="col" className="px-5 py-3 font-medium">Roles</th>
+            <th scope="col" className="px-5 py-3 font-medium">Accesos</th>
             <th scope="col" className="px-5 py-3 font-medium">Estado</th>
             <th scope="col" className="px-5 py-3 font-medium">Registro</th>
             <th scope="col" className="px-5 py-3 text-right font-medium">Acciones</th>
@@ -206,9 +213,9 @@ export function UsersTable({
                 <td className="px-5 py-4 text-muted-foreground">{user.phone || '—'}</td>
                 <td className="px-5 py-4">
                   <div className="flex flex-wrap gap-1">
-                    {user.roleCodes.map((role) => (
-                      <span key={role} className="rounded-full bg-secondary px-2 py-1 text-xs">
-                        {role}
+                    {accessLabels(user).map((access) => (
+                      <span key={access} className="rounded-full bg-secondary px-2 py-1 text-xs">
+                        {access}
                       </span>
                     ))}
                   </div>
