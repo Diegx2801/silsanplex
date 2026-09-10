@@ -96,9 +96,13 @@ function waitForRestResponse(
 async function expectSuccessful(responsePromise: Promise<Response>) {
   const response = await responsePromise
   expect(await response.finished()).toBeNull()
+  const failureBody = response.ok()
+    ? ''
+    : await response.text().catch(() => '')
+  const diagnostic = failureBody.trim() ? `\n${failureBody}` : ''
   expect(
     response.ok(),
-    `${response.request().method()} ${response.url()} respondió ${response.status()}`,
+    `${response.request().method()} ${response.url()} respondió ${response.status()}${diagnostic}`,
   ).toBeTruthy()
 }
 

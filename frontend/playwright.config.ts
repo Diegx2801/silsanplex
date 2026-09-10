@@ -5,6 +5,7 @@ import { loadEnvFile } from 'node:process'
 
 const localE2eEnvironment = resolve(import.meta.dirname, '.env.e2e.local')
 const localFrontendEnvironment = resolve(import.meta.dirname, '.env.local')
+const isCI = process.env.CI === 'true'
 
 if (existsSync(localFrontendEnvironment)) {
   loadEnvFile(localFrontendEnvironment)
@@ -41,8 +42,12 @@ if (missingE2eVariables.length > 0) {
 
 export default defineConfig({
   testDir: './tests/e2e',
-  fullyParallel: true,
-  retries: process.env.CI ? 2 : 0,
+  // Los escenarios comparten una organización local y modifican autenticación e
+  // inventario. En CI se serializan para evitar interferencia entre archivos sobre
+  // un único Supabase; el desarrollo local conserva la ejecución paralela rápida.
+  fullyParallel: !isCI,
+  workers: isCI ? 1 : undefined,
+  retries: isCI ? 2 : 0,
   reporter: 'list',
   use: {
     baseURL: 'http://127.0.0.1:5173',
@@ -57,6 +62,6 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev -- --host 127.0.0.1',
     url: 'http://127.0.0.1:5173',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !isCI,
   },
 })
