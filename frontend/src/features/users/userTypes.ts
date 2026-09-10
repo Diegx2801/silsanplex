@@ -12,33 +12,34 @@ export interface AccessModule {
   code: string
   label: string
   description: string
+  group: 'process' | 'master'
   capabilities: readonly AccessCapability[]
 }
 
 export const operationalAccessModules: readonly AccessModule[] = [
-  { code: 'products', label: 'Productos', description: 'Catálogo, precios y datos comerciales.', capabilities: [
+  { code: 'products', label: 'Productos', description: 'Catálogo y precios.', group: 'master', capabilities: [
     { code: 'products-view', label: 'Consultar', permissionCodes: [PERMISSIONS.PRODUCTS_VIEW] },
     { code: 'products-manage', label: 'Administrar', permissionCodes: [PERMISSIONS.PRODUCTS_MANAGE] },
   ] },
-  { code: 'inventory', label: 'Inventario', description: 'Almacenes, ubicaciones, existencias y movimientos.', capabilities: [
+  { code: 'inventory', label: 'Inventario', description: 'Almacenes, ubicaciones y stock.', group: 'master', capabilities: [
     { code: 'inventory-view', label: 'Consultar', permissionCodes: [PERMISSIONS.INVENTORY_VIEW] },
     { code: 'inventory-manage', label: 'Administrar', permissionCodes: [PERMISSIONS.INVENTORY_MANAGE] },
   ] },
-  { code: 'suppliers', label: 'Proveedores', description: 'Directorio fiscal y comercial de proveedores.', capabilities: [
+  { code: 'suppliers', label: 'Proveedores', description: 'Directorio de proveedores.', group: 'master', capabilities: [
     { code: 'suppliers-view', label: 'Consultar', permissionCodes: [PERMISSIONS.SUPPLIERS_VIEW] },
     { code: 'suppliers-manage', label: 'Administrar', permissionCodes: [PERMISSIONS.SUPPLIERS_MANAGE] },
   ] },
-  { code: 'purchases', label: 'Compras', description: 'Órdenes de compra y recepción de mercadería.', capabilities: [
+  { code: 'purchases', label: 'Compras', description: 'Órdenes y recepciones.', group: 'process', capabilities: [
     { code: 'purchases-view', label: 'Consultar', permissionCodes: [PERMISSIONS.PURCHASES_VIEW] },
     { code: 'purchases-manage', label: 'Administrar', permissionCodes: [PERMISSIONS.PURCHASES_MANAGE] },
     { code: 'purchases-receive', label: 'Recibir', permissionCodes: [PERMISSIONS.PURCHASES_RECEIVE] },
   ] },
-  { code: 'customers', label: 'Clientes', description: 'Directorio fiscal, contactos y direcciones.', capabilities: [
+  { code: 'customers', label: 'Clientes', description: 'Directorio y direcciones.', group: 'master', capabilities: [
     { code: 'customers-view', label: 'Consultar', permissionCodes: [PERMISSIONS.CUSTOMERS_VIEW] },
     { code: 'customers-manage', label: 'Administrar', permissionCodes: [PERMISSIONS.CUSTOMERS_MANAGE] },
     { code: 'customers-export', label: 'Exportar', permissionCodes: [PERMISSIONS.CUSTOMERS_EXPORT] },
   ] },
-  { code: 'repairs', label: 'Reparaciones', description: 'Órdenes de servicio y operación técnica.', capabilities: [
+  { code: 'repairs', label: 'Reparaciones', description: 'Órdenes y operación técnica.', group: 'process', capabilities: [
     { code: 'repairs-view', label: 'Consultar', permissionCodes: [PERMISSIONS.REPAIRS_VIEW] },
     { code: 'repairs-operate', label: 'Operar', permissionCodes: [
       PERMISSIONS.REPAIRS_CREATE, PERMISSIONS.REPAIRS_UPDATE, PERMISSIONS.REPAIRS_ASSIGN,
@@ -47,15 +48,20 @@ export const operationalAccessModules: readonly AccessModule[] = [
       PERMISSIONS.REPAIRS_PERFORM_TECHNICAL,
     ] },
   ] },
-  { code: 'sales', label: 'Ventas', description: 'Cotizaciones, pedidos y despacho.', capabilities: [
+  { code: 'sales', label: 'Ventas', description: 'Cotizaciones, pedidos y despacho.', group: 'process', capabilities: [
     { code: 'sales-view', label: 'Consultar', permissionCodes: [PERMISSIONS.SALES_VIEW] },
     { code: 'sales-manage', label: 'Administrar', permissionCodes: [PERMISSIONS.SALES_MANAGE] },
   ] },
-  { code: 'distribution', label: 'Distribución', description: 'Rutas, asignaciones y entregas.', capabilities: [
+  { code: 'distribution', label: 'Distribución', description: 'Rutas y entregas.', group: 'process', capabilities: [
     { code: 'distribution-view', label: 'Consultar', permissionCodes: [PERMISSIONS.DISTRIBUTION_VIEW] },
     { code: 'distribution-manage', label: 'Administrar', permissionCodes: [PERMISSIONS.DISTRIBUTION_MANAGE] },
   ] },
 ] as const
+
+export const accessModulesInDisplayOrder = [
+  ...operationalAccessModules.filter((module) => module.group === 'process'),
+  ...operationalAccessModules.filter((module) => module.group === 'master'),
+]
 
 export const assignablePermissionCodes = [
   ...new Set(
@@ -99,19 +105,13 @@ export function expandPermissionDependencies(codes: readonly PermissionCode[]) {
   return [...expanded]
 }
 
-export function removePermissionWithDependents(codes: readonly PermissionCode[], removedCodes: readonly PermissionCode[]) {
-  const removed = new Set(removedCodes)
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const code of codes) {
-      if (!removed.has(code) && expandPermissionDependencies([code]).some((dependency) => removed.has(dependency))) {
-        removed.add(code)
-        changed = true
-      }
-    }
-  }
-  return codes.filter((code) => !removed.has(code))
+export function collapseToPrimaryPermissions(codes: readonly PermissionCode[]) {
+  const uniqueCodes = [...new Set(codes)]
+  return uniqueCodes.filter((candidate) =>
+    !uniqueCodes.some((other) =>
+      other !== candidate && expandPermissionDependencies([other]).includes(candidate),
+    ),
+  )
 }
 
 export interface ManagedUser {

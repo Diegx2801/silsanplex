@@ -1,7 +1,7 @@
 import { KeyRound, MailCheck, Pencil, Power, PowerOff } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { operationalAccessModules, type ManagedUser } from '@/features/users/userTypes'
+import { accessModulesInDisplayOrder, type ManagedUser } from '@/features/users/userTypes'
 
 interface UsersTableProps {
   users: ManagedUser[]
@@ -26,7 +26,7 @@ type UserActionsProps = Omit<UsersTableProps, 'users' | 'hasActiveFilters'> & {
 
 function accessLabels(user: ManagedUser) {
   if (user.isAdmin) return ['Administrador total']
-  return operationalAccessModules
+  return accessModulesInDisplayOrder
     .filter((module) => module.capabilities.some((capability) => capability.permissionCodes.some((permission) => user.permissionCodes.includes(permission))))
     .map((module) => module.label)
 }

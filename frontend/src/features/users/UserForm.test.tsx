@@ -20,15 +20,43 @@ describe('UserForm', () => {
     fireEvent.click(screen.getByLabelText('Compras: Administrar'))
 
     expect(screen.getByLabelText('Compras: Consultar')).toBeChecked()
+    expect(screen.getByLabelText('Compras: Consultar')).toBeDisabled()
     expect(screen.getByLabelText('Productos: Consultar')).toBeChecked()
+    expect(screen.getByLabelText('Productos: Consultar')).toBeDisabled()
     expect(screen.getByLabelText('Proveedores: Consultar')).toBeChecked()
     expect(screen.getByLabelText('Inventario: Consultar')).toBeChecked()
+    expect(screen.getAllByText('Requerido').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Usado por:').length).toBeGreaterThan(0)
+    expect(screen.getByText('4 módulos')).toBeInTheDocument()
+    expect(screen.getByText('· 4 accesos requeridos')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Compras, Productos, Inventario, Proveedores')
 
     fireEvent.click(screen.getByRole('button', { name: 'Enviar invitación' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
       isAdmin: false,
       permissionCodes: expect.arrayContaining(['PURCHASES_MANAGE', 'PURCHASES_VIEW', 'PRODUCTS_VIEW', 'SUPPLIERS_VIEW', 'INVENTORY_VIEW']),
     })))
+  })
+
+  it('separa procesos de mantenedores y elimina dependencias al retirar su origen', () => {
+    render(<UserForm open user={null} currentUserId="admin" isSubmitting={false} onOpenChange={vi.fn()} onSubmit={vi.fn()} />)
+
+    const processHeading = screen.getByRole('heading', { name: 'Procesos operativos' })
+    const masterHeading = screen.getByRole('heading', { name: 'Mantenedores y recursos' })
+    expect(processHeading.compareDocumentPosition(masterHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    const salesView = screen.getByLabelText('Ventas: Consultar')
+    fireEvent.click(salesView)
+    expect(screen.getByLabelText('Productos: Consultar')).toBeDisabled()
+    expect(screen.getByLabelText('Clientes: Consultar')).toBeDisabled()
+    expect(screen.getByLabelText('Inventario: Consultar')).toBeDisabled()
+    expect(screen.getByLabelText('Ventas: Administrar')).not.toBeChecked()
+    expect(screen.getByLabelText('Distribución: Consultar')).not.toBeChecked()
+
+    fireEvent.click(salesView)
+    expect(screen.getByLabelText('Productos: Consultar')).not.toBeChecked()
+    expect(screen.getByLabelText('Clientes: Consultar')).not.toBeChecked()
+    expect(screen.getByLabelText('Inventario: Consultar')).not.toBeChecked()
   })
 
   it('envía un administrador total sin permisos individuales', async () => {

@@ -6,12 +6,13 @@ import { useForm } from 'react-hook-form'
 import type { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
+import { UserAccessSelector } from '@/features/users/UserAccessSelector'
 import { userFormSchema } from '@/features/users/userSchemas'
 import {
+  accessModulesInDisplayOrder,
+  collapseToPrimaryPermissions,
   expandPermissionDependencies,
   type ManagedUser,
-  operationalAccessModules,
-  removePermissionWithDependents,
   type UserInput,
 } from '@/features/users/userTypes'
 
@@ -36,7 +37,16 @@ export function UserForm({
 }: UserFormProps) {
   const form = useForm<UserFormValues>({ resolver: zodResolver(userFormSchema), defaultValues: emptyValues })
   const isAdmin = form.watch('isAdmin')
-  const selectedPermissions = form.watch('permissionCodes')
+  const selectedPermissions = form.watch('permissionCodes') ?? []
+  const effectivePermissions = expandPermissionDependencies(selectedPermissions)
+  const effectiveModules = accessModulesInDisplayOrder
+    .filter((module) => module.capabilities.some((capability) =>
+      capability.permissionCodes.some((permission) => effectivePermissions.includes(permission)),
+    ))
+    .map((module) => module.label)
+  const automaticallyIncludedCount = effectivePermissions
+    .filter((permission) => !selectedPermissions.includes(permission))
+    .length
   const protectsOwnAdminAccess = user?.id === currentUserId && user.isAdmin
 
   useEffect(() => {
@@ -46,7 +56,7 @@ export function UserForm({
       email: user.email,
       phone: user.phone ?? '',
       isAdmin: user.isAdmin,
-      permissionCodes: user.isAdmin ? [] : user.permissionCodes,
+      permissionCodes: user.isAdmin ? [] : collapseToPrimaryPermissions(user.permissionCodes),
     } : emptyValues)
   }, [form, open, user])
 
@@ -54,14 +64,6 @@ export function UserForm({
     if (!nextIsAdmin && protectsOwnAdminAccess) return
     form.setValue('isAdmin', nextIsAdmin, { shouldDirty: true, shouldValidate: true })
     if (nextIsAdmin) form.setValue('permissionCodes', [], { shouldDirty: true, shouldValidate: true })
-  }
-
-  function toggleCapability(permissionCodes: readonly (typeof selectedPermissions)[number][], enabled: boolean) {
-    const current = form.getValues('permissionCodes')
-    const next = enabled
-      ? expandPermissionDependencies([...current, ...permissionCodes])
-      : removePermissionWithDependents(current, permissionCodes)
-    form.setValue('permissionCodes', next, { shouldDirty: true, shouldValidate: true })
   }
 
   const submit = form.handleSubmit(async (values) => {
@@ -74,7 +76,7 @@ export function UserForm({
     <DialogPrimitive.Root open={open} onOpenChange={(nextOpen) => { if (!isSubmitting) onOpenChange(nextOpen) }}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/30" />
-        <DialogPrimitive.Content className="fixed inset-0 z-50 m-auto flex h-dvh w-full flex-col bg-card shadow-xl outline-none sm:h-[min(92svh,900px)] sm:max-w-3xl sm:rounded-lg sm:border">
+        <DialogPrimitive.Content className="fixed inset-0 z-50 m-auto flex h-dvh w-full flex-col bg-card shadow-xl outline-none sm:h-[min(92svh,900px)] sm:w-[min(92vw,56rem)] sm:max-w-none sm:rounded-lg sm:border">
           <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7">
             <div>
               <DialogPrimitive.Title className="text-2xl font-semibold tracking-[-0.03em]">
@@ -125,31 +127,37 @@ export function UserForm({
               </fieldset>
 
               {!isAdmin ? (
-                <fieldset aria-describedby="permission-help permission-error">
-                  <legend className="text-sm font-semibold">Accesos operativos *</legend>
-                  <p id="permission-help" className="mt-1 text-xs leading-5 text-muted-foreground">Administrar u operar activa Consultar. Las dependencias necesarias entre módulos se agregan automáticamente.</p>
-                  <div className="mt-3 divide-y rounded-md border">
-                    {operationalAccessModules.map((module) => (
-                      <div key={module.code} className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                        <div><p className="text-sm font-medium">{module.label}</p><p className="mt-0.5 text-xs text-muted-foreground">{module.description}</p></div>
-                        <div className="flex flex-wrap gap-x-4 gap-y-2">
-                          {module.capabilities.map((capability) => {
-                            const checked = capability.permissionCodes.every((permission) => selectedPermissions.includes(permission))
-                            return <label key={capability.code} className="flex min-h-8 cursor-pointer items-center gap-2 text-sm">
-                              <input type="checkbox" aria-label={`${module.label}: ${capability.label}`} checked={checked} onChange={(event) => toggleCapability(capability.permissionCodes, event.target.checked)} className="size-4 accent-primary" />
-                              {capability.label}
-                            </label>
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {form.formState.errors.permissionCodes ? <span id="permission-error" className="mt-2 block text-xs text-destructive">{form.formState.errors.permissionCodes.message}</span> : null}
-                </fieldset>
+                <UserAccessSelector
+                  selectedPermissions={selectedPermissions}
+                  error={form.formState.errors.permissionCodes?.message}
+                  onChange={(permissions) => form.setValue('permissionCodes', permissions, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })}
+                />
               ) : null}
 
               {submitError ? <p role="alert" className="border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{submitError}</p> : null}
             </div>
+
+            {!isAdmin && effectiveModules.length > 0 ? (
+              <div
+                className="flex flex-wrap items-center gap-x-2 border-t bg-muted/50 px-5 py-3 text-xs sm:px-7"
+                role="status"
+                title={`Módulos: ${effectiveModules.join(', ')}`}
+              >
+                <span className="font-semibold text-foreground">Acceso efectivo:</span>
+                <span className="text-muted-foreground">
+                  {effectiveModules.length} {effectiveModules.length === 1 ? 'módulo' : 'módulos'}
+                </span>
+                {automaticallyIncludedCount > 0 ? (
+                  <span className="text-primary">
+                    · {automaticallyIncludedCount} {automaticallyIncludedCount === 1 ? 'acceso requerido' : 'accesos requeridos'}
+                  </span>
+                ) : null}
+                <span className="sr-only">Módulos: {effectiveModules.join(', ')}.</span>
+              </div>
+            ) : null}
 
             <footer className="flex flex-col-reverse gap-2 border-t bg-card px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
               <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => onOpenChange(false)}>Cancelar</Button>
