@@ -1,6 +1,6 @@
 begin;
 
-select plan(33);
+select plan(35);
 
 select has_table('public', 'organization_user_permissions', 'existe asignación directa multiempresa');
 select has_table('public', 'permission_dependencies', 'existe catálogo de dependencias');
@@ -63,6 +63,16 @@ select set_config('request.jwt.claim.sub','da200000-0000-4000-8000-000000000002'
 select results_eq('select unnest(public.current_user_permissions())', $$values ('PRODUCTS_MANAGE'::text),('PRODUCTS_VIEW'::text)$$, 'la sesión obtiene permisos directos');
 select is(public.has_organization_permission('da100000-0000-4000-8000-000000000001','PRODUCTS_MANAGE'),true,'RLS reconoce permisos directos');
 select is(public.has_organization_permission('da100000-0000-4000-8000-000000000002','PRODUCTS_MANAGE'),false,'el permiso no cruza organizaciones');
+select results_eq(
+  $$select unnest(public.current_user_organization_ids_with_permission('PRODUCTS_VIEW'))$$,
+  $$values ('da100000-0000-4000-8000-000000000001'::uuid)$$,
+  'la autorización optimizada conserva la organización permitida'
+);
+select is(
+  cardinality(public.current_user_organization_ids_with_permission('INVENTORY_VIEW')),
+  0,
+  'la autorización optimizada no concede módulos ajenos'
+);
 reset role;
 
 select lives_ok(
