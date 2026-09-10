@@ -15,6 +15,7 @@ import {
   listarTransferencias,
   listarVencimientos,
 } from '@/modulos/inventario/servicios/almacenService'
+import { inventoryQueryKeys } from './inventoryQueryKeys'
 
 interface ConsultasListadosAlmacen {
   stock: ConsultaStockDetallado
@@ -27,7 +28,7 @@ interface ConsultasListadosAlmacen {
 export function useListadosAlmacen(consultas: ConsultasListadosAlmacen) {
   const { access } = useAuth()
   const organizationId = access?.organizationId ?? ''
-  const base = ['warehouse-management', organizationId, 'listados'] as const
+  const base = inventoryQueryKeys.listings(organizationId)
   const comunes = {
     enabled: Boolean(organizationId),
     placeholderData: keepPreviousData,
@@ -49,7 +50,7 @@ export function useListadosAlmacen(consultas: ConsultasListadosAlmacen) {
   })
   const kardex = useQuery({
     ...comunes,
-    queryKey: [...base, 'kardex', consultas.kardex],
+    queryKey: inventoryQueryKeys.kardex(organizationId, consultas.kardex),
     queryFn: () => listarKardex(organizationId, consultas.kardex),
   })
   const transferencias = useQuery({

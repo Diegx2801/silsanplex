@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
+import type { ConsultaKardex } from '@/modulos/inventario/modelo/almacen'
+import { inventoryQueryKeys } from '@/modulos/inventario/estado/inventoryQueryKeys'
 
 const mocks = vi.hoisted(() => ({
   crearPedidoPersistente: vi.fn(),
@@ -120,13 +122,22 @@ describe('useOperacionesVenta', () => {
     mocks.despacharVentaPersistente.mockResolvedValue('pedido-1')
     const cliente = crearCliente()
     const invalidar = vi.spyOn(cliente, 'invalidateQueries')
+    const filtrosKardex = {
+      pagina: 1, tamanioPagina: 25, busqueda: 'producto', almacenId: '',
+      fechaDesde: '', fechaHasta: '', orden: 'fecha-desc',
+    } satisfies ConsultaKardex
+    const kardexFiltradoKey = inventoryQueryKeys.kardex('org-1', filtrosKardex)
+    cliente.setQueryData(kardexFiltradoKey, [])
     render(<QueryClientProvider client={cliente}><Probe /></QueryClientProvider>)
 
     fireEvent.click(screen.getByRole('button', { name: 'Despachar' }))
     await waitFor(() => expect(mocks.despacharVentaPersistente).toHaveBeenCalledWith(
       'org-1', 'pedido-1', 'venta-1', [{ orderItemId: 'linea-1', quantity: 1 }], '00000000-0000-4000-8000-000000000003', '2026-09-01',
     ))
-    await waitFor(() => expect(invalidar).toHaveBeenCalledWith({ queryKey: ['inventory-kardex', 'org-1'] }))
+    await waitFor(() => expect(invalidar).toHaveBeenCalledWith({
+      queryKey: inventoryQueryKeys.kardexRoot('org-1'),
+    }))
+    expect(cliente.getQueryState(kardexFiltradoKey)?.isInvalidated).toBe(true)
     expect(invalidar).toHaveBeenCalledWith({ queryKey: ['sales', 'org-1'] })
   })
 })

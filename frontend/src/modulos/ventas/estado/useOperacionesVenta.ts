@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/useAuth'
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
 import type { DatosVenta } from '@/modulos/ventas/modelo/operacionVenta'
+import { inventoryQueryKeys } from '@/modulos/inventario/estado/inventoryQueryKeys'
 import {
   actualizarCantidadesPedidoPersistente,
   cancelarPedidoPersistente,
@@ -124,7 +125,7 @@ export function useOperacionesVenta({
         queryClient.invalidateQueries({ queryKey: pedidosQueryKey }),
         queryClient.invalidateQueries({ queryKey: inventoryQueryKey }),
         queryClient.invalidateQueries({ queryKey: inventoryFefoQueryKey }),
-        queryClient.invalidateQueries({ queryKey: ['inventory-kardex', organizationId] }),
+        queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.kardexRoot(organizationId) }),
       ])
     },
   })
