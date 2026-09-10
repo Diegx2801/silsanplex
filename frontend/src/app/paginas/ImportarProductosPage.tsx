@@ -19,15 +19,28 @@ import { Button } from '@/components/ui/button'
 import type {
   FilaImportacionObservada,
   FilaImportacionRechazada,
+  FilaPrecioImportacion,
+  FilaProductoImportacion,
   EstadoFilaImportacion,
   NivelHallazgo,
   ModoImportacionProductos,
   ResultadoImportacion,
   ResultadoImportacionPersistida,
 } from '@/modulos/productos/modelo/analisisImportacion'
+import {
+  normalizarAfectacionTributaria,
+  normalizarIncIgv,
+  esIncIgvValido,
+  valoresAfectacionTributaria,
+  valoresIncIgv,
+} from '@/modulos/productos/modelo/analisisImportacion'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
-import { consultarCodigosProductosExistentes, importarProductos } from '@/modulos/productos/servicios/productosService'
+import {
+  consultarProductosExistentes,
+  importarProductos,
+  type ContextoProductoExistenteImportacion,
+} from '@/modulos/productos/servicios/productosService'
 
 const formatoEntero = new Intl.NumberFormat('es-PE')
 
@@ -182,7 +195,13 @@ function FilasObservadas({ filas }: { filas: FilaImportacionObservada[] }) {
                           ? 'Mínimo sin venta'
                           : fila.tipoAviso === 'inc-igv-ambiguo'
                             ? 'IncIGV ambiguo'
-                          : configuracion.etiqueta}
+                            : fila.tipoAviso === 'afectacion-pendiente'
+                              ? 'Clasificacion pendiente'
+                              : fila.tipoAviso === 'inc-igv-invalido'
+                                ? 'IncIGV invalido'
+                                : fila.tipoAviso === 'afectacion-invalida'
+                                  ? 'Afectacion invalida'
+                                  : configuracion.etiqueta}
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">{fila.motivo}</p>
@@ -208,6 +227,16 @@ function traducirMotivoRechazo(motivo: string) {
       'El código ya existe con datos diferentes en el catálogo.',
     PRODUCT_IMPORT_MINIMUM_SALE_PRICE_INVALID:
       'El precio mínimo requiere un precio de venta efectivo y no puede superarlo.',
+    PRODUCT_IMPORT_INC_IGV_INVALID:
+      'IncIGV contiene un valor no reconocido.',
+    PRODUCT_IMPORT_TAX_AFFECTATION_INVALID:
+      'AfectacionTributaria contiene un valor no reconocido.',
+    PRODUCT_IMPORT_PRICE_OVERFLOW:
+      'El precio excede el rango permitido para numeric(14,2).',
+    PRODUCT_IMPORT_AMBIGUOUS_INC_IGV:
+      'El precio fuente no puede transformarse con seguridad usando IncIGV.',
+    PRODUCT_IMPORT_TAX_AFFECTATION_PENDING:
+      'El precio es final, pero la afectacion tributaria permanece por-definir.',
   }[motivo] ?? 'La fila no cumple las reglas de importación.'
 }
 
@@ -227,12 +256,29 @@ function convertirRechazos(
   })
 }
 
+function convertirAdvertencias(
+  filas: FilaImportacionRechazada[],
+): FilaImportacionObservada[] {
+  return filas.flatMap((fila) => {
+    const numeros = fila.filas ?? (fila.fila === undefined ? [] : [fila.fila])
+
+    return numeros.map((numero) => ({
+      tipo: fila.tipo,
+      fila: numero,
+      codigo: fila.codigo ?? '',
+      estado: 'advertencia' as const,
+      motivo: traducirMotivoRechazo(fila.motivo),
+    }))
+  })
+}
+
 function ResultadoPersistencia({
   resultado,
 }: {
   resultado: ResultadoImportacionPersistida
 }) {
   const filas = convertirRechazos(resultado.filasRechazadas)
+  const advertencias = convertirAdvertencias(resultado.advertencias ?? [])
   const rechazado = resultado.estado === 'rechazado'
 
   return (
@@ -280,7 +326,7 @@ function ResultadoPersistencia({
           </div>
         </div>
       </div>
-      <FilasObservadas filas={filas} />
+      <FilasObservadas filas={[...filas, ...advertencias]} />
     </section>
   )
 }
@@ -417,12 +463,313 @@ function ResultadoAnalisis({ resultado, compacto = false }: { resultado: Resulta
   )
 }
 
-function VistaPreviaSku({ resultado, existentes, modo }: { resultado: ResultadoImportacion; existentes: ReadonlySet<string>; modo: ModoImportacionProductos }) {
+interface PrecioVistaPrevia {
+  afectacion: string
+  precioFuente: number | null
+  incIgv: string
+  precioFinal: number | null
+  minimoFinal: number | null
+  pendiente: boolean
+  warnings: string[]
+}
+
+const formatoPrecio = new Intl.NumberFormat('es-PE', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+function numeroPrecioVista(valor: string | number | null | undefined) {
+  if (valor === null || valor === undefined || valor === '') return null
+  const numero = typeof valor === 'number' ? valor : Number(valor)
+  return Number.isFinite(numero) ? numero : null
+}
+
+function redondearPrecioVista(valor: number) {
+  return Math.round((valor + Number.EPSILON) * 100) / 100
+}
+
+function calcularPrecioVista(
+  producto: FilaProductoImportacion,
+  precio: FilaPrecioImportacion | undefined,
+  existente: ContextoProductoExistenteImportacion | undefined,
+  columnaPresente: boolean,
+  modo: ModoImportacionProductos,
+): PrecioVistaPrevia {
+  const afectacionCelda = columnaPresente
+    ? normalizarAfectacionTributaria(producto.afectacionTributaria ?? '')
+    : ''
+  const incIgv = normalizarIncIgv(precio?.incIgv ?? '')
+  const hayPrecio = precio !== undefined
+  let afectacion: string = valoresAfectacionTributaria.porDefinir
+  let legacyPreservaAfectacion = false
+
+  if (!columnaPresente) {
+    if (incIgv === valoresIncIgv.si) {
+      afectacion = valoresAfectacionTributaria.gravado
+    } else if (existente) {
+      afectacion = existente.afectacionTributaria
+      legacyPreservaAfectacion = true
+    }
+  } else if (afectacionCelda) {
+    afectacion = afectacionCelda
+  } else if (existente) {
+    afectacion = existente.afectacionTributaria
+  }
+
+  const warnings: string[] = []
+  const incValido = esIncIgvValido(incIgv)
+  const afectacionValida =
+    afectacion === valoresAfectacionTributaria.gravado ||
+    afectacion === valoresAfectacionTributaria.exonerado ||
+    afectacion === valoresAfectacionTributaria.inafecto ||
+    afectacion === valoresAfectacionTributaria.porDefinir
+
+  if (hayPrecio && !incValido) {
+    warnings.push('PRODUCT_IMPORT_INC_IGV_INVALID')
+  }
+  if (hayPrecio && !afectacionValida) {
+    warnings.push('PRODUCT_IMPORT_TAX_AFFECTATION_INVALID')
+  }
+
+  const ambiguo =
+    hayPrecio &&
+    incValido &&
+    afectacionValida &&
+    (legacyPreservaAfectacion
+      ? incIgv !== valoresIncIgv.si
+      : afectacion === valoresAfectacionTributaria.porDefinir &&
+        incIgv !== valoresIncIgv.si)
+  const pendienteFiscal =
+    hayPrecio &&
+    afectacion === valoresAfectacionTributaria.porDefinir &&
+    incIgv === valoresIncIgv.si &&
+    !legacyPreservaAfectacion
+
+  if (ambiguo) warnings.push('PRODUCT_IMPORT_AMBIGUOUS_INC_IGV')
+  if (pendienteFiscal) warnings.push('PRODUCT_IMPORT_TAX_AFFECTATION_PENDING')
+
+  const precioFuente = numeroPrecioVista(precio?.precioVenta)
+  const minimoFuente = numeroPrecioVista(precio?.precioMinimo)
+  const determinista =
+    hayPrecio &&
+    incValido &&
+    afectacionValida &&
+    !ambiguo &&
+    !(
+      afectacion === valoresAfectacionTributaria.gravado &&
+      incIgv !== valoresIncIgv.si &&
+      incIgv !== valoresIncIgv.no
+    )
+
+  let factor = 1
+  if (
+    determinista &&
+    afectacion === valoresAfectacionTributaria.gravado &&
+    incIgv === valoresIncIgv.no
+  ) {
+    factor = 1.18
+  }
+
+  const precioFinalCalculado =
+    precioFuente === null || !determinista
+      ? null
+      : redondearPrecioVista(precioFuente * factor)
+  const precioFinal =
+    modo === 'SKIP' && existente
+      ? existente.precioVenta
+      : precioFinalCalculado ?? (existente?.precioVenta ?? null)
+
+  let minimoFinal =
+    modo === 'SKIP' && existente ? existente.precioMinimo : existente?.precioMinimo ?? null
+  if (minimoFuente !== null && determinista) {
+    minimoFinal = redondearPrecioVista(minimoFuente * factor)
+  } else if (minimoFuente !== null && !existente) {
+    minimoFinal = null
+  }
+
+  if (minimoFuente !== null && precioFinal === null) {
+    warnings.push('PRODUCT_IMPORT_MINIMUM_SALE_PRICE_INVALID')
+  } else if (
+    minimoFinal !== null &&
+    precioFinal !== null &&
+    minimoFinal > precioFinal
+  ) {
+    warnings.push('PRODUCT_IMPORT_MINIMUM_SALE_PRICE_INVALID')
+  }
+
+  const precioPendiente =
+    !hayPrecio ||
+    !afectacionValida ||
+    !incValido ||
+    ambiguo ||
+    (precioFuente !== null && precioFinal === null)
+
+  return {
+    afectacion,
+    precioFuente,
+    incIgv: incIgv || 'vacío',
+    precioFinal,
+    minimoFinal,
+    pendiente: precioPendiente,
+    warnings,
+  }
+}
+
+function VistaPreviaSkuC3({
+  resultado,
+  existentes,
+  modo,
+}: {
+  resultado: ResultadoImportacion
+  existentes: ReadonlyMap<string, ContextoProductoExistenteImportacion>
+  modo: ModoImportacionProductos
+}) {
   const [pagina, setPagina] = useState(1)
-  const totalPaginas = Math.max(1, Math.ceil(resultado.datos.productos.length / filasPorPagina))
+  const totalPaginas = Math.max(
+    1,
+    Math.ceil(resultado.datos.productos.length / filasPorPagina),
+  )
   const paginaActual = Math.min(pagina, totalPaginas)
-  const visibles = resultado.datos.productos.slice((paginaActual - 1) * filasPorPagina, paginaActual * filasPorPagina)
-  return <section className="ledger-sheet" aria-labelledby="vista-previa-sku-title"><div className="border-b px-5 py-4 sm:px-6"><h2 id="vista-previa-sku-title" className="text-lg font-semibold">Vista previa de decisiones</h2><p className="mt-1 text-sm text-muted-foreground">{resultado.datos.productos.length - existentes.size} nuevos · {existentes.size} existentes · {resultado.filasObservadas.filter((fila) => fila.estado === 'rechazada').length} filas excluidas</p></div><div className="overflow-x-auto"><table className="w-full min-w-[44rem] text-left text-sm"><thead className="border-b bg-muted/50"><tr><th className="px-5 py-3">SKU</th><th className="px-5 py-3">Producto</th><th className="px-5 py-3">Unidades/precios</th><th className="px-5 py-3">Decisión</th></tr></thead><tbody className="divide-y">{visibles.map((producto) => { const existe = existentes.has(producto.codigo); const precios = resultado.datos.precios.filter((precio) => precio.codigoProducto === producto.codigo).length; return <tr key={producto.codigo}><td className="px-5 py-3 font-mono text-xs">{producto.codigo}</td><td className="px-5 py-3">{producto.descripcion}</td><td className="px-5 py-3">{precios}</td><td className="px-5 py-3">{existe ? (modo === 'UPDATE' ? 'Actualizar existente' : 'Omitir existente') : 'Crear producto'}</td></tr> })}</tbody></table></div><div className="flex items-center justify-between border-t px-5 py-4 text-sm sm:px-6"><span>Página {paginaActual} de {totalPaginas}</span><div className="flex gap-2"><Button type="button" variant="outline" size="sm" disabled={paginaActual <= 1} onClick={() => setPagina((valor) => valor - 1)}>Anterior</Button><Button type="button" variant="outline" size="sm" disabled={paginaActual >= totalPaginas} onClick={() => setPagina((valor) => valor + 1)}>Siguiente</Button></div></div></section>
+  const visibles = resultado.datos.productos.slice(
+    (paginaActual - 1) * filasPorPagina,
+    paginaActual * filasPorPagina,
+  )
+  const preciosPorCodigo = new Map<string, FilaPrecioImportacion>()
+  const cantidadesPorCodigo = new Map<string, number>()
+  for (const precio of resultado.datos.precios) {
+    if (!preciosPorCodigo.has(precio.codigoProducto)) {
+      preciosPorCodigo.set(precio.codigoProducto, precio)
+    }
+    cantidadesPorCodigo.set(
+      precio.codigoProducto,
+      (cantidadesPorCodigo.get(precio.codigoProducto) ?? 0) + 1,
+    )
+  }
+  const nuevos = resultado.datos.productos.filter(
+    (producto) => !existentes.has(producto.codigo),
+  ).length
+
+  return (
+    <section className="ledger-sheet" aria-labelledby="vista-previa-sku-title">
+      <div className="border-b px-5 py-4 sm:px-6">
+        <h2 id="vista-previa-sku-title" className="text-lg font-semibold">
+          Vista previa tributaria y de precios
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {nuevos} nuevos · {existentes.size} existentes ·{' '}
+          {resultado.filasObservadas.filter((fila) => fila.estado === 'rechazada').length}{' '}
+          filas excluidas
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[84rem] text-left text-sm">
+          <thead className="border-b bg-muted/50">
+            <tr>
+              <th className="px-5 py-3">SKU</th>
+              <th className="px-5 py-3">Producto</th>
+              <th className="px-5 py-3">Afectación tributaria</th>
+              <th className="px-5 py-3">Precio fuente</th>
+              <th className="px-5 py-3">IncIGV</th>
+              <th className="px-5 py-3">Precio final</th>
+              <th className="px-5 py-3">Mínimo final</th>
+              <th className="px-5 py-3">Decisión / warning</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {visibles.map((producto) => {
+              const precio = preciosPorCodigo.get(producto.codigo)
+              const existente = existentes.get(producto.codigo)
+              const vista = calcularPrecioVista(
+                producto,
+                precio,
+                existente,
+                resultado.datos.afectacionTributariaColumnaPresente === true,
+                modo,
+              )
+              const decision = existente
+                ? modo === 'UPDATE'
+                  ? 'Actualizar existente'
+                  : 'Omitir existente'
+                : 'Crear producto'
+              return (
+                <tr key={producto.codigo}>
+                  <td className="px-5 py-3 font-mono text-xs">{producto.codigo}</td>
+                  <td className="px-5 py-3">{producto.descripcion}</td>
+                  <td className="px-5 py-3">
+                    <span className="font-mono text-xs">{vista.afectacion}</span>
+                    {vista.warnings.includes(
+                      'PRODUCT_IMPORT_TAX_AFFECTATION_PENDING',
+                    ) ? (
+                      <span className="mt-1 block text-xs text-amber-700">
+                        Clasificación pendiente
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="px-5 py-3 tabular-nums">
+                    {vista.precioFuente === null
+                      ? '—'
+                      : formatoPrecio.format(vista.precioFuente)}
+                  </td>
+                  <td className="px-5 py-3">{vista.incIgv}</td>
+                  <td className="px-5 py-3 tabular-nums">
+                    {vista.precioFinal === null
+                      ? 'Precio pendiente'
+                      : formatoPrecio.format(vista.precioFinal)}
+                  </td>
+                  <td className="px-5 py-3 tabular-nums">
+                    {vista.minimoFinal === null
+                      ? '—'
+                      : formatoPrecio.format(vista.minimoFinal)}
+                  </td>
+                  <td className="px-5 py-3">
+                    <div>{decision}</div>
+                    {vista.pendiente ? (
+                      <div className="mt-1 text-xs text-amber-700">
+                        Precio pendiente de interpretación
+                      </div>
+                    ) : null}
+                    {vista.warnings.length ? (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {vista.warnings.join(', ')}
+                      </div>
+                    ) : null}
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {cantidadesPorCodigo.get(producto.codigo) ?? 0} unidad(es)/precio(s)
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center justify-between border-t px-5 py-4 text-sm sm:px-6">
+        <span>
+          Página {paginaActual} de {totalPaginas}
+        </span>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={paginaActual <= 1}
+            onClick={() => setPagina((valor) => valor - 1)}
+          >
+            Anterior
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={paginaActual >= totalPaginas}
+            onClick={() => setPagina((valor) => valor + 1)}
+          >
+            Siguiente
+          </Button>
+        </div>
+      </div>
+    </section>
+  )
 }
 
 interface ImportarProductosPageProps { integrado?: boolean; alCompletar?: () => void; alCerrar?: () => void }
@@ -442,7 +789,9 @@ export function ImportarProductosPage({ integrado = false, alCompletar, alCerrar
   const [versionSelectores, setVersionSelectores] = useState(0)
   const [mensajeEstado, setMensajeEstado] = useState('')
   const [modo, setModo] = useState<ModoImportacionProductos>('SKIP')
-  const [codigosExistentes, setCodigosExistentes] = useState<Set<string>>(new Set())
+  const [codigosExistentes, setCodigosExistentes] = useState<
+    Map<string, ContextoProductoExistenteImportacion>
+  >(new Map())
 
   const cambiarProductos = (archivo: File | null) => {
     setArchivoProductos(archivo)
@@ -476,8 +825,8 @@ export function ImportarProductosPage({ integrado = false, alCompletar, alCerrar
       )
       setResultado(nuevoResultado)
       setCodigosExistentes(access?.organizationId
-        ? await consultarCodigosProductosExistentes(access.organizationId, nuevoResultado.codigosImportables)
-        : new Set())
+        ? await consultarProductosExistentes(access.organizationId, nuevoResultado.codigosImportables)
+        : new Map())
       setMensajeEstado(
         nuevoResultado.tieneBloqueos
           ? `Análisis completado con ${nuevoResultado.hallazgos.length} grupos de hallazgos y correcciones requeridas.`
@@ -546,7 +895,7 @@ export function ImportarProductosPage({ integrado = false, alCompletar, alCerrar
     setResultadoPersistencia(null)
     setError('')
     setMensajeEstado('Selección de archivos limpiada.')
-    setCodigosExistentes(new Set())
+    setCodigosExistentes(new Map())
     setVersionSelectores((version) => version + 1)
   }
 
@@ -577,7 +926,7 @@ export function ImportarProductosPage({ integrado = false, alCompletar, alCerrar
       <form onSubmit={analizar}>
         <section className="border">
           <div className="grid lg:grid-cols-[minmax(0,1fr)_17rem]">
-            <div className="lg:border-e"><div className="border-b px-4 py-3"><h2 className="font-semibold">Archivos de origen</h2><p className="mt-1 text-sm text-muted-foreground">Selecciona las exportaciones de productos y precios de Codeplex.</p></div><SelectorArchivo key={`productos-${versionSelectores}`} id="archivo-productos" titulo="Catálogo de productos" descripcion="Código, producto, línea, sublínea y marca." archivo={archivoProductos} alCambiar={cambiarProductos} /><SelectorArchivo key={`precios-${versionSelectores}`} id="archivo-precios" titulo="Precios de los productos" descripcion="Código, medida, precio e IGV. IncIGV: Sí = precio con IGV; No = precio fuente sin IGV; Pendiente/vacío = información insuficiente." archivo={archivoPrecios} alCambiar={cambiarPrecios} /></div>
+            <div className="lg:border-e"><div className="border-b px-4 py-3"><h2 className="font-semibold">Archivos de origen</h2><p className="mt-1 text-sm text-muted-foreground">Selecciona las exportaciones de productos y precios de Codeplex.</p></div><SelectorArchivo key={`productos-${versionSelectores}`} id="archivo-productos" titulo="Catálogo de productos" descripcion="Código, producto, línea, sublínea, marca y AfectacionTributaria opcional." archivo={archivoProductos} alCambiar={cambiarProductos} /><SelectorArchivo key={`precios-${versionSelectores}`} id="archivo-precios" titulo="Precios de los productos" descripcion="Código, medida, precio e IGV. IncIGV: Sí = precio con IGV; No = precio fuente sin IGV; Pendiente/vacío = información insuficiente." archivo={archivoPrecios} alCambiar={cambiarPrecios} /></div>
             <div className="flex flex-col justify-between gap-4 p-4"><label><span className="field-label">Si el SKU ya existe</span><select className="field-control" value={modo} onChange={(evento) => setModo(evento.target.value as ModoImportacionProductos)} disabled={importando || Boolean(resultadoPersistencia)}><option value="SKIP">Omitir el producto</option><option value="UPDATE">Actualizar datos disponibles</option></select></label><div className="flex flex-col gap-2">{archivoProductos || archivoPrecios ? <Button type="button" variant="outline" onClick={reiniciar} disabled={analizando || importando}><RotateCcw aria-hidden="true" />Limpiar</Button> : null}<Button type="submit" disabled={!archivoProductos || !archivoPrecios || analizando || Boolean(resultadoPersistencia)}>{analizando ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}{analizando ? 'Analizando…' : 'Analizar archivos'}</Button></div></div>
           </div>
         </section>
@@ -589,7 +938,7 @@ export function ImportarProductosPage({ integrado = false, alCompletar, alCerrar
         ['Advertencias', advertencias],
         ['Con errores', errores],
         ['Ya existentes', codigosExistentes.size],
-      ].map(([etiqueta, valor]) => <div key={etiqueta} className="border px-4 py-3"><span className="block text-xs uppercase text-muted-foreground">{etiqueta}</span><strong className="mt-1 block text-xl">{valor}</strong></div>)}</div><VistaPreviaSku resultado={resultado} existentes={codigosExistentes} modo={modo} /><details className="border"><summary className="cursor-pointer px-4 py-3 font-medium">Ver detalles técnicos ({resultado.hallazgos.length})</summary><div className="divide-y border-t">{resultado.hallazgos.map((hallazgo) => <div key={hallazgo.id} className="px-4 py-3"><div className="flex items-center justify-between gap-3"><span className="font-medium">{hallazgo.titulo}</span><span className="text-sm tabular-nums text-muted-foreground">{hallazgo.cantidad}</span></div><p className="mt-1 text-sm text-muted-foreground">{hallazgo.detalle}</p></div>)}</div><FilasObservadas filas={resultado.filasObservadas} /></details></> : null}
+      ].map(([etiqueta, valor]) => <div key={etiqueta} className="border px-4 py-3"><span className="block text-xs uppercase text-muted-foreground">{etiqueta}</span><strong className="mt-1 block text-xl">{valor}</strong></div>)}</div><VistaPreviaSkuC3 resultado={resultado} existentes={codigosExistentes} modo={modo} /><details className="border"><summary className="cursor-pointer px-4 py-3 font-medium">Ver detalles técnicos ({resultado.hallazgos.length})</summary><div className="divide-y border-t">{resultado.hallazgos.map((hallazgo) => <div key={hallazgo.id} className="px-4 py-3"><div className="flex items-center justify-between gap-3"><span className="font-medium">{hallazgo.titulo}</span><span className="text-sm tabular-nums text-muted-foreground">{hallazgo.cantidad}</span></div><p className="mt-1 text-sm text-muted-foreground">{hallazgo.detalle}</p></div>)}</div><FilasObservadas filas={resultado.filasObservadas} /></details></> : null}
       {resultadoPersistencia ? <div role="status" className="border border-primary/30 bg-primary/5 px-4 py-3 text-sm">Importación finalizada: {resultadoPersistencia.creados} creados, {resultadoPersistencia.actualizados} actualizados, {resultadoPersistencia.omitidos} omitidos y {resultadoPersistencia.fallidos} fallidos.</div> : null}
       <footer className="sticky bottom-0 -mx-5 flex flex-col-reverse gap-2 border-t bg-background px-5 py-4 sm:-mx-7 sm:flex-row sm:justify-end sm:px-7">{hayIncidencias ? <Button type="button" variant="outline" onClick={descargarIncidencias}><Download aria-hidden="true" />Descargar incidencias</Button> : null}<Button type="button" variant="outline" onClick={alCerrar}>{resultadoPersistencia ? 'Cerrar' : 'Cancelar'}</Button>{!resultadoPersistencia && puedeImportar ? <Button type="button" disabled={importando || !resultado || resultado.tieneBloqueos} onClick={() => void importar()}>{importando ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}{importando ? 'Importando…' : `Importar ${resultado?.datos.productos.length ?? 0} productos`}</Button> : null}</footer>
       <p role="status" aria-live="polite" className="sr-only">{mensajeEstado}</p>
@@ -635,7 +984,7 @@ export function ImportarProductosPage({ integrado = false, alCompletar, alCerrar
             key={`productos-${versionSelectores}`}
             id="archivo-productos"
             titulo="Catálogo de productos"
-            descripcion="Archivo con Código, Producto, Línea, SubLínea y Marca. Admite ficha técnica, dimensiones y controles como columnas opcionales."
+            descripcion="Archivo con Código, Producto, Línea, SubLínea y Marca. AfectacionTributaria es opcional; también admite ficha técnica, dimensiones y controles."
             archivo={archivoProductos}
             alCambiar={cambiarProductos}
           />
@@ -643,7 +992,7 @@ export function ImportarProductosPage({ integrado = false, alCompletar, alCerrar
             key={`precios-${versionSelectores}`}
             id="archivo-precios"
             titulo="Precios de los productos"
-            descripcion="Archivo con CódigoProducto, Medida, Precio_venta e IGV. Admite CostoBase y PrecioMinimo como columnas opcionales."
+            descripcion="Archivo con CódigoProducto, Medida, Precio_venta e IncIGV. IncIGV representa el precio fuente; admite CostoBase y PrecioMinimo."
             archivo={archivoPrecios}
             alCambiar={cambiarPrecios}
           />
@@ -698,7 +1047,7 @@ export function ImportarProductosPage({ integrado = false, alCompletar, alCerrar
       {resultado ? (
         <>
           <ResultadoAnalisis resultado={resultado} compacto={integrado} />
-          <VistaPreviaSku resultado={resultado} existentes={codigosExistentes} modo={modo} />
+          <VistaPreviaSkuC3 resultado={resultado} existentes={codigosExistentes} modo={modo} />
           <section className="ledger-sheet">
               <div className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[1fr_18rem_auto] lg:items-end">
                 <div>

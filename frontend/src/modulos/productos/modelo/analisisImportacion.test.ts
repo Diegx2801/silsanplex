@@ -1,8 +1,26 @@
 import { describe, expect, it } from 'vitest'
 
-import { analizarFilasImportacion } from './analisisImportacion'
+import {
+  analizarFilasImportacion,
+  esAfectacionTributariaValida,
+  esIncIgvValido,
+  normalizarAfectacionTributaria,
+  normalizarIncIgv,
+} from './analisisImportacion'
 
 describe('analizarFilasImportacion', () => {
+  it('normaliza únicamente los valores tributarios contractuales', () => {
+    expect(normalizarIncIgv(' si ')).toBe('Sí')
+    expect(normalizarIncIgv('NO')).toBe('No')
+    expect(normalizarIncIgv('pendiente')).toBe('Pendiente')
+    expect(normalizarIncIgv('desconocido')).toBe('desconocido')
+    expect(esIncIgvValido('Sí')).toBe(true)
+    expect(esIncIgvValido('desconocido')).toBe(false)
+    expect(normalizarAfectacionTributaria(' Por definir ')).toBe('por-definir')
+    expect(esAfectacionTributariaValida('por-definir')).toBe(true)
+    expect(esAfectacionTributariaValida('sin-clasificar')).toBe(false)
+  })
+
   it.each([
     ['Sí', true],
     ['si', true],
@@ -188,6 +206,68 @@ describe('analizarFilasImportacion', () => {
     )
     expect(resultado.filasObservadas).toContainEqual(
       expect.objectContaining({ tipoAviso: 'inc-igv-ambiguo', codigo: 'NO-IGV' }),
+    )
+  })
+
+  it('considera la afectacion tributaria al detectar duplicados de producto', () => {
+    const resultado = analizarFilasImportacion(
+      [
+        { Codigo: 'C3-DUP', Producto: 'Producto', AfectacionTributaria: 'gravado' },
+        { Codigo: 'C3-DUP', Producto: 'Producto', AfectacionTributaria: 'exonerado' },
+      ],
+      [],
+      { afectacionTributariaColumnaPresente: true },
+    )
+
+    expect(resultado.tieneBloqueos).toBe(true)
+    expect(resultado.hallazgos).toContainEqual(
+      expect.objectContaining({ id: 'codigos-ambiguos', cantidad: 1 }),
+    )
+  })
+
+  it('distingue precio final y clasificación pendiente en el nuevo contrato', () => {
+    const resultado = analizarFilasImportacion(
+      [
+        { Codigo: 'GRAVADO', Producto: 'Gravado', AfectacionTributaria: 'gravado' },
+        { Codigo: 'EXO', Producto: 'Exonerado', AfectacionTributaria: 'exonerado' },
+        { Codigo: 'PEND', Producto: 'Pendiente', AfectacionTributaria: 'por-definir' },
+      ],
+      [
+        { CodigoProducto: 'GRAVADO', Medida: 'UND', Precio_venta: '10', IncIGV: 'No' },
+        { CodigoProducto: 'EXO', Medida: 'UND', Precio_venta: '11', IncIGV: 'No' },
+        { CodigoProducto: 'PEND', Medida: 'UND', Precio_venta: '12', IncIGV: 'Sí' },
+      ],
+      { afectacionTributariaColumnaPresente: true },
+    )
+
+    expect(resultado.tieneBloqueos).toBe(false)
+    expect(resultado.hallazgos).toContainEqual(
+      expect.objectContaining({ id: 'afectacion-pendiente', nivel: 'advertencia' }),
+    )
+    expect(resultado.hallazgos).not.toContainEqual(
+      expect.objectContaining({ id: 'inc-igv-ambiguo', cantidad: 2 }),
+    )
+  })
+
+  it('bloquea afectación e IncIGV inválidos sin normalizarlos silenciosamente', () => {
+    const resultado = analizarFilasImportacion(
+      [{ Codigo: 'INVALIDO', Producto: 'Producto', AfectacionTributaria: 'otro' }],
+      [{ CodigoProducto: 'INVALIDO', Medida: 'UND', Precio_venta: '10', IncIGV: 'incluido' }],
+      { afectacionTributariaColumnaPresente: true },
+    )
+
+    expect(resultado.tieneBloqueos).toBe(true)
+    expect(resultado.hallazgos).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'afectaciones-invalidas', nivel: 'bloqueo' }),
+        expect.objectContaining({ id: 'precios-invalidos', nivel: 'bloqueo' }),
+      ]),
+    )
+    expect(resultado.filasObservadas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tipoAviso: 'afectacion-invalida' }),
+        expect.objectContaining({ tipoAviso: 'inc-igv-invalido' }),
+      ]),
     )
   })
 

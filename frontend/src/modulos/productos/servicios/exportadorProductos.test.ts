@@ -43,14 +43,16 @@ describe('exportadorProductos', () => {
     expect(filas[0]).toMatchObject({
       SKU: 'MED-001',
       Producto: 'Paracetamol 500 mg',
-      'Afectación de IGV': 'Gravado',
-      'Precio de venta base': 12.5,
+      AfectacionTributaria: 'gravado',
+      'Precio de venta final': 12.5,
+      'Precio mínimo final': 10,
       'Control por lote': 'Sí',
       'Control de vencimiento': 'Sí',
       'Control por serie': 'Sí',
       Estado: 'Activo',
     })
-    expect(filas[1]?.['Precio de venta base']).toBe('')
+    expect(filas[1]?.['Precio de venta final']).toBe('')
+    expect(filas[1]?.['Precio mínimo final']).toBe('')
     expect(filas[1]?.Estado).toBe('Inactivo')
     expect(productos[0]?.precioVenta).toBe('12.50')
   })
@@ -62,14 +64,14 @@ describe('exportadorProductos', () => {
     )
 
     expect(libro.SheetNames).toEqual(['Productos', 'Resumen'])
-    expect(libro.Sheets.Productos?.['!autofilter']).toEqual({ ref: 'A1:R3' })
-    expect(libro.Sheets.Productos?.['!cols']).toHaveLength(18)
+    expect(libro.Sheets.Productos?.['!autofilter']).toEqual({ ref: 'A1:S3' })
+    expect(libro.Sheets.Productos?.['!cols']).toHaveLength(19)
 
     const catalogo = utils.sheet_to_json<(string | number)[]>(
       libro.Sheets.Productos!,
       { header: 1 },
     )
-    expect(catalogo[0]).toHaveLength(18)
+    expect(catalogo[0]).toHaveLength(19)
     expect(catalogo[0]).toContain('Control por serie')
     expect(catalogo[1]?.[15]).toBe('Sí')
     expect(catalogo[2]?.[15]).toBe('No')

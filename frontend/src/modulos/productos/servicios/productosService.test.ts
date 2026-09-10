@@ -20,6 +20,7 @@ import {
   crearProducto,
   editarProducto,
   importarProductos,
+  consultarProductosExistentes,
   listarArchivosProducto,
   listarOpcionesProductos,
   listarProductosPaginados,
@@ -358,6 +359,55 @@ describe('productosService', () => {
       fallidos: 0,
       sinCambios: 1,
       filasRechazadas: [],
+    })
+  })
+
+  it('serializa la presencia y la clasificación tributaria del archivo', async () => {
+    supabaseMock.rpc.mockResolvedValue({
+      data: {
+        estado: 'completado', hash: 'c'.repeat(64), id_lote: 'lote-c3',
+        creados: 1, actualizados: 0, omitidos: 0, fallidos: 0,
+        sin_cambios: 0, filas_rechazadas: [], advertencias: [],
+      },
+      error: null,
+    })
+
+    await importarProductos('org-1', {
+      afectacionTributariaColumnaPresente: true,
+      productos: [{
+        fila: 2, codigo: 'C3-001', descripcion: 'Producto C3', categoria: '',
+        sublinea: '', laboratorio: '', descripcionAmpliada: '', codigoBarras: '',
+        presentacion: '', registroSanitario: '', stockMaximo: '', anchoCm: '',
+        altoCm: '', largoCm: '', pesoKg: '', controlLote: false,
+        controlVencimiento: false, ventaReceta: false,
+        afectacionTributaria: 'gravado',
+      }],
+      precios: [],
+    })
+
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('import_products_partial',
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          afectacion_tributaria_columna_presente: true,
+          productos: [expect.objectContaining({ afectacion_tributaria: 'gravado' })],
+        }),
+      }),
+    )
+  })
+
+  it('consulta el contexto fiscal y los precios existentes para el preview', async () => {
+    respuesta = { data: [productoFila], error: null }
+
+    const existentes = await consultarProductosExistentes('org-1', ['MED-001'])
+
+    expect(cadena.select).toHaveBeenCalledWith(
+      'code,tax_affectation,sale_price,minimum_sale_price',
+    )
+    expect(existentes.get('MED-001')).toEqual({
+      codigo: 'MED-001',
+      afectacionTributaria: 'por-definir',
+      precioVenta: 15,
+      precioMinimo: 12,
     })
   })
 

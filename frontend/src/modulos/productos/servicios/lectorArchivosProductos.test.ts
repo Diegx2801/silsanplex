@@ -169,6 +169,52 @@ describe('analizarArchivosProductos', () => {
     })
   })
 
+  it('distingue la ausencia de AfectacionTributaria de una celda vacía o explícita', async () => {
+    const encabezadosConAfectacion = [
+      ...encabezadosProductos,
+      'AfectacionTributaria',
+    ]
+
+    const ausente = await analizarArchivosProductos(
+      archivoProductosValido(),
+      archivoPreciosValido(),
+    )
+    expect(ausente.datos.afectacionTributariaColumnaPresente).toBe(false)
+    expect(ausente.datos.productos[0]).not.toHaveProperty(
+      'afectacionTributaria',
+    )
+
+    const vacia = await analizarArchivosProductos(
+      crearArchivo('Productos.xlsx', encabezadosConAfectacion, [
+        '0001',
+        'Producto uno',
+        'Línea',
+        'SubLínea',
+        'Marca',
+        '',
+      ]),
+      archivoPreciosValido(),
+    )
+    expect(vacia.datos.afectacionTributariaColumnaPresente).toBe(true)
+    expect(vacia.datos.productos[0]).toHaveProperty('afectacionTributaria', '')
+
+    const explicita = await analizarArchivosProductos(
+      crearArchivo('Productos.xlsx', encabezadosConAfectacion, [
+        '0001',
+        'Producto uno',
+        'Línea',
+        'SubLínea',
+        'Marca',
+        ' GRAVADO ',
+      ]),
+      archivoPreciosValido(),
+    )
+    expect(explicita.datos.productos[0]).toHaveProperty(
+      'afectacionTributaria',
+      'gravado',
+    )
+  })
+
   it('permite exactamente 1000 filas de productos', async () => {
     const resultado = await analizarArchivosProductos(
       crearArchivoConFilas('Productos.xlsx', encabezadosProductos, filasProductos(1000)),

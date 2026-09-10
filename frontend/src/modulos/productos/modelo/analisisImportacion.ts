@@ -51,6 +51,7 @@ export interface FilaProductoImportacion {
   controlVencimiento: boolean
   serialControl?: boolean
   ventaReceta: boolean
+  afectacionTributaria?: string
 }
 
 export interface FilaPrecioImportacion {
@@ -69,6 +70,7 @@ export interface FilaPrecioImportacion {
 export interface DatosImportacionProductos {
   productos: FilaProductoImportacion[]
   precios: FilaPrecioImportacion[]
+  afectacionTributariaColumnaPresente?: boolean
 }
 
 export type TipoFilaImportacion = 'producto' | 'precio'
@@ -80,7 +82,14 @@ export interface FilaImportacionObservada {
   codigo: string
   estado: EstadoFilaImportacion
   motivo: string
-  tipoAviso?: 'sin-precio' | 'precio-cero' | 'minimo-sin-precio' | 'inc-igv-ambiguo'
+  tipoAviso?:
+    | 'sin-precio'
+    | 'precio-cero'
+    | 'minimo-sin-precio'
+    | 'inc-igv-ambiguo'
+    | 'afectacion-pendiente'
+    | 'inc-igv-invalido'
+    | 'afectacion-invalida'
 }
 
 export interface FilaImportacionRechazada {
@@ -101,6 +110,7 @@ export interface ResultadoImportacionPersistida {
   fallidos: number
   sinCambios: number
   filasRechazadas: FilaImportacionRechazada[]
+  advertencias?: FilaImportacionRechazada[]
 }
 
 const gruposUnidades: Record<string, string[]> = {
@@ -113,6 +123,24 @@ function unidadCanonica(valor: string) {
   return Object.entries(gruposUnidades).find(([, variantes]) => variantes.includes(unidad))?.[0] ?? unidad
 }
 const precioMaximo = 999_999_999_999.99
+
+export const valoresIncIgv = {
+  si: 'S\u00ED',
+  no: 'No',
+  pendiente: 'Pendiente',
+  vacio: '',
+} as const
+
+export const valoresAfectacionTributaria = {
+  gravado: 'gravado',
+  exonerado: 'exonerado',
+  inafecto: 'inafecto',
+  porDefinir: 'por-definir',
+} as const
+
+export type IncIgvCanonico = typeof valoresIncIgv[keyof typeof valoresIncIgv]
+export type AfectacionTributariaCanonica =
+  typeof valoresAfectacionTributaria[keyof typeof valoresAfectacionTributaria]
 
 const normalizar = (valor: string) => valor.trim().toLocaleUpperCase('es-PE')
 
@@ -157,6 +185,9 @@ function firmaProducto(fila: FilaImportacion) {
     fila.ControlVencimiento,
     fila.ControlSerie,
     fila.VentaReceta,
+    Object.prototype.hasOwnProperty.call(fila, 'AfectacionTributaria')
+      ? `presente:${fila.AfectacionTributaria ?? ''}`
+      : 'ausente',
   ]
     .map((valor) => normalizar(valor ?? ''))
     .join('|')
@@ -172,7 +203,7 @@ function firmaPrecio(fila: FilaImportacion) {
     fila.Producto,
     fila.Medida,
     precio === '' ? '' : String(Number(precio)),
-    fila.IncIGV,
+    normalizarIncIgv(fila.IncIGV ?? ''),
     fila.CostoBase,
     fila.PrecioMinimo,
     fila.Equivalencia,
@@ -184,6 +215,10 @@ function firmaPrecio(fila: FilaImportacion) {
 
 function filaProducto(fila: FilaImportacion, indice: number): FilaProductoImportacion {
   const serialControl = normalizarBooleanoOpcional(fila.ControlSerie ?? '')
+  const afectacionPresente = Object.prototype.hasOwnProperty.call(
+    fila,
+    'AfectacionTributaria',
+  )
 
   return {
     fila: indice + 2,
@@ -206,19 +241,67 @@ function filaProducto(fila: FilaImportacion, indice: number): FilaProductoImport
       normalizarBooleano(fila.ControlVencimiento ?? '') === true,
     ...(serialControl === undefined ? {} : { serialControl }),
     ventaReceta: normalizarBooleano(fila.VentaReceta ?? '') === true,
+    ...(afectacionPresente
+      ? {
+          afectacionTributaria: normalizarAfectacionTributaria(
+            fila.AfectacionTributaria ?? '',
+          ),
+        }
+      : {}),
   }
 }
 
-function normalizarIncIgv(valor: string) {
-  switch (normalizar(valor)) {
+export function normalizarIncIgv(valor: string): string {
+  const valorNormalizado = valor
+    .trim()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toUpperCase()
+
+  switch (valorNormalizado) {
     case 'SI':
-    case 'SÍ':
-      return 'Sí'
+      return valoresIncIgv.si
     case 'NO':
-      return 'No'
+      return valoresIncIgv.no
+    case 'PENDIENTE':
+      return valoresIncIgv.pendiente
+    case '':
+      return valoresIncIgv.vacio
     default:
-      return 'Pendiente'
+      return valor.trim()
   }
+}
+
+export function esIncIgvValido(valor: string): valor is IncIgvCanonico {
+  return Object.values(valoresIncIgv).includes(valor as IncIgvCanonico)
+}
+
+export function normalizarAfectacionTributaria(valor: string): string {
+  const valorNormalizado = valor.trim().toLocaleLowerCase('es-PE')
+  switch (valorNormalizado) {
+    case valoresAfectacionTributaria.gravado:
+    case valoresAfectacionTributaria.exonerado:
+    case valoresAfectacionTributaria.inafecto:
+    case valoresAfectacionTributaria.porDefinir:
+      return valorNormalizado
+    case 'por definir':
+      return valoresAfectacionTributaria.porDefinir
+    case '':
+      return ''
+    default:
+      return valor.trim()
+  }
+}
+
+export function esAfectacionTributariaValida(
+  valor: string,
+): valor is AfectacionTributariaCanonica | '' {
+  return (
+    valor === '' ||
+    Object.values(valoresAfectacionTributaria).includes(
+      valor as AfectacionTributariaCanonica,
+    )
+  )
 }
 
 function normalizarBooleano(valor: string) {
@@ -275,6 +358,7 @@ function primerosPorCodigo<T>(
 function crearDatosImportacion(
   productos: FilaImportacion[],
   precios: FilaImportacion[],
+  afectacionTributariaColumnaPresente: boolean,
 ): DatosImportacionProductos {
   const productosNormalizados = productos.map(filaProducto)
   const preciosNormalizados = precios.map(filaPrecio)
@@ -295,6 +379,7 @@ function crearDatosImportacion(
           numeric: true,
         }),
     ),
+    afectacionTributariaColumnaPresente,
   }
 }
 
@@ -320,10 +405,20 @@ function agregarObservaciones(
   }
 }
 
+export interface OpcionesAnalisisImportacion {
+  afectacionTributariaColumnaPresente?: boolean
+}
+
 export function analizarFilasImportacion(
   productos: FilaImportacion[],
   precios: FilaImportacion[],
+  opciones: OpcionesAnalisisImportacion = {},
 ): ResultadoImportacion {
+  const afectacionTributariaColumnaPresente =
+    opciones.afectacionTributariaColumnaPresente ??
+    productos.some((fila) =>
+      Object.prototype.hasOwnProperty.call(fila, 'AfectacionTributaria'),
+    )
   const productosPorCodigo = agruparPor(productos, (fila) =>
     normalizar(fila.Codigo ?? ''),
   )
@@ -466,6 +561,45 @@ export function analizarFilasImportacion(
     )
   }
 
+  const productosConAfectacionInvalida = productos.filter((fila) => {
+    const columnaPresente = Object.prototype.hasOwnProperty.call(
+      fila,
+      'AfectacionTributaria',
+    )
+    if (!columnaPresente) return false
+    const afectacion = normalizarAfectacionTributaria(
+      fila.AfectacionTributaria ?? '',
+    )
+    return !esAfectacionTributariaValida(afectacion)
+  })
+  if (productosConAfectacionInvalida.length) {
+    const filasInvalidas = new Set(productosConAfectacionInvalida)
+    const detalle =
+      'AfectacionTributaria solo admite gravado, exonerado, inafecto o por-definir.'
+    hallazgos.push({
+      id: 'afectaciones-invalidas',
+      nivel: 'bloqueo',
+      titulo: 'Afectaciones tributarias invalidas',
+      detalle,
+      cantidad: productosConAfectacionInvalida.length,
+      unidad: 'fila',
+      ejemplos: ejemplosLimitados(
+        productosConAfectacionInvalida.map((fila) => fila.Codigo ?? ''),
+      ),
+    })
+    for (const [indice, fila] of productos.entries()) {
+      if (!filasInvalidas.has(fila)) continue
+      filasObservadas.push({
+        tipo: 'producto',
+        fila: indice + 2,
+        codigo: normalizar(fila.Codigo ?? ''),
+        estado: 'rechazada',
+        motivo: detalle,
+        tipoAviso: 'afectacion-invalida',
+      })
+    }
+  }
+
   const codigosPrecioSinProducto = [...codigosPrecio].filter(
     (codigo) => !codigosProducto.has(codigo),
   )
@@ -566,7 +700,7 @@ export function analizarFilasImportacion(
   const preciosInvalidos = precios.filter((fila) => {
     const precio = (fila.Precio_venta ?? '').trim()
     const unidadMedida = (fila.Medida ?? '').trim()
-    const incIgv = normalizar(fila.IncIGV ?? '')
+    const incIgv = normalizarIncIgv(fila.IncIGV ?? '')
     const precioNumerico = precio === '' ? null : Number(normalizarPrecio(precio))
     const costo = (fila.CostoBase ?? '').trim()
     const precioMinimo = (fila.PrecioMinimo ?? '').trim()
@@ -580,8 +714,7 @@ export function analizarFilasImportacion(
         precioNumerico !== null &&
         Number.isFinite(precioNumerico) &&
         precioNumerico <= precioMaximo)
-    const incIgvValido =
-      incIgv === '' || ['SI', 'SÍ', 'NO', 'PENDIENTE'].includes(incIgv)
+    const incIgvValido = esIncIgvValido(incIgv)
     const minimoNoSuperaVenta =
       !precioMinimo || !precio || Number(normalizarPrecio(precioMinimo)) <= Number(normalizarPrecio(precio))
     return !precioValido || !numeroMonetarioValido(costo) ||
@@ -611,6 +744,9 @@ export function analizarFilasImportacion(
         fila: indice + 2,
         codigo: normalizar(fila.CodigoProducto ?? ''),
         estado: 'rechazada',
+        tipoAviso: !esIncIgvValido(normalizarIncIgv(fila.IncIGV ?? ''))
+          ? 'inc-igv-invalido'
+          : undefined,
         motivo:
           'El precio, la unidad de medida o el indicador de IGV no cumple las restricciones del catálogo persistente.',
       })
@@ -647,20 +783,83 @@ export function analizarFilasImportacion(
     }
   }
 
+  const afectacionesPorCodigo = new Map<string, string>()
+  for (const fila of productos) {
+    const codigo = normalizar(fila.Codigo ?? '')
+    if (!codigo || afectacionesPorCodigo.has(codigo)) continue
+    if (Object.prototype.hasOwnProperty.call(fila, 'AfectacionTributaria')) {
+      afectacionesPorCodigo.set(
+        codigo,
+        normalizarAfectacionTributaria(fila.AfectacionTributaria ?? ''),
+      )
+    } else {
+      afectacionesPorCodigo.set(codigo, '')
+    }
+  }
+
+  const preciosConAfectacionPendiente = precios.filter((fila) => {
+    if (!afectacionTributariaColumnaPresente) return false
+    const codigo = normalizar(fila.CodigoProducto ?? '')
+    return (
+      afectacionesPorCodigo.get(codigo) === valoresAfectacionTributaria.porDefinir &&
+      normalizarIncIgv(fila.IncIGV ?? '') === valoresIncIgv.si
+    )
+  })
+  if (preciosConAfectacionPendiente.length) {
+    const filasPendientes = new Set(preciosConAfectacionPendiente)
+    const detalle =
+      'El precio ya viene expresado como final, pero la clasificacion tributaria permanece por-definir.'
+    hallazgos.push({
+      id: 'afectacion-pendiente',
+      nivel: 'advertencia',
+      titulo: 'Clasificacion tributaria pendiente',
+      detalle,
+      cantidad: preciosConAfectacionPendiente.length,
+      unidad: 'fila',
+      ejemplos: ejemplosLimitados(
+        preciosConAfectacionPendiente.map((fila) => fila.CodigoProducto ?? ''),
+      ),
+    })
+    for (const [indice, fila] of precios.entries()) {
+      if (!filasPendientes.has(fila)) continue
+      filasObservadas.push({
+        tipo: 'precio',
+        fila: indice + 2,
+        codigo: normalizar(fila.CodigoProducto ?? ''),
+        estado: 'advertencia',
+        motivo: detalle,
+        tipoAviso: 'afectacion-pendiente',
+      })
+    }
+  }
+
   const preciosConIncIgvAmbiguo = precios.filter((fila) => {
-    const incIgv = normalizar(fila.IncIGV ?? '')
+    const incIgv = normalizarIncIgv(fila.IncIGV ?? '')
+    const afectacion = afectacionesPorCodigo.get(
+      normalizar(fila.CodigoProducto ?? ''),
+    )
     const precio = (fila.Precio_venta ?? '').trim()
     const precioMinimo = (fila.PrecioMinimo ?? '').trim()
-    return ['NO', 'PENDIENTE', ''].includes(incIgv) && (precio !== '' || precioMinimo !== '')
+    const determinista =
+      afectacion === valoresAfectacionTributaria.exonerado ||
+      afectacion === valoresAfectacionTributaria.inafecto ||
+      (afectacion === valoresAfectacionTributaria.gravado &&
+        incIgv === valoresIncIgv.no)
+    return (
+      esIncIgvValido(incIgv) &&
+      incIgv !== valoresIncIgv.si &&
+      !determinista &&
+      (precio !== '' || precioMinimo !== '')
+    )
   })
   if (preciosConIncIgvAmbiguo.length) {
-    const preciosConIncIgvAmbiguoSet = new Set(preciosConIncIgvAmbiguo)
+    const filasAmbiguas = new Set(preciosConIncIgvAmbiguo)
     const detalle =
-      'La afectación tributaria no puede determinarse con IncIGV. El producto se importará sin precio de venta y deberá completarse antes de utilizarlo comercialmente.'
+      'IncIGV no permite determinar la transformacion del precio fuente; el backend preservara o dejara pendiente el precio segun el SKU.'
     hallazgos.push({
       id: 'inc-igv-ambiguo',
       nivel: 'advertencia',
-      titulo: 'IncIGV no determina la afectación tributaria',
+      titulo: 'IncIGV no determina el precio final',
       detalle,
       cantidad: preciosConIncIgvAmbiguo.length,
       unidad: 'fila',
@@ -669,7 +868,7 @@ export function analizarFilasImportacion(
       ),
     })
     for (const [indice, fila] of precios.entries()) {
-      if (!preciosConIncIgvAmbiguoSet.has(fila)) continue
+      if (!filasAmbiguas.has(fila)) continue
       filasObservadas.push({
         tipo: 'precio',
         fila: indice + 2,
@@ -841,10 +1040,15 @@ export function analizarFilasImportacion(
   const codigosRechazados = new Set<string>([
     ...codigosAmbiguos.map(([codigo]) => codigo),
     ...productosInvalidos.map((fila) => normalizar(fila.Codigo ?? '')),
+    ...productosConAfectacionInvalida.map((fila) => normalizar(fila.Codigo ?? '')),
     ...codigosPrecioConflictos.map(([clave]) => clave.split('|')[0] ?? ''),
     ...preciosInvalidos.map((fila) => normalizar(fila.CodigoProducto ?? '')),
   ])
-  const datosAnalizados = crearDatosImportacion(productos, precios)
+  const datosAnalizados = crearDatosImportacion(
+    productos,
+    precios,
+    afectacionTributariaColumnaPresente,
+  )
   const productosImportables = datosAnalizados.productos.filter(
     (fila) => fila.codigo && !codigosRechazados.has(fila.codigo),
   )
@@ -854,6 +1058,7 @@ export function analizarFilasImportacion(
     precios: datosAnalizados.precios.filter((fila) =>
       codigosImportables.has(fila.codigoProducto) && !codigosRechazados.has(fila.codigoProducto),
     ),
+    afectacionTributariaColumnaPresente,
   }
 
   return {

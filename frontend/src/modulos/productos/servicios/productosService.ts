@@ -195,6 +195,19 @@ function mensajeError(error: PostgrestError, contexto: ContextoError) {
     }
     const mensajeLimite = mensajesLimite[error.message]
     if (mensajeLimite) return mensajeLimite
+
+    const mensajesImportacionC3: Record<string, string> = {
+      PRODUCT_IMPORT_INC_IGV_INVALID:
+        'IncIGV contiene un valor no reconocido; la fila no se importo.',
+      PRODUCT_IMPORT_TAX_AFFECTATION_INVALID:
+        'AfectacionTributaria contiene un valor no reconocido; la fila no se importo.',
+      PRODUCT_IMPORT_PRICE_OVERFLOW:
+        'El precio excede el rango permitido de numeric(14,2).',
+      PRODUCT_IMPORT_MINIMUM_SALE_PRICE_INVALID:
+        'El precio minimo no tiene una referencia valida o supera el precio final.',
+    }
+    const mensajeImportacionC3 = mensajesImportacionC3[error.message]
+    if (mensajeImportacionC3) return mensajeImportacionC3
   }
   if (error.code === '23514') return 'Los datos del producto no cumplen las reglas del catálogo'
 
@@ -469,7 +482,7 @@ export async function listarOpcionesProductos(
 }
 
 function construirPayloadImportacion(datos: DatosImportacionProductos) {
-  return {
+  const payload = {
     productos: datos.productos.map((fila) => ({
       fila: fila.fila,
       codigo: fila.codigo,
@@ -489,6 +502,9 @@ function construirPayloadImportacion(datos: DatosImportacionProductos) {
       control_lote: fila.controlLote,
       control_vencimiento: fila.controlVencimiento,
       ...(fila.serialControl === undefined ? {} : { control_serie: fila.serialControl }),
+      ...(datos.afectacionTributariaColumnaPresente
+        ? { afectacion_tributaria: fila.afectacionTributaria ?? '' }
+        : {}),
       venta_receta: fila.ventaReceta,
     })),
     precios: datos.precios.map((fila) => ({
@@ -504,6 +520,10 @@ function construirPayloadImportacion(datos: DatosImportacionProductos) {
       codigo_barras: fila.codigoBarras,
     })),
   }
+
+  return datos.afectacionTributariaColumnaPresente
+    ? { ...payload, afectacion_tributaria_columna_presente: true }
+    : payload
 }
 
 interface RespuestaImportacion {
@@ -516,6 +536,7 @@ interface RespuestaImportacion {
   fallidos: number
   sin_cambios: number
   filas_rechazadas: FilaImportacionRechazada[]
+  advertencias?: FilaImportacionRechazada[]
 }
 
 export async function importarProductos(
@@ -544,6 +565,9 @@ export async function importarProductos(
     filasRechazadas: Array.isArray(resultado.filas_rechazadas)
       ? resultado.filas_rechazadas
       : [],
+    ...(Array.isArray(resultado.advertencias)
+      ? { advertencias: resultado.advertencias }
+      : {}),
   }
 }
 
@@ -562,23 +586,45 @@ export async function crearProducto(
   return data as string
 }
 
-export async function consultarCodigosProductosExistentes(
+export interface ContextoProductoExistenteImportacion {
+  codigo: string
+  afectacionTributaria: 'gravado' | 'exonerado' | 'inafecto' | 'por-definir'
+  precioVenta: number | null
+  precioMinimo: number | null
+}
+
+export async function consultarProductosExistentes(
   organizationId: string,
   codigos: string[],
 ) {
-  const existentes = new Set<string>()
+  const existentes = new Map<string, ContextoProductoExistenteImportacion>()
   for (let inicio = 0; inicio < codigos.length; inicio += 100) {
     const lote = codigos.slice(inicio, inicio + 100)
     if (!lote.length) continue
     const { data, error } = await supabase
       .from('products')
-      .select('code')
+      .select('code,tax_affectation,sale_price,minimum_sale_price')
       .eq('organization_id', organizationId)
       .in('code', lote)
     if (error) throw new Error(mensajeError(error, 'consultar'))
-    for (const fila of data ?? []) existentes.add(String(fila.code).toUpperCase())
+    for (const fila of data ?? []) {
+      const codigo = String(fila.code).toUpperCase()
+      existentes.set(codigo, {
+        codigo,
+        afectacionTributaria: fila.tax_affectation,
+        precioVenta: fila.sale_price,
+        precioMinimo: fila.minimum_sale_price,
+      })
+    }
   }
   return existentes
+}
+
+export async function consultarCodigosProductosExistentes(
+  organizationId: string,
+  codigos: string[],
+) {
+  return new Set((await consultarProductosExistentes(organizationId, codigos)).keys())
 }
 
 export async function editarProducto(

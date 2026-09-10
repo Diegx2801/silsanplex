@@ -1,7 +1,6 @@
 import { utils, writeFile, type WorkBook } from 'xlsx'
 
 import {
-  afectacionesIgv,
   resumirProductos,
   type Producto,
 } from '@/modulos/productos/modelo/producto'
@@ -17,8 +16,9 @@ export interface FilaProductoExportada {
   Presentación: string
   'Unidad de medida': string
   'Unidades alternativas': string
-  'Afectación de IGV': string
-  'Precio de venta base': number | ''
+  AfectacionTributaria: string
+  'Precio de venta final': number | ''
+  'Precio mínimo final': number | ''
   'Registro sanitario': string
   'Control por lote': 'Sí' | 'No'
   'Control de vencimiento': 'Sí' | 'No'
@@ -38,8 +38,9 @@ const encabezados = [
   'Presentación',
   'Unidad de medida',
   'Unidades alternativas',
-  'Afectación de IGV',
-  'Precio de venta base',
+  'AfectacionTributaria',
+  'Precio de venta final',
+  'Precio mínimo final',
   'Registro sanitario',
   'Control por lote',
   'Control de vencimiento',
@@ -49,14 +50,13 @@ const encabezados = [
 ] satisfies (keyof FilaProductoExportada)[]
 
 const anchosColumnas = [
-  16, 20, 36, 18, 22, 18, 28, 26, 18, 36, 16, 22, 19, 18, 22, 18, 18, 12,
+  16, 20, 36, 18, 22, 18, 28, 26, 18, 36, 20, 22, 22, 19, 18, 22, 18, 18, 12,
 ].map((wch) => ({ wch }))
 
-function etiquetaAfectacionIgv(valor: Producto['afectacionIgv']) {
-  return (
-    afectacionesIgv.find((opcion) => opcion.valor === valor)?.etiqueta ??
-    'Por definir'
-  )
+function afectacionTributariaCanonica(valor: Producto['afectacionIgv']) {
+  return valor === 'gravado' || valor === 'exonerado' || valor === 'inafecto'
+    ? valor
+    : 'por-definir'
 }
 
 export function crearFilasProductos(
@@ -75,10 +75,11 @@ export function crearFilasProductos(
     'Unidades alternativas': producto.unidadesAlternativas
       .map((unidad) => `${unidad.unidadNombre || 'Unidad'} x ${unidad.equivalencia}`)
       .join('; '),
-    'Afectación de IGV': etiquetaAfectacionIgv(producto.afectacionIgv),
-    'Precio de venta base': producto.precioVenta
+    AfectacionTributaria: afectacionTributariaCanonica(producto.afectacionIgv),
+    'Precio de venta final': producto.precioVenta
       ? Number(producto.precioVenta)
       : '',
+    'Precio mínimo final': producto.precioMinimo ? Number(producto.precioMinimo) : '',
     'Registro sanitario': producto.registroSanitario,
     'Control por lote': producto.controlLote ? 'Sí' : 'No',
     'Control de vencimiento': producto.controlVencimiento ? 'Sí' : 'No',
@@ -113,7 +114,7 @@ export function crearLibroCatalogoProductos(
 
   hojaProductos['!cols'] = anchosColumnas
   hojaProductos['!autofilter'] = {
-    ref: `A1:R${ultimaFila}`,
+    ref: `A1:S${ultimaFila}`,
   }
 
   const hojaResumen = utils.aoa_to_sheet([
