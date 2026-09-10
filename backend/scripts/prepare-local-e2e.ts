@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
 import { config } from 'dotenv'
 
@@ -206,60 +206,55 @@ async function createInventoryFixture(
     .single()
   if (productError || !product) throw productError ?? new Error('No se creó el producto E2E.')
 
-  const { data: warehouses, error: warehousesError } = await admin
-    .from('warehouses')
-    .insert([
-      {
+  const warehouseResults = await Promise.all([
+    admin.rpc('save_warehouse', {
+      payload: {
         organization_id: organizationId,
+        operation_key: randomUUID(),
         code: sourceWarehouseCode,
         name: sourceWarehouseName,
         address: 'Fixture E2E FEFO',
-        created_by: actorId,
-        updated_by: actorId,
       },
-      {
+    }),
+    admin.rpc('save_warehouse', {
+      payload: {
         organization_id: organizationId,
+        operation_key: randomUUID(),
         code: destinationWarehouseCode,
         name: destinationWarehouseName,
         address: 'Fixture E2E FEFO',
-        created_by: actorId,
-        updated_by: actorId,
       },
-    ])
-    .select('id,code')
-  if (warehousesError || warehouses?.length !== 2) {
-    throw warehousesError ?? new Error('No se crearon los almacenes E2E.')
+    }),
+  ])
+  const failedWarehouse = warehouseResults.find((result) => result.error)
+  if (failedWarehouse?.error) throw failedWarehouse.error
+
+  const [sourceWarehouseId, destinationWarehouseId] = warehouseResults.map(
+    (result) => result.data,
+  )
+  if (
+    typeof sourceWarehouseId !== 'string'
+    || typeof destinationWarehouseId !== 'string'
+  ) {
+    throw new Error('Almacenes E2E incompletos.')
   }
-  const sourceWarehouse = warehouses.find((warehouse) => warehouse.code === sourceWarehouseCode)
-  const destinationWarehouse = warehouses.find((warehouse) => warehouse.code === destinationWarehouseCode)
-  if (!sourceWarehouse || !destinationWarehouse) throw new Error('Almacenes E2E incompletos.')
 
   const { data: locations, error: locationsError } = await admin
     .from('warehouse_locations')
-    .insert([
-      {
-        organization_id: organizationId,
-        warehouse_id: sourceWarehouse.id,
-        code: 'A-01',
-        name: 'Anaquel origen E2E',
-        created_by: actorId,
-        updated_by: actorId,
-      },
-      {
-        organization_id: organizationId,
-        warehouse_id: destinationWarehouse.id,
-        code: 'B-01',
-        name: 'Anaquel destino E2E',
-        created_by: actorId,
-        updated_by: actorId,
-      },
-    ])
     .select('id,warehouse_id')
-  if (locationsError || locations?.length !== 2) {
-    throw locationsError ?? new Error('No se crearon las ubicaciones E2E.')
+    .in('warehouse_id', [sourceWarehouseId, destinationWarehouseId])
+    .eq('code', 'GENERAL')
+  if (locationsError) throw locationsError
+
+  const sourceLocation = locations?.find(
+    (location) => location.warehouse_id === sourceWarehouseId,
+  )
+  const destinationLocation = locations?.find(
+    (location) => location.warehouse_id === destinationWarehouseId,
+  )
+  if (!sourceLocation || !destinationLocation) {
+    throw new Error('Ubicaciones generales E2E incompletas.')
   }
-  const sourceLocation = locations.find((location) => location.warehouse_id === sourceWarehouse.id)
-  if (!sourceLocation) throw new Error('Ubicación origen E2E incompleta.')
 
   const operationDate = new Date().toISOString().slice(0, 10)
   const movementResults = await Promise.all([
@@ -272,7 +267,7 @@ async function createInventoryFixture(
       product_id: product.id,
       movement_type: 'entrada',
       quantity: lot.quantity,
-      warehouse_id: sourceWarehouse.id,
+      warehouse_id: sourceWarehouseId,
       location_id: sourceLocation.id,
       stock_status: 'available',
       unit_cost: lot.unit_cost,

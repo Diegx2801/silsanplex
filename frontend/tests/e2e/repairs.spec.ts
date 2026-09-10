@@ -51,21 +51,20 @@ async function fixture(page: Page) {
     code: reference, description: `000 ${reference}`, unit_of_measure: 'UND', sale_price: 25,
     batch_control: false, expiration_control: false, serial_control: false,
   }).select('id').single())
-  const warehouse = await checked(api.from('warehouses').insert({ organization_id: organizationId,
-    created_by: session.user.id, updated_by: session.user.id,
+  const warehouseId = await checked(api.rpc('save_warehouse', { payload: {
+    organization_id: organizationId, operation_key: randomUUID(),
     code: reference, name: reference,
-  }).select('id').single())
-  const location = await checked(api.from('warehouse_locations').insert({ organization_id: organizationId,
-    created_by: session.user.id, updated_by: session.user.id,
-    warehouse_id: warehouse.id, code: 'A1', name: 'Reparaciones E2E',
-  }).select('id').single())
+  } })) as string
+  const location = await checked(api.from('warehouse_locations').select('id')
+    .eq('organization_id', organizationId).eq('warehouse_id', warehouseId)
+    .eq('code', 'GENERAL').single())
   await checked(api.rpc('record_inventory_movement', { payload: {
-    organization_id: organizationId, product_id: product.id, warehouse_id: warehouse.id,
+    organization_id: organizationId, product_id: product.id, warehouse_id: warehouseId,
     location_id: location.id, movement_type: 'entrada', quantity: 2, unit_cost: 10,
     stock_status: 'available', operation_date: new Date().toISOString().slice(0, 10), reason: reference,
   } }))
   return { api, organizationId, customerId, productId: product.id as string,
-    warehouseId: warehouse.id as string, locationId: location.id as string,
+    warehouseId, locationId: location.id as string,
     reference, userId: session.user.id as string }
 }
 
