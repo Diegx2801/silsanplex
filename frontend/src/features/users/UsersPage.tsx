@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 import { UserForm } from '@/features/users/UserForm'
+import { UserActionDialog, type UserActionKind } from '@/features/users/UserActionDialog'
 import { UsersTable } from '@/features/users/UsersTable'
 import {
   createUser,
@@ -28,13 +29,15 @@ export function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<ManagedUser | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
   const [busyUserId, setBusyUserId] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<{ user: ManagedUser; kind: UserActionKind } | null>(null)
 
   const usersQuery = useQuery({ queryKey: usersQueryKey, queryFn: listUsers })
 
   const saveMutation = useMutation({
     mutationFn: async (input: UserInput) => {
-      if (selectedUser) return updateUser(selectedUser.id, input)
+      if (selectedUser) return updateUser(selectedUser, input)
       return createUser(input)
     },
     onSuccess: async () => {
@@ -53,7 +56,13 @@ export function UsersPage() {
         (statusFilter === 'active' ? user.isActive : !user.isActive)
       const matchesSearch =
         !normalizedSearch ||
-        [user.fullName, user.email, user.phone ?? '', ...user.roleCodes]
+        [
+          user.fullName,
+          user.email,
+          user.phone ?? '',
+          user.isAdmin ? 'administrador total' : 'acceso operativo personalizado',
+          ...user.permissionCodes,
+        ]
           .join(' ')
           .toLocaleLowerCase('es')
           .includes(normalizedSearch)
@@ -66,7 +75,7 @@ export function UsersPage() {
     user: ManagedUser,
     action: () => Promise<unknown>,
     successMessage: string,
-  ) {
+  ): Promise<boolean> {
     setActionError(null)
     setNotice(null)
     setBusyUserId(user.id)
@@ -75,8 +84,10 @@ export function UsersPage() {
       await action()
       await queryClient.invalidateQueries({ queryKey: usersQueryKey })
       setNotice(successMessage)
+      return true
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'La operación falló.')
+      return false
     } finally {
       setBusyUserId(null)
     }
@@ -87,6 +98,7 @@ export function UsersPage() {
     setNotice(null)
     setActionError(null)
     saveMutation.reset()
+    setFormError(null)
     setFormOpen(true)
   }
 
@@ -95,40 +107,38 @@ export function UsersPage() {
     setNotice(null)
     setActionError(null)
     saveMutation.reset()
+    setFormError(null)
     setFormOpen(true)
   }
 
   function toggleStatus(user: ManagedUser) {
     const nextStatus = !user.isActive
-    const verb = nextStatus ? 'reactivar' : 'desactivar'
-
-    if (!window.confirm(`¿Deseas ${verb} a ${user.fullName}?`)) return
-
-    void executeUserAction(
-      user,
-      () => setUserStatus(user.id, nextStatus),
-      nextStatus ? 'Usuario reactivado.' : 'Usuario desactivado.',
-    )
+    setActionError(null)
+    setPendingAction({ user, kind: nextStatus ? 'activate' : 'deactivate' })
   }
 
   function resetPassword(user: ManagedUser) {
-    if (!window.confirm(`¿Enviar recuperación de contraseña a ${user.email}?`)) return
-
-    void executeUserAction(
-      user,
-      () => sendPasswordReset(user.id),
-      'Correo de recuperación enviado.',
-    )
+    setActionError(null)
+    setPendingAction({ user, kind: 'reset-password' })
   }
 
   function resendPendingInvitation(user: ManagedUser) {
-    if (!window.confirm(`¿Reenviar la invitación a ${user.email}?`)) return
+    setActionError(null)
+    setPendingAction({ user, kind: 'resend-invitation' })
+  }
 
-    void executeUserAction(
-      user,
-      () => resendInvitation(user.id),
-      'Invitación reenviada.',
-    )
+  async function confirmPendingAction() {
+    if (!pendingAction) return
+    const { user, kind } = pendingAction
+    const definitions = {
+      activate: { action: () => setUserStatus(user.id, true), message: 'Usuario reactivado.' },
+      deactivate: { action: () => setUserStatus(user.id, false), message: 'Usuario desactivado.' },
+      'reset-password': { action: () => sendPasswordReset(user.id), message: 'Correo de recuperación enviado.' },
+      'resend-invitation': { action: () => resendInvitation(user.id), message: 'Invitación reenviada.' },
+    } satisfies Record<UserActionKind, { action: () => Promise<unknown>; message: string }>
+    const definition = definitions[kind]
+    const succeeded = await executeUserAction(user, definition.action, definition.message)
+    if (succeeded) setPendingAction(null)
   }
 
   return (
@@ -140,7 +150,7 @@ export function UsersPage() {
             Control de usuarios
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Invita integrantes, asigna roles y administra su acceso a SILSAN.
+            Invita integrantes y define su acceso por módulos y capacidades.
           </p>
         </div>
         <Button size="lg" onClick={openCreateForm}>
@@ -154,7 +164,7 @@ export function UsersPage() {
           {notice}
         </p>
       ) : null}
-      {actionError ? (
+      {actionError && !pendingAction ? (
         <p role="alert" className="border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {actionError}
         </p>
@@ -183,7 +193,7 @@ export function UsersPage() {
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Buscar por nombre, correo o rol"
+                placeholder="Buscar por nombre, correo o acceso"
                 className="h-10 w-full rounded-md border bg-background ps-9 pe-3 text-sm outline-none focus:ring-2 focus:ring-ring"
               />
             </label>
@@ -240,21 +250,37 @@ export function UsersPage() {
         open={formOpen}
         user={selectedUser}
         isSubmitting={saveMutation.isPending}
+        submitError={formError}
         currentUserId={currentUser?.id ?? null}
         onOpenChange={(open) => {
           setFormOpen(open)
-          if (!open) setSelectedUser(null)
+          if (!open) {
+            setSelectedUser(null)
+            setFormError(null)
+          }
         }}
         onSubmit={async (values) => {
-          setActionError(null)
+          setFormError(null)
           setNotice(null)
           try {
             await saveMutation.mutateAsync(values)
           } catch (error) {
-            setActionError(error instanceof Error ? error.message : 'No se pudo guardar.')
+            setFormError(error instanceof Error ? error.message : 'No se pudo guardar.')
           }
         }}
       />
+      {pendingAction ? (
+        <UserActionDialog
+          open
+          kind={pendingAction.kind}
+          userName={pendingAction.user.fullName}
+          userEmail={pendingAction.user.email}
+          processing={busyUserId === pendingAction.user.id}
+          error={actionError}
+          onOpenChange={(open) => { if (!open) { setPendingAction(null); setActionError(null) } }}
+          onConfirm={() => void confirmPendingAction()}
+        />
+      ) : null}
     </div>
   )
 }

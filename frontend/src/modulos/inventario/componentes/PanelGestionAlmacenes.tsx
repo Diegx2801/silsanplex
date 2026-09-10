@@ -1,22 +1,19 @@
-import { AlertTriangle, ArrowLeftRight, Boxes, MapPin, ShieldAlert, Warehouse } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, Boxes, ShieldAlert } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { EstadoListadoInventario } from '@/modulos/inventario/componentes/EstadoListadoInventario'
 import { PaginacionInventario } from '@/modulos/inventario/componentes/PaginacionInventario'
+import { SelectorFiltrable } from '@/modulos/inventario/componentes/SelectorFiltrable'
 import { useDebounceInventario } from '@/modulos/inventario/estado/useDebounceInventario'
 import { useListadosAlmacen } from '@/modulos/inventario/estado/useListadosAlmacen'
 import {
-  esquemaAlmacen,
   esquemaReclasificacion,
   esquemaTransferencia,
-  esquemaUbicacion,
   etiquetasEstadoStock,
   type Almacen,
-  type DatosAlmacen,
   type DatosReclasificacion,
   type DatosTransferencia,
-  type DatosUbicacion,
   type UbicacionAlmacen,
 } from '@/modulos/inventario/modelo/almacen'
 import type { TamanioPaginaInventario } from '@/modulos/inventario/modelo/paginacionInventario'
@@ -27,8 +24,6 @@ interface Props {
   ubicaciones: UbicacionAlmacen[]
   productos: Producto[]
   puedeGestionar: boolean
-  crearAlmacen: (datos: DatosAlmacen) => Promise<string | undefined>
-  crearUbicacion: (datos: DatosUbicacion) => Promise<string | undefined>
   transferir: (datos: DatosTransferencia) => Promise<string | undefined>
   reclasificar: (datos: DatosReclasificacion) => Promise<string | undefined>
   configurar: (datos: { productoId: string; almacenId: string; ubicacionId: string; stockMinimo: number; diasVencimiento: number }) => Promise<string | undefined>
@@ -45,7 +40,24 @@ function Mensaje({ texto }: { texto: string }) {
 
 export function PanelGestionAlmacenes(props: Props) {
   const { almacenes, ubicaciones, productos, puedeGestionar } = props
-  const productosInventariables = productos.filter((producto) => producto.tipo === 'good')
+  const productosInventariables = useMemo(
+    () => productos.filter((producto) => producto.tipo === 'good'),
+    [productos],
+  )
+  const opcionesProductos = useMemo(
+    () => productosInventariables
+      .filter((producto) => producto.activo)
+      .map((producto) => ({
+        id: producto.id,
+        etiqueta: `${producto.codigo} · ${producto.descripcion}`,
+        textoBusqueda: producto.codigoBarras ?? '',
+      })),
+    [productosInventariables],
+  )
+  const almacenesActivos = useMemo(
+    () => almacenes.filter((almacen) => almacen.activo),
+    [almacenes],
+  )
   const [mensaje, setMensaje] = useState('')
   const [origenId, setOrigenId] = useState(props.almacenes[0]?.id ?? '')
   const [destinoId, setDestinoId] = useState(props.almacenes[1]?.id ?? '')
@@ -91,14 +103,14 @@ export function PanelGestionAlmacenes(props: Props) {
   const nombreAlmacen = (id: string) => props.almacenes.find((item) => item.id === id)?.nombre ?? 'Almacen'
 
   useEffect(() => {
-    const activos = props.almacenes.filter((almacen) => almacen.activo)
+    const activos = almacenesActivos
     if (!activos.some((almacen) => almacen.id === origenId)) setOrigenId(activos[0]?.id ?? '')
     if (!activos.some((almacen) => almacen.id === destinoId) || destinoId === origenId) {
       setDestinoId(activos.find((almacen) => almacen.id !== (origenId || activos[0]?.id))?.id ?? '')
     }
     if (!activos.some((almacen) => almacen.id === reclasificacionAlmacenId)) setReclasificacionAlmacenId(activos[0]?.id ?? '')
     if (!activos.some((almacen) => almacen.id === politicaAlmacenId)) setPoliticaAlmacenId(activos[0]?.id ?? '')
-  }, [destinoId, origenId, politicaAlmacenId, props.almacenes, reclasificacionAlmacenId])
+  }, [almacenesActivos, destinoId, origenId, politicaAlmacenId, reclasificacionAlmacenId])
 
   const resolver = async <T,>(resultado: { success: true; data: T } | { success: false; error: { issues: { message: string }[] } }, accion: (datos: T) => Promise<string | undefined>, exito: string) => {
     if (!resultado.success) {
@@ -107,20 +119,6 @@ export function PanelGestionAlmacenes(props: Props) {
     }
     const error = await accion(resultado.data)
     setMensaje(error ?? exito)
-  }
-
-  const guardarAlmacen = (evento: FormEvent<HTMLFormElement>) => {
-    evento.preventDefault()
-    const datos = new FormData(evento.currentTarget)
-    void resolver(esquemaAlmacen.safeParse({ codigo: valor(datos, 'codigo'), nombre: valor(datos, 'nombre'), direccion: valor(datos, 'direccion') }), props.crearAlmacen, 'Almacen creado correctamente.')
-    evento.currentTarget.reset()
-  }
-
-  const guardarUbicacion = (evento: FormEvent<HTMLFormElement>) => {
-    evento.preventDefault()
-    const datos = new FormData(evento.currentTarget)
-    void resolver(esquemaUbicacion.safeParse({ almacenId: valor(datos, 'almacenId'), codigo: valor(datos, 'codigo'), nombre: valor(datos, 'nombre'), descripcion: valor(datos, 'descripcion') }), props.crearUbicacion, 'Ubicacion creada correctamente.')
-    evento.currentTarget.reset()
   }
 
   const guardarTransferencia = (evento: FormEvent<HTMLFormElement>) => {
@@ -213,7 +211,7 @@ export function PanelGestionAlmacenes(props: Props) {
         <h3 className="flex items-center gap-2 font-semibold"><ArrowLeftRight className="size-5 text-primary" />Transferencia entre almacenes</h3>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <div><label className="field-label" htmlFor="transferencia-referencia">Referencia</label><input id="transferencia-referencia" name="referencia" required className="field-control" placeholder="TR-0001" /></div>
-          <div><label className="field-label" htmlFor="transferencia-producto">Producto</label><select id="transferencia-producto" name="productoId" className="field-control">{productosInventariables.filter((p) => p.activo).map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.descripcion}</option>)}</select></div>
+          <SelectorFiltrable id="transferencia-producto" name="productoId" etiqueta="Producto" opciones={opcionesProductos} />
           <div><label className="field-label" htmlFor="almacen-origen">Almacén origen</label><select id="almacen-origen" className="field-control" value={origenId} onChange={(e) => setOrigenId(e.target.value)}>{almacenes.filter((a) => a.activo).map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></div>
           <div><label className="field-label" htmlFor="ubicacion-origen">Ubicación origen</label><select id="ubicacion-origen" name="ubicacionOrigenId" className="field-control">{ubicacionesOrigen.map((u) => <option key={u.id} value={u.id}>{u.codigo} · {u.nombre}</option>)}</select></div>
           <div><label className="field-label" htmlFor="almacen-destino">Almacén destino</label><select id="almacen-destino" className="field-control" value={destinoId} onChange={(e) => setDestinoId(e.target.value)}>{almacenes.filter((a) => a.activo).map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></div>
@@ -230,9 +228,9 @@ export function PanelGestionAlmacenes(props: Props) {
       <form className="ledger-sheet p-5 sm:p-6" onSubmit={guardarReclasificacion}>
         <h3 className="flex items-center gap-2 font-semibold"><ShieldAlert className="size-5 text-primary" />Inmovilizar o liberar stock</h3>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2"><label className="field-label" htmlFor="reclasificar-producto">Producto</label><select id="reclasificar-producto" name="productoId" className="field-control">{productosInventariables.filter((p) => p.activo).map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.descripcion}</option>)}</select></div>
-          <div><label className="field-label" htmlFor="reclasificar-almacen">Almacén</label><select id="reclasificar-almacen" name="almacenId" className="field-control" value={reclasificacionAlmacenId} onChange={(e) => setReclasificacionAlmacenId(e.target.value)}>{almacenes.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></div>
-          <div><label className="field-label" htmlFor="reclasificar-ubicacion">Ubicación</label><select id="reclasificar-ubicacion" name="ubicacionId" className="field-control">{ubicaciones.filter((u) => u.almacenId === reclasificacionAlmacenId).map((u) => <option key={u.id} value={u.id}>{u.codigo} · {u.nombre}</option>)}</select></div>
+          <div className="sm:col-span-2"><SelectorFiltrable id="reclasificar-producto" name="productoId" etiqueta="Producto" opciones={opcionesProductos} /></div>
+          <div><label className="field-label" htmlFor="reclasificar-almacen">Almacén</label><select id="reclasificar-almacen" name="almacenId" className="field-control" value={reclasificacionAlmacenId} onChange={(e) => setReclasificacionAlmacenId(e.target.value)}>{almacenesActivos.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></div>
+          <div><label className="field-label" htmlFor="reclasificar-ubicacion">Ubicación</label><select id="reclasificar-ubicacion" name="ubicacionId" className="field-control">{ubicaciones.filter((u) => u.almacenId === reclasificacionAlmacenId && u.activa).map((u) => <option key={u.id} value={u.id}>{u.codigo} · {u.nombre}</option>)}</select></div>
           <div><label className="field-label" htmlFor="estado-origen">Estado actual</label><select id="estado-origen" name="estadoOrigen" className="field-control"><option value="available">Disponible</option><option value="quarantine">Cuarentena</option><option value="damaged">Dañado</option></select></div>
           <div><label className="field-label" htmlFor="estado-destino">Nuevo estado</label><select id="estado-destino" name="estadoDestino" className="field-control"><option value="quarantine">Cuarentena</option><option value="damaged">Dañado</option><option value="available">Disponible</option></select></div>
           <div><label className="field-label" htmlFor="reclasificar-cantidad">Cantidad</label><input id="reclasificar-cantidad" name="cantidad" required className="field-control" /></div>
@@ -244,13 +242,9 @@ export function PanelGestionAlmacenes(props: Props) {
       </form>
     </section> : null}
 
-    {puedeGestionar ? <section aria-labelledby="maestros-almacen" className="ledger-sheet">
-      <div className="border-b px-5 py-5 sm:px-6"><h2 id="maestros-almacen" className="flex items-center gap-2 text-lg font-semibold"><Warehouse className="size-5 text-primary" />Maestros y políticas</h2></div>
-      <div className="grid gap-px bg-border lg:grid-cols-3">
-        <form className="bg-background p-5" onSubmit={guardarAlmacen}><h3 className="font-medium">Nuevo almacén</h3><div className="mt-4 space-y-3"><label className="field-label">Código<input name="codigo" required className="field-control" placeholder="CENTRAL" /></label><label className="field-label">Nombre<input name="nombre" required className="field-control" placeholder="Almacén central" /></label><label className="field-label">Dirección<input name="direccion" className="field-control" placeholder="Dirección física" /></label></div><Button className="mt-4" variant="outline">Crear almacén</Button></form>
-        <form className="bg-background p-5" onSubmit={guardarUbicacion}><h3 className="flex items-center gap-2 font-medium"><MapPin className="size-4" />Nueva ubicación</h3><div className="mt-4 space-y-3"><label className="field-label">Almacén<select name="almacenId" className="field-control">{almacenes.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></label><label className="field-label">Código<input name="codigo" required className="field-control" placeholder="A-01-N2" /></label><label className="field-label">Nombre<input name="nombre" required className="field-control" placeholder="Pasillo / anaquel" /></label><label className="field-label">Descripción<input name="descripcion" className="field-control" placeholder="Referencia física" /></label></div><Button className="mt-4" variant="outline">Crear ubicación</Button></form>
-        <form className="bg-background p-5" onSubmit={guardarConfiguracion}><h3 className="flex items-center gap-2 font-medium"><Boxes className="size-4" />Política de alertas</h3><div className="mt-4 space-y-3"><label className="field-label">Producto<select name="productoId" className="field-control">{productosInventariables.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.descripcion}</option>)}</select></label><label className="field-label">Almacén<select name="almacenId" className="field-control" value={politicaAlmacenId} onChange={(e) => setPoliticaAlmacenId(e.target.value)}>{almacenes.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></label><label className="field-label">Ubicación predeterminada<select name="ubicacionId" className="field-control">{ubicaciones.filter((u) => u.almacenId === politicaAlmacenId).map((u) => <option key={u.id} value={u.id}>{u.codigo} · {u.nombre}</option>)}</select></label><label className="field-label">Stock mínimo<input name="stockMinimo" type="number" min="0" step="0.001" className="field-control" placeholder="0" /></label><label className="field-label">Alerta de vencimiento (días)<input name="diasVencimiento" type="number" min="0" max="3650" defaultValue="30" className="field-control" /></label></div><Button className="mt-4" variant="outline" disabled={!productosInventariables.length}>Guardar política</Button></form>
-      </div>
+    {puedeGestionar ? <section aria-labelledby="politicas-almacen" className="ledger-sheet">
+      <div className="border-b px-5 py-5 sm:px-6"><h2 id="politicas-almacen" className="flex items-center gap-2 text-lg font-semibold"><Boxes className="size-5 text-primary" />Política de alertas</h2><p className="mt-1 text-sm text-muted-foreground">Define la ubicación predeterminada y los umbrales por producto y almacén.</p></div>
+      <form className="grid gap-4 p-5 sm:p-6 lg:grid-cols-5 lg:items-end" onSubmit={guardarConfiguracion}><div className="lg:col-span-2"><SelectorFiltrable id="politica-producto" name="productoId" etiqueta="Producto" opciones={opcionesProductos} /></div><label className="field-label">Almacén<select name="almacenId" className="field-control" value={politicaAlmacenId} onChange={(e) => setPoliticaAlmacenId(e.target.value)}>{almacenesActivos.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}</select></label><label className="field-label">Ubicación predeterminada<select name="ubicacionId" className="field-control">{ubicaciones.filter((u) => u.almacenId === politicaAlmacenId && u.activa).map((u) => <option key={u.id} value={u.id}>{u.codigo} · {u.nombre}</option>)}</select></label><label className="field-label">Stock mínimo<input name="stockMinimo" type="number" min="0" step="0.001" className="field-control" placeholder="0" /></label><label className="field-label">Alerta de vencimiento (días)<input name="diasVencimiento" type="number" min="0" max="3650" defaultValue="30" className="field-control" /></label><Button className="lg:col-start-5" variant="outline" disabled={!productosInventariables.length || !almacenesActivos.length}>Guardar política</Button></form>
     </section> : null}
 
     <section aria-labelledby="kardex-title" className="ledger-sheet">

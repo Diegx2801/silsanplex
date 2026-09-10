@@ -96,9 +96,13 @@ function waitForRestResponse(
 async function expectSuccessful(responsePromise: Promise<Response>) {
   const response = await responsePromise
   expect(await response.finished()).toBeNull()
+  const failureBody = response.ok()
+    ? ''
+    : await response.text().catch(() => '')
+  const diagnostic = failureBody.trim() ? `\n${failureBody}` : ''
   expect(
     response.ok(),
-    `${response.request().method()} ${response.url()} respondió ${response.status()}`,
+    `${response.request().method()} ${response.url()} respondió ${response.status()}${diagnostic}`,
   ).toBeTruthy()
 }
 
@@ -176,6 +180,8 @@ test('aplica FEFO multilote y conserva kardex y valorización por almacén', asy
 
   const operationsRegion = page.getByRole('region', { name: 'Operaciones de almacén' })
   await operationsRegion.getByLabel('Referencia', { exact: true }).fill(transferReference)
+  await operationsRegion.getByLabel('Buscar producto', { exact: true }).first().fill(productCode)
+  await expect(operationsRegion.getByLabel('Producto', { exact: true }).first().locator('option', { hasText: productLabel })).toHaveCount(1)
   await operationsRegion.getByLabel('Producto', { exact: true }).first().selectOption({ label: productLabel })
   await operationsRegion.getByLabel('Almacén origen', { exact: true }).selectOption({ label: sourceWarehouseName })
   await operationsRegion.getByLabel('Almacén destino', { exact: true }).selectOption({ label: destinationWarehouseName })

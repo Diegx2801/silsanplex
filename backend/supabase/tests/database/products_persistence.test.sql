@@ -813,6 +813,10 @@ select is(
   (
     select count(*)
     from public.product_import_batches
+    where organization_id in (
+      'a1111111-1111-4111-8111-111111111111',
+      'a2222222-2222-4222-8222-222222222222'
+    )
   ),
   4::bigint,
   'cada resultado nuevo conserva un lote interno'

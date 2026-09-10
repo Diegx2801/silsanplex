@@ -1,7 +1,7 @@
 import { invokeEdgeFunction } from '@/lib/edgeFunctions'
 import type {
   ManagedUser,
-  RoleCode,
+  PermissionCode,
   UserInput,
 } from '@/features/users/userTypes'
 
@@ -13,7 +13,9 @@ interface RawManagedUser {
   phone: string | null
   is_active: boolean
   auth_confirmed_at: string | null
-  role_codes: RoleCode[]
+  permission_codes: PermissionCode[]
+  is_admin: boolean
+  access_version: number
   created_at: string
   updated_at: string
 }
@@ -33,7 +35,9 @@ export async function listUsers(): Promise<ManagedUser[]> {
     phone: user.phone,
     isActive: user.is_active,
     authConfirmedAt: user.auth_confirmed_at,
-    roleCodes: user.role_codes,
+    permissionCodes: user.permission_codes,
+    isAdmin: user.is_admin,
+    accessVersion: user.access_version,
     createdAt: user.created_at,
     updatedAt: user.updated_at,
   }))
@@ -46,10 +50,14 @@ export async function createUser(input: UserInput) {
   })
 }
 
-export async function updateUser(userId: string, input: UserInput) {
+export async function updateUser(
+  user: Pick<ManagedUser, 'id' | 'accessVersion'>,
+  input: UserInput,
+) {
   return invokeAdminUsers<{ userId: string }>({
     action: 'update',
-    userId,
+    userId: user.id,
+    accessVersion: user.accessVersion,
     ...input,
   })
 }

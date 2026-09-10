@@ -1,29 +1,17 @@
 import { adminUserRequestSchema } from './schemas.ts'
 
-Deno.test('permite crear y editar técnicos sin rol ADMIN', () => {
-  for (const action of ['create', 'update']) {
-    const result = adminUserRequestSchema.safeParse({
-      action, userId: '11111111-1111-4111-8111-111111111111',
-      email: 'tecnico@silsan.com', fullName: 'Técnico Reparaciones',
-      roleCodes: ['TECNICO_REPARACIONES'],
-    })
-    assert(result.success, `El rol técnico fue rechazado en ${action}`)
-    assert('roleCodes' in result.data && result.data.roleCodes.length === 1
-      && result.data.roleCodes[0] === 'TECNICO_REPARACIONES', 'Se alteró el rol solicitado')
-  }
-})
-
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
 }
 
-Deno.test('acepta una solicitud válida de creación', () => {
+Deno.test('acepta una creación con permisos operativos explícitos', () => {
   const result = adminUserRequestSchema.safeParse({
     action: 'create',
     email: 'USUARIO@SILSAN.COM',
     fullName: 'Usuario SILSAN',
-    phone: '',
-    roleCodes: ['VENTAS', 'ALMACEN'],
+    phone: '+51 999-888-777',
+    isAdmin: false,
+    permissionCodes: ['SALES_VIEW', 'SALES_MANAGE'],
   })
 
   assert(result.success, 'La solicitud válida fue rechazada')
@@ -31,15 +19,107 @@ Deno.test('acepta una solicitud válida de creación', () => {
   assert(result.data.email === 'usuario@silsan.com', 'El correo no se normalizó')
 })
 
-Deno.test('rechaza una creación sin roles', () => {
+Deno.test('acepta crear un administrador sin permisos directos', () => {
+  const result = adminUserRequestSchema.safeParse({
+    action: 'create',
+    email: 'admin@silsan.com',
+    fullName: 'Administrador SILSAN',
+    isAdmin: true,
+    permissionCodes: [],
+  })
+
+  assert(result.success, 'La creación del administrador fue rechazada')
+})
+
+Deno.test('rechaza una cuenta operativa sin permisos', () => {
   const result = adminUserRequestSchema.safeParse({
     action: 'create',
     email: 'usuario@silsan.com',
     fullName: 'Usuario SILSAN',
-    roleCodes: [],
+    isAdmin: false,
+    permissionCodes: [],
   })
 
-  assert(!result.success, 'La solicitud sin roles fue aceptada')
+  assert(!result.success, 'La solicitud sin permisos fue aceptada')
+})
+
+Deno.test('impide asignar permisos directos a un administrador', () => {
+  const result = adminUserRequestSchema.safeParse({
+    action: 'create',
+    email: 'admin@silsan.com',
+    fullName: 'Administrador SILSAN',
+    isAdmin: true,
+    permissionCodes: ['PRODUCTS_VIEW'],
+  })
+
+  assert(!result.success, 'La combinación ambigua de accesos fue aceptada')
+})
+
+Deno.test('rechaza permisos administrativos y códigos desconocidos', () => {
+  for (const permissionCode of ['USERS_MANAGE', 'ADMIN', 'UNKNOWN_PERMISSION']) {
+    const result = adminUserRequestSchema.safeParse({
+      action: 'create',
+      email: 'usuario@silsan.com',
+      fullName: 'Usuario SILSAN',
+      isAdmin: false,
+      permissionCodes: [permissionCode],
+    })
+
+    assert(!result.success, `El permiso no delegable ${permissionCode} fue aceptado`)
+  }
+})
+
+Deno.test('rechaza permisos operativos duplicados', () => {
+  const result = adminUserRequestSchema.safeParse({
+    action: 'create',
+    email: 'usuario@silsan.com',
+    fullName: 'Usuario SILSAN',
+    isAdmin: false,
+    permissionCodes: ['INVENTORY_VIEW', 'INVENTORY_VIEW'],
+  })
+
+  assert(!result.success, 'Los permisos duplicados fueron aceptados')
+})
+
+Deno.test('exige la versión de accesos al editar', () => {
+  const baseRequest = {
+    action: 'update' as const,
+    userId: '11111111-1111-4111-8111-111111111111',
+    email: 'usuario@silsan.com',
+    fullName: 'Usuario SILSAN',
+    isAdmin: false,
+    permissionCodes: ['INVENTORY_VIEW'],
+  }
+
+  assert(!adminUserRequestSchema.safeParse(baseRequest).success, 'Se aceptó una edición sin versión')
+  assert(
+    !adminUserRequestSchema.safeParse({ ...baseRequest, accessVersion: 0 }).success,
+    'Se aceptó una versión inexistente',
+  )
+  assert(
+    adminUserRequestSchema.safeParse({ ...baseRequest, accessVersion: 1 }).success,
+    'Se rechazó una edición con versión válida',
+  )
+})
+
+Deno.test('el teléfono es opcional y se valida solamente cuando se informa', () => {
+  const baseRequest = {
+    action: 'create' as const,
+    email: 'usuario@silsan.com',
+    fullName: 'Usuario SILSAN',
+    isAdmin: false,
+    permissionCodes: ['PRODUCTS_VIEW'],
+  }
+
+  assert(adminUserRequestSchema.safeParse(baseRequest).success, 'Se hizo obligatorio el teléfono')
+  assert(
+    !adminUserRequestSchema.safeParse({ ...baseRequest, phone: 'abc123' }).success,
+    'Se aceptaron letras en el teléfono',
+  )
+  assert(
+    !adminUserRequestSchema.safeParse({ ...baseRequest, phone: '12345' }).success,
+    'Se aceptó un teléfono demasiado corto',
+  )
 })
 
 Deno.test('rechaza identificadores de usuario inválidos', () => {

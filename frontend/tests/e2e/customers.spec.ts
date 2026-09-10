@@ -66,5 +66,6 @@ test('previsualiza e importa clientes desde un archivo de Codeplex', async ({ pa
   await importDialog.getByRole('button', { name: 'Importar 1 filas' }).click()
   await expect(importDialog.getByText(/Importación finalizada: 1 creados/)).toBeVisible()
   await importDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Buscar', exact: true }).fill(uniqueDocument)
   await expect(page.getByText(uniqueName)).toBeVisible()
 })

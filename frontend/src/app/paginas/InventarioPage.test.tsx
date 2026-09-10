@@ -15,7 +15,9 @@ vi.mock('@/modulos/productos/estado/useProductos', () => ({
 }))
 vi.mock('@/modulos/inventario/estado/useAlmacenes', () => ({
   useAlmacenes: () => ({
-    almacenes: [], ubicaciones: [], crearAlmacen: vi.fn(), crearUbicacion: vi.fn(),
+    almacenes: [], ubicaciones: [], cargando: false, error: '', reintentar: vi.fn(),
+    guardarAlmacen: vi.fn(), guardarUbicacion: vi.fn(),
+    cambiarEstadoAlmacen: vi.fn(), cambiarEstadoUbicacion: vi.fn(),
     transferir: vi.fn(), reclasificar: vi.fn(), configurar: vi.fn(),
   }),
 }))

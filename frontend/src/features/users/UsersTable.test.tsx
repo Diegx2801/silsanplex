@@ -12,7 +12,9 @@ const usuarioInactivo: ManagedUser = {
   phone: null,
   isActive: false,
   authConfirmedAt: '2026-08-20T12:00:00.000Z',
-  roleCodes: ['VENTAS'],
+  isAdmin: false,
+  permissionCodes: ['SALES_VIEW'],
+  accessVersion: 1,
   createdAt: '2026-08-20T12:00:00.000Z',
   updatedAt: '2026-08-20T12:00:00.000Z',
 }

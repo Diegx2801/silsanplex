@@ -26,19 +26,43 @@ function errorAlmacen(error: { code?: string; message?: string }) {
   const mensaje = error.message ?? ''
   if (mensaje.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no pueden transferirse ni administrarse como inventario.'
   if (mensaje.includes('INVENTORY_FEFO_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock asignable disponible según FEFO.'
-  if (mensaje.includes('INVENTORY_INSUFFICIENT_STOCK')) return 'La operacion supera el stock disponible del lote y ubicacion seleccionados.'
+  if (mensaje.includes('INVENTORY_INSUFFICIENT_STOCK')) return 'La operación supera el stock disponible del lote y ubicación seleccionados.'
   if (mensaje.includes('INVENTORY_MAXIMUM_STOCK_EXCEEDED')) return 'La operación superaría el stock máximo configurado para el producto.'
-  if (mensaje.includes('TRANSFER_WAREHOUSES_MUST_DIFFER')) return 'El almacen de destino debe ser diferente al de origen.'
-  if (mensaje.includes('LOCATION_UNAVAILABLE')) return 'La ubicacion seleccionada no esta disponible.'
+  if (mensaje.includes('TRANSFER_WAREHOUSES_MUST_DIFFER')) return 'El almacén de destino debe ser diferente al de origen.'
+  if (mensaje.includes('LOCATION_UNAVAILABLE')) return 'La ubicación seleccionada no está disponible.'
+  if (mensaje.includes('WAREHOUSE_OPERATION_KEY_REUSED')) return 'La operación ya fue utilizada con otros datos. Vuelve a intentarlo.'
+  if (mensaje.includes('WAREHOUSE_CODE_DUPLICATE')) return 'Ya existe un almacén con ese código.'
+  if (mensaje.includes('WAREHOUSE_LOCATION_CODE_DUPLICATE')) return 'Ya existe una ubicación con ese código en el almacén.'
+  if (mensaje.includes('WAREHOUSE_CODE_INVALID')) return 'Revisa el código del almacén.'
+  if (mensaje.includes('WAREHOUSE_LOCATION_CODE_INVALID')) return 'Revisa el código de la ubicación.'
+  if (mensaje.includes('WAREHOUSE_NAME_INVALID')) return 'Revisa el nombre del almacén.'
+  if (mensaje.includes('WAREHOUSE_LOCATION_NAME_INVALID')) return 'Revisa el nombre de la ubicación.'
+  if (mensaje.includes('WAREHOUSE_STALE_WRITE') || mensaje.includes('WAREHOUSE_LOCATION_STALE_WRITE')) return 'El registro cambió mientras lo editabas. Recarga los datos e inténtalo nuevamente.'
+  if (mensaje.includes('WAREHOUSE_ACTIVE_LOCATION_REQUIRED')) return 'El almacén necesita al menos una ubicación activa.'
+  if (mensaje.includes('WAREHOUSE_HAS_STOCK')) return 'No puedes desactivar un almacén que todavía tiene stock.'
+  if (mensaje.includes('WAREHOUSE_HAS_RESERVATIONS')) return 'No puedes desactivar un almacén con reservas activas.'
+  if (mensaje.includes('WAREHOUSE_HAS_OPEN_PURCHASES')) return 'No puedes desactivar un almacén con compras pendientes.'
+  if (mensaje.includes('WAREHOUSE_HAS_OPEN_ORDERS')) return 'No puedes desactivar un almacén con pedidos pendientes.'
+  if (mensaje.includes('WAREHOUSE_LOCATION_LAST_ACTIVE')) return 'El almacén debe conservar al menos una ubicación activa.'
+  if (mensaje.includes('WAREHOUSE_LOCATION_HAS_STOCK')) return 'No puedes desactivar una ubicación que todavía tiene stock.'
+  if (mensaje.includes('WAREHOUSE_LOCATION_HAS_RESERVATIONS')) return 'No puedes desactivar una ubicación con reservas activas.'
+  if (mensaje.includes('WAREHOUSE_LOCATION_IS_DEFAULT')) return 'Cambia primero la ubicación predeterminada de los productos.'
   if (mensaje.includes('INVENTORY_FORBIDDEN') || error.code === '42501') return 'No tienes permiso para administrar almacenes.'
-  if (error.code === '23505') return 'El codigo o la referencia ya existe.'
-  return 'No se pudo completar la operacion de almacen.'
+  if (error.code === '23505') return 'El código o la referencia ya existe.'
+  return 'No se pudo completar la operación de almacén.'
+}
+
+function versionMaestro(version: number | undefined) {
+  if (!version || version < 1) {
+    throw new Error('No se pudo verificar la versión del registro. Recarga los datos e inténtalo nuevamente.')
+  }
+  return version
 }
 
 export async function cargarMaestrosAlmacen(organizationId: string) {
   const [almacenes, ubicaciones] = await Promise.all([
-    supabase.from('warehouses').select('id,code,name,address,is_active').eq('organization_id', organizationId).order('name'),
-    supabase.from('warehouse_locations').select('id,warehouse_id,code,name,description,is_active').eq('organization_id', organizationId).order('name'),
+    supabase.from('warehouses').select('id,code,name,address,is_active,lock_version').eq('organization_id', organizationId).order('name'),
+    supabase.from('warehouse_locations').select('id,warehouse_id,code,name,description,is_active,lock_version').eq('organization_id', organizationId).order('name'),
   ])
   const fallo = [almacenes, ubicaciones].find((resultado) => resultado.error)
   if (fallo?.error) throw new Error(errorAlmacen(fallo.error))
@@ -46,9 +70,11 @@ export async function cargarMaestrosAlmacen(organizationId: string) {
   return {
     almacenes: (almacenes.data ?? []).map((fila) => ({
       id: fila.id, codigo: fila.code, nombre: fila.name, direccion: fila.address ?? '', activo: fila.is_active,
+      version: Number(fila.lock_version),
     })) as Almacen[],
     ubicaciones: (ubicaciones.data ?? []).map((fila) => ({
       id: fila.id, almacenId: fila.warehouse_id, codigo: fila.code, nombre: fila.name, descripcion: fila.description ?? '', activa: fila.is_active,
+      version: Number(fila.lock_version),
     })) as UbicacionAlmacen[],
   }
 }
@@ -283,28 +309,101 @@ function mapearSaldoBucket(fila: Record<string, unknown>): SaldoInventario {
   }
 }
 
-export async function crearAlmacen(organizationId: string, userId: string, datos: DatosAlmacen) {
-  const { error } = await supabase.from('warehouses').insert({
+export async function crearAlmacen(
+  organizationId: string,
+  datos: DatosAlmacen,
+  operationKey = crypto.randomUUID(),
+) {
+  const { error } = await supabase.rpc('save_warehouse', { payload: {
     organization_id: organizationId,
+    operation_key: operationKey,
     code: datos.codigo,
     name: datos.nombre,
-    address: datos.direccion || null,
-    created_by: userId,
-    updated_by: userId,
-  })
+    address: datos.direccion,
+  } })
   if (error) throw new Error(errorAlmacen(error))
 }
 
-export async function crearUbicacion(organizationId: string, userId: string, datos: DatosUbicacion) {
-  const { error } = await supabase.from('warehouse_locations').insert({
+export async function crearUbicacion(
+  organizationId: string,
+  datos: DatosUbicacion,
+  operationKey = crypto.randomUUID(),
+) {
+  const { error } = await supabase.rpc('save_warehouse_location', { payload: {
     organization_id: organizationId,
+    operation_key: operationKey,
     warehouse_id: datos.almacenId,
     code: datos.codigo,
     name: datos.nombre,
-    description: datos.descripcion || null,
-    created_by: userId,
-    updated_by: userId,
-  })
+    description: datos.descripcion,
+  } })
+  if (error) throw new Error(errorAlmacen(error))
+}
+
+export async function editarAlmacen(
+  organizationId: string,
+  almacen: Almacen,
+  datos: DatosAlmacen,
+  operationKey = crypto.randomUUID(),
+) {
+  const { error } = await supabase.rpc('save_warehouse', { payload: {
+    id: almacen.id,
+    organization_id: organizationId,
+    operation_key: operationKey,
+    expected_lock_version: versionMaestro(almacen.version),
+    code: almacen.codigo,
+    name: datos.nombre,
+    address: datos.direccion,
+  } })
+  if (error) throw new Error(errorAlmacen(error))
+}
+
+export async function editarUbicacion(
+  organizationId: string,
+  ubicacion: UbicacionAlmacen,
+  datos: DatosUbicacion,
+  operationKey = crypto.randomUUID(),
+) {
+  const { error } = await supabase.rpc('save_warehouse_location', { payload: {
+    id: ubicacion.id,
+    organization_id: organizationId,
+    operation_key: operationKey,
+    expected_lock_version: versionMaestro(ubicacion.version),
+    warehouse_id: ubicacion.almacenId,
+    code: ubicacion.codigo,
+    name: datos.nombre,
+    description: datos.descripcion,
+  } })
+  if (error) throw new Error(errorAlmacen(error))
+}
+
+export async function cambiarEstadoAlmacen(
+  organizationId: string,
+  almacen: Almacen,
+  operationKey = crypto.randomUUID(),
+) {
+  const { error } = await supabase.rpc('set_warehouse_status', { payload: {
+    id: almacen.id,
+    organization_id: organizationId,
+    operation_key: operationKey,
+    expected_lock_version: versionMaestro(almacen.version),
+    is_active: !almacen.activo,
+  } })
+  if (error) throw new Error(errorAlmacen(error))
+}
+
+export async function cambiarEstadoUbicacion(
+  organizationId: string,
+  ubicacion: UbicacionAlmacen,
+  operationKey = crypto.randomUUID(),
+) {
+  const { error } = await supabase.rpc('set_warehouse_location_status', { payload: {
+    id: ubicacion.id,
+    organization_id: organizationId,
+    operation_key: operationKey,
+    expected_lock_version: versionMaestro(ubicacion.version),
+    is_active: !ubicacion.activa,
+  } })
   if (error) throw new Error(errorAlmacen(error))
 }
 

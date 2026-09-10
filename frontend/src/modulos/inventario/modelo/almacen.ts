@@ -10,6 +10,7 @@ export interface Almacen {
   nombre: string
   direccion: string
   activo: boolean
+  version?: number
 }
 
 export interface UbicacionAlmacen {
@@ -19,6 +20,7 @@ export interface UbicacionAlmacen {
   nombre: string
   descripcion: string
   activa: boolean
+  version?: number
 }
 
 export interface SaldoInventario {
@@ -132,16 +134,16 @@ const cantidadPositiva = z
   .refine((valor) => /^\d+(\.\d{1,3})?$/.test(valor) && Number(valor) > 0, 'Ingresa una cantidad mayor a cero')
 
 export const esquemaAlmacen = z.object({
-  codigo: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9._-]{0,19}$/, 'Usa letras, numeros, punto, guion o guion bajo'),
-  nombre: z.string().trim().min(2, 'Ingresa el nombre').max(80),
-  direccion: z.string().trim().max(180),
+  codigo: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9._-]{0,19}$/, 'Usa de 1 a 20 letras, números, puntos, guiones o guiones bajos'),
+  nombre: z.string().trim().min(2, 'Ingresa un nombre de al menos 2 caracteres').max(80, 'El nombre no puede superar 80 caracteres'),
+  direccion: z.string().trim().max(180, 'La dirección no puede superar 180 caracteres'),
 })
 
 export const esquemaUbicacion = z.object({
-  almacenId: z.string().uuid('Selecciona un almacen'),
-  codigo: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9._-]{0,29}$/, 'Codigo no valido'),
-  nombre: z.string().trim().min(2, 'Ingresa el nombre').max(80),
-  descripcion: z.string().trim().max(180),
+  almacenId: z.string().uuid('Selecciona un almacén'),
+  codigo: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9._-]{0,29}$/, 'Usa de 1 a 30 letras, números, puntos, guiones o guiones bajos'),
+  nombre: z.string().trim().min(2, 'Ingresa un nombre de al menos 2 caracteres').max(80, 'El nombre no puede superar 80 caracteres'),
+  descripcion: z.string().trim().max(180, 'La descripción no puede superar 180 caracteres'),
 })
 
 export const esquemaTransferencia = z.object({
