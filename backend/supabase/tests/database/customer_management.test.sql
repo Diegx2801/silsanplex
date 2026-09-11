@@ -1,6 +1,6 @@
 begin;
 
-select plan(34);
+select plan(38);
 
 select has_table('public', 'customers', 'existe customers');
 select has_table('public', 'customer_addresses', 'existe customer_addresses');
@@ -161,6 +161,64 @@ select lives_ok(
   'actualiza los hijos aun cuando un cliente antiguo no envía sus identificadores'
 );
 
+select lives_ok(
+  $$ select public.save_customer(
+    jsonb_build_object(
+      'id', (select id from public.customers where document_number = '20999999991'),
+      'documentType', 'RUC',
+      'documentNumber', '20999999991',
+      'legalName', 'Cliente editable S.A.C.',
+      'addresses', jsonb_build_array(
+        jsonb_build_object(
+          'id', (select id from public.customer_addresses where customer_id = (select id from public.customers where document_number = '20999999991') and address_type = 'FISCAL' and is_active),
+          'addressType', 'FISCAL',
+          'addressLine', 'Av. Actualizada 200',
+          'isDefault', true
+        ),
+        jsonb_build_object('addressType', 'DELIVERY', 'label', 'Entrega actual', 'addressLine', 'Av. Entrega 100', 'isDefault', true),
+        jsonb_build_object('addressType', 'DELIVERY', 'label', 'Entrega alterna', 'addressLine', 'Av. Entrega 200', 'isDefault', false)
+      ),
+      'contacts', jsonb_build_array(
+        jsonb_build_object(
+          'id', (select id from public.customer_contacts where customer_id = (select id from public.customers where document_number = '20999999991') and is_primary and is_active),
+          'fullName', 'Contacto actualizado',
+          'isPrimary', true
+        )
+      )
+    )
+  ) $$,
+  'crea dos direcciones de entrega con una principal'
+);
+
+select lives_ok(
+  $$ select public.save_customer(
+    jsonb_build_object(
+      'id', (select id from public.customers where document_number = '20999999991'),
+      'documentType', 'RUC',
+      'documentNumber', '20999999991',
+      'legalName', 'Cliente editable S.A.C.',
+      'addresses', jsonb_build_array(
+        jsonb_build_object(
+          'id', (select id from public.customer_addresses where customer_id = (select id from public.customers where document_number = '20999999991') and address_type = 'FISCAL' and is_active),
+          'addressType', 'FISCAL',
+          'addressLine', 'Av. Actualizada 200',
+          'isDefault', true
+        ),
+        jsonb_build_object('id', (select id from public.customer_addresses where label = 'Entrega alterna'), 'addressType', 'DELIVERY', 'label', 'Entrega alterna', 'addressLine', 'Av. Entrega 200', 'isDefault', true),
+        jsonb_build_object('id', (select id from public.customer_addresses where label = 'Entrega actual'), 'addressType', 'DELIVERY', 'label', 'Entrega actual', 'addressLine', 'Av. Entrega 100', 'isDefault', false)
+      ),
+      'contacts', jsonb_build_array(
+        jsonb_build_object(
+          'id', (select id from public.customer_contacts where customer_id = (select id from public.customers where document_number = '20999999991') and is_primary and is_active),
+          'fullName', 'Contacto actualizado',
+          'isPrimary', true
+        )
+      )
+    )
+  ) $$,
+  'permite cambiar la principal aunque el payload llegue en orden inverso'
+);
+
 reset role;
 
 select is(
@@ -190,6 +248,26 @@ select is(
    where customer.document_number = '20999999991' and contact.is_primary and contact.is_active),
   'Contacto actualizado',
   'reutiliza y actualiza el contacto principal'
+);
+select is(
+  (select count(*) from public.customer_addresses address
+   join public.customers customer on customer.id = address.customer_id
+   where customer.document_number = '20999999991'
+     and address.address_type = 'DELIVERY'
+     and address.is_active
+     and address.is_default),
+  1::bigint,
+  'mantiene una única dirección de entrega principal'
+);
+select is(
+  (select address.address_line from public.customer_addresses address
+   join public.customers customer on customer.id = address.customer_id
+   where customer.document_number = '20999999991'
+     and address.address_type = 'DELIVERY'
+     and address.is_active
+     and address.is_default),
+  'Av. Entrega 200',
+  'conserva la nueva dirección de entrega principal'
 );
 
 select * from finish();
