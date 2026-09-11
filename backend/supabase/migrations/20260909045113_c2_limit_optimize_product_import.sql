@@ -70,6 +70,8 @@ comment on function public.assert_product_import_limits(jsonb) is
 -- Las funciones se redefinen desde su estado activo para conservar sin cambios
 -- las capas historicas C1, P1D y P1E-1. Cada reemplazo esta protegido: si una
 -- definicion esperada cambia, la migracion falla en lugar de aplicar parcialmente.
+-- Normaliza funciones historicas creadas desde Windows; este archivo se conserva
+-- siempre con LF mediante .gitattributes para que los reemplazos sean portables.
 
 do $migration$
 declare

@@ -86,7 +86,7 @@ select lives_ok($$
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
     "location_id":"a5000000-0000-4000-8000-000000000001",
     "movement_type":"entrada","quantity":"5","unit_cost":"10",
-    "stock_status":"available","lot":"LOTE-PRIMERO","expiration_date":"2026-09-10",
+    "stock_status":"available","lot":"LOTE-PRIMERO","expiration_date":"2099-09-10",
     "operation_date":"2026-08-29","reason":"Ingreso FEFO primero"
   }'::jsonb)
 $$, 'registra el lote que vence primero');
@@ -98,7 +98,7 @@ select lives_ok($$
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
     "location_id":"a5000000-0000-4000-8000-000000000001",
     "movement_type":"entrada","quantity":"7","unit_cost":"20",
-    "stock_status":"available","lot":"LOTE-DESPUES","expiration_date":"2026-10-01",
+    "stock_status":"available","lot":"LOTE-DESPUES","expiration_date":"2099-10-01",
     "operation_date":"2026-08-29","reason":"Ingreso FEFO posterior"
   }'::jsonb)
 $$, 'registra el lote que vence despues');
@@ -110,7 +110,7 @@ select lives_ok($$
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
     "location_id":"a5000000-0000-4000-8000-000000000001",
     "movement_type":"entrada","quantity":"9","unit_cost":"5",
-    "stock_status":"quarantine","lot":"LOTE-CUARENTENA","expiration_date":"2026-09-01",
+    "stock_status":"quarantine","lot":"LOTE-CUARENTENA","expiration_date":"2099-09-01",
     "operation_date":"2026-08-29","reason":"No asignable por cuarentena"
   }'::jsonb)
 $$, 'registra un lote en cuarentena');
@@ -122,8 +122,8 @@ select lives_ok($$
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
     "location_id":"a5000000-0000-4000-8000-000000000001",
     "movement_type":"entrada","quantity":"8","unit_cost":"4",
-    "stock_status":"available","lot":"LOTE-VENCIDO","expiration_date":"2026-08-01",
-    "operation_date":"2026-08-01","reason":"Historico vencido"
+    "stock_status":"available","lot":"LOTE-VENCIDO","expiration_date":"2000-08-01",
+    "operation_date":"2000-08-01","reason":"Historico vencido"
   }'::jsonb)
 $$, 'registra un lote vencido historico');
 
@@ -138,7 +138,7 @@ insert into public.inventory_reservations (
   'a3000000-0000-4000-8000-000000000001',
   'a4000000-0000-4000-8000-000000000001',
   'a5000000-0000-4000-8000-000000000001',
-  'available', 'LOTE-PRIMERO', '2026-09-10', 4, 0, 'active',
+  'available', 'LOTE-PRIMERO', '2099-09-10', 4, 0, 'active',
   'test-fefo', 'a7000000-0000-4000-8000-000000000001',
   'a2000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001'
 );
@@ -154,8 +154,8 @@ select results_eq(
       and warehouse_id = 'a4000000-0000-4000-8000-000000000001'
     order by fefo_rank$$,
   $$values
-    ('LOTE-PRIMERO'::text, '2026-09-10'::date, 1.000::numeric, 1::bigint),
-    ('LOTE-DESPUES'::text, '2026-10-01'::date, 7.000::numeric, 2::bigint)$$,
+    ('LOTE-PRIMERO'::text, '2099-09-10'::date, 1.000::numeric, 1::bigint),
+    ('LOTE-DESPUES'::text, '2099-10-01'::date, 7.000::numeric, 2::bigint)$$,
   'candidatos excluyen vencido y cuarentena, descuentan reservas y ordenan por vencimiento'
 );
 
@@ -167,8 +167,8 @@ select results_eq(
       'a4000000-0000-4000-8000-000000000001', 6, null
     ) order by allocation_order$$,
   $$values
-    ('LOTE-PRIMERO'::text, '2026-09-10'::date, 1.000::numeric),
-    ('LOTE-DESPUES'::text, '2026-10-01'::date, 5.000::numeric)$$,
+    ('LOTE-PRIMERO'::text, '2099-09-10'::date, 1.000::numeric),
+    ('LOTE-DESPUES'::text, '2099-10-01'::date, 5.000::numeric)$$,
   'el plan distribuye la cantidad respetando FEFO'
 );
 
@@ -187,7 +187,7 @@ select throws_ok($$
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
     "location_id":"a5000000-0000-4000-8000-000000000001",
     "movement_type":"salida","quantity":"1","stock_status":"available",
-    "lot":"LOTE-DESPUES","expiration_date":"2026-10-01",
+    "lot":"LOTE-DESPUES","expiration_date":"2099-10-01",
     "operation_date":"2026-08-29","reason":"Intento fuera de FEFO"
   }'::jsonb)
 $$, 'P0001', 'INVENTORY_FEFO_VIOLATION', 'una salida manual no salta el primer lote asignable');
@@ -199,7 +199,7 @@ select lives_ok($$
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
     "location_id":"a5000000-0000-4000-8000-000000000001",
     "movement_type":"salida","quantity":"1","stock_status":"available",
-    "lot":"LOTE-PRIMERO","expiration_date":"2026-09-10",
+    "lot":"LOTE-PRIMERO","expiration_date":"2099-09-10",
     "operation_date":"2026-08-29","reason":"Salida FEFO"
   }'::jsonb)
 $$, 'permite consumir la parte no reservada del primer lote');
@@ -211,7 +211,7 @@ select lives_ok($$
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
     "location_id":"a5000000-0000-4000-8000-000000000001",
     "movement_type":"salida","quantity":"1","stock_status":"available",
-    "lot":"LOTE-DESPUES","expiration_date":"2026-10-01",
+    "lot":"LOTE-DESPUES","expiration_date":"2099-10-01",
     "operation_date":"2026-08-29","reason":"Primer lote totalmente reservado"
   }'::jsonb)
 $$, 'permite el siguiente lote si el anterior ya no es asignable');
@@ -223,7 +223,7 @@ select lives_ok($$
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
     "location_id":"a5000000-0000-4000-8000-000000000001",
     "movement_type":"entrada","quantity":"2","unit_cost":"15",
-    "stock_status":"available","lot":"LOTE-INTERMEDIO","expiration_date":"2026-09-20",
+    "stock_status":"available","lot":"LOTE-INTERMEDIO","expiration_date":"2099-09-20",
     "operation_date":"2026-08-29","reason":"Nuevo candidato intermedio"
   }'::jsonb)
 $$, 'registra un nuevo lote anterior al lote posterior');
@@ -238,7 +238,7 @@ select throws_ok($$
       "product_id":"a3000000-0000-4000-8000-000000000001",
       "source_location_id":"a5000000-0000-4000-8000-000000000001",
       "destination_location_id":"a5000000-0000-4000-8000-000000000002",
-      "quantity":"1","lot":"LOTE-DESPUES","expiration_date":"2026-10-01",
+      "quantity":"1","lot":"LOTE-DESPUES","expiration_date":"2099-10-01",
       "stock_status":"available"
     }]
   }'::jsonb)
@@ -260,7 +260,7 @@ select lives_ok($$
       "product_id":"a3000000-0000-4000-8000-000000000001",
       "source_location_id":"a5000000-0000-4000-8000-000000000001",
       "destination_location_id":"a5000000-0000-4000-8000-000000000002",
-      "quantity":"1","lot":"LOTE-INTERMEDIO","expiration_date":"2026-09-20",
+      "quantity":"1","lot":"LOTE-INTERMEDIO","expiration_date":"2099-09-20",
       "stock_status":"available"
     }]
   }'::jsonb)
@@ -311,7 +311,7 @@ select lives_ok($$
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
     "location_id":"a5000000-0000-4000-8000-000000000001",
     "movement_type":"entrada","quantity":"2","unit_cost":"12",
-    "stock_status":"available","lot":"LOTE-NUEVO-PRIMERO","expiration_date":"2026-09-15",
+    "stock_status":"available","lot":"LOTE-NUEVO-PRIMERO","expiration_date":"2099-09-15",
     "operation_date":"2026-08-29","reason":"Lote para transferencia multilote"
   }'::jsonb)
 $$, 'registra un lote anterior para probar transferencia multilote');
@@ -377,7 +377,7 @@ select lives_ok($$
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
     "location_id":"a5000000-0000-4000-8000-000000000001",
     "movement_type":"entrada","quantity":"2","unit_cost":"25",
-    "stock_status":"available","lot":"LOTE-ULTIMO","expiration_date":"2026-11-01",
+    "stock_status":"available","lot":"LOTE-ULTIMO","expiration_date":"2099-11-01",
     "operation_date":"2026-08-29","reason":"Lote posterior para validar reservas"
   }'::jsonb)
 $$, 'registra un lote posterior para conservar la regresion FEFO de reservas');
@@ -392,7 +392,7 @@ select throws_ok($$
     'a3000000-0000-4000-8000-000000000001',
     'a4000000-0000-4000-8000-000000000001',
     'a5000000-0000-4000-8000-000000000001',
-    'available', 'LOTE-ULTIMO', '2026-11-01', 1, 'active',
+    'available', 'LOTE-ULTIMO', '2099-11-01', 1, 'active',
     'test-fefo-later', 'a7000000-0000-4000-8000-000000000002'
   )
 $$, 'P0001', 'INVENTORY_FEFO_VIOLATION', 'una reserva nueva tampoco puede saltar un lote anterior');

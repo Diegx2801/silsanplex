@@ -170,9 +170,109 @@ describe('DialogoCliente', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Registrar cliente' }))
     await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(
-      expect.objectContaining({ nombreRazonSocial: resultadoDni.fullName, fuenteDatosFiscales: '', fechaConsultaSunat: null }),
+      expect.objectContaining({ nombreRazonSocial: resultadoDni.fullName, fuenteDatosFiscales: resultadoDni.source, fechaConsultaSunat: resultadoDni.checkedAt }),
       undefined,
     ))
+  })
+
+  it('reabre un cliente DNI consultado sin bloquear sus datos fiscales', () => {
+    render(
+      <DialogoCliente
+        abierto
+        cliente={{
+          id: '11111111-1111-4111-8111-111111111111',
+          organizacionId: '22222222-2222-4222-8222-222222222222',
+          tipoDocumento: 'dni',
+          numeroDocumento: resultadoDni.dni,
+          nombreRazonSocial: resultadoDni.fullName,
+          nombreComercial: '', contacto: '', email: '', telefono: '', direccion: '', ubigeo: '',
+          estadoSunat: '', condicionDomicilio: '', direccionesEntrega: [], activo: true,
+          fuenteDatosFiscales: resultadoDni.source,
+          fechaConsultaSunat: resultadoDni.checkedAt,
+          fechaRegistro: '2026-09-01T12:00:00.000Z',
+          fechaActualizacion: '2026-09-01T12:00:00.000Z',
+        }}
+        alCambiarApertura={vi.fn()}
+        alGuardar={vi.fn().mockResolvedValue(undefined)}
+        alConsultarRuc={vi.fn().mockResolvedValue(resultado)}
+        alConsultarDni={vi.fn().mockResolvedValue(resultadoDni)}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByLabelText('Nombre o razón social *')).toHaveAttribute('readonly')
+    expect(screen.getByLabelText('Dirección fiscal')).not.toHaveAttribute('readonly')
+    expect(screen.getByLabelText('Ubigeo fiscal')).not.toHaveAttribute('readonly')
+    expect(screen.getByLabelText('Estado SUNAT')).not.toHaveAttribute('readonly')
+    expect(screen.getByLabelText('Condición de domicilio')).not.toHaveAttribute('readonly')
+  })
+
+  it('reabre un cliente RUC consultado manteniendo protegidos sus datos tributarios', () => {
+    render(
+      <DialogoCliente
+        abierto
+        cliente={{
+          id: '11111111-1111-4111-8111-111111111111',
+          organizacionId: '22222222-2222-4222-8222-222222222222',
+          tipoDocumento: 'ruc',
+          numeroDocumento: resultado.ruc,
+          nombreRazonSocial: resultado.legalName,
+          nombreComercial: '', contacto: '', email: '', telefono: '', direccion: resultado.fiscalAddress,
+          ubigeo: resultado.ubigeoCode, estadoSunat: resultado.taxpayerStatus,
+          condicionDomicilio: 'HABIDO', direccionesEntrega: [], activo: true,
+          fuenteDatosFiscales: resultado.source,
+          fechaConsultaSunat: resultado.checkedAt,
+          fechaRegistro: '2026-08-21T12:00:00.000Z',
+          fechaActualizacion: '2026-08-21T12:00:00.000Z',
+        }}
+        alCambiarApertura={vi.fn()}
+        alGuardar={vi.fn().mockResolvedValue(undefined)}
+        alConsultarRuc={vi.fn().mockResolvedValue(resultado)}
+        alConsultarDni={vi.fn().mockResolvedValue(resultadoDni)}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByLabelText('Nombre o razón social *')).toHaveAttribute('readonly')
+    expect(screen.getByLabelText('Dirección fiscal')).toHaveAttribute('readonly')
+    expect(screen.getByLabelText('Ubigeo fiscal')).toHaveAttribute('readonly')
+    expect(screen.getByLabelText('Estado SUNAT')).toHaveAttribute('readonly')
+    expect(screen.getByLabelText('Condición de domicilio')).toHaveAttribute('readonly')
+  })
+
+  it('muestra errores accesibles y permite omitir el teléfono', async () => {
+    const { alGuardar } = renderDialog()
+    fireEvent.change(screen.getByLabelText('Número de documento *'), { target: { value: resultado.ruc } })
+    fireEvent.change(screen.getByLabelText('Nombre o razón social *'), { target: { value: 'Cliente válido' } })
+    fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '987-654' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar cliente' }))
+
+    const telefono = screen.getByLabelText('Teléfono')
+    const error = await screen.findByText('El teléfono debe contener solo números')
+    expect(error).toHaveAttribute('role', 'alert')
+    expect(telefono).toHaveAttribute('aria-invalid', 'true')
+    expect(telefono).toHaveAttribute('aria-describedby', 'cliente-telefono-error')
+    expect(alGuardar).not.toHaveBeenCalled()
+
+    fireEvent.change(telefono, { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar cliente' }))
+    await waitFor(() => expect(alGuardar).toHaveBeenCalled())
+  })
+
+  it('mantiene una sola dirección principal al seleccionar otra', async () => {
+    renderDialog()
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar' }))
+
+    const principales = screen.getAllByRole('checkbox', { name: 'Dirección principal' })
+    expect(principales[0]).toBeChecked()
+    expect(principales[1]).not.toBeChecked()
+
+    fireEvent.click(principales[1])
+    await waitFor(() => {
+      expect(principales[0]).not.toBeChecked()
+      expect(principales[1]).toBeChecked()
+    })
   })
 
   it('valida el formato del DNI antes de consultar', async () => {

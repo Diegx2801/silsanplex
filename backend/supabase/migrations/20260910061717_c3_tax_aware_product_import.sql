@@ -651,6 +651,8 @@ comment on function public.resolve_product_import_tax_payload(uuid, jsonb) is
 -- El core C2 sigue siendo la unica capa que valida duplicados, conflictos,
 -- inserciones y locks. Solo se le agrega el contexto canonico que produce el
 -- resolver; no se reabre ninguna consulta dependiente de P x Q.
+-- Normaliza funciones historicas creadas desde Windows; .gitattributes conserva
+-- esta migracion con LF para que sus patrones sean portables.
 do $migration$
 declare
   function_definition text;

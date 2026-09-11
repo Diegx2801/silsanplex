@@ -43,7 +43,10 @@ export const esquemaDatosCliente = z
         (valor) => valor === '' || z.string().email().safeParse(valor).success,
         'Ingresa un correo válido',
       ),
-    telefono: textoOpcional(30),
+    telefono: textoOpcional(30).refine(
+      (valor) => valor === '' || /^\d+$/.test(valor),
+      'El teléfono debe contener solo números',
+    ),
     direccion: textoOpcional(240).refine(
       (valor) => valor === '' || valor.length >= 3,
       'La dirección fiscal debe tener al menos 3 caracteres',
@@ -55,7 +58,7 @@ export const esquemaDatosCliente = z
     contactoPrincipalId: z.string().uuid().optional(),
     fuenteDatosFiscales: textoOpcional(40).optional(),
     fechaConsultaSunat: z.string().datetime().nullable().optional(),
-    direccionesEntrega: z.array(esquemaDireccionEntrega).max(20),
+    direccionesEntrega: z.array(esquemaDireccionEntrega),
     activo: z.boolean(),
   })
   .superRefine((datos, contexto) => {
@@ -74,7 +77,10 @@ export const esquemaDatosCliente = z
       })
     }
     if (datos.direccionesEntrega.filter((direccion) => direccion.principal).length > 1) {
-      contexto.addIssue({ code: 'custom', path: ['direccionesEntrega'], message: 'Solo puede existir una dirección de entrega principal' })
+      contexto.addIssue({ code: 'custom', path: ['direccionesEntrega', 'root'], message: 'Solo puede existir una dirección de entrega principal' })
+    }
+    if (datos.direccionesEntrega.length > 20) {
+      contexto.addIssue({ code: 'custom', path: ['direccionesEntrega', 'root'], message: 'Solo puedes registrar hasta 20 direcciones de entrega' })
     }
   })
 
