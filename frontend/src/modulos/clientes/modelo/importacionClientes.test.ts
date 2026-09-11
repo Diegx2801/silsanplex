@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { analizarRegistrosClientes, normalizarEncabezadoCliente } from './importacionClientes'
+import {
+  analizarRegistrosClientes,
+  esquemaResultadoImportacionClientes,
+  normalizarEncabezadoCliente,
+} from './importacionClientes'
 
 describe('importacionClientes', () => {
   it('normaliza encabezados de la exportación de Codeplex', () => {
@@ -67,5 +71,23 @@ describe('importacionClientes', () => {
       'El correo no es válido.',
       'El ubigeo debe tener 6 dígitos.',
     ]))
+  })
+
+  it('valida la respuesta persistida de una importación antes de mostrarla', () => {
+    const resultado = esquemaResultadoImportacionClientes.safeParse({
+      created: 1,
+      updated: 0,
+      skipped: 1,
+      failed: 0,
+      rows: [{
+        rowNumber: 2,
+        documentNumber: '20131312955',
+        status: 'CREATED',
+        message: 'Cliente creado.',
+      }],
+    })
+
+    expect(resultado.success).toBe(true)
+    expect(esquemaResultadoImportacionClientes.safeParse({ created: '1' }).success).toBe(false)
   })
 })

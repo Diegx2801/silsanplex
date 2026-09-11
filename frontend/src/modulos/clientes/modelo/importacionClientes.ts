@@ -46,6 +46,19 @@ export interface ResultadoImportacionClientes {
   rows: ResultadoFilaImportacionCliente[]
 }
 
+export const esquemaResultadoImportacionClientes = z.object({
+  created: z.number().int().nonnegative(),
+  updated: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  rows: z.array(z.object({
+    rowNumber: z.number().int().positive(),
+    documentNumber: z.string(),
+    status: z.enum(['CREATED', 'UPDATED', 'SKIPPED', 'FAILED']),
+    message: z.string(),
+  })),
+})
+
 const esquemaEmail = z.string().email()
 
 export function normalizarEncabezadoCliente(value: string) {

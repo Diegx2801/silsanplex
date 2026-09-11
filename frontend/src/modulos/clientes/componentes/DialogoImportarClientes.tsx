@@ -110,6 +110,11 @@ export function DialogoImportarClientes({
                 <option value="SKIP">Omitir la fila</option>
                 <option value="UPDATE">Actualizar datos disponibles</option>
               </select>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {mode === 'SKIP'
+                  ? 'Las filas existentes se omiten y no se modifican.'
+                  : 'Solo se actualizan los datos presentes; los campos vacíos conservan su valor.'}
+              </span>
             </label>
           </section>
 

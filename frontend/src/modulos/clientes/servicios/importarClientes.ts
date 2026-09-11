@@ -1,14 +1,31 @@
 import {
   analizarRegistrosClientes,
+  normalizarEncabezadoCliente,
   type AnalisisImportacionClientes,
   type FilaClienteImportada,
   type ModoImportacionClientes,
   type ResultadoImportacionClientes,
+  esquemaResultadoImportacionClientes,
 } from '@/modulos/clientes/modelo/importacionClientes'
 import { supabase } from '@/lib/supabase'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const MAX_ROWS = 500
+
+const mensajesErrorImportacion: Array<[string, string]> = [
+  ['AUTHENTICATION_REQUIRED', 'Tu sesión expiró. Inicia sesión nuevamente.'],
+  ['CUSTOMER_PERMISSION_REQUIRED', 'No tienes permiso para importar clientes.'],
+  ['INVALID_CUSTOMER_IMPORT_MODE', 'Selecciona una estrategia de importación válida.'],
+  ['INVALID_CUSTOMER_IMPORT_SIZE', `El archivo debe contener entre 1 y ${MAX_ROWS} filas válidas.`],
+]
+
+export function mensajeErrorImportacionCliente(error: { code?: string | null; message?: string | null }) {
+  const detalle = `${error.code ?? ''} ${error.message ?? ''}`
+  return mensajesErrorImportacion.find(([codigo]) => detalle.includes(codigo))?.[1]
+    ?? (error.code === '42501'
+      ? 'No tienes permiso para importar clientes.'
+      : 'No se pudo importar el archivo. Revisa el formato e inténtalo nuevamente.')
+}
 
 export async function analizarArchivoClientes(file: File): Promise<AnalisisImportacionClientes> {
   if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
@@ -21,6 +38,19 @@ export async function analizarArchivoClientes(file: File): Promise<AnalisisImpor
   const sheetName = workbook.SheetNames[0]
   const sheet = sheetName ? workbook.Sheets[sheetName] : undefined
   if (!sheet) throw new Error('El archivo no contiene una hoja legible.')
+  const encabezados = (utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    raw: false,
+    defval: '',
+    blankrows: false,
+  })[0] ?? []).map((value) => normalizarEncabezadoCliente(String(value)))
+  const tieneDocumento = ['RUC_DNI', 'NUMERO_DOCUMENTO', 'DOCUMENTO', 'RUC', 'DNI']
+    .some((encabezado) => encabezados.includes(encabezado))
+  const tieneNombre = ['RAZON_SOCIAL', 'RAZ_SOCIAL', 'CLIENTE', 'NOMBRE_RAZON_SOCIAL']
+    .some((encabezado) => encabezados.includes(encabezado))
+  if (!tieneDocumento || !tieneNombre) {
+    throw new Error('El archivo debe incluir las columnas RUC_DNI (o documento) y RAZON_SOCIAL (o cliente).')
+  }
   const records = utils.sheet_to_json<Record<string, unknown>>(sheet, {
     raw: false,
     defval: '',
@@ -58,8 +88,10 @@ export async function importarClientes(
   const { data, error } = await supabase.rpc('import_customers', {
     payload: { mode, rows: validRows },
   })
-  if (error) throw new Error(error.message)
-  return data as unknown as ResultadoImportacionClientes
+  if (error) throw new Error(mensajeErrorImportacionCliente(error))
+  const parsed = esquemaResultadoImportacionClientes.safeParse(data)
+  if (!parsed.success) throw new Error('El servidor devolvió un resultado de importación inválido.')
+  return parsed.data as ResultadoImportacionClientes
 }
 
 export async function descargarIncidenciasImportacion(
