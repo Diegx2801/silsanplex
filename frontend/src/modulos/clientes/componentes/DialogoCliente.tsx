@@ -1,10 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Plus, Trash2, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useFieldArray, useForm, useWatch } from 'react-hook-form'
+import { useFieldArray, useForm, useWatch, type FieldErrors } from 'react-hook-form'
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
-import { condicionesDomicilio, esquemaDatosCliente, tiposDocumentoCliente, type Cliente, type DatosCliente } from '@/modulos/clientes/modelo/cliente'
+import { condicionesDomicilio, esDocumentoNumerico, esquemaDatosCliente, limitesDocumentoCliente, normalizarFechaConsulta, tiposDocumentoCliente, type Cliente, type DatosCliente } from '@/modulos/clientes/modelo/cliente'
+import { DireccionesEntrega } from './DireccionesEntrega'
+import { resumirErroresCliente } from './erroresFormularioCliente'
 import type { ResultadoConsultaRuc } from '@/modulos/clientes/servicios/rucLookupService'
 import type { ResultadoConsultaDni } from '@/modulos/clientes/servicios/dniLookupService'
 
@@ -13,11 +15,15 @@ const inicial: DatosCliente = { tipoDocumento: 'ruc', numeroDocumento: '', nombr
 interface Props { abierto: boolean; cliente: Cliente | null; alCambiarApertura: (abierto: boolean) => void; alGuardar: (datos: DatosCliente, clienteId?: string) => Promise<void>; alConsultarRuc: (ruc: string) => Promise<ResultadoConsultaRuc>; alConsultarDni: (dni: string) => Promise<ResultadoConsultaDni>; alRestaurarFoco: () => void }
 
 export function DialogoCliente({ abierto, cliente, alCambiarApertura, alGuardar, alConsultarRuc, alConsultarDni, alRestaurarFoco }: Props) {
-  const { register, control, handleSubmit, setError, setValue, getValues, clearErrors, formState: { errors, isSubmitting } } = useForm<DatosCliente>({ resolver: zodResolver(esquemaDatosCliente), defaultValues: cliente ?? inicial })
-  const direcciones = useFieldArray({ control, name: 'direccionesEntrega' })
+  const fechaInicial = cliente ? normalizarFechaConsulta(cliente.fechaConsultaSunat) : null
+  const fechaOriginalInvalida = Boolean(cliente?.fechaConsultaSunat && !fechaInicial)
+  const valoresIniciales = cliente ? { ...cliente, fechaConsultaSunat: fechaInicial } : inicial
+  const { register, control, handleSubmit, setError, setValue, getValues, clearErrors, formState: { errors, isSubmitting } } = useForm<DatosCliente>({ resolver: zodResolver(esquemaDatosCliente), defaultValues: valoresIniciales })
+  const direcciones = useFieldArray({ control, name: 'direccionesEntrega', keyName: 'fieldKey' })
   const tipoDocumento = useWatch({ control, name: 'tipoDocumento' })
   const fuenteFiscal = useWatch({ control, name: 'fuenteDatosFiscales' })
   const fechaConsulta = useWatch({ control, name: 'fechaConsultaSunat' })
+  const erroresFormulario = resumirErroresCliente(errors)
   const [consultando, setConsultando] = useState(false)
   const [mensajeConsulta, setMensajeConsulta] = useState('')
   const [rucConsultado, setRucConsultado] = useState<string | null>(() => (
@@ -34,6 +40,8 @@ export function DialogoCliente({ abierto, cliente, alCambiarApertura, alGuardar,
   const consultaId = useRef(0)
   const nombreBloqueado = Boolean(rucConsultado || dniConsultado || nombreAutocompletado)
   const datosFiscalesBloqueados = Boolean(rucConsultado)
+  const limiteDocumento = limitesDocumentoCliente[tipoDocumento]
+  const documentoNumerico = esDocumentoNumerico(tipoDocumento)
   useEffect(() => {
     register('direccionFiscalId')
     register('contactoPrincipalId')
@@ -60,19 +68,10 @@ export function DialogoCliente({ abierto, cliente, alCambiarApertura, alGuardar,
     else if (limpiarNombre) setValue('nombreRazonSocial', '')
     setMensajeConsulta('')
   }
-  const cambiarNumeroDocumento = (evento: ChangeEvent<HTMLInputElement>) => {
-    const nuevoDocumento = evento.target.value.trim()
-    const documentoConsultado = rucConsultado ?? dniConsultado
-    if (documentoConsultado && nuevoDocumento !== documentoConsultado) {
-      invalidarConsulta(rucConsultado ? true : false)
-    } else {
-      consultaId.current += 1
-      setConsultando(false)
-      setMensajeConsulta('')
-    }
-  }
   const cambiarTipoDocumento = () => {
     invalidarConsulta(Boolean(rucConsultado))
+    setValue('numeroDocumento', '')
+    clearErrors('numeroDocumento')
   }
   const consultarRuc = async () => {
     const ruc = getValues('numeroDocumento').trim()
@@ -142,7 +141,43 @@ export function DialogoCliente({ abierto, cliente, alCambiarApertura, alGuardar,
       if (id === consultaId.current) setConsultando(false)
     }
   }
+  const encontrarCampo = (path: string) => {
+    const formulario = document.getElementById('formulario-cliente') as HTMLFormElement | null
+    if (!formulario) return null
+    const campo = Array.from(formulario.elements).find((elemento) => elemento.getAttribute('name') === path)
+    if (campo instanceof HTMLElement) return campo
+    const direccion = path.match(/^direccionesEntrega\.(\d+)\./)
+    return direccion ? formulario.querySelector<HTMLElement>(`[data-address-index="${direccion[1]}"] [data-address-toggle]`) : null
+  }
+  const enfocarError = (path?: string) => {
+    const campo = (path ? encontrarCampo(path) : null) ?? document.querySelector<HTMLElement>('#formulario-cliente [aria-invalid="true"]')
+    if (campo && typeof campo.scrollIntoView === 'function') campo.scrollIntoView({ block: 'center' })
+    campo?.focus()
+  }
+  const manejarErrores = (errores: FieldErrors<DatosCliente>) => {
+    clearErrors('root')
+    const primerError = resumirErroresCliente(errores)[0]
+    window.setTimeout(() => {
+      enfocarError(primerError?.path)
+    }, 0)
+  }
+  const cambiarNumeroDocumento = (evento: ChangeEvent<HTMLInputElement>) => {
+    const valorOriginal = evento.target.value
+    const nuevoDocumento = documentoNumerico
+      ? valorOriginal.replace(/\D/g, '').slice(0, limiteDocumento)
+      : valorOriginal.slice(0, limiteDocumento)
+    if (valorOriginal !== nuevoDocumento) evento.target.value = nuevoDocumento
+    const documentoConsultado = rucConsultado ?? dniConsultado
+    if (documentoConsultado && nuevoDocumento !== documentoConsultado) {
+      invalidarConsulta(rucConsultado ? true : false)
+    } else {
+      consultaId.current += 1
+      setConsultando(false)
+      setMensajeConsulta('')
+    }
+  }
   const guardar = async (datos: DatosCliente) => {
+    clearErrors('root')
     try { await alGuardar(datos, cliente?.id); alCambiarApertura(false) }
     catch (error) { setError('root', { message: error instanceof Error ? error.message : 'No se pudo guardar el cliente.' }) }
   }
@@ -150,11 +185,12 @@ export function DialogoCliente({ abierto, cliente, alCambiarApertura, alGuardar,
     <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25" />
     <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-50 max-h-[92svh] w-[calc(100%-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background shadow-xl outline-none" onCloseAutoFocus={(e) => { e.preventDefault(); alRestaurarFoco() }}>
       <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7"><div><DialogPrimitive.Title className="text-xl font-semibold">{cliente ? 'Editar cliente' : 'Registrar cliente'}</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">Datos fiscales, contacto y lugares de entrega.</DialogPrimitive.Description></div><DialogPrimitive.Close asChild><button type="button" aria-label="Cerrar cliente" className="grid size-9 place-items-center rounded-md hover:bg-muted"><X className="size-5" /></button></DialogPrimitive.Close></header>
-      <form id="formulario-cliente" className="grid gap-5 px-5 py-6 sm:grid-cols-2 sm:px-7" onSubmit={handleSubmit(guardar)}>
+      <form id="formulario-cliente" className="grid gap-5 px-5 py-6 sm:grid-cols-2 sm:px-7" onChange={() => clearErrors('root')} onSubmit={handleSubmit(guardar, manejarErrores)}>
+        {erroresFormulario.length > 0 ? <div role="alert" className="border border-destructive/35 bg-destructive/5 px-4 py-3 text-sm text-destructive sm:col-span-2">{erroresFormulario.some((error) => error.path !== 'root') ? <p className="font-medium">Revisa los campos marcados antes de guardar.</p> : null}{errors.root?.message ? <p className="font-medium">{errors.root.message}</p> : null}</div> : null}
         <Campo label="Tipo de documento *">{cliente ? <><input className="field-control" value={tiposDocumentoCliente.find((item) => item.valor === tipoDocumento)?.etiqueta ?? tipoDocumento} readOnly /><input type="hidden" {...register('tipoDocumento')} /></> : <select className="field-control" {...register('tipoDocumento', { onChange: cambiarTipoDocumento })}>{tiposDocumentoCliente.map((t) => <option key={t.valor} value={t.valor}>{t.etiqueta}</option>)}</select>}</Campo>
-        <Campo label="Número de documento *" error={errors.numeroDocumento?.message} errorId="cliente-numero-documento-error"><div className="flex gap-2"><input autoFocus={!cliente} className="field-control" readOnly={Boolean(cliente)} aria-invalid={Boolean(errors.numeroDocumento)} aria-describedby={errors.numeroDocumento ? 'cliente-numero-documento-error' : undefined} {...register('numeroDocumento', { onChange: cambiarNumeroDocumento })} />{tipoDocumento === 'ruc' ? <Button type="button" variant="outline" disabled={consultando} onClick={() => void consultarRuc()}>{consultando ? 'Consultando…' : cliente ? 'Actualizar SUNAT' : 'Consultar RUC'}</Button> : tipoDocumento === 'dni' ? <Button type="button" variant="outline" disabled={consultando} onClick={() => void consultarDni()}>{consultando ? 'Consultando…' : cliente ? 'Actualizar RENIEC' : 'Consultar DNI'}</Button> : null}</div>{cliente ? <span className="mt-1 block text-xs text-muted-foreground">La identidad del documento no se modifica. Registra otro cliente si el documento es distinto.</span> : null}</Campo>
+        <Campo label="Número de documento *" error={errors.numeroDocumento?.message} errorId="cliente-numero-documento-error"><div className="flex gap-2"><input autoFocus={!cliente} className="field-control" readOnly={Boolean(cliente)} maxLength={limiteDocumento} inputMode={documentoNumerico ? 'numeric' : 'text'} pattern={documentoNumerico ? '\\d*' : undefined} aria-invalid={Boolean(errors.numeroDocumento)} aria-describedby={errors.numeroDocumento ? 'cliente-numero-documento-error' : undefined} {...register('numeroDocumento', { onChange: cambiarNumeroDocumento })} />{tipoDocumento === 'ruc' ? <Button type="button" variant="outline" disabled={consultando} onClick={() => void consultarRuc()}>{consultando ? 'Consultando…' : cliente ? 'Actualizar SUNAT' : 'Consultar RUC'}</Button> : tipoDocumento === 'dni' ? <Button type="button" variant="outline" disabled={consultando} onClick={() => void consultarDni()}>{consultando ? 'Consultando…' : cliente ? 'Actualizar RENIEC' : 'Consultar DNI'}</Button> : null}</div>{cliente ? <span className="mt-1 block text-xs text-muted-foreground">La identidad del documento no se modifica. Registra otro cliente si el documento es distinto.</span> : null}</Campo>
         {mensajeConsulta ? <p role="status" aria-live="polite" className="text-sm text-muted-foreground sm:col-span-2">{mensajeConsulta}</p> : null}
-        {fuenteFiscal ? <div className="border bg-muted/25 px-4 py-3 text-sm sm:col-span-2"><strong>Procedencia de datos:</strong> {fuenteFiscal}{fechaConsulta ? ` · consultada ${new Intl.DateTimeFormat('es-PE', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(fechaConsulta))}` : ' · ingreso manual o importado'}</div> : null}
+        {fuenteFiscal ? <div className="border bg-muted/25 px-4 py-3 text-sm sm:col-span-2"><strong>Procedencia de datos:</strong> {fuenteFiscal}{fechaConsulta ? ` · consultada ${new Intl.DateTimeFormat('es-PE', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(fechaConsulta))}` : fechaOriginalInvalida ? ' · requiere una nueva consulta' : ' · ingreso manual o importado'}</div> : null}
         <Campo label="Nombre o razón social *" error={errors.nombreRazonSocial?.message} errorId="cliente-nombre-error" ancho><input autoFocus={Boolean(cliente)} autoComplete="organization" readOnly={nombreBloqueado} title={rucConsultado ? 'Dato obtenido de SUNAT' : dniConsultado ? 'Nombre obtenido de RENIEC' : undefined} className={claseCampoBloqueado(nombreBloqueado)} aria-invalid={Boolean(errors.nombreRazonSocial)} aria-describedby={errors.nombreRazonSocial ? 'cliente-nombre-error' : undefined} {...register('nombreRazonSocial')} /></Campo>
         {dniConsultado ? <p className="text-xs text-muted-foreground sm:col-span-2">Nombre obtenido de RENIEC; no editable mientras el DNI consultado no cambie.</p> : null}
         <Campo label="Nombre comercial" error={errors.nombreComercial?.message} errorId="cliente-nombre-comercial-error" ancho><input className="field-control" aria-invalid={Boolean(errors.nombreComercial)} aria-describedby={errors.nombreComercial ? 'cliente-nombre-comercial-error' : undefined} {...register('nombreComercial')} /></Campo>
@@ -165,32 +201,15 @@ export function DialogoCliente({ abierto, cliente, alCambiarApertura, alGuardar,
         <Campo label="Ubigeo fiscal" error={errors.ubigeo?.message} errorId="cliente-ubigeo-error"><input inputMode="numeric" maxLength={6} readOnly={datosFiscalesBloqueados} title={datosFiscalesBloqueados ? 'Dato obtenido de SUNAT' : undefined} className={claseCampoBloqueado(datosFiscalesBloqueados)} aria-invalid={Boolean(errors.ubigeo)} aria-describedby={errors.ubigeo ? 'cliente-ubigeo-error' : undefined} {...register('ubigeo')} /></Campo>
         <Campo label="Estado SUNAT" error={errors.estadoSunat?.message} errorId="cliente-estado-sunat-error"><input readOnly={datosFiscalesBloqueados} title={datosFiscalesBloqueados ? 'Dato obtenido de SUNAT' : undefined} className={claseCampoBloqueado(datosFiscalesBloqueados)} placeholder="Ej. ACTIVO" aria-invalid={Boolean(errors.estadoSunat)} aria-describedby={errors.estadoSunat ? 'cliente-estado-sunat-error' : undefined} {...register('estadoSunat')} /></Campo>
         <Campo label="Condición de domicilio" error={errors.condicionDomicilio?.message} errorId="cliente-condicion-error">{datosFiscalesBloqueados ? <input readOnly title="Dato obtenido de SUNAT" className={claseCampoBloqueado(true)} aria-invalid={Boolean(errors.condicionDomicilio)} aria-describedby={errors.condicionDomicilio ? 'cliente-condicion-error' : undefined} {...register('condicionDomicilio')} /> : <select className="field-control" aria-invalid={Boolean(errors.condicionDomicilio)} aria-describedby={errors.condicionDomicilio ? 'cliente-condicion-error' : undefined} {...register('condicionDomicilio')}><option value="">Sin verificar</option>{condicionesDomicilio.map((c) => <option key={c}>{c}</option>)}</select>}</Campo>
-        <fieldset className="space-y-4 border-t pt-5 sm:col-span-2"><div className="flex items-center justify-between"><legend className="font-semibold">Direcciones de entrega</legend><Button type="button" variant="outline" onClick={() => direcciones.append({ etiqueta: '', direccion: '', ubigeo: '', referencia: '', principal: direcciones.fields.length === 0 })}><Plus /> Agregar</Button></div>
-          {direcciones.fields.length === 0 ? <p className="text-sm text-muted-foreground">Sin direcciones adicionales.</p> : direcciones.fields.map((field, index) => <div key={field.id} className="grid gap-3 border p-4 sm:grid-cols-2">
-            <Campo label="Etiqueta" error={errors.direccionesEntrega?.[index]?.etiqueta?.message} errorId={`cliente-direccion-${index}-etiqueta-error`}><input className="field-control" placeholder="Ej. Almacén principal" aria-invalid={Boolean(errors.direccionesEntrega?.[index]?.etiqueta)} aria-describedby={errors.direccionesEntrega?.[index]?.etiqueta ? `cliente-direccion-${index}-etiqueta-error` : undefined} {...register(`direccionesEntrega.${index}.etiqueta`)} /></Campo>
-            <Campo label="Ubigeo" error={errors.direccionesEntrega?.[index]?.ubigeo?.message} errorId={`cliente-direccion-${index}-ubigeo-error`}><input inputMode="numeric" maxLength={6} className="field-control" aria-invalid={Boolean(errors.direccionesEntrega?.[index]?.ubigeo)} aria-describedby={errors.direccionesEntrega?.[index]?.ubigeo ? `cliente-direccion-${index}-ubigeo-error` : undefined} {...register(`direccionesEntrega.${index}.ubigeo`)} /></Campo>
-            <Campo label="Dirección *" error={errors.direccionesEntrega?.[index]?.direccion?.message} errorId={`cliente-direccion-${index}-direccion-error`} ancho><input className="field-control" aria-invalid={Boolean(errors.direccionesEntrega?.[index]?.direccion)} aria-describedby={errors.direccionesEntrega?.[index]?.direccion ? `cliente-direccion-${index}-direccion-error` : undefined} {...register(`direccionesEntrega.${index}.direccion`)} /></Campo>
-            <Campo label="Referencia" error={errors.direccionesEntrega?.[index]?.referencia?.message} errorId={`cliente-direccion-${index}-referencia-error`} ancho><input className="field-control" aria-invalid={Boolean(errors.direccionesEntrega?.[index]?.referencia)} aria-describedby={errors.direccionesEntrega?.[index]?.referencia ? `cliente-direccion-${index}-referencia-error` : undefined} {...register(`direccionesEntrega.${index}.referencia`)} /></Campo>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" {...register(`direccionesEntrega.${index}.principal`, { onChange: (evento) => {
-              if (!evento.target.checked) return
-              getValues('direccionesEntrega').forEach((_, posicion) => {
-                setValue(`direccionesEntrega.${posicion}.principal`, posicion === index, { shouldDirty: true, shouldValidate: true })
-              })
-              clearErrors('direccionesEntrega')
-            } })} /> Dirección principal</label>
-            <Button type="button" variant="ghost" className="justify-self-end" onClick={() => direcciones.remove(index)}><Trash2 /> Quitar</Button>
-          </div>)}
-        </fieldset>
+        <DireccionesEntrega fieldArray={direcciones} errors={errors} register={register} getValues={getValues} setValue={setValue} clearErrors={clearErrors} />
         <label className="flex gap-3 border-t pt-4 sm:col-span-2"><input type="checkbox" {...register('activo')} /><span><span className="block text-sm font-medium">Cliente activo</span><span className="text-sm text-muted-foreground">Disponible para nuevas operaciones comerciales.</span></span></label>
-        {errors.direccionesEntrega?.root?.message ? <p role="alert" className="field-error sm:col-span-2">{errors.direccionesEntrega.root.message}</p> : null}
-        {errors.root?.message ? <p role="alert" className="field-error sm:col-span-2">{errors.root.message}</p> : null}
       </form>
       <footer className="flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end sm:px-7"><DialogPrimitive.Close asChild><Button type="button" variant="outline">Cancelar</Button></DialogPrimitive.Close><Button type="submit" form="formulario-cliente" disabled={isSubmitting}>{isSubmitting ? 'Guardando…' : cliente ? 'Guardar cambios' : 'Registrar cliente'}</Button></footer>
     </DialogPrimitive.Content>
   </DialogPrimitive.Portal></DialogPrimitive.Root>
 }
 
-function Campo({ label, error, errorId, ancho, children }: { label: string; error?: string; errorId?: string; ancho?: boolean; children: ReactNode }) { return <label className={ancho ? 'sm:col-span-2' : ''}><span className="field-label">{label}</span>{children}{error ? <span id={errorId} role="alert" className="field-error">{error}</span> : null}</label> }
+function Campo({ label, error, errorId, ancho, children }: { label: string; error?: string; errorId?: string; ancho?: boolean; children: ReactNode }) { return <div className={ancho ? 'sm:col-span-2' : ''}><label><span className="field-label">{label}</span>{children}</label>{error ? <span id={errorId} role="alert" className="field-error">{error}</span> : null}</div> }
 
 function claseCampoBloqueado(bloqueado: boolean) {
   return bloqueado ? 'field-control border-primary/25 bg-muted/35 text-foreground' : 'field-control'

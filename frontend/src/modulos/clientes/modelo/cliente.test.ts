@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   clienteCoincideBusqueda,
   esquemaDatosCliente,
+  limitesDocumentoCliente,
+  normalizarFechaConsulta,
   type Cliente,
 } from './cliente'
 
@@ -28,6 +30,10 @@ const cliente = {
 } satisfies Cliente
 
 describe('esquemaDatosCliente', () => {
+  it('expone límites por tipo de documento', () => {
+    expect(limitesDocumentoCliente).toEqual({ ruc: 11, dni: 8, ce: 20, otro: 20 })
+  })
+
   it('acepta un RUC válido y limpia espacios', () => {
     const resultado = esquemaDatosCliente.parse({
       ...cliente,
@@ -51,6 +57,41 @@ describe('esquemaDatosCliente', () => {
         numeroDocumento: '2012',
       }).success,
     ).toBe(false)
+    expect(
+      esquemaDatosCliente.safeParse({
+        ...cliente,
+        tipoDocumento: 'dni',
+        numeroDocumento: '1234567A',
+      }).success,
+    ).toBe(false)
+    expect(
+      esquemaDatosCliente.safeParse({
+        ...cliente,
+        tipoDocumento: 'ruc',
+        numeroDocumento: '201234567890',
+      }).success,
+    ).toBe(false)
+    expect(
+      esquemaDatosCliente.safeParse({
+        ...cliente,
+        tipoDocumento: 'ce',
+        numeroDocumento: 'A'.repeat(20),
+      }).success,
+    ).toBe(true)
+    expect(
+      esquemaDatosCliente.safeParse({
+        ...cliente,
+        tipoDocumento: 'ce',
+        numeroDocumento: 'A'.repeat(21),
+      }).success,
+    ).toBe(false)
+  })
+
+  it('normaliza fechas con offset y descarta metadata inválida', () => {
+    expect(normalizarFechaConsulta('2026-09-11T19:51:00+00:00')).toBe('2026-09-11T19:51:00.000Z')
+    expect(normalizarFechaConsulta('fecha inválida')).toBeNull()
+    expect(esquemaDatosCliente.parse({ ...cliente, fechaConsultaSunat: '2026-09-11T19:51:00+00:00' }).fechaConsultaSunat).toBe('2026-09-11T19:51:00+00:00')
+    expect(esquemaDatosCliente.safeParse({ ...cliente, fechaConsultaSunat: 'fecha inválida' }).success).toBe(false)
   })
 
   it('rechaza más de una dirección de entrega principal', () => {

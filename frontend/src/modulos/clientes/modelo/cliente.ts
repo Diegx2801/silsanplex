@@ -10,7 +10,26 @@ export const tiposDocumentoCliente = [
   { valor: 'otro', etiqueta: 'Otro' },
 ] as const
 
+export const limitesDocumentoCliente = {
+  ruc: 11,
+  dni: 8,
+  ce: 20,
+  otro: 20,
+} as const
+
+export function esDocumentoNumerico(tipo: (typeof tiposDocumentoCliente)[number]['valor']) {
+  return tipo === 'ruc' || tipo === 'dni'
+}
+
 export const condicionesDomicilio = ['HABIDO', 'NO HABIDO', 'NO HALLADO', 'PENDIENTE'] as const
+
+export function normalizarFechaConsulta(valor: string | null | undefined) {
+  if (!valor) return null
+  const fecha = new Date(valor)
+  return Number.isNaN(fecha.getTime()) ? null : fecha.toISOString()
+}
+
+const fechaConsultaOpcional = z.string().datetime({ offset: true }).nullable().optional()
 
 export const esquemaDireccionEntrega = z.object({
   id: z.string().uuid().optional(),
@@ -28,7 +47,7 @@ export const esquemaDatosCliente = z
       .string()
       .trim()
       .min(1, 'Ingresa el número de documento')
-      .max(20, 'Máximo 20 caracteres'),
+      .max(limitesDocumentoCliente.otro, 'Máximo 20 caracteres'),
     nombreRazonSocial: z
       .string()
       .trim()
@@ -57,7 +76,7 @@ export const esquemaDatosCliente = z
     direccionFiscalId: z.string().uuid().optional(),
     contactoPrincipalId: z.string().uuid().optional(),
     fuenteDatosFiscales: textoOpcional(40).optional(),
-    fechaConsultaSunat: z.string().datetime().nullable().optional(),
+    fechaConsultaSunat: fechaConsultaOpcional,
     direccionesEntrega: z.array(esquemaDireccionEntrega),
     activo: z.boolean(),
   })
@@ -92,7 +111,7 @@ export const esquemaCliente = esquemaDatosCliente.and(
     fechaRegistro: z.string().datetime(),
     fechaActualizacion: z.string().datetime(),
     organizacionId: z.string().uuid(),
-    fechaConsultaSunat: z.string().datetime().nullable(),
+    fechaConsultaSunat: z.string().datetime({ offset: true }).nullable(),
   }),
 )
 

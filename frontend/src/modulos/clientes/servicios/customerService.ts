@@ -1,4 +1,4 @@
-import type { Cliente, DatosCliente } from '@/modulos/clientes/modelo/cliente'
+import { normalizarFechaConsulta, type Cliente, type DatosCliente } from '@/modulos/clientes/modelo/cliente'
 import { supabase } from '@/lib/supabase'
 
 export type EstadoFiltroCliente = 'todos' | 'activos' | 'inactivos'
@@ -22,6 +22,29 @@ function reportarErrorDeLectura(error: unknown) {
   }
 }
 
+const mensajesErrorGuardado: Array<[string, string]> = [
+  ['CUSTOMER_DOCUMENT_ALREADY_EXISTS', 'Ya existe un cliente con este documento.'],
+  ['CUSTOMER_FISCAL_IDENTITY_IMMUTABLE', 'El tipo y número de documento no pueden modificarse.'],
+  ['INVALID_CUSTOMER_DOCUMENT_TYPE', 'Selecciona un tipo de documento válido.'],
+  ['INVALID_CUSTOMER_LEGAL_NAME', 'Ingresa un nombre o razón social válido.'],
+  ['CUSTOMER_NOT_FOUND', 'El cliente ya no existe o no está disponible. Recarga el listado.'],
+  ['CUSTOMER_ADDRESS_NOT_OWNED', 'Una de las direcciones no pertenece a este cliente. Recarga el formulario e inténtalo nuevamente.'],
+  ['customer_addresses_line_not_blank', 'Cada dirección debe tener al menos 3 caracteres.'],
+  ['customer_addresses_ubigeo_format', 'El ubigeo de una dirección debe contener 6 dígitos.'],
+  ['customer_addresses_label_length', 'La etiqueta de una dirección no puede superar 80 caracteres.'],
+  ['customer_addresses_reference_length', 'La referencia de una dirección no puede superar 200 caracteres.'],
+  ['customer_addresses_one_default_delivery_idx', 'Solo puede existir una dirección de entrega principal.'],
+  ['customer_addresses_type_valid', 'El tipo de dirección no es válido.'],
+  ['CUSTOMER_CONTACT_NOT_OWNED', 'El contacto no pertenece a este cliente. Recarga el formulario e inténtalo nuevamente.'],
+  ['CUSTOMER_PERMISSION_REQUIRED', 'No tienes permiso para gestionar clientes.'],
+]
+
+export function mensajeErrorGuardadoCliente(error: { code?: string | null; message?: string | null }) {
+  const detalle = `${error.code ?? ''} ${error.message ?? ''}`
+  return mensajesErrorGuardado.find(([codigo]) => detalle.includes(codigo))?.[1]
+    ?? (error.code === '42501' ? 'No tienes permiso para gestionar clientes.' : 'No se pudo guardar el cliente. Revisa los datos e inténtalo nuevamente.')
+}
+
 function mapear(fila: FilaCliente): Cliente {
   const fiscal = fila.customer_addresses.find((d) => d.address_type === 'FISCAL' && d.is_active)
   const contacto = fila.customer_contacts.find((c) => c.is_primary && c.is_active) ?? fila.customer_contacts.find((c) => c.is_active)
@@ -39,7 +62,7 @@ function mapear(fila: FilaCliente): Cliente {
     fuenteDatosFiscales: fila.tax_data_source ?? '',
     direccionesEntrega: fila.customer_addresses.filter((d) => d.address_type === 'DELIVERY' && d.is_active).map((d) => ({ id: d.id, etiqueta: d.label ?? '', direccion: d.address_line, ubigeo: d.ubigeo_code ?? '', referencia: d.reference ?? '', principal: d.is_default })),
     activo: fila.is_active, fechaRegistro: fila.created_at, fechaActualizacion: fila.updated_at,
-    fechaConsultaSunat: fila.tax_checked_at,
+    fechaConsultaSunat: normalizarFechaConsulta(fila.tax_checked_at),
   }
 }
 
@@ -64,13 +87,9 @@ export async function guardarCliente(datos: DatosCliente, id?: string) {
   ]
   const contacts = datos.contacto || datos.email || datos.telefono ? [{ id: datos.contactoPrincipalId, fullName: datos.contacto, email: datos.email, phone: datos.telefono, isPrimary: true }] : []
   const fuenteFiscal = datos.fuenteDatosFiscales || (datos.estadoSunat || datos.condicionDomicilio ? 'MANUAL' : null)
-  const { data, error } = await supabase.rpc('save_customer', { payload: { id, documentType: datos.tipoDocumento.toUpperCase(), documentNumber: datos.numeroDocumento, legalName: datos.nombreRazonSocial, tradeName: datos.nombreComercial, taxpayerStatus: datos.estadoSunat, domicileCondition: datos.condicionDomicilio, taxDataSource: fuenteFiscal, taxCheckedAt: fuenteFiscal && fuenteFiscal !== 'MANUAL' ? datos.fechaConsultaSunat : null, isActive: datos.activo, addresses, contacts } })
+  const { data, error } = await supabase.rpc('save_customer', { payload: { id, documentType: datos.tipoDocumento.toUpperCase(), documentNumber: datos.numeroDocumento, legalName: datos.nombreRazonSocial, tradeName: datos.nombreComercial, taxpayerStatus: datos.estadoSunat, domicileCondition: datos.condicionDomicilio, taxDataSource: fuenteFiscal, taxCheckedAt: fuenteFiscal && fuenteFiscal !== 'MANUAL' ? normalizarFechaConsulta(datos.fechaConsultaSunat) : null, isActive: datos.activo, addresses, contacts } })
   if (error) {
-    if (error.message.includes('CUSTOMER_DOCUMENT_ALREADY_EXISTS')) throw new Error('Ya existe un cliente con este documento.')
-    if (error.message.includes('CUSTOMER_FISCAL_IDENTITY_IMMUTABLE')) throw new Error('El tipo y número de documento no pueden modificarse.')
-    if (error.message.includes('customer_addresses_line_not_blank')) throw new Error('La dirección debe tener al menos 3 caracteres.')
-    if (error.code === '42501') throw new Error('No tienes permiso para gestionar clientes.')
-    throw new Error('No se pudo guardar el cliente. Revisa los datos e inténtalo nuevamente.')
+    throw new Error(mensajeErrorGuardadoCliente(error))
   }
   return data as string
 }

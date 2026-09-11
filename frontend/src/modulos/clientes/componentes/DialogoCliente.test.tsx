@@ -259,6 +259,48 @@ describe('DialogoCliente', () => {
     await waitFor(() => expect(alGuardar).toHaveBeenCalled())
   })
 
+  it('aplica el límite y teclado numérico según el tipo de documento', () => {
+    renderDialog()
+    const tipo = screen.getByLabelText('Tipo de documento *')
+    const documento = screen.getByLabelText('Número de documento *')
+
+    expect(documento).toHaveAttribute('maxlength', '11')
+    expect(documento).toHaveAttribute('inputmode', 'numeric')
+
+    fireEvent.change(tipo, { target: { value: 'dni' } })
+    expect(documento).toHaveValue('')
+    expect(documento).toHaveAttribute('maxlength', '8')
+    expect(documento).toHaveAttribute('inputmode', 'numeric')
+
+    fireEvent.change(tipo, { target: { value: 'ce' } })
+    expect(documento).toHaveAttribute('maxlength', '20')
+    expect(documento).toHaveAttribute('inputmode', 'text')
+  })
+
+  it('muestra un resumen visible y enfoca el primer campo inválido', async () => {
+    renderDialog()
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar cliente' }))
+
+    expect(await screen.findByText('Revisa los campos marcados antes de guardar.')).toBeVisible()
+    expect(screen.getByLabelText('Número de documento *')).toHaveFocus()
+  })
+
+  it('abre automáticamente una dirección nueva y señala su error específico', async () => {
+    const { alGuardar } = renderDialog()
+    fireEvent.change(screen.getByLabelText('Número de documento *'), { target: { value: resultado.ruc } })
+    fireEvent.change(screen.getByLabelText('Nombre o razón social *'), { target: { value: 'Cliente válido' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar' }))
+
+    const tarjeta = screen.getByRole('button', { name: /Dirección 1/ })
+    expect(tarjeta).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar cliente' }))
+
+    expect(await screen.findByText('Ingresa la dirección')).toBeVisible()
+    expect(screen.queryByRole('list')).not.toBeInTheDocument()
+    expect(tarjeta).toHaveAttribute('aria-expanded', 'true')
+    expect(alGuardar).not.toHaveBeenCalled()
+  })
+
   it('mantiene una sola dirección principal al seleccionar otra', async () => {
     renderDialog()
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }))
