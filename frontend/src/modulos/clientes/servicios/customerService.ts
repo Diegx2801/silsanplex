@@ -37,6 +37,7 @@ const mensajesErrorGuardado: Array<[string, string]> = [
   ['CUSTOMER_DELIVERY_ADDRESS_LIMIT', 'Un cliente puede tener como máximo 20 direcciones de entrega.'],
   ['CUSTOMER_DELIVERY_ADDRESS_PRIMARY_REQUIRED', 'Selecciona una dirección de entrega principal.'],
   ['customer_addresses_type_valid', 'El tipo de dirección no es válido.'],
+  ['customer_contacts_phone_format', 'El teléfono debe tener entre 7 y 15 dígitos y usar un formato válido.'],
   ['CUSTOMER_CONTACT_NOT_OWNED', 'El contacto no pertenece a este cliente. Recarga el formulario e inténtalo nuevamente.'],
   ['CUSTOMER_PERMISSION_REQUIRED', 'No tienes permiso para gestionar clientes.'],
 ]

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { validarTelefonoCliente } from './cliente'
 
 export type ModoImportacionClientes = 'SKIP' | 'UPDATE'
 export type EstadoFilaImportacion = 'VALID' | 'INVALID'
@@ -165,6 +166,8 @@ export function analizarRegistrosClientes(
     if (contactName.length > 120) errors.push('El contacto supera 120 caracteres.')
     if (email.length > 254) errors.push('El correo supera 254 caracteres.')
     if (phone.length > 30) errors.push('El teléfono supera 30 caracteres.')
+    const phoneError = validarTelefonoCliente(phone)
+    if (phoneError) errors.push(phoneError)
     if (fiscalAddress && (fiscalAddress.length < 3 || fiscalAddress.length > 240)) errors.push('La dirección fiscal debe tener entre 3 y 240 caracteres.')
     if (ubigeoCode && !/^\d{6}$/.test(ubigeoCode)) errors.push('El ubigeo debe tener 6 dígitos.')
     if (taxpayerStatus.length > 40 || domicileCondition.length > 40) errors.push('Los datos SUNAT superan 40 caracteres.')
