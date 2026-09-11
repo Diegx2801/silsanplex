@@ -3,6 +3,15 @@ import { z } from 'zod'
 export type ModoImportacionClientes = 'SKIP' | 'UPDATE'
 export type EstadoFilaImportacion = 'VALID' | 'INVALID'
 
+export interface DireccionEntregaImportada {
+  id?: string
+  etiqueta: string
+  direccion: string
+  ubigeo: string
+  referencia: string
+  principal: boolean
+}
+
 export interface FilaClienteImportada {
   rowNumber: number
   documentType: 'RUC' | 'DNI' | 'CE' | 'OTHER'
@@ -17,6 +26,7 @@ export interface FilaClienteImportada {
   taxpayerStatus: string
   domicileCondition: string
   isActive: boolean
+  direccionesEntrega: DireccionEntregaImportada[]
   status: EstadoFilaImportacion
   errors: string[]
   warnings: string[]
@@ -29,6 +39,11 @@ export interface AnalisisImportacionClientes {
   validCount: number
   invalidCount: number
   warningCount: number
+}
+
+export interface AnalisisDireccionesEntregaImportadas {
+  porCliente: Map<string, DireccionEntregaImportada[]>
+  erroresPorCliente: Map<string, string[]>
 }
 
 export interface ResultadoFilaImportacionCliente {
@@ -99,6 +114,13 @@ function inferirTipoDocumento(typeValue: string, documentNumber: string) {
   return 'OTHER' as const
 }
 
+export function claveDocumentoImportado(
+  documentType: FilaClienteImportada['documentType'],
+  documentNumber: string,
+) {
+  return `${documentType}:${documentNumber}`
+}
+
 function interpretarActivo(value: string) {
   if (!value) return true
   return !['NO', 'N', '0', 'FALSE', 'INACTIVO'].includes(normalizarEncabezadoCliente(value))
@@ -164,6 +186,7 @@ export function analizarRegistrosClientes(
       taxpayerStatus,
       domicileCondition,
       isActive: interpretarActivo(valor(record, ['ACTIVO', 'ESTADO'])),
+      direccionesEntrega: [],
       status: errors.length ? 'INVALID' : 'VALID',
       errors,
       warnings,
@@ -178,4 +201,69 @@ export function analizarRegistrosClientes(
     invalidCount: rows.filter((row) => row.status === 'INVALID').length,
     warningCount: rows.filter((row) => row.status === 'VALID' && row.warnings.length > 0).length,
   }
+}
+
+export function analizarRegistrosDireccionesEntrega(
+  records: readonly Record<string, unknown>[],
+): AnalisisDireccionesEntregaImportadas {
+  const porCliente = new Map<string, DireccionEntregaImportada[]>()
+  const erroresPorCliente = new Map<string, string[]>()
+  const idsVistos = new Set<string>()
+
+  const agregarError = (clave: string, mensaje: string) => {
+    const errores = erroresPorCliente.get(clave) ?? []
+    errores.push(mensaje)
+    erroresPorCliente.set(clave, errores)
+  }
+
+  records.forEach((record, index) => {
+    let documentNumber = valor(record, ['RUC_DNI', 'NUMERO_DOCUMENTO', 'DOCUMENTO', 'RUC', 'DNI'])
+      .replace(/\.0$/, '')
+      .replace(/\s+/g, '')
+    const documentType = inferirTipoDocumento(
+      valor(record, ['TIPO_DOCUMENTO', 'TIPO_DOCUM', 'TIPO_DOC']),
+      documentNumber,
+    )
+    if (documentType === 'DNI' && /^\d{1,7}$/.test(documentNumber)) {
+      documentNumber = documentNumber.padStart(8, '0')
+    }
+    const clave = claveDocumentoImportado(documentType, documentNumber)
+    const rowNumber = index + 2
+    const id = valor(record, ['ID_DIRECCION', 'DIRECCION_ID', 'ID'])
+    const etiqueta = valorOpcionalCodeplex(record, ['ETIQUETA', 'LABEL', 'NOMBRE'])
+    const direccion = valor(record, ['DIRECCION', 'DIRECCION_ENTREGA', 'ADDRESS'])
+    const ubigeo = valorOpcionalCodeplex(record, ['UBIGEO', 'UBIGEO_ENTREGA', 'CODIGO_UBIGEO'])
+    const referencia = valorOpcionalCodeplex(record, ['REFERENCIA', 'REFERENCE'])
+    const principalValue = valor(record, ['PRINCIPAL', 'ES_PRINCIPAL', 'DEFAULT'])
+    const principal = ['SI', 'S', 'YES', 'TRUE', '1'].includes(normalizarEncabezadoCliente(principalValue))
+    const errors: string[] = []
+
+    if (!documentNumber) errors.push('Falta el documento de la dirección.')
+    if (documentType === 'RUC' && !/^\d{11}$/.test(documentNumber)) errors.push('El RUC debe tener 11 dígitos.')
+    if (documentType === 'DNI' && !/^\d{8}$/.test(documentNumber)) errors.push('El DNI debe tener 8 dígitos.')
+    if (id && !z.string().uuid().safeParse(id).success) errors.push('El ID de dirección no es válido.')
+    if (id && idsVistos.has(id)) errors.push('El ID de dirección está repetido en el archivo.')
+    if (id) idsVistos.add(id)
+    if (direccion.length < 3 || direccion.length > 240) errors.push('La dirección debe tener entre 3 y 240 caracteres.')
+    if (ubigeo && !/^\d{6}$/.test(ubigeo)) errors.push('El ubigeo debe tener 6 dígitos.')
+    if (etiqueta.length > 80) errors.push('La etiqueta supera 80 caracteres.')
+    if (referencia.length > 200) errors.push('La referencia supera 200 caracteres.')
+    if (principalValue && !['SI', 'S', 'YES', 'TRUE', '1', 'NO', 'N', 'FALSE', '0'].includes(normalizarEncabezadoCliente(principalValue))) {
+      errors.push('La columna PRINCIPAL debe indicar SI o NO.')
+    }
+
+    const direcciones = porCliente.get(clave) ?? []
+    direcciones.push({ id: id || undefined, etiqueta, direccion, ubigeo, referencia, principal })
+    porCliente.set(clave, direcciones)
+    errors.forEach((error) => agregarError(clave, `Fila ${rowNumber}: ${error}`))
+  })
+
+  porCliente.forEach((direcciones, clave) => {
+    if (direcciones.length > 20) agregarError(clave, 'Un cliente no puede importar más de 20 direcciones de entrega.')
+    if (direcciones.length > 0 && direcciones.filter((direccion) => direccion.principal).length !== 1) {
+      agregarError(clave, 'La hoja de direcciones debe marcar exactamente una dirección como principal.')
+    }
+  })
+
+  return { porCliente, erroresPorCliente }
 }

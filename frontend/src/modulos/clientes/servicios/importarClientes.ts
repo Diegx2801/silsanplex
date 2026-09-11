@@ -1,5 +1,7 @@
 import {
   analizarRegistrosClientes,
+  analizarRegistrosDireccionesEntrega,
+  claveDocumentoImportado,
   normalizarEncabezadoCliente,
   type AnalisisImportacionClientes,
   type FilaClienteImportada,
@@ -60,6 +62,50 @@ export async function analizarArchivoClientes(file: File): Promise<AnalisisImpor
   if (records.length > MAX_ROWS) throw new Error(`El archivo supera el límite de ${MAX_ROWS} filas por lote.`)
 
   const analysis = analizarRegistrosClientes(records, file.name)
+  const addressSheetName = workbook.SheetNames.find((name) => {
+    const normalizedName = normalizarEncabezadoCliente(name)
+    return normalizedName === 'DIRECCIONES_ENTREGA' || normalizedName === 'DIRECCIONESENTREGA'
+  })
+  if (addressSheetName) {
+    const addressSheet = workbook.Sheets[addressSheetName]
+    const addressHeaders = (utils.sheet_to_json<unknown[]>(addressSheet, {
+      header: 1,
+      raw: false,
+      defval: '',
+      blankrows: false,
+    })[0] ?? []).map((value) => normalizarEncabezadoCliente(String(value)))
+    const addressHasDocument = ['RUC_DNI', 'NUMERO_DOCUMENTO', 'DOCUMENTO', 'RUC', 'DNI']
+      .some((header) => addressHeaders.includes(header))
+    const addressHasLine = ['DIRECCION', 'DIRECCION_ENTREGA', 'ADDRESS']
+      .some((header) => addressHeaders.includes(header))
+    if (addressSheet && (!addressHasDocument || !addressHasLine)) {
+      throw new Error('La hoja DireccionesEntrega debe incluir las columnas de documento y DIRECCION.')
+    }
+    const addressRecords = addressSheet
+      ? utils.sheet_to_json<Record<string, unknown>>(addressSheet, { raw: false, defval: '', blankrows: false })
+      : []
+    if (addressRecords.length > 0) {
+      const addressAnalysis = analizarRegistrosDireccionesEntrega(addressRecords)
+      const customerKeys = new Set(analysis.rows.map((row) => claveDocumentoImportado(row.documentType, row.documentNumber)))
+      const unknownCustomer = [...addressAnalysis.porCliente.keys()].find((key) => !customerKeys.has(key))
+      if (unknownCustomer) {
+        throw new Error('La hoja DireccionesEntrega contiene un documento que no existe en la hoja Clientes.')
+      }
+      analysis.rows = analysis.rows.map((row) => {
+        const key = claveDocumentoImportado(row.documentType, row.documentNumber)
+        const addressErrors = addressAnalysis.erroresPorCliente.get(key) ?? []
+        const errors = [...row.errors, ...addressErrors]
+        return {
+          ...row,
+          direccionesEntrega: addressAnalysis.porCliente.get(key) ?? [],
+          errors,
+          status: errors.length ? 'INVALID' : row.status,
+        }
+      })
+      analysis.validCount = analysis.rows.filter((row) => row.status === 'VALID').length
+      analysis.invalidCount = analysis.rows.filter((row) => row.status === 'INVALID').length
+    }
+  }
   const validRows = analysis.rows.filter((row) => row.status === 'VALID')
   if (!validRows.length) return analysis
 

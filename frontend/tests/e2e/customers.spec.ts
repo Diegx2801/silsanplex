@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto'
 import { expect, test } from '@playwright/test'
+import * as XLSX from 'xlsx'
 
 function requiredEnvironment(name: string) {
   const value = process.env[name]?.trim()
@@ -157,4 +158,47 @@ test('rechaza un archivo de clientes sin columnas obligatorias', async ({ page }
     'El archivo debe incluir las columnas RUC_DNI (o documento) y RAZON_SOCIAL (o cliente).',
   )
   await expect(importDialog.getByRole('button', { name: /Importar/ })).toBeDisabled()
+})
+
+test('importa direcciones de entrega desde la hoja separada', async ({ page }) => {
+  const documentNumber = uniqueRuc()
+  const legalName = `CLIENTE E2E HOJA DIRECCIONES ${documentNumber}`
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{
+    RUC_DNI: documentNumber,
+    RAZON_SOCIAL: legalName,
+  }]), 'Clientes')
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
+    {
+      TIPO_DOCUMENTO: 'RUC', NUMERO_DOCUMENTO: documentNumber, ETIQUETA: 'Principal',
+      DIRECCION: 'Av. Hoja principal 10', UBIGEO: '150101', PRINCIPAL: 'SI',
+    },
+    {
+      TIPO_DOCUMENTO: 'RUC', NUMERO_DOCUMENTO: documentNumber, ETIQUETA: 'Secundaria',
+      DIRECCION: 'Av. Hoja secundaria 20', UBIGEO: '150102', PRINCIPAL: 'NO',
+    },
+  ]), 'DireccionesEntrega')
+  const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
+
+  await signIn(page)
+  await page.goto('/clientes')
+  await page.getByRole('button', { name: 'Importar' }).click()
+  const importDialog = page.getByRole('dialog', { name: 'Importar clientes' })
+  await importDialog.locator('input[type="file"]').setInputFiles({
+    name: 'clientes-con-direcciones.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer,
+  })
+
+  await expect(importDialog.getByText(legalName)).toBeVisible()
+  await importDialog.getByRole('button', { name: 'Importar 1 filas' }).click()
+  await expect(importDialog.getByText(/Importación finalizada: 1 creados/)).toBeVisible()
+  await importDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
+
+  await page.getByRole('searchbox', { name: 'Buscar', exact: true }).fill(documentNumber)
+  await expect(page.getByText(legalName)).toBeVisible()
+  await page.getByRole('button', { name: `Editar ${legalName}` }).click()
+  const editDialog = page.getByRole('dialog', { name: 'Editar cliente' })
+  await expect(editDialog.locator('[data-address-index="0"]')).toBeVisible()
+  await expect(editDialog.locator('[data-address-index="1"]')).toBeVisible()
 })

@@ -91,7 +91,7 @@ export function DialogoImportarClientes({
           <section className="grid gap-4 border p-4 lg:grid-cols-[1fr_16rem] lg:items-end">
             <div>
               <h3 className="font-semibold">Archivo de origen</h3>
-              <p className="mt-1 text-sm text-muted-foreground">Admite la exportación de Codeplex en XLSX y archivos XLS o CSV, hasta 500 filas y 5 MB.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Admite XLSX, XLS o CSV de hasta 500 filas y 5 MB. En XLSX, la hoja opcional DireccionesEntrega conserva las direcciones de entrega.</p>
               <input
                 ref={inputRef}
                 type="file"

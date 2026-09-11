@@ -34,6 +34,8 @@ const mensajesErrorGuardado: Array<[string, string]> = [
   ['customer_addresses_label_length', 'La etiqueta de una dirección no puede superar 80 caracteres.'],
   ['customer_addresses_reference_length', 'La referencia de una dirección no puede superar 200 caracteres.'],
   ['customer_addresses_one_default_delivery_idx', 'Solo puede existir una dirección de entrega principal.'],
+  ['CUSTOMER_DELIVERY_ADDRESS_LIMIT', 'Un cliente puede tener como máximo 20 direcciones de entrega.'],
+  ['CUSTOMER_DELIVERY_ADDRESS_PRIMARY_REQUIRED', 'Selecciona una dirección de entrega principal.'],
   ['customer_addresses_type_valid', 'El tipo de dirección no es válido.'],
   ['CUSTOMER_CONTACT_NOT_OWNED', 'El contacto no pertenece a este cliente. Recarga el formulario e inténtalo nuevamente.'],
   ['CUSTOMER_PERMISSION_REQUIRED', 'No tienes permiso para gestionar clientes.'],

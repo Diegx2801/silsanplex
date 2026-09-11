@@ -1,5 +1,5 @@
 import { ChevronDown, Trash2 } from 'lucide-react'
-import type { FieldArrayWithId, UseFormClearErrors, UseFormGetValues, UseFormRegister, UseFormSetValue } from 'react-hook-form'
+import { Controller, type Control, type FieldArrayWithId, type UseFormClearErrors, type UseFormGetValues, type UseFormRegister, type UseFormSetValue } from 'react-hook-form'
 import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import type { DatosCliente } from '@/modulos/clientes/modelo/cliente'
@@ -18,6 +18,7 @@ interface Props {
   abierta: boolean
   errores?: ErroresDireccion
   register: UseFormRegister<DatosCliente>
+  control: Control<DatosCliente>
   getValues: UseFormGetValues<DatosCliente>
   setValue: UseFormSetValue<DatosCliente>
   clearErrors: UseFormClearErrors<DatosCliente>
@@ -25,7 +26,7 @@ interface Props {
   alQuitar: () => void
 }
 
-export function DireccionEntregaCard({ field, index, abierta, errores, register, getValues, setValue, clearErrors, alAlternar, alQuitar }: Props) {
+export function DireccionEntregaCard({ field, index, abierta, errores, register, control, getValues, setValue, clearErrors, alAlternar, alQuitar }: Props) {
   const prefijo = `direccionesEntrega.${index}` as const
   const limpiarErrores = () => clearErrors('direccionesEntrega')
   const registrar = (campo: 'etiqueta' | 'ubigeo' | 'direccion' | 'referencia') => register(`${prefijo}.${campo}`, { onChange: limpiarErrores })
@@ -42,14 +43,12 @@ export function DireccionEntregaCard({ field, index, abierta, errores, register,
       <Campo label="Ubigeo" error={errores?.ubigeo?.message} errorId={`cliente-direccion-${index}-ubigeo-error`}><input inputMode="numeric" maxLength={6} className="field-control" aria-invalid={Boolean(errores?.ubigeo)} aria-describedby={errores?.ubigeo ? `cliente-direccion-${index}-ubigeo-error` : undefined} {...registrar('ubigeo')} /></Campo>
       <Campo label="Dirección *" error={errores?.direccion?.message} errorId={`cliente-direccion-${index}-direccion-error`} ancho><input className="field-control" aria-invalid={Boolean(errores?.direccion)} aria-describedby={errores?.direccion ? `cliente-direccion-${index}-direccion-error` : undefined} {...registrar('direccion')} /></Campo>
       <Campo label="Referencia" error={errores?.referencia?.message} errorId={`cliente-direccion-${index}-referencia-error`} ancho><input className="field-control" aria-invalid={Boolean(errores?.referencia)} aria-describedby={errores?.referencia ? `cliente-direccion-${index}-referencia-error` : undefined} {...registrar('referencia')} /></Campo>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" {...register(`${prefijo}.principal`, { onChange: (evento) => {
-        if (evento.target.checked) {
-          getValues('direccionesEntrega').forEach((_, posicion) => {
-            setValue(`direccionesEntrega.${posicion}.principal`, posicion === index, { shouldDirty: true, shouldValidate: true })
-          })
-        }
+      <Controller control={control} name={`${prefijo}.principal`} render={({ field: principalField }) => <label className="flex items-center gap-2 text-sm"><input type="radio" name="direccion-principal" aria-label="Dirección principal" checked={Boolean(principalField.value)} onChange={() => {
+        getValues('direccionesEntrega').forEach((_, posicion) => {
+          setValue(`direccionesEntrega.${posicion}.principal`, posicion === index, { shouldDirty: true, shouldValidate: true })
+        })
         limpiarErrores()
-      } })} /> Dirección principal</label>
+      }} onBlur={principalField.onBlur} ref={principalField.ref} /> Dirección principal</label>} />
       <Button type="button" variant="ghost" className="justify-self-end" onClick={alQuitar}><Trash2 /> Quitar</Button>
     </div>
   </article>

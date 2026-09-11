@@ -95,8 +95,12 @@ export const esquemaDatosCliente = z
         message: 'El DNI debe contener 8 dígitos',
       })
     }
-    if (datos.direccionesEntrega.filter((direccion) => direccion.principal).length > 1) {
+    const direccionesPrincipales = datos.direccionesEntrega.filter((direccion) => direccion.principal).length
+    if (direccionesPrincipales > 1) {
       contexto.addIssue({ code: 'custom', path: ['direccionesEntrega', 'root'], message: 'Solo puede existir una dirección de entrega principal' })
+    }
+    if (datos.direccionesEntrega.length > 0 && direccionesPrincipales === 0) {
+      contexto.addIssue({ code: 'custom', path: ['direccionesEntrega', 'root'], message: 'Selecciona una dirección de entrega principal' })
     }
     if (datos.direccionesEntrega.length > 20) {
       contexto.addIssue({ code: 'custom', path: ['direccionesEntrega', 'root'], message: 'Solo puedes registrar hasta 20 direcciones de entrega' })
