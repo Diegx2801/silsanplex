@@ -95,14 +95,19 @@ permiso y organización activos.
 Despliegue: aplicar `20260905010000_add_repair_technician_role.sql`, desplegar
 la Edge Function `admin-users` y publicar el frontend. La asignación utiliza
 las operaciones existentes de administración y queda en su auditoría.
-## Precio mínimo pendiente
+## Precio mínimo de repuestos
 
-P1C no aplica `products.minimum_sale_price` a las cotizaciones de Reparaciones.
-El catálogo expresa ese mínimo como precio final por unidad base en PEN, mientras
-que Reparaciones admite cotizaciones en PEN y USD y todavía no conserva un
-snapshot de tipo de cambio adecuado. El enforcement debe abordarse en una fase
-separada después de definir y persistir ese snapshot; no se debe comparar usando
-un tipo de cambio vigente ni convertir documentos históricos.
+Las cotizaciones conservan `exchange_rate_to_pen`, expresado como PEN por una
+unidad de la moneda cotizada. En PEN el valor es siempre `1`; en USD debe enviarse
+un valor positivo explícito. PostgreSQL convierte cada precio unitario a su valor
+final en PEN, incluyendo el impuesto cuando corresponde, y lo compara sin
+redondeo previo con `products.minimum_sale_price`.
+
+Cada línea de repuesto conserva el mínimo PEN vigente y el precio comparable
+calculado. Cambios posteriores en el catálogo o en el tipo de cambio no alteran
+documentos ya guardados. Las cotizaciones USD heredadas siguen siendo legibles
+con tipo de cambio nulo, identificado en la interfaz como histórico no registrado;
+deben indicar un tipo de cambio si vuelven a editarse.
 
 ## Validación local
 

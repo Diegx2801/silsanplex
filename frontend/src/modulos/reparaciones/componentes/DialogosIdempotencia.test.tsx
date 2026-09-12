@@ -101,6 +101,26 @@ describe('Claves de reintento de comandos', () => {
     expect(alGuardar.mock.calls[2][2]).not.toBe(alGuardar.mock.calls[0][2])
   })
 
+  it('exige y envía el tipo de cambio cuando la cotización está en USD', async () => {
+    const alGuardar = vi.fn().mockResolvedValue(undefined)
+    render(<DialogoCotizacion abierto reparacion={reparacion} cotizacion={null}
+      productos={productos} alGuardar={alGuardar} alCambiarApertura={vi.fn()} />)
+
+    fireEvent.change(screen.getByLabelText('Moneda *'), { target: { value: 'USD' } })
+    fireEvent.change(screen.getByLabelText('Descripción *'), { target: { value: 'Diagnóstico' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }))
+    expect(await screen.findByText('Ingresa un tipo de cambio positivo')).toBeInTheDocument()
+    expect(alGuardar).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('Tipo de cambio a PEN *'), { target: { value: '3.75' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }))
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(
+      expect.objectContaining({ moneda: 'USD', tipoCambioPen: '3.75' }),
+      false,
+      expect.any(String),
+    ))
+  })
+
   it('restaura el borrador y su clave al volver a montar el diálogo', async () => {
     const clave = crypto.randomUUID()
     const alGuardar = vi.fn().mockResolvedValue(undefined)
@@ -111,7 +131,7 @@ describe('Claves de reintento de comandos', () => {
         enviar: false,
         expectedLockVersion: 1,
         datos: {
-          moneda: 'PEN', preciosIncluyenImpuesto: false, tasaImpuesto: '18',
+          moneda: 'PEN', tipoCambioPen: '1', preciosIncluyenImpuesto: false, tasaImpuesto: '18',
           lineas: [{ tipo: 'labor', productoId: '', descripcion: 'Borrador recuperado',
             cantidad: '1', precioUnitario: '50', gravable: true }],
         },
