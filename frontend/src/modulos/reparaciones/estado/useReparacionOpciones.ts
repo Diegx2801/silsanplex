@@ -3,12 +3,15 @@ import { useCallback } from 'react'
 
 import { useAuth } from '@/features/auth/useAuth'
 import {
-  listarAlmacenesReparacion,
+  listarOpcionesAlmacenesReparacion,
+  listarOpcionesUbicacionesReparacion,
   listarOpcionesClientesReparacion,
   listarOpcionesProductosReparacion,
   listarTecnicosReparacion,
   obtenerOpcionClienteReparacion,
+  obtenerOpcionAlmacenReparacion,
   obtenerOpcionProductoReparacion,
+  obtenerOpcionUbicacionReparacion,
 } from '@/modulos/reparaciones/servicios/reparacionesService'
 import type { ConsultaCatalogoReparacion } from '../modelo/reparacion'
 
@@ -21,6 +24,7 @@ interface ConfiguracionOpcionesReparacion {
 }
 
 const consultaInicial = { busqueda: '', pagina: 1, tamanioPagina: 25 }
+const ubicacionesIniciales: never[] = []
 
 export function useReparacionOpciones(
   configuracion: ConfiguracionOpcionesReparacion = {},
@@ -41,7 +45,7 @@ export function useReparacionOpciones(
   })
   const almacenesQuery = useQuery({
     queryKey: ['repair-options', organizationId, 'warehouses'],
-    queryFn: () => listarAlmacenesReparacion(organizationId),
+    queryFn: () => listarOpcionesAlmacenesReparacion(organizationId, consultaInicial),
     enabled: Boolean(organizationId && configuracion.cargarAlmacenes),
     staleTime: 60_000,
   })
@@ -65,6 +69,14 @@ export function useReparacionOpciones(
     obtenerOpcionClienteReparacion(organizationId, id), [organizationId])
   const resolverProducto = useCallback((id: string) =>
     obtenerOpcionProductoReparacion(organizationId, id), [organizationId])
+  const buscarAlmacenes = useCallback((consulta: ConsultaCatalogoReparacion) =>
+    listarOpcionesAlmacenesReparacion(organizationId, consulta), [organizationId])
+  const buscarUbicaciones = useCallback((almacenId: string, consulta: ConsultaCatalogoReparacion) =>
+    listarOpcionesUbicacionesReparacion(organizationId, almacenId, consulta), [organizationId])
+  const resolverAlmacen = useCallback((id: string) =>
+    obtenerOpcionAlmacenReparacion(organizationId, id), [organizationId])
+  const resolverUbicacion = useCallback((id: string) =>
+    obtenerOpcionUbicacionReparacion(organizationId, id), [organizationId])
 
   return {
     clientes: clientesQuery.data?.elementos ?? [],
@@ -77,8 +89,13 @@ export function useReparacionOpciones(
     productoActual: productoActualQuery.data ?? null,
     buscarProductos,
     resolverProducto,
-    almacenes: almacenesQuery.data?.almacenes ?? [],
-    ubicaciones: almacenesQuery.data?.ubicaciones ?? [],
+    almacenes: almacenesQuery.data?.elementos ?? [],
+    totalAlmacenes: almacenesQuery.data?.total ?? 0,
+    ubicaciones: ubicacionesIniciales,
+    buscarAlmacenes,
+    buscarUbicaciones,
+    resolverAlmacen,
+    resolverUbicacion,
     cargando:
       clientesQuery.isLoading || productosQuery.isLoading || almacenesQuery.isLoading
       || clienteActualQuery.isLoading || productoActualQuery.isLoading,
