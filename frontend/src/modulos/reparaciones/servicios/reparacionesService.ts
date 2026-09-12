@@ -946,45 +946,77 @@ export async function obtenerOpcionProductoReparacion(organizationId: string, id
   return data ? mapearOpcionProducto(data as FilaProductoReparacion) : null
 }
 
-export async function listarAlmacenesReparacion(
-  organizationId: string,
-): Promise<{ almacenes: Almacen[]; ubicaciones: UbicacionAlmacen[] }> {
-  const [almacenesResult, ubicacionesResult] = await Promise.all([
-    supabase
-      .from('warehouses')
-      .select('id,code,name,address,is_active')
-      .eq('organization_id', organizationId)
-      .eq('is_active', true)
-      .order('name', { ascending: true }),
-    supabase
-      .from('warehouse_locations')
-      .select('id,warehouse_id,code,name,description,is_active')
-      .eq('organization_id', organizationId)
-      .eq('is_active', true)
-      .order('name', { ascending: true }),
-  ])
-  const fallo = [almacenesResult, ubicacionesResult].find((resultado) => resultado.error)
-  if (fallo?.error) {
-    throw crearErrorReparacion(fallo.error, 'opciones')
-  }
-
+function mapearAlmacenReparacion(fila: FilaAlmacen): Almacen {
   return {
-    almacenes: ((almacenesResult.data ?? []) as FilaAlmacen[]).map((fila) => ({
-      id: fila.id,
-      codigo: fila.code,
-      nombre: fila.name,
-      direccion: fila.address ?? '',
-      activo: fila.is_active,
-    })),
-    ubicaciones: ((ubicacionesResult.data ?? []) as FilaUbicacion[]).map((fila) => ({
-      id: fila.id,
-      almacenId: fila.warehouse_id,
-      codigo: fila.code,
-      nombre: fila.name,
-      descripcion: fila.description ?? '',
-      activa: fila.is_active,
-    })),
+    id: fila.id,
+    codigo: fila.code,
+    nombre: fila.name,
+    direccion: fila.address ?? '',
+    activo: fila.is_active,
   }
+}
+
+function mapearUbicacionReparacion(fila: FilaUbicacion): UbicacionAlmacen {
+  return {
+    id: fila.id,
+    almacenId: fila.warehouse_id,
+    codigo: fila.code,
+    nombre: fila.name,
+    descripcion: fila.description ?? '',
+    activa: fila.is_active,
+  }
+}
+
+export async function listarOpcionesAlmacenesReparacion(
+  organizationId: string,
+  consulta: ConsultaCatalogoReparacion,
+): Promise<ResultadoCatalogoReparacion<Almacen>> {
+  const rango = rangoCatalogo(consulta)
+  let query = supabase.from('warehouses')
+    .select('id,code,name,address,is_active', { count: 'exact' })
+    .eq('organization_id', organizationId).eq('is_active', true)
+  const termino = escaparPatronIlike(normalizarBusquedaReparaciones(consulta.busqueda))
+  if (termino) query = query.or(`code.ilike.%${termino}%,name.ilike.%${termino}%,address.ilike.%${termino}%`)
+  const { data, error, count } = await query.order('name', { ascending: true })
+    .order('code', { ascending: true }).order('id', { ascending: true })
+    .range(rango.inicio, rango.fin)
+  if (error) throw crearErrorReparacion(error, 'opciones')
+  return { elementos: ((data ?? []) as FilaAlmacen[]).map(mapearAlmacenReparacion), total: count ?? 0 }
+}
+
+export async function listarOpcionesUbicacionesReparacion(
+  organizationId: string,
+  almacenId: string,
+  consulta: ConsultaCatalogoReparacion,
+): Promise<ResultadoCatalogoReparacion<UbicacionAlmacen>> {
+  const rango = rangoCatalogo(consulta)
+  let query = supabase.from('warehouse_locations')
+    .select('id,warehouse_id,code,name,description,is_active', { count: 'exact' })
+    .eq('organization_id', organizationId).eq('warehouse_id', almacenId)
+    .eq('is_active', true)
+  const termino = escaparPatronIlike(normalizarBusquedaReparaciones(consulta.busqueda))
+  if (termino) query = query.or(`code.ilike.%${termino}%,name.ilike.%${termino}%,description.ilike.%${termino}%`)
+  const { data, error, count } = await query.order('name', { ascending: true })
+    .order('code', { ascending: true }).order('id', { ascending: true })
+    .range(rango.inicio, rango.fin)
+  if (error) throw crearErrorReparacion(error, 'opciones')
+  return { elementos: ((data ?? []) as FilaUbicacion[]).map(mapearUbicacionReparacion), total: count ?? 0 }
+}
+
+export async function obtenerOpcionAlmacenReparacion(organizationId: string, id: string) {
+  const { data, error } = await supabase.from('warehouses')
+    .select('id,code,name,address,is_active')
+    .eq('organization_id', organizationId).eq('id', id).maybeSingle()
+  if (error) throw crearErrorReparacion(error, 'opciones')
+  return data ? mapearAlmacenReparacion(data as FilaAlmacen) : null
+}
+
+export async function obtenerOpcionUbicacionReparacion(organizationId: string, id: string) {
+  const { data, error } = await supabase.from('warehouse_locations')
+    .select('id,warehouse_id,code,name,description,is_active')
+    .eq('organization_id', organizationId).eq('id', id).maybeSingle()
+  if (error) throw crearErrorReparacion(error, 'opciones')
+  return data ? mapearUbicacionReparacion(data as FilaUbicacion) : null
 }
 
 export async function listarTecnicosReparacion(

@@ -307,6 +307,10 @@ export function ReparacionesPage() {
         buscarProductos={opciones.buscarProductos}
         resolverProducto={opciones.resolverProducto}
         almacenes={opciones.almacenes}
+        totalAlmacenes={opciones.totalAlmacenes}
+        buscarAlmacenes={opciones.buscarAlmacenes}
+        resolverAlmacen={opciones.resolverAlmacen}
+        resolverUbicacion={opciones.resolverUbicacion}
         ubicaciones={opciones.ubicaciones}
         puedeEditar={puedeEditar}
         puedeAsignar={puedeAsignar}

@@ -66,7 +66,13 @@ limita cada petición a 50 filas. Al editar, la referencia guardada se resuelve
 por organización e ID aunque esté fuera de la página actual o se encuentre
 inactiva; permanece visible como referencia histórica, pero no se ofrece como
 nueva selección. Esta misma consulta paginada se usa en cotizaciones y reservas
-de repuestos. Almacenes y ubicaciones muestran registros activos. Los técnicos
+de repuestos.
+
+El selector de almacenes de la reserva también usa búsqueda remota y páginas de
+25 registros. Las ubicaciones activas se consultan paginadas dentro de un único
+almacén; FEFO continúa eligiendo la ubicación asignable de la reserva. El detalle
+resuelve almacén y ubicación directamente por organización e ID, sin filtrar por
+estado, para mostrar correctamente referencias históricas inactivas. Los técnicos
 se obtienen mediante `list_repair_technicians`.
 
 ## Productos serializados

@@ -98,6 +98,13 @@ async function createRepair(page: Page, f: Fixture) {
   return dialog
 }
 
+async function selectWarehouse(dialog: Locator, f: Fixture) {
+  await dialog.getByLabel('Buscar almacén').fill(f.reference)
+  const warehouse = dialog.getByLabel('Almacén *', { exact: true })
+  await expect(warehouse.locator(`option[value="${f.warehouseId}"]`)).toHaveCount(1)
+  await warehouse.selectOption(f.warehouseId)
+}
+
 // Forward to real PostgreSQL, then lose the successful response. Never mock a
 // successful mutation: the second request must replay the committed operation.
 async function interceptFirstSuccessfulResponse(page: Page, rpc: string) {
@@ -201,7 +208,7 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   await reservation.getByLabel('Buscar repuesto').fill(f.reference)
   await expect(reservation.getByLabel('Producto *').locator(`option[value="${f.productId}"]`)).toHaveCount(1)
   await reservation.getByLabel('Producto *', { exact: true }).selectOption(f.productId)
-  await reservation.getByLabel('Almacén *', { exact: true }).selectOption(f.warehouseId)
+  await selectWarehouse(reservation, f)
   await expect(reservation.getByText(/2 asignables/)).toBeVisible()
   await reservation.getByLabel('Cantidad solicitada *').fill('2')
   const interceptedReservation = await interceptFirstSuccessfulResponse(page, 'reserve_repair_part')
@@ -358,7 +365,7 @@ test('catálogos remotos permiten seleccionar después del registro 1000 y resol
   await reservation.getByLabel('Buscar repuesto').fill('E2ECAT1001')
   await expect(reservation.getByLabel('Producto *').locator(`option[value="${catalogProductId}"]`)).toHaveCount(1)
   await reservation.getByLabel('Producto *').selectOption(catalogProductId)
-  await reservation.getByLabel('Almacén *').selectOption(f.warehouseId)
+  await selectWarehouse(reservation, f)
   await expect(reservation.getByText(/2 asignables/)).toBeVisible()
   await reservation.getByRole('button', { name: 'Cancelar', exact: true }).click()
 })

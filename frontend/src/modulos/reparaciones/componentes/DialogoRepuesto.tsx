@@ -30,6 +30,9 @@ interface DialogoReservaParteProps {
   buscarProductos?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>>
   resolverProducto?: (id: string) => Promise<OpcionProductoReparacion | null>
   almacenes: readonly Almacen[]
+  totalAlmacenes?: number
+  buscarAlmacenes?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<Almacen>>
+  resolverAlmacen?: (id: string) => Promise<Almacen | null>
   ubicaciones: readonly UbicacionAlmacen[]
   operacionPendiente?: ReservaPartePendiente | null
   alCambiarApertura: (abierto: boolean) => void
@@ -44,6 +47,9 @@ export function DialogoReservaParte({
   buscarProductos,
   resolverProducto,
   almacenes,
+  totalAlmacenes = almacenes.length,
+  buscarAlmacenes,
+  resolverAlmacen,
   ubicaciones,
   operacionPendiente,
   alCambiarApertura,
@@ -53,6 +59,7 @@ export function DialogoReservaParte({
   const primeraUbicacion = ubicaciones.find((item) => item.almacenId === primerAlmacen)?.id ?? ''
   const [mensaje, setMensaje] = useState('')
   const [productoRemoto, setProductoRemoto] = useState<OpcionProductoReparacion | null>(null)
+  const [almacenRemoto, setAlmacenRemoto] = useState<Almacen | null>(null)
   const operacion = useRef<{ firma: string; clave: string } | null>(null)
   const [seleccionEnviada, setSeleccionEnviada] = useState<{
     productoId: string; almacenId: string; candidato: CandidatoFefo
@@ -115,6 +122,7 @@ export function DialogoReservaParte({
       },
     } : null)
     setProductoRemoto(null)
+    setAlmacenRemoto(null)
     if (abierto) {
       reset(operacionPendiente?.datos ?? {
         productoId: productos[0]?.id ?? '',
@@ -208,12 +216,17 @@ export function DialogoReservaParte({
               <input type="hidden" {...register('estadoStock')} />
               <p id="reserva-estado-stock" className="field-control flex items-center bg-muted/35">Disponible · FEFO canónico</p>
             </div>
-            <div>
-              <label htmlFor="reserva-almacen" className="field-label">Almacén *</label>
-              <select id="reserva-almacen" className="field-control" aria-invalid={Boolean(errors.almacenId)} {...register('almacenId')}>
-                {almacenes.map((almacen) => <option key={almacen.id} value={almacen.id}>{almacen.codigo} · {almacen.nombre}</option>)}
-              </select>
-              {errors.almacenId ? <p className="field-error">{errors.almacenId.message}</p> : null}
+            <div className="sm:col-span-2">
+              <Controller name="almacenId" control={control} render={({ field }) =>
+                <SelectorCatalogoReparacion id="reserva-almacen" etiqueta="Almacén *"
+                  etiquetaBusqueda="Buscar almacén" valor={field.value}
+                  opcionesIniciales={almacenes} totalInicial={totalAlmacenes}
+                  opcionActual={almacenRemoto} buscar={buscarAlmacenes}
+                  resolver={resolverAlmacen}
+                  representar={(item) => `${item.codigo} · ${item.nombre}${item.activo ? '' : ' (inactivo)'}`}
+                  alCambiar={(valor, opcion) => { setAlmacenRemoto(opcion); field.onChange(valor) }}
+                  error={errors.almacenId?.message} textoVacio="Selecciona un almacén" />
+              } />
             </div>
             <div>
               <label htmlFor="reserva-ubicacion-fefo" className="field-label">Ubicación FEFO *</label>
@@ -252,7 +265,7 @@ export function DialogoReservaParte({
           {mensaje ? <p role="alert" className="border-t bg-destructive/10 px-5 py-3 text-sm text-destructive sm:px-7">{mensaje}</p> : null}
           <footer className="flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
             <DialogPrimitive.Close asChild><Button type="button" variant="outline" size="lg">Cancelar</Button></DialogPrimitive.Close>
-            <Button type="submit" form="formulario-reserva-parte" size="lg" disabled={isSubmitting || !almacenes.length || !ubicaciones.length || cargandoFefo || !candidatoFefo}>{operacionPendiente ? 'Reintentar reserva' : 'Reservar repuesto'}</Button>
+            <Button type="submit" form="formulario-reserva-parte" size="lg" disabled={isSubmitting || !almacenId || cargandoFefo || !candidatoFefo}>{operacionPendiente ? 'Reintentar reserva' : 'Reservar repuesto'}</Button>
           </footer>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

@@ -20,12 +20,16 @@ import {
   ErrorReparacion,
   esConflictoVersionReparacion,
   guardarCotizacionReparacion,
+  listarOpcionesAlmacenesReparacion,
   listarOpcionesClientesReparacion,
   listarOpcionesProductosReparacion,
+  listarOpcionesUbicacionesReparacion,
   listarReparacionesPaginadas,
   obtenerDetalleReparacion,
+  obtenerOpcionAlmacenReparacion,
   obtenerOpcionClienteReparacion,
   obtenerOpcionProductoReparacion,
+  obtenerOpcionUbicacionReparacion,
   obtenerMensajeErrorReparacion,
   rechazarCotizacionReparacion,
   registrarDiagnosticoReparacion,
@@ -274,6 +278,51 @@ describe('reparacionesService', () => {
     await expect(obtenerOpcionProductoReparacion('org-1', 'inactive-product'))
       .resolves.toMatchObject({ id: 'inactive-product', activo: false, serialControl: true })
     expect(cadena.eq).toHaveBeenCalledWith('id', 'inactive-product')
+  })
+
+  it('pagina y busca almacenes sin descargar ubicaciones', async () => {
+    respuesta = { data: [{ id: 'warehouse-1001', code: 'ALM-1001', name: 'Almacén objetivo',
+      address: 'Lima', is_active: true }], error: null, count: 1001 }
+
+    await expect(listarOpcionesAlmacenesReparacion('org-1', {
+      busqueda: 'ALM-1001', pagina: 41, tamanioPagina: 25,
+    })).resolves.toMatchObject({ total: 1001, elementos: [{ id: 'warehouse-1001' }] })
+
+    expect(supabaseMock.from).toHaveBeenCalledTimes(1)
+    expect(supabaseMock.from).toHaveBeenCalledWith('warehouses')
+    expect(cadena.or).toHaveBeenCalledWith(expect.stringContaining('code.ilike.%ALM-1001%'))
+    expect(cadena.range).toHaveBeenCalledWith(1000, 1024)
+  })
+
+  it('pagina ubicaciones activas dentro del almacén seleccionado', async () => {
+    respuesta = { data: [{ id: 'location-26', warehouse_id: 'warehouse-1', code: 'U-026',
+      name: 'Ubicación objetivo', description: 'Pasillo final', is_active: true }],
+      error: null, count: 26 }
+
+    await expect(listarOpcionesUbicacionesReparacion('org-1', 'warehouse-1', {
+      busqueda: 'objetivo', pagina: 2, tamanioPagina: 25,
+    })).resolves.toMatchObject({ total: 26, elementos: [{
+      id: 'location-26', almacenId: 'warehouse-1',
+    }] })
+
+    expect(supabaseMock.from).toHaveBeenCalledWith('warehouse_locations')
+    expect(cadena.eq).toHaveBeenCalledWith('warehouse_id', 'warehouse-1')
+    expect(cadena.eq).toHaveBeenCalledWith('is_active', true)
+    expect(cadena.range).toHaveBeenCalledWith(25, 49)
+  })
+
+  it('resuelve almacenes y ubicaciones históricas inactivas por ID', async () => {
+    respuesta = { data: { id: 'warehouse-old', code: 'OLD', name: 'Almacén histórico',
+      address: null, is_active: false }, error: null }
+    await expect(obtenerOpcionAlmacenReparacion('org-1', 'warehouse-old'))
+      .resolves.toMatchObject({ id: 'warehouse-old', activo: false })
+    expect(cadena.eq).not.toHaveBeenCalledWith('is_active', true)
+
+    respuesta = { data: { id: 'location-old', warehouse_id: 'warehouse-old', code: 'OLD-1',
+      name: 'Ubicación histórica', description: null, is_active: false }, error: null }
+    await expect(obtenerOpcionUbicacionReparacion('org-1', 'location-old'))
+      .resolves.toMatchObject({ id: 'location-old', almacenId: 'warehouse-old', activa: false })
+    expect(cadena.eq).toHaveBeenCalledWith('id', 'location-old')
   })
 
   it('crea y actualiza una reparación sin campos técnicos en el payload general', async () => {

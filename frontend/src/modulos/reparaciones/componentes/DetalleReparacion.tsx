@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
@@ -144,6 +144,10 @@ interface DetalleReparacionProps {
   buscarProductos?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>>
   resolverProducto?: (id: string) => Promise<OpcionProductoReparacion | null>
   almacenes: readonly Almacen[]
+  totalAlmacenes?: number
+  buscarAlmacenes?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<Almacen>>
+  resolverAlmacen?: (id: string) => Promise<Almacen | null>
+  resolverUbicacion?: (id: string) => Promise<UbicacionAlmacen | null>
   ubicaciones: readonly UbicacionAlmacen[]
   puedeEditar: boolean
   puedeAsignar: boolean
@@ -222,6 +226,10 @@ export function DetalleReparacion({
   buscarProductos,
   resolverProducto,
   almacenes,
+  totalAlmacenes = almacenes.length,
+  buscarAlmacenes,
+  resolverAlmacen,
+  resolverUbicacion,
   ubicaciones,
   puedeEditar,
   puedeAsignar,
@@ -251,6 +259,44 @@ export function DetalleReparacion({
 }: DetalleReparacionProps) {
   const [accion, setAccion] = useState<ContextoAccion | null>(null)
   const [mensaje, setMensaje] = useState('')
+  const [almacenesHistoricos, setAlmacenesHistoricos] = useState<Almacen[]>([])
+  const [ubicacionesHistoricas, setUbicacionesHistoricas] = useState<UbicacionAlmacen[]>([])
+  const almacenesDisponibles = [...almacenesHistoricos,
+    ...almacenes.filter((item) => !almacenesHistoricos.some((historico) => historico.id === item.id))]
+  const ubicacionesDisponibles = [...ubicacionesHistoricas,
+    ...ubicaciones.filter((item) => !ubicacionesHistoricas.some((historica) => historica.id === item.id))]
+
+  useEffect(() => {
+    if (!detalle) {
+      setAlmacenesHistoricos([])
+      setUbicacionesHistoricas([])
+      return
+    }
+    let vigente = true
+    const almacenIds = [...new Set(detalle.partes.map((parte) => parte.almacenId))]
+    const ubicacionIds = [...new Set(detalle.partes.map((parte) => parte.ubicacionId))]
+    void Promise.all([
+      resolverAlmacen ? Promise.all(almacenIds.map((id) => resolverAlmacen(id))) : [],
+      resolverUbicacion ? Promise.all(ubicacionIds.map((id) => resolverUbicacion(id))) : [],
+    ]).then(([almacenesResueltos, ubicacionesResueltas]) => {
+      if (!vigente) return
+      const almacenesValidos: Almacen[] = []
+      const ubicacionesValidas: UbicacionAlmacen[] = []
+      for (const almacen of almacenesResueltos) {
+        if (almacen) almacenesValidos.push(almacen)
+      }
+      for (const ubicacion of ubicacionesResueltas) {
+        if (ubicacion) ubicacionesValidas.push(ubicacion)
+      }
+      setAlmacenesHistoricos(almacenesValidos)
+      setUbicacionesHistoricas(ubicacionesValidas)
+    }).catch(() => {
+      if (!vigente) return
+      setAlmacenesHistoricos([])
+      setUbicacionesHistoricas([])
+    })
+    return () => { vigente = false }
+  }, [detalle, resolverAlmacen, resolverUbicacion])
 
   const cerrarDialogo = (abiertoDialogo: boolean) => {
     if (!abiertoDialogo) setAccion(null)
@@ -328,8 +374,8 @@ export function DetalleReparacion({
             <DetalleContenido
               detalle={detalle}
               productos={productos}
-              almacenes={almacenes}
-              ubicaciones={ubicaciones}
+              almacenes={almacenesDisponibles}
+              ubicaciones={ubicacionesDisponibles}
               puedeEditar={puedeEditar}
               puedeAsignar={puedeAsignar}
               puedeCambiarEstado={puedeCambiarEstado}
@@ -417,8 +463,11 @@ export function DetalleReparacion({
             totalProductos={totalProductos}
             buscarProductos={buscarProductos}
             resolverProducto={resolverProducto}
-            almacenes={almacenes}
-            ubicaciones={ubicaciones}
+            almacenes={almacenesDisponibles}
+            totalAlmacenes={totalAlmacenes}
+            buscarAlmacenes={buscarAlmacenes}
+            resolverAlmacen={resolverAlmacen}
+            ubicaciones={ubicacionesDisponibles}
             operacionPendiente={accion.reservaPendiente}
             alCambiarApertura={cerrarDialogo}
             alGuardar={(datos, operationKey) => ejecutar(() => alReservarParte(accion.reparacion.id, datos, operationKey, accion.reparacion.lockVersion), 'Repuesto reservado.')}

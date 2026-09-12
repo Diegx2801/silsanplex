@@ -145,6 +145,8 @@ function renderizarDetalle({
   resultadoSolucion,
   resultadoOperacion,
   conCotizacionRechazada = false,
+  resolverAlmacen,
+  resolverUbicacion,
 }: {
   estado?: EstadoReparacion
   puedeEditar?: boolean
@@ -155,6 +157,8 @@ function renderizarDetalle({
   resultadoSolucion?: string
   resultadoOperacion?: string
   conCotizacionRechazada?: boolean
+  resolverAlmacen?: (id: string) => Promise<import('@/modulos/inventario/modelo/almacen').Almacen | null>
+  resolverUbicacion?: (id: string) => Promise<import('@/modulos/inventario/modelo/almacen').UbicacionAlmacen | null>
 } = {}) {
   const operacion = vi.fn().mockResolvedValue(resultadoOperacion)
   const editar = vi.fn()
@@ -176,6 +180,8 @@ function renderizarDetalle({
       productos={[]}
       almacenes={[]}
       ubicaciones={[]}
+      resolverAlmacen={resolverAlmacen}
+      resolverUbicacion={resolverUbicacion}
       puedeEditar={puedeEditar}
       puedeAsignar={false}
       puedeCambiarEstado={puedeCambiarEstado}
@@ -212,6 +218,24 @@ function renderizarDetalle({
 }
 
 describe('DetalleReparacion acciones técnicas', () => {
+  it('resuelve por ID los nombres históricos de almacén y ubicación', async () => {
+    const resolverAlmacen = vi.fn().mockResolvedValue({
+      id: 'warehouse-1', codigo: 'ALM-OLD', nombre: 'Almacén histórico',
+      direccion: '', activo: false,
+    })
+    const resolverUbicacion = vi.fn().mockResolvedValue({
+      id: 'location-1', almacenId: 'warehouse-1', codigo: 'UBI-OLD',
+      nombre: 'Ubicación histórica', descripcion: '', activa: false,
+    })
+
+    renderizarDetalle({ conParte: true, resolverAlmacen, resolverUbicacion })
+
+    expect(await screen.findByText(/ALM-OLD · Almacén histórico · UBI-OLD · Ubicación histórica/))
+      .toBeInTheDocument()
+    expect(resolverAlmacen).toHaveBeenCalledWith('warehouse-1')
+    expect(resolverUbicacion).toHaveBeenCalledWith('location-1')
+  })
+
   it('conserva la acción especializada de diagnóstico', () => {
     renderizarDetalle()
 
