@@ -19,6 +19,7 @@ import {
   type ParteReparacion,
   type Reparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
+import type { ReservaPartePendiente } from '@/modulos/reparaciones/estado/creacionPendiente'
 import { SelectorCatalogoReparacion } from './SelectorCatalogoReparacion'
 
 interface DialogoReservaParteProps {
@@ -30,6 +31,7 @@ interface DialogoReservaParteProps {
   resolverProducto?: (id: string) => Promise<OpcionProductoReparacion | null>
   almacenes: readonly Almacen[]
   ubicaciones: readonly UbicacionAlmacen[]
+  operacionPendiente?: ReservaPartePendiente | null
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (datos: DatosReservaParte, operationKey: string) => Promise<string | undefined>
 }
@@ -43,6 +45,7 @@ export function DialogoReservaParte({
   resolverProducto,
   almacenes,
   ubicaciones,
+  operacionPendiente,
   alCambiarApertura,
   alGuardar,
 }: DialogoReservaParteProps) {
@@ -89,11 +92,31 @@ export function DialogoReservaParte({
   useEffect(() => {
     // Una recarga del catálogo no debe borrar una operación pendiente de reintento.
     if (abierto && operacion.current) return
-    operacion.current = null
-    setSeleccionEnviada(null)
+    operacion.current = abierto && operacionPendiente
+      ? { firma: JSON.stringify(operacionPendiente.datos), clave: operacionPendiente.clave }
+      : null
+    const ubicacionPendiente = operacionPendiente
+      ? ubicaciones.find((item) => item.id === operacionPendiente.datos.ubicacionId)
+      : undefined
+    setSeleccionEnviada(abierto && operacionPendiente ? {
+      productoId: operacionPendiente.datos.productoId,
+      almacenId: operacionPendiente.datos.almacenId,
+      candidato: {
+        productoId: operacionPendiente.datos.productoId,
+        almacenId: operacionPendiente.datos.almacenId,
+        ubicacionId: operacionPendiente.datos.ubicacionId,
+        ubicacionCodigo: ubicacionPendiente?.codigo ?? 'RECUPERADA',
+        ubicacionNombre: ubicacionPendiente?.nombre ?? 'Ubicación de la operación pendiente',
+        lote: operacionPendiente.datos.lote,
+        fechaVencimiento: operacionPendiente.datos.fechaVencimiento,
+        cantidadAsignable: Number(operacionPendiente.datos.cantidadSolicitada),
+        costoPromedio: 0,
+        ordenFefo: 0,
+      },
+    } : null)
     setProductoRemoto(null)
     if (abierto) {
-      reset({
+      reset(operacionPendiente?.datos ?? {
         productoId: productos[0]?.id ?? '',
         almacenId: primerAlmacen,
         ubicacionId: primeraUbicacion,
@@ -104,7 +127,7 @@ export function DialogoReservaParte({
         notas: '',
       })
     }
-  }, [abierto, primeraUbicacion, primerAlmacen, productos, reset])
+  }, [abierto, operacionPendiente, primeraUbicacion, primerAlmacen, productos, reset, ubicaciones])
 
   useEffect(() => {
     if (!productoId && productos[0]) setValue('productoId', productos[0].id)
@@ -221,10 +244,15 @@ export function DialogoReservaParte({
                   : errorFefo || 'No existe stock sanitario asignable en este almacén.'}
             </p>
           </form>
+          {operacionPendiente ? (
+            <p role="status" className="border-t bg-primary/5 px-5 py-3 text-sm text-primary sm:px-7">
+              Se recuperó una reserva pendiente. Reintenta la misma operación antes de realizar cambios.
+            </p>
+          ) : null}
           {mensaje ? <p role="alert" className="border-t bg-destructive/10 px-5 py-3 text-sm text-destructive sm:px-7">{mensaje}</p> : null}
           <footer className="flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
             <DialogPrimitive.Close asChild><Button type="button" variant="outline" size="lg">Cancelar</Button></DialogPrimitive.Close>
-            <Button type="submit" form="formulario-reserva-parte" size="lg" disabled={isSubmitting || !almacenes.length || !ubicaciones.length || cargandoFefo || !candidatoFefo}>Reservar repuesto</Button>
+            <Button type="submit" form="formulario-reserva-parte" size="lg" disabled={isSubmitting || !almacenes.length || !ubicaciones.length || cargandoFefo || !candidatoFefo}>{operacionPendiente ? 'Reintentar reserva' : 'Reservar repuesto'}</Button>
           </footer>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

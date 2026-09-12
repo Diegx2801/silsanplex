@@ -100,7 +100,7 @@ async function createRepair(page: Page, f: Fixture) {
 
 // Forward to real PostgreSQL, then lose the successful response. Never mock a
 // successful mutation: the second request must replay the committed operation.
-async function submitWithLostResponse(page: Page, dialog: Locator, rpc: string, button: string) {
+async function interceptFirstSuccessfulResponse(page: Page, rpc: string) {
   const requests: unknown[] = []
   const pattern = `**/rest/v1/rpc/${rpc}`
   await page.route(pattern, async (route) => {
@@ -112,13 +112,23 @@ async function submitWithLostResponse(page: Page, dialog: Locator, rpc: string, 
         body: JSON.stringify({ message: 'Tiempo de espera agotado E2E' }) })
     } else await route.fulfill({ response })
   })
+  return {
+    requests,
+    finish: async () => {
+      expect(requests).toHaveLength(2)
+      expect(requests[1]).toEqual(requests[0])
+      await page.unroute(pattern)
+    },
+  }
+}
+
+async function submitWithLostResponse(page: Page, dialog: Locator, rpc: string, button: string) {
+  const intercepted = await interceptFirstSuccessfulResponse(page, rpc)
   await dialog.getByRole('button', { name: button, exact: true }).click()
   await expect(dialog.getByRole('alert')).toBeVisible()
   await dialog.getByRole('button', { name: button, exact: true }).click()
   await expect(dialog).toBeHidden()
-  expect(requests).toHaveLength(2)
-  expect(requests[1]).toEqual(requests[0])
-  await page.unroute(pattern)
+  await intercepted.finish()
 }
 
 async function changeState(page: Page, state: string) {
@@ -167,7 +177,17 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   await diagnosis.getByRole('button', { name: 'Guardar diagnóstico' }).click()
   await expect(diagnosis).toBeHidden()
   const draft = await quote(page)
-  await submitWithLostResponse(page, draft, 'save_repair_quote', 'Guardar borrador')
+  const interceptedDraft = await interceptFirstSuccessfulResponse(page, 'save_repair_quote')
+  await draft.getByRole('button', { name: 'Guardar borrador', exact: true }).click()
+  await expect(draft.getByRole('alert')).toBeVisible()
+  await draft.getByRole('button', { name: 'Cancelar', exact: true }).click()
+  await expect(draft).toBeHidden()
+  await page.getByRole('button', { name: 'Crear cotización', exact: true }).click()
+  const recoveredDraft = page.getByRole('dialog', { name: 'Crear cotización', exact: true })
+  await expect(recoveredDraft.getByText('Se recuperó una cotización pendiente de guardado')).toBeVisible()
+  await recoveredDraft.getByRole('button', { name: 'Reintentar guardado', exact: true }).click()
+  await expect(recoveredDraft).toBeHidden()
+  await interceptedDraft.finish()
   const submission = await quote(page, 'Editar borrador')
   await submission.getByRole('button', { name: 'Enviar a aprobación' }).click()
   await expect(submission).toBeHidden()
@@ -184,7 +204,17 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   await reservation.getByLabel('Almacén *', { exact: true }).selectOption(f.warehouseId)
   await expect(reservation.getByText(/2 asignables/)).toBeVisible()
   await reservation.getByLabel('Cantidad solicitada *').fill('2')
-  await submitWithLostResponse(page, reservation, 'reserve_repair_part', 'Reservar repuesto')
+  const interceptedReservation = await interceptFirstSuccessfulResponse(page, 'reserve_repair_part')
+  await reservation.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
+  await expect(reservation.getByRole('alert')).toBeVisible()
+  await page.reload()
+  await openRepair(page, f.reference)
+  await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
+  const recoveredReservation = page.getByRole('dialog', { name: 'Reservar repuesto', exact: true })
+  await expect(recoveredReservation.getByText('Se recuperó una reserva pendiente')).toBeVisible()
+  await recoveredReservation.getByRole('button', { name: 'Reintentar reserva', exact: true }).click()
+  await expect(recoveredReservation).toBeHidden()
+  await interceptedReservation.finish()
   expect(await stock(f.api, f.productId)).toMatchObject({ physical_quantity: 2, reserved_quantity: 2, assignable_quantity: 0 })
   await page.getByRole('button', { name: 'Consumir saldo' }).click()
   const consumption = page.getByRole('dialog', { name: 'Consumir repuesto' })
@@ -394,7 +424,17 @@ test('rechazo y revisión conservan una sola cotización vigente y el actor de d
   await rejection.getByRole('button', { name: 'Rechazar cotización', exact: true }).click()
   await expect(rejection).toBeHidden()
   const revision = await quote(page, 'Crear revisión')
-  await submitWithLostResponse(page, revision, 'revise_repair_quote', 'Guardar borrador')
+  const interceptedRevision = await interceptFirstSuccessfulResponse(page, 'revise_repair_quote')
+  await revision.getByRole('button', { name: 'Guardar borrador', exact: true }).click()
+  await expect(revision.getByRole('alert')).toBeVisible()
+  await revision.getByRole('button', { name: 'Cancelar', exact: true }).click()
+  await expect(revision).toBeHidden()
+  await page.getByRole('button', { name: 'Crear revisión', exact: true }).click()
+  const recoveredRevision = page.getByRole('dialog', { name: /Crear revisión/ })
+  await expect(recoveredRevision.getByText('Se recuperó una cotización pendiente de guardado')).toBeVisible()
+  await recoveredRevision.getByRole('button', { name: 'Reintentar guardado', exact: true }).click()
+  await expect(recoveredRevision).toBeHidden()
+  await interceptedRevision.finish()
   const quotes = await checked(f.api.from('repair_quotes').select('version_number,status,is_current,rejected_by')
     .eq('repair_id', (await repair(f)).id).order('version_number'))
   expect(quotes).toEqual([

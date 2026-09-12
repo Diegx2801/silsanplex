@@ -20,6 +20,10 @@ import { useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
+import type {
+  CotizacionPendiente,
+  ReservaPartePendiente,
+} from '@/modulos/reparaciones/estado/creacionPendiente'
 import { DialogoCotizacion } from '@/modulos/reparaciones/componentes/DialogoCotizacion'
 import { DialogoDiagnostico } from '@/modulos/reparaciones/componentes/DialogoDiagnostico'
 import {
@@ -164,6 +168,8 @@ interface DetalleReparacionProps {
   alRegistrarPrueba: (reparacionId: string, datos: DatosPrueba, expectedLockVersion: number) => Promise<string | undefined>
   alEntregar: (reparacionId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
   alCancelar: (reparacionId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
+  recuperarCotizacionPendiente?: (reparacionId: string, esRevision: boolean) => CotizacionPendiente | null
+  recuperarReservaPartePendiente?: (reparacionId: string) => ReservaPartePendiente | null
 }
 
 type TipoDialogoActivo =
@@ -185,6 +191,8 @@ interface ContextoAccion {
   tipo: TipoDialogoActivo
   reparacion: Reparacion
   cotizacion: CotizacionReparacion | null
+  cotizacionPendiente?: CotizacionPendiente | null
+  reservaPendiente?: ReservaPartePendiente | null
   parte?: ParteReparacion
 }
 
@@ -238,6 +246,8 @@ export function DetalleReparacion({
   alRegistrarPrueba,
   alEntregar,
   alCancelar,
+  recuperarCotizacionPendiente = () => null,
+  recuperarReservaPartePendiente = () => null,
 }: DetalleReparacionProps) {
   const [accion, setAccion] = useState<ContextoAccion | null>(null)
   const [mensaje, setMensaje] = useState('')
@@ -258,7 +268,24 @@ export function DetalleReparacion({
   }
 
   const abrirDialogo = (tipo: TipoDialogoActivo) => {
-    if (detalle) setAccion(crearContextoAccion(tipo, detalle))
+    if (!detalle) return
+    try {
+      const contexto = crearContextoAccion(tipo, detalle)
+      if (tipo === 'cotizacion') {
+        contexto.cotizacionPendiente = recuperarCotizacionPendiente(
+          detalle.reparacion.id,
+          detalle.reparacion.estado === 'rejected',
+        )
+      }
+      if (tipo === 'reserva') {
+        contexto.reservaPendiente = recuperarReservaPartePendiente(detalle.reparacion.id)
+      }
+      setAccion(contexto)
+    } catch (errorRecuperacion) {
+      setMensaje(errorRecuperacion instanceof Error
+        ? errorRecuperacion.message
+        : 'No se pudo recuperar la operación pendiente.')
+    }
   }
 
   const abrirParte = (tipo: 'consumo' | 'cancelarParte', parte: ParteReparacion) => {
@@ -350,14 +377,15 @@ export function DetalleReparacion({
             abierto={accion.tipo === 'cotizacion'}
             reparacion={accion.reparacion}
             cotizacion={accion.cotizacion?.estado === 'draft' || accion.reparacion.estado === 'rejected' ? accion.cotizacion : null}
-            esRevision={accion.reparacion.estado === 'rejected'}
+            esRevision={Boolean(accion.cotizacionPendiente?.quoteId) || accion.reparacion.estado === 'rejected'}
+            operacionPendiente={accion.cotizacionPendiente}
             productos={productos}
             totalProductos={totalProductos}
             buscarProductos={buscarProductos}
             resolverProducto={resolverProducto}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(datos, enviar, operationKey) => accion.reparacion.estado === 'rejected' && accion.cotizacion
-              ? ejecutar(() => alRevisarCotizacion(accion.reparacion.id, accion.cotizacion!.id, datos, enviar, operationKey, accion.reparacion.lockVersion), enviar ? 'Revisión enviada a aprobación.' : 'Revisión guardada como borrador.')
+            alGuardar={(datos, enviar, operationKey) => accion.cotizacionPendiente?.quoteId || (accion.reparacion.estado === 'rejected' && accion.cotizacion)
+              ? ejecutar(() => alRevisarCotizacion(accion.reparacion.id, accion.cotizacionPendiente?.quoteId ?? accion.cotizacion!.id, datos, enviar, operationKey, accion.reparacion.lockVersion), enviar ? 'Revisión enviada a aprobación.' : 'Revisión guardada como borrador.')
               : ejecutar(() => alGuardarCotizacion(accion.reparacion.id, datos, enviar, operationKey, accion.reparacion.lockVersion), enviar ? 'Cotización enviada a aprobación.' : 'Borrador de cotización guardado.')}
           />
           {accion.cotizacion ? (
@@ -391,6 +419,7 @@ export function DetalleReparacion({
             resolverProducto={resolverProducto}
             almacenes={almacenes}
             ubicaciones={ubicaciones}
+            operacionPendiente={accion.reservaPendiente}
             alCambiarApertura={cerrarDialogo}
             alGuardar={(datos, operationKey) => ejecutar(() => alReservarParte(accion.reparacion.id, datos, operationKey, accion.reparacion.lockVersion), 'Repuesto reservado.')}
           />

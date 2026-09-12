@@ -46,9 +46,12 @@ usan sus propias RPC:
 - `deliver_repair` y `cancel_repair` para cerrar la orden.
 
 Reservar un repuesto no crea un movimiento de inventario. Consumirlo genera una
-salida atómica mediante `consume_repair_part` y envía un `operation_key` UUID
-generado al abrir el diálogo para permitir reintentos idempotentes. La reserva
-conserva lote y vencimiento; no se permite reservar ni consumir un bucket vencido.
+salida atómica mediante `consume_repair_part`. Creación, guardado o revisión de
+cotizaciones y reserva de repuestos persisten datos, versión y `operation_key` en
+`sessionStorage` antes del RPC. La intención se aísla por organización, usuario,
+reparación y comando, y se recupera al cerrar, reabrir o recargar la pestaña. Solo
+una confirmación o un rechazo definitivo elimina el pendiente. La reserva conserva
+lote y vencimiento; no se permite reservar ni consumir un bucket vencido.
 
 ## Seguridad
 
