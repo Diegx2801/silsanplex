@@ -10,9 +10,10 @@ versiones de cotización, repuestos, consumos, pruebas y eventos.
 Las colecciones del detalle se recorren en páginas de 500 filas con conteo
 exacto y orden estable. Si el número recuperado no coincide con el conteo, la
 carga falla de forma explícita. Los consumos agrupan hasta 100 IDs de repuesto
-por consulta. Las cotizaciones cargan todas sus cabeceras, pero las líneas se
-solicitan únicamente para la versión vigente seleccionada y se paginan por su
-`quote_id`.
+por consulta. Las cotizaciones cargan todas sus cabeceras y solo las líneas de la
+versión vigente al abrir el detalle. El selector de versiones solicita las líneas
+de una cotización histórica bajo demanda, paginadas por su `quote_id`, y conserva
+el resultado en caché para inspecciones posteriores.
 
 La ruta es `/reparaciones` y se carga de forma lazy. La navegación y la ruta
 requieren `REPAIRS_VIEW`.

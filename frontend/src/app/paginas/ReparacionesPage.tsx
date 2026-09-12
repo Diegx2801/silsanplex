@@ -312,6 +312,7 @@ export function ReparacionesPage() {
         resolverAlmacen={opciones.resolverAlmacen}
         resolverUbicacion={opciones.resolverUbicacion}
         ubicaciones={opciones.ubicaciones}
+        cargarLineasCotizacion={detalleConsulta.cargarLineasCotizacion}
         puedeEditar={puedeEditar}
         puedeAsignar={puedeAsignar}
         puedeCambiarEstado={puedeCambiarEstado}

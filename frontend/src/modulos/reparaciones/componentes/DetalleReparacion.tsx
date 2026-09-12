@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
@@ -58,6 +58,7 @@ import {
   type ConsultaCatalogoReparacion,
   type DetalleReparacion as DatosDetalleReparacion,
   type EstadoReparacion,
+  type LineaCotizacionReparacion,
   type OpcionProductoReparacion,
   type ParteReparacion,
   type Reparacion,
@@ -149,6 +150,7 @@ interface DetalleReparacionProps {
   resolverAlmacen?: (id: string) => Promise<Almacen | null>
   resolverUbicacion?: (id: string) => Promise<UbicacionAlmacen | null>
   ubicaciones: readonly UbicacionAlmacen[]
+  cargarLineasCotizacion?: (cotizacionId: string) => Promise<LineaCotizacionReparacion[]>
   puedeEditar: boolean
   puedeAsignar: boolean
   puedeCambiarEstado: boolean
@@ -231,6 +233,7 @@ export function DetalleReparacion({
   resolverAlmacen,
   resolverUbicacion,
   ubicaciones,
+  cargarLineasCotizacion,
   puedeEditar,
   puedeAsignar,
   puedeCambiarEstado,
@@ -376,6 +379,7 @@ export function DetalleReparacion({
               productos={productos}
               almacenes={almacenesDisponibles}
               ubicaciones={ubicacionesDisponibles}
+              cargarLineasCotizacion={cargarLineasCotizacion}
               puedeEditar={puedeEditar}
               puedeAsignar={puedeAsignar}
               puedeCambiarEstado={puedeCambiarEstado}
@@ -527,6 +531,7 @@ interface DetalleContenidoProps {
   productos: readonly OpcionProductoReparacion[]
   almacenes: readonly Almacen[]
   ubicaciones: readonly UbicacionAlmacen[]
+  cargarLineasCotizacion?: (cotizacionId: string) => Promise<LineaCotizacionReparacion[]>
   puedeEditar: boolean
   puedeAsignar: boolean
   puedeCambiarEstado: boolean
@@ -538,11 +543,126 @@ interface DetalleContenidoProps {
   alAbrirParte: (dialogo: 'consumo' | 'cancelarParte', parte: ParteReparacion) => void
 }
 
+interface CotizacionesDetalleProps {
+  detalle: DatosDetalleReparacion
+  puedeCotizar: boolean
+  puedeRevisar: boolean
+  puedeAprobar: boolean
+  alAbrirDialogo: (dialogo: TipoDialogoActivo) => void
+  cargarLineasCotizacion?: (cotizacionId: string) => Promise<LineaCotizacionReparacion[]>
+}
+
+function CotizacionesDetalle({
+  detalle,
+  puedeCotizar,
+  puedeRevisar,
+  puedeAprobar,
+  alAbrirDialogo,
+  cargarLineasCotizacion,
+}: CotizacionesDetalleProps) {
+  const cotizacionActiva = detalle.cotizacionActiva
+  const [cotizacionSeleccionadaId, setCotizacionSeleccionadaId] = useState(
+    cotizacionActiva?.id ?? detalle.cotizaciones[0]?.id ?? '',
+  )
+  const [lineasCargadas, setLineasCargadas] = useState<Record<string, LineaCotizacionReparacion[]>>(
+    cotizacionActiva ? { [cotizacionActiva.id]: cotizacionActiva.lineas } : {},
+  )
+  const [cotizacionCargandoId, setCotizacionCargandoId] = useState('')
+  const [errorLineas, setErrorLineas] = useState('')
+  const solicitudActual = useRef(0)
+
+  useEffect(() => {
+    if (!cotizacionActiva) return
+    setLineasCargadas((actuales) => ({
+      ...actuales,
+      [cotizacionActiva.id]: cotizacionActiva.lineas,
+    }))
+  }, [cotizacionActiva])
+
+  const solicitarLineas = (cotizacionId: string) => {
+    const solicitud = ++solicitudActual.current
+    setCotizacionCargandoId(cotizacionId)
+    setErrorLineas('')
+    if (!cargarLineasCotizacion) {
+      setCotizacionCargandoId('')
+      setErrorLineas('No se pudieron consultar las líneas de esta cotización.')
+      return
+    }
+    void cargarLineasCotizacion(cotizacionId).then((lineas) => {
+      if (solicitud !== solicitudActual.current) return
+      setLineasCargadas((actuales) => ({ ...actuales, [cotizacionId]: lineas }))
+    }).catch((error: unknown) => {
+      if (solicitud !== solicitudActual.current) return
+      setErrorLineas(error instanceof Error
+        ? error.message
+        : 'No se pudieron consultar las líneas de esta cotización.')
+    }).finally(() => {
+      if (solicitud === solicitudActual.current) setCotizacionCargandoId('')
+    })
+  }
+
+  const seleccionarCotizacion = (cotizacionId: string) => {
+    ++solicitudActual.current
+    setCotizacionSeleccionadaId(cotizacionId)
+    setCotizacionCargandoId('')
+    setErrorLineas('')
+    if (cotizacionId === cotizacionActiva?.id
+      || Object.prototype.hasOwnProperty.call(lineasCargadas, cotizacionId)) return
+    solicitarLineas(cotizacionId)
+  }
+
+  const cotizacionBase = detalle.cotizaciones.find(
+    (item) => item.id === cotizacionSeleccionadaId,
+  ) ?? cotizacionActiva
+  const cotizacion = cotizacionBase ? {
+    ...cotizacionBase,
+    lineas: lineasCargadas[cotizacionBase.id] ?? cotizacionBase.lineas,
+  } : null
+  const cargandoLineas = cotizacionCargandoId === cotizacion?.id
+  const lineasConsultadas = Boolean(cotizacion && (
+    cotizacion.id === cotizacionActiva?.id
+    || Object.prototype.hasOwnProperty.call(lineasCargadas, cotizacion.id)
+  ))
+
+  return <section aria-labelledby="reparacion-cotizaciones" className="border-b px-5 py-6 sm:px-7">
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 id="reparacion-cotizaciones" className="flex items-center gap-2 font-semibold"><ReceiptText aria-hidden="true" className="size-4 text-primary" /> Cotización</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{detalle.cotizaciones.length ? `${detalle.cotizaciones.length} versión${detalle.cotizaciones.length === 1 ? '' : 'es'} registrada${detalle.cotizaciones.length === 1 ? '' : 's'}` : 'Aún no hay cotizaciones'}</p>
+      </div>
+      {puedeCotizar || puedeRevisar ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('cotizacion')}><Plus aria-hidden="true" /> {puedeRevisar ? 'Crear revisión' : cotizacionActiva?.estado === 'draft' ? 'Editar borrador' : 'Crear cotización'}</Button> : null}
+    </div>
+    {detalle.cotizaciones.length > 1 ? <div className="mt-5 max-w-sm">
+      <label htmlFor="cotizacion-version" className="field-label">Versión de cotización</label>
+      <select id="cotizacion-version" className="field-control" value={cotizacionSeleccionadaId}
+        disabled={Boolean(cotizacionCargandoId)}
+        onChange={(evento) => seleccionarCotizacion(evento.target.value)}>
+        {detalle.cotizaciones.map((item) => <option key={item.id} value={item.id}>
+          Versión {item.version} · {etiquetasEstadoCotizacion[item.estado]} · {importe(item.total, item.moneda)}{item.esActual ? ' · vigente' : ''}
+        </option>)}
+      </select>
+    </div> : null}
+    {cotizacion ? <article className="mt-5 border bg-muted/20 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><p className="font-medium">Versión {cotizacion.version}{cotizacion.esActual ? ' · vigente' : ' · histórica'}</p><p className="mt-1 text-xs text-muted-foreground">{etiquetasEstadoCotizacion[cotizacion.estado]} · {cotizacion.preciosIncluyenImpuesto ? 'Precios con impuesto incluido' : 'Precios sin impuesto incluido'} · Tasa {cotizacion.tasaImpuesto}%{cotizacion.tipoCambioPen != null ? ` · TC ${cotizacion.tipoCambioPen} PEN/${cotizacion.moneda}` : ' · TC histórico no registrado'}</p></div>
+        <span className="status-label" data-tone={cotizacion.estado === 'approved' ? 'listo' : cotizacion.estado === 'pending' ? 'pendiente' : 'revision'}>{etiquetasEstadoCotizacion[cotizacion.estado]}</span>
+      </div>
+      {cargandoLineas ? <div role="status" className="mt-4 border border-dashed px-4 py-5 text-sm text-muted-foreground">Cargando líneas de la versión {cotizacion.version}…</div>
+        : errorLineas ? <div role="alert" className="mt-4 border border-destructive/40 px-4 py-4 text-sm text-destructive"><p>{errorLineas}</p><Button type="button" size="sm" variant="outline" className="mt-3" onClick={() => solicitarLineas(cotizacion.id)}>Reintentar líneas</Button></div>
+          : lineasConsultadas && cotizacion.lineas.length ? <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[34rem] text-left text-sm"><thead className="border-b font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase"><tr><th className="py-2 pe-3">Concepto</th><th className="px-3 py-2 text-end">Cant.</th><th className="px-3 py-2 text-end">Precio</th><th className="ps-3 py-2 text-end">Subtotal</th></tr></thead><tbody className="divide-y">{cotizacion.lineas.map((linea) => <tr key={linea.id}><td className="py-3 pe-3"><span className="font-medium">{linea.descripcion}</span><span className="mt-1 block text-xs text-muted-foreground">{linea.tipo === 'part' ? 'Repuesto' : linea.tipo === 'labor' ? 'Mano de obra' : 'Servicio externo'}{linea.gravable ? ' · Gravable' : ''}</span></td><td className="px-3 py-3 text-end font-mono text-xs tabular-nums">{linea.cantidad}</td><td className="px-3 py-3 text-end font-mono text-xs tabular-nums">{importe(linea.precioUnitario, cotizacion.moneda)}</td><td className="ps-3 py-3 text-end font-mono text-xs tabular-nums">{importe(linea.subtotalLinea, cotizacion.moneda)}</td></tr>)}</tbody></table></div>
+            : lineasConsultadas ? <p className="mt-4 border border-dashed px-4 py-5 text-sm text-muted-foreground">Esta cotización no tiene líneas registradas.</p> : null}
+      <dl className="mt-4 grid grid-cols-3 gap-3 border-t pt-4 text-sm"><div><dt className="text-xs text-muted-foreground">Subtotal</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{importe(cotizacion.subtotal, cotizacion.moneda)}</dd></div><div><dt className="text-xs text-muted-foreground">Impuesto</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{importe(cotizacion.impuesto, cotizacion.moneda)}</dd></div><div><dt className="text-xs text-muted-foreground">Total</dt><dd className="mt-1 font-mono text-base font-semibold tabular-nums">{importe(cotizacion.total, cotizacion.moneda)}</dd></div></dl>
+      {puedeAprobar && cotizacion.id === cotizacionActiva?.id ? <div className="mt-4 flex flex-col gap-2 border-t pt-4 sm:flex-row sm:justify-end"><Button type="button" variant="outline" onClick={() => alAbrirDialogo('rechazar')}>Rechazar</Button><Button type="button" onClick={() => alAbrirDialogo('aprobar')}><CheckCircle2 aria-hidden="true" /> Aprobar</Button></div> : null}
+    </article> : <p className="mt-5 border border-dashed px-4 py-5 text-sm text-muted-foreground">La cotización se crea después de registrar el diagnóstico o cuando el flujo lo permita.</p>}
+  </section>
+}
+
 function DetalleContenido({
   detalle,
   productos,
   almacenes,
   ubicaciones,
+  cargarLineasCotizacion,
   puedeEditar,
   puedeAsignar,
   puedeCambiarEstado,
@@ -554,15 +674,15 @@ function DetalleContenido({
   alAbrirParte,
 }: DetalleContenidoProps) {
   const reparacion = detalle.reparacion
-  const cotizacion = detalle.cotizacionActiva
+  const cotizacionActiva = detalle.cotizacionActiva
   const editable = puedeEditar && estadoEsEditable(reparacion.estado)
   const transiciones = puedeCambiarEstado
     ? obtenerTransicionesGenericas(reparacion.estado)
     : []
   const puedeCancelar = puedeCambiarEstado && !estadoEsTerminal(reparacion.estado)
   const puedeCotizar = puedeEditar && (reparacion.estado === 'diagnosis' || reparacion.estado === 'quote_pending')
-  const puedeRevisar = puedeEditar && reparacion.estado === 'rejected' && cotizacion?.estado === 'rejected'
-  const puedeAprobar = puedeAprobarCotizacion && reparacion.estado === 'waiting_customer_approval' && cotizacion?.estado === 'pending'
+  const puedeRevisar = puedeEditar && reparacion.estado === 'rejected' && cotizacionActiva?.estado === 'rejected'
+  const puedeAprobar = puedeAprobarCotizacion && reparacion.estado === 'waiting_customer_approval' && cotizacionActiva?.estado === 'pending'
   const puedeReservar = puedeUsarPartes && ['quote_approved', 'warranty', 'in_repair', 'awaiting_parts'].includes(reparacion.estado)
   const puedeRegistrarDiagnostico = puedeCambiarEstado && reparacion.estado === 'diagnosis'
   const puedeRegistrarSolucion = puedeCambiarEstado
@@ -624,12 +744,15 @@ function DetalleContenido({
         <p className={`mt-5 whitespace-pre-wrap text-sm leading-6 ${reparacion.solucionAplicada ? '' : 'border border-dashed px-4 py-5 text-muted-foreground'}`}>{mostrar(reparacion.solucionAplicada, 'Todavía no hay una solución aplicada registrada.')}</p>
       </section>
 
-      <section aria-labelledby="reparacion-cotizaciones" className="border-b px-5 py-6 sm:px-7">
-        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-cotizaciones" className="flex items-center gap-2 font-semibold"><ReceiptText aria-hidden="true" className="size-4 text-primary" /> Cotización</h2><p className="mt-1 text-sm text-muted-foreground">{detalle.cotizaciones.length ? `${detalle.cotizaciones.length} versión${detalle.cotizaciones.length === 1 ? '' : 'es'} registrada${detalle.cotizaciones.length === 1 ? '' : 's'}` : 'Aún no hay cotizaciones'}</p></div>{puedeCotizar || puedeRevisar ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('cotizacion')}><Plus aria-hidden="true" /> {puedeRevisar ? 'Crear revisión' : cotizacion?.estado === 'draft' ? 'Editar borrador' : 'Crear cotización'}</Button> : null}</div>
-        {cotizacion ? <article className="mt-5 border bg-muted/20 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-medium">Versión {cotizacion.version}</p><p className="mt-1 text-xs text-muted-foreground">{etiquetasEstadoCotizacion[cotizacion.estado]} · {cotizacion.preciosIncluyenImpuesto ? 'Precios con impuesto incluido' : 'Precios sin impuesto incluido'} · Tasa {cotizacion.tasaImpuesto}%{cotizacion.tipoCambioPen != null ? ` · TC ${cotizacion.tipoCambioPen} PEN/${cotizacion.moneda}` : ' · TC histórico no registrado'}</p></div><span className="status-label" data-tone={cotizacion.estado === 'approved' ? 'listo' : cotizacion.estado === 'pending' ? 'pendiente' : 'revision'}>{etiquetasEstadoCotizacion[cotizacion.estado]}</span></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[34rem] text-left text-sm"><thead className="border-b font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase"><tr><th className="py-2 pe-3">Concepto</th><th className="px-3 py-2 text-end">Cant.</th><th className="px-3 py-2 text-end">Precio</th><th className="ps-3 py-2 text-end">Subtotal</th></tr></thead><tbody className="divide-y">{cotizacion.lineas.map((linea) => <tr key={linea.id}><td className="py-3 pe-3"><span className="font-medium">{linea.descripcion}</span><span className="mt-1 block text-xs text-muted-foreground">{linea.tipo === 'part' ? 'Repuesto' : linea.tipo === 'labor' ? 'Mano de obra' : 'Servicio externo'}{linea.gravable ? ' · Gravable' : ''}</span></td><td className="px-3 py-3 text-end font-mono text-xs tabular-nums">{linea.cantidad}</td><td className="px-3 py-3 text-end font-mono text-xs tabular-nums">{importe(linea.precioUnitario, cotizacion.moneda)}</td><td className="ps-3 py-3 text-end font-mono text-xs tabular-nums">{importe(linea.subtotalLinea, cotizacion.moneda)}</td></tr>)}</tbody></table></div><dl className="mt-4 grid grid-cols-3 gap-3 border-t pt-4 text-sm"><div><dt className="text-xs text-muted-foreground">Subtotal</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{importe(cotizacion.subtotal, cotizacion.moneda)}</dd></div><div><dt className="text-xs text-muted-foreground">Impuesto</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{importe(cotizacion.impuesto, cotizacion.moneda)}</dd></div><div><dt className="text-xs text-muted-foreground">Total</dt><dd className="mt-1 font-mono text-base font-semibold tabular-nums">{importe(cotizacion.total, cotizacion.moneda)}</dd></div></dl>{puedeAprobar ? <div className="mt-4 flex flex-col gap-2 border-t pt-4 sm:flex-row sm:justify-end"><Button type="button" variant="outline" onClick={() => alAbrirDialogo('rechazar')}>Rechazar</Button><Button type="button" onClick={() => alAbrirDialogo('aprobar')}><CheckCircle2 aria-hidden="true" /> Aprobar</Button></div> : null}</article> : <p className="mt-5 border border-dashed px-4 py-5 text-sm text-muted-foreground">La cotización se crea después de registrar el diagnóstico o cuando el flujo lo permita.</p>}
-        {detalle.cotizaciones.length > 1 ? <div className="mt-5 border-t pt-4"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Historial de versiones</p><ul className="mt-3 space-y-2">{detalle.cotizaciones.filter((item) => item.id !== cotizacion?.id).map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 text-sm"><span>Versión {item.version} · {etiquetasEstadoCotizacion[item.estado]}</span><span className="font-mono text-xs tabular-nums">{importe(item.total, item.moneda)}</span></li>)}</ul></div> : null}
-      </section>
-
+      <CotizacionesDetalle
+        key={detalle.cotizacionActiva?.id ?? 'sin-cotizacion'}
+        detalle={detalle}
+        puedeCotizar={puedeCotizar}
+        puedeRevisar={puedeRevisar}
+        puedeAprobar={puedeAprobar}
+        alAbrirDialogo={alAbrirDialogo}
+        cargarLineasCotizacion={cargarLineasCotizacion}
+      />
       <section aria-labelledby="reparacion-partes" className="border-b px-5 py-6 sm:px-7">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-partes" className="flex items-center gap-2 font-semibold"><Package aria-hidden="true" className="size-4 text-primary" /> Repuestos</h2><p className="mt-1 text-sm text-muted-foreground">Reservas, consumos y ubicación física</p></div>{puedeReservar ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('reserva')}><Plus aria-hidden="true" /> Reservar repuesto</Button> : null}</div>
         {detalle.partes.length ? <div className="mt-5 space-y-3">{detalle.partes.map((parte) => { const saldo = Math.max(0, parte.cantidadSolicitada - parte.cantidadConsumida); const puedeOperar = puedeUsarPartes && ['quote_approved', 'warranty', 'in_repair', 'awaiting_parts', 'testing'].includes(reparacion.estado); return <article key={parte.id} className="border bg-muted/20 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-medium">{parte.productoDescripcionSnapshot}</p><p className="mt-1 font-mono text-xs text-muted-foreground">{parte.productoCodigoSnapshot} · {etiquetasEstadoStockReparacion[parte.estadoStock]}</p></div><span className="status-label" data-tone={parte.estado === 'consumed' ? 'listo' : parte.estado === 'reserved' ? 'pendiente' : 'revision'}>{etiquetasEstadoParte[parte.estado]}</span></div><dl className="mt-4 grid grid-cols-2 gap-x-5 sm:grid-cols-4"><Dato etiqueta="Solicitado" valor={`${parte.cantidadSolicitada} ${unidadProducto(productos, parte.productoId)}`} /><Dato etiqueta="Consumido" valor={`${parte.cantidadConsumida} ${unidadProducto(productos, parte.productoId)}`} /><Dato etiqueta="Saldo" valor={<span className="font-semibold">{saldo}</span>} /><Dato etiqueta="Lote" valor={mostrar(parte.lote, 'Sin lote')} /></dl><p className="mt-3 border-t pt-3 text-xs text-muted-foreground">{nombreAlmacen(almacenes, parte.almacenId)} · {nombreUbicacion(ubicaciones, parte.ubicacionId)}</p>{puedeOperar && parte.estado === 'reserved' ? <div className="mt-3 flex flex-wrap justify-end gap-2 border-t pt-3"><Button type="button" variant="outline" size="sm" disabled={saldo <= 0} onClick={() => alAbrirParte('consumo', parte)}>Consumir saldo</Button><Button type="button" variant="ghost" size="sm" onClick={() => alAbrirParte('cancelarParte', parte)}>Cancelar reserva</Button></div> : null}{parte.consumos.length ? <ul className="mt-3 space-y-1 border-t pt-3 text-xs text-muted-foreground">{parte.consumos.map((consumo) => <li key={consumo.id} className="flex flex-wrap justify-between gap-2"><span>Consumo de {consumo.cantidad} · {formatoFecha.format(new Date(consumo.consumidoEn))}</span><span className="font-mono">{abreviarId(consumo.claveOperacion)}</span></li>)}</ul> : null}</article> })}</div> : <p className="mt-5 border border-dashed px-4 py-5 text-sm text-muted-foreground">No hay repuestos reservados para esta reparación.</p>}

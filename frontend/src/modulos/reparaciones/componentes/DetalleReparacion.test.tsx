@@ -147,6 +147,8 @@ function renderizarDetalle({
   conCotizacionRechazada = false,
   resolverAlmacen,
   resolverUbicacion,
+  detallePersonalizado,
+  cargarLineasCotizacion,
 }: {
   estado?: EstadoReparacion
   puedeEditar?: boolean
@@ -159,15 +161,19 @@ function renderizarDetalle({
   conCotizacionRechazada?: boolean
   resolverAlmacen?: (id: string) => Promise<import('@/modulos/inventario/modelo/almacen').Almacen | null>
   resolverUbicacion?: (id: string) => Promise<import('@/modulos/inventario/modelo/almacen').UbicacionAlmacen | null>
+  detallePersonalizado?: DatosDetalleReparacion
+  cargarLineasCotizacion?: (id: string) => Promise<CotizacionReparacion['lineas']>
 } = {}) {
   const operacion = vi.fn().mockResolvedValue(resultadoOperacion)
   const editar = vi.fn()
   const registrarSolucion = vi.fn().mockResolvedValue(resultadoSolucion)
   const revisarCotizacion = vi.fn().mockResolvedValue(undefined)
+  const detalleBase = detallePersonalizado
+    ?? crearDetalle(estado, solucionAplicada, conParte, conCotizacionRechazada)
   const construirDetalle = (lockVersion = reparacionBase.lockVersion) => ({
-    ...crearDetalle(estado, solucionAplicada, conParte, conCotizacionRechazada),
+    ...detalleBase,
     reparacion: {
-      ...crearDetalle(estado, solucionAplicada, conParte, conCotizacionRechazada).reparacion,
+      ...detalleBase.reparacion,
       lockVersion,
     },
   })
@@ -182,6 +188,7 @@ function renderizarDetalle({
       ubicaciones={[]}
       resolverAlmacen={resolverAlmacen}
       resolverUbicacion={resolverUbicacion}
+      cargarLineasCotizacion={cargarLineasCotizacion}
       puedeEditar={puedeEditar}
       puedeAsignar={false}
       puedeCambiarEstado={puedeCambiarEstado}
@@ -218,6 +225,66 @@ function renderizarDetalle({
 }
 
 describe('DetalleReparacion acciones técnicas', () => {
+  it('carga las líneas históricas al seleccionar su versión y conserva la vigente en caché', async () => {
+    const cotizacionVigente: CotizacionReparacion = {
+      ...cotizacionRechazada,
+      id: 'quote-current',
+      version: 2,
+      esActual: true,
+      estado: 'approved',
+      lineas: [{
+        ...cotizacionRechazada.lineas[0],
+        id: 'line-current',
+        cotizacionId: 'quote-current',
+        descripcion: 'Reparación aprobada',
+      }],
+    }
+    const cotizacionHistorica: CotizacionReparacion = {
+      ...cotizacionRechazada,
+      id: 'quote-history',
+      version: 1,
+      esActual: false,
+      lineas: [],
+    }
+    const lineaHistorica = {
+      ...cotizacionRechazada.lineas[0],
+      id: 'line-history',
+      cotizacionId: 'quote-history',
+      descripcion: 'Diagnóstico inicial',
+    }
+    const cargarLineasCotizacion = vi.fn().mockResolvedValue([lineaHistorica])
+    const detallePersonalizado = {
+      ...crearDetalle(),
+      cotizaciones: [cotizacionVigente, cotizacionHistorica],
+      cotizacionActiva: cotizacionVigente,
+    }
+
+    renderizarDetalle({ detallePersonalizado, cargarLineasCotizacion })
+
+    expect(screen.getByText('Reparación aprobada')).toBeInTheDocument()
+    expect(cargarLineasCotizacion).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('Versión de cotización'), {
+      target: { value: 'quote-history' },
+    })
+
+    expect(await screen.findByText('Diagnóstico inicial')).toBeInTheDocument()
+    expect(screen.getByText('Versión 1 · histórica')).toBeInTheDocument()
+    expect(cargarLineasCotizacion).toHaveBeenCalledTimes(1)
+    expect(cargarLineasCotizacion).toHaveBeenCalledWith('quote-history')
+
+    fireEvent.change(screen.getByLabelText('Versión de cotización'), {
+      target: { value: 'quote-current' },
+    })
+    expect(screen.getByText('Reparación aprobada')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Versión de cotización'), {
+      target: { value: 'quote-history' },
+    })
+    expect(screen.getByText('Diagnóstico inicial')).toBeInTheDocument()
+    expect(cargarLineasCotizacion).toHaveBeenCalledTimes(1)
+  })
+
   it('resuelve por ID los nombres históricos de almacén y ubicación', async () => {
     const resolverAlmacen = vi.fn().mockResolvedValue({
       id: 'warehouse-1', codigo: 'ALM-OLD', nombre: 'Almacén histórico',
