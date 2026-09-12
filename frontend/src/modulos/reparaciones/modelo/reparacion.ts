@@ -184,6 +184,8 @@ export interface LineaCotizacionReparacion {
   precioUnitario: number
   gravable: boolean
   subtotalLinea: number
+  precioMinimoPenSnapshot: number | null
+  precioComparablePenSnapshot: number | null
   creadoEn: string
 }
 
@@ -195,6 +197,7 @@ export interface CotizacionReparacion {
   esActual: boolean
   estado: EstadoCotizacion
   moneda: 'PEN' | 'USD'
+  tipoCambioPen: number | null
   preciosIncluyenImpuesto: boolean
   tasaImpuesto: number
   subtotal: number
@@ -392,6 +395,10 @@ export const esquemaLineaCotizacion = z
 export const esquemaDatosCotizacion = z.object({
   id: z.string().uuid().optional(),
   moneda: z.enum(['PEN', 'USD']),
+  tipoCambioPen: z.string().trim().refine(
+    (valor) => /^\d{1,8}(\.\d{1,8})?$/.test(valor) && Number(valor) > 0,
+    'Ingresa un tipo de cambio positivo',
+  ),
   preciosIncluyenImpuesto: z.boolean(),
   tasaImpuesto: z
     .string()
@@ -401,6 +408,14 @@ export const esquemaDatosCotizacion = z.object({
       'La tasa debe estar entre 0 y 100',
     ),
   lineas: z.array(esquemaLineaCotizacion).min(1, 'Agrega al menos una línea').max(100),
+}).superRefine((datos, contexto) => {
+  if (datos.moneda === 'PEN' && Number(datos.tipoCambioPen) !== 1) {
+    contexto.addIssue({
+      code: 'custom',
+      path: ['tipoCambioPen'],
+      message: 'Para cotizaciones en PEN el tipo de cambio debe ser 1',
+    })
+  }
 })
 
 export type DatosCotizacion = z.infer<typeof esquemaDatosCotizacion>

@@ -16,6 +16,7 @@ const ambito = 'organizacion:usuario'
 const cotizacion = {
   datos: {
     moneda: 'PEN' as const,
+    tipoCambioPen: '1',
     preciosIncluyenImpuesto: false,
     tasaImpuesto: '18',
     lineas: [{

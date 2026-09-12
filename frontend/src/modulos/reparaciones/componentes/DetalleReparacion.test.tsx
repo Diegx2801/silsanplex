@@ -83,6 +83,7 @@ const cotizacionRechazada: CotizacionReparacion = {
   esActual: true,
   estado: 'rejected',
   moneda: 'PEN',
+  tipoCambioPen: 1,
   preciosIncluyenImpuesto: false,
   tasaImpuesto: 18,
   subtotal: 100,
@@ -109,6 +110,8 @@ const cotizacionRechazada: CotizacionReparacion = {
     precioUnitario: 100,
     gravable: true,
     subtotalLinea: 100,
+    precioMinimoPenSnapshot: null,
+    precioComparablePenSnapshot: null,
     creadoEn: '2026-09-01T11:00:00Z',
   }],
 }

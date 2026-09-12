@@ -113,6 +113,7 @@ interface FilaCotizacion {
   is_current: boolean
   status: 'draft' | 'pending' | 'approved' | 'rejected'
   currency: 'PEN' | 'USD'
+  exchange_rate_to_pen: number | null
   prices_include_tax: boolean
   tax_rate: number
   subtotal: number
@@ -141,6 +142,8 @@ interface FilaLineaCotizacion {
   unit_price: number
   taxable: boolean
   line_subtotal: number | null
+  minimum_sale_price_pen_snapshot: number | null
+  comparable_unit_price_pen_snapshot: number | null
   created_at: string
 }
 
@@ -302,6 +305,9 @@ const mensajesDominio: Array<[string, string]> = [
   ['REPAIR_QUOTE_REVISION_BASE_INVALID', 'La versión seleccionada no es una cotización rechazada.'],
   ['REPAIR_QUOTE_PRODUCT_NOT_FOUND', 'No se encontró el producto del repuesto.'],
   ['REPAIR_QUOTE_PRODUCT_UNAVAILABLE', 'El producto del repuesto ya no está activo.'],
+  ['REPAIR_QUOTE_EXCHANGE_RATE_REQUIRED', 'Ingresa el tipo de cambio a PEN de la cotización.'],
+  ['REPAIR_QUOTE_EXCHANGE_RATE_INVALID', 'El tipo de cambio de la cotización no es válido.'],
+  ['REPAIR_QUOTE_MINIMUM_SALE_PRICE_VIOLATION', 'El precio final de un repuesto es menor que el precio mínimo permitido.'],
   ['REPAIR_QUOTE_APPROVAL_STATE_INVALID', 'La reparación no está esperando aprobación del cliente.'],
   ['REPAIR_QUOTE_REJECTION_STATE_INVALID', 'La reparación no está esperando aprobación del cliente.'],
   ['REPAIR_QUOTE_NOT_PENDING', 'La cotización ya no está pendiente de aprobación.'],
@@ -472,6 +478,10 @@ function mapearLineaCotizacion(fila: FilaLineaCotizacion): LineaCotizacionRepara
     precioUnitario: Number(fila.unit_price),
     gravable: fila.taxable,
     subtotalLinea: Number(fila.line_subtotal ?? 0),
+    precioMinimoPenSnapshot: fila.minimum_sale_price_pen_snapshot == null
+      ? null : Number(fila.minimum_sale_price_pen_snapshot),
+    precioComparablePenSnapshot: fila.comparable_unit_price_pen_snapshot == null
+      ? null : Number(fila.comparable_unit_price_pen_snapshot),
     creadoEn: fila.created_at,
   }
 }
@@ -488,6 +498,7 @@ function mapearCotizacion(
     esActual: fila.is_current,
     estado: fila.status,
     moneda: fila.currency,
+    tipoCambioPen: fila.exchange_rate_to_pen == null ? null : Number(fila.exchange_rate_to_pen),
     preciosIncluyenImpuesto: fila.prices_include_tax,
     tasaImpuesto: Number(fila.tax_rate),
     subtotal: Number(fila.subtotal),
@@ -725,7 +736,7 @@ export async function obtenerLineasCotizacionReparacion(
   const filas = await consultarPaginasDetalle<FilaLineaCotizacion>(
     (inicio, fin) => supabase
       .from('repair_quote_items')
-      .select('id,organization_id,quote_id,line_type,product_id,description,quantity,unit_price,taxable,line_subtotal,created_at', { count: 'exact' })
+      .select('id,organization_id,quote_id,line_type,product_id,description,quantity,unit_price,taxable,line_subtotal,minimum_sale_price_pen_snapshot,comparable_unit_price_pen_snapshot,created_at', { count: 'exact' })
       .eq('organization_id', organizationId)
       .eq('quote_id', quoteId)
       .order('id', { ascending: true })
@@ -780,7 +791,7 @@ export async function obtenerDetalleReparacion(
       await Promise.all([
       consultarPaginasDetalle<FilaCotizacion>((inicio, fin) => supabase
         .from('repair_quotes')
-        .select('id,organization_id,repair_id,version_number,is_current,status,currency,prices_include_tax,tax_rate,subtotal,tax,total,approved_by,approved_at,approval_observation,rejected_by,rejected_at,rejection_observation,created_by,updated_by,created_at,updated_at', { count: 'exact' })
+        .select('id,organization_id,repair_id,version_number,is_current,status,currency,exchange_rate_to_pen,prices_include_tax,tax_rate,subtotal,tax,total,approved_by,approved_at,approval_observation,rejected_by,rejected_at,rejection_observation,created_by,updated_by,created_at,updated_at', { count: 'exact' })
         .eq('organization_id', organizationId).eq('repair_id', repairId)
         .order('version_number', { ascending: false }).order('id', { ascending: false })
         .range(inicio, fin), 'cotizaciones'),
@@ -1139,6 +1150,7 @@ export async function guardarCotizacionReparacion(
       expected_lock_version: expectedLockVersion,
       ...(datos.id ? { id: datos.id } : {}),
       currency: datos.moneda,
+      exchange_rate_to_pen: Number(datos.tipoCambioPen),
       prices_include_tax: datos.preciosIncluyenImpuesto,
       tax_rate: Number(datos.tasaImpuesto),
       submit: enviar,
@@ -1173,6 +1185,7 @@ export async function revisarCotizacionReparacion(
       rejected_quote_id: cotizacionRechazadaId,
       expected_lock_version: expectedLockVersion,
       currency: datos.moneda,
+      exchange_rate_to_pen: Number(datos.tipoCambioPen),
       prices_include_tax: datos.preciosIncluyenImpuesto,
       tax_rate: Number(datos.tasaImpuesto),
       submit: enviar,

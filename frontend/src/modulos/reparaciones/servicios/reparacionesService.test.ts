@@ -434,6 +434,7 @@ describe('reparacionesService', () => {
       reparacionId: 'repair-1',
       estado: 'draft',
       moneda: 'PEN',
+      tipoCambioPen: 1,
       preciosIncluyenImpuesto: false,
       tasaImpuesto: 0,
       subtotal: 10,
@@ -464,6 +465,7 @@ describe('reparacionesService', () => {
 
     await revisarCotizacionReparacion('org-1', 'repair-1', 'quote-1', {
       moneda: 'PEN',
+      tipoCambioPen: '1',
       preciosIncluyenImpuesto: false,
       tasaImpuesto: '18',
       lineas: [{
@@ -483,6 +485,7 @@ describe('reparacionesService', () => {
         rejected_quote_id: 'quote-1',
         expected_lock_version: 13,
         operation_key: '00000000-0000-4000-8000-000000000012',
+        exchange_rate_to_pen: 1,
         submit: true,
         items: [{
           line_type: 'labor',
@@ -654,6 +657,7 @@ describe('reparacionesService', () => {
     const observacion = { observacion: 'Confirmado' }
     const cotizacion: DatosCotizacion = {
       moneda: 'PEN',
+      tipoCambioPen: '1',
       preciosIncluyenImpuesto: false,
       tasaImpuesto: '18',
       lineas: [{
@@ -695,6 +699,7 @@ describe('reparacionesService', () => {
       payload: expect.objectContaining({
         expected_lock_version: 22,
         operation_key: '00000000-0000-4000-8000-000000000013',
+        exchange_rate_to_pen: 1,
       }),
     })
     expect(supabaseMock.rpc).toHaveBeenCalledWith('approve_repair_quote', expect.objectContaining({ requested_expected_lock_version: 23 }))

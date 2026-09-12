@@ -38,6 +38,9 @@ function datosIniciales(
   return {
     id: cotizacion?.estado === 'draft' ? cotizacion.id : undefined,
     moneda: cotizacion?.moneda ?? 'PEN',
+    tipoCambioPen: cotizacion?.tipoCambioPen != null
+      ? String(cotizacion.tipoCambioPen)
+      : cotizacion?.moneda === 'USD' ? '' : '1',
     preciosIncluyenImpuesto: cotizacion?.preciosIncluyenImpuesto ?? false,
     tasaImpuesto: cotizacion ? String(cotizacion.tasaImpuesto) : '0',
     lineas: cotizacion?.lineas.length
@@ -160,13 +163,25 @@ export function DialogoCotizacion({
           </header>
 
           <form id="formulario-cotizacion" className="min-h-0 flex-1 overflow-y-auto" onSubmit={(evento) => evento.preventDefault()}>
-            <section className="grid gap-5 border-b px-5 py-6 sm:grid-cols-3 sm:px-7">
+            <section className="grid gap-5 border-b px-5 py-6 sm:grid-cols-4 sm:px-7">
               <div>
                 <label htmlFor="cotizacion-moneda" className="field-label">Moneda *</label>
-                <select id="cotizacion-moneda" className="field-control" {...register('moneda')}>
+                <select id="cotizacion-moneda" className="field-control" {...register('moneda', {
+                  onChange: (evento) => {
+                    setValue('tipoCambioPen', evento.target.value === 'PEN' ? '1' : '')
+                  },
+                })}>
                   <option value="PEN">Sol peruano (PEN)</option>
                   <option value="USD">Dólar estadounidense (USD)</option>
                 </select>
+              </div>
+              <div>
+                <label htmlFor="cotizacion-tipo-cambio" className="field-label">Tipo de cambio a PEN *</label>
+                <input id="cotizacion-tipo-cambio" type="number" min="0.00000001" step="0.00000001"
+                  className="field-control" disabled={moneda === 'PEN'} aria-invalid={Boolean(errors.tipoCambioPen)}
+                  {...register('tipoCambioPen')} />
+                {errors.tipoCambioPen ? <p className="field-error">{errors.tipoCambioPen.message}</p> : null}
+                <p className="mt-1 text-xs text-muted-foreground">PEN por 1 {moneda}. Se conserva en la cotización.</p>
               </div>
               <div>
                 <label htmlFor="cotizacion-tasa" className="field-label">Tasa de impuesto (%) *</label>
