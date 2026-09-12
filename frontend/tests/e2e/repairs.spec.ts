@@ -419,7 +419,7 @@ test('dos pestañas: una acción obsoleta se rechaza sin sobrescribir el cambio 
   await other.close()
 })
 
-test('rechazo y revisión conservan una sola cotización vigente y el actor de decisión', async ({ page }) => {
+test('rechazo y revisión conservan una sola vigente y permiten inspeccionar líneas históricas', async ({ page }) => {
   const f = await fixture(page)
   await prepareDiagnosis(page, f)
   const first = await quote(page)
@@ -431,6 +431,7 @@ test('rechazo y revisión conservan una sola cotización vigente y el actor de d
   await rejection.getByRole('button', { name: 'Rechazar cotización', exact: true }).click()
   await expect(rejection).toBeHidden()
   const revision = await quote(page, 'Crear revisión')
+  await revision.getByLabel('Descripción *', { exact: true }).fill('Reparación revisada')
   const interceptedRevision = await interceptFirstSuccessfulResponse(page, 'revise_repair_quote')
   await revision.getByRole('button', { name: 'Guardar borrador', exact: true }).click()
   await expect(revision.getByRole('alert')).toBeVisible()
@@ -442,10 +443,21 @@ test('rechazo y revisión conservan una sola cotización vigente y el actor de d
   await recoveredRevision.getByRole('button', { name: 'Reintentar guardado', exact: true }).click()
   await expect(recoveredRevision).toBeHidden()
   await interceptedRevision.finish()
-  const quotes = await checked(f.api.from('repair_quotes').select('version_number,status,is_current,rejected_by')
+  await expect(page.getByText('Reparación revisada')).toBeVisible()
+  const quotes = await checked(f.api.from('repair_quotes').select('id,version_number,status,is_current,rejected_by')
     .eq('repair_id', (await repair(f)).id).order('version_number'))
-  expect(quotes).toEqual([
+  expect(quotes).toMatchObject([
     { version_number: 1, status: 'rejected', is_current: false, rejected_by: f.userId },
     { version_number: 2, status: 'draft', is_current: true, rejected_by: null },
   ])
+  const historicalLinesResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return url.pathname.endsWith('/repair_quote_items')
+      && url.searchParams.get('quote_id') === `eq.${quotes[0].id}`
+  })
+  await page.getByLabel('Versión de cotización').selectOption(quotes[0].id)
+  expect((await historicalLinesResponse).ok()).toBeTruthy()
+  await expect(page.getByText('Reparación de fuente')).toBeVisible()
+  await expect(page.getByText('Versión 1 · histórica')).toBeVisible()
+  await expect(page.getByText('Reparación revisada')).toBeHidden()
 })
