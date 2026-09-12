@@ -41,7 +41,13 @@ reabren o recargan, y exigen mismo payload, clave, ID devuelto y una sola fila.
 Seis pruebas unitarias cubren persistencia, aislamiento, errores y nuevas
 intenciones. El alcance de persistencia es la pestaña actual y sus recargas;
 no cubre cerrar definitivamente la pestaña, borrar su almacenamiento ni otro
-dispositivo. Reservas y cotizaciones conservan su implementación anterior.
+dispositivo.
+
+Ampliación del 12 de septiembre: el mismo contrato persistente se aplica al
+guardado y revisión de cotizaciones y a la reserva de repuestos. Los formularios
+restauran los datos, la versión optimista y la clave originales después de cerrar,
+reabrir o recargar. Un reintento conserva el payload exacto aun cuando el primer
+intento ya haya modificado el stock o la versión en PostgreSQL.
 
 ### R-AUD-02 — P1 corregido: clientes y productos paginados
 

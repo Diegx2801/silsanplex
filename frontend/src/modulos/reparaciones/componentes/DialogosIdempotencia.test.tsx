@@ -100,4 +100,53 @@ describe('Claves de reintento de comandos', () => {
     await waitFor(() => expect(alGuardar).toHaveBeenCalledTimes(3))
     expect(alGuardar.mock.calls[2][2]).not.toBe(alGuardar.mock.calls[0][2])
   })
+
+  it('restaura el borrador y su clave al volver a montar el diálogo', async () => {
+    const clave = crypto.randomUUID()
+    const alGuardar = vi.fn().mockResolvedValue(undefined)
+    render(<DialogoCotizacion abierto reparacion={reparacion} cotizacion={null}
+      productos={productos} alGuardar={alGuardar} alCambiarApertura={vi.fn()}
+      operacionPendiente={{
+        clave,
+        enviar: false,
+        expectedLockVersion: 1,
+        datos: {
+          moneda: 'PEN', preciosIncluyenImpuesto: false, tasaImpuesto: '18',
+          lineas: [{ tipo: 'labor', productoId: '', descripcion: 'Borrador recuperado',
+            cantidad: '1', precioUnitario: '50', gravable: true }],
+        },
+      }} />)
+
+    expect(screen.getByLabelText('Descripción *')).toHaveValue('Borrador recuperado')
+    expect(screen.getByRole('button', { name: 'Enviar a aprobación' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar guardado' }))
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(
+      expect.objectContaining({ lineas: [expect.objectContaining({ descripcion: 'Borrador recuperado' })] }),
+      false,
+      clave,
+    ))
+  })
+
+  it('restaura la reserva aunque el stock asignable ya no aparezca después de recargar', async () => {
+    fefo.candidatos = []
+    const clave = crypto.randomUUID()
+    const alGuardar = vi.fn().mockResolvedValue(undefined)
+    const datos = {
+      productoId: productos[0].id,
+      almacenId: almacenes[0].id,
+      ubicacionId: ubicaciones[0].id,
+      estadoStock: 'available' as const,
+      lote: '', fechaVencimiento: '', cantidadSolicitada: '2', notas: '',
+    }
+    render(<DialogoReservaParte abierto reparacion={reparacion} productos={productos}
+      almacenes={almacenes} ubicaciones={ubicaciones} alGuardar={alGuardar}
+      alCambiarApertura={vi.fn()} operacionPendiente={{
+        clave, datos, expectedLockVersion: 1,
+      }} />)
+
+    expect(await screen.findByRole('button', { name: 'Reintentar reserva' })).toBeEnabled()
+    expect(screen.getByLabelText('Cantidad solicitada *')).toHaveValue(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar reserva' }))
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(datos, clave))
+  })
 })

@@ -331,6 +331,8 @@ export function ReparacionesPage() {
         alRegistrarPrueba={(repairId, datos: DatosPrueba, lockVersion) => operaciones.registrarPrueba(repairId, datos, lockVersion)}
         alEntregar={(repairId, datos: DatosObservacionReparacion, lockVersion) => operaciones.entregar(repairId, datos, lockVersion)}
         alCancelar={(repairId, datos: DatosObservacionReparacion, lockVersion) => operaciones.cancelar(repairId, datos, lockVersion)}
+        recuperarCotizacionPendiente={operaciones.recuperarCotizacionPendiente}
+        recuperarReservaPartePendiente={operaciones.recuperarReservaPartePendiente}
       /> : null}
     </div>
   )

@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
-import { crearConReintentoPersistente, leerCreacionPendiente } from './creacionPendiente'
+import {
+  crearConReintentoPersistente,
+  guardarCotizacionConReintentoPersistente,
+  leerCotizacionPendiente,
+  leerCreacionPendiente,
+  leerReservaPartePendiente,
+  reservarParteConReintentoPersistente,
+} from './creacionPendiente'
 import type {
   ConsultaReparaciones,
   ResultadoReparacionesPaginado,
@@ -70,6 +77,9 @@ export function useReparaciones(
   const queryClient = useQueryClient()
   const organizationId = access?.organizationId ?? ''
   const ambitoCreacion = `${organizationId}:${user?.id ?? ''}`
+  const ambitoCotizacion = (repairId: string, esRevision: boolean) =>
+    `${ambitoCreacion}:${repairId}:quote:${esRevision ? 'revision' : 'save'}`
+  const ambitoReserva = (repairId: string) => `${ambitoCreacion}:${repairId}:part-reservation`
   const consulta = configuracion.consulta ?? consultaInicial
   const pagina = configuracion.pagina ?? 1
   const tamanioPagina = configuracion.tamanioPagina ?? 10
@@ -312,6 +322,11 @@ export function useReparaciones(
     entregando: entregaMutation.isPending,
     cancelando: cancelacionMutation.isPending,
     recuperarCreacionPendiente: () => leerCreacionPendiente(ambitoCreacion)?.datos,
+    recuperarCotizacionPendiente: (repairId: string, esRevision: boolean) =>
+      leerCotizacionPendiente(ambitoCotizacion(repairId, esRevision))
+      ?? leerCotizacionPendiente(ambitoCotizacion(repairId, !esRevision)),
+    recuperarReservaPartePendiente: (repairId: string) =>
+      leerReservaPartePendiente(ambitoReserva(repairId)),
     crear: async (datos: DatosReparacion, operationKey: string) => {
       try {
         await crearConReintentoPersistente(ambitoCreacion, datos, operationKey,
@@ -363,7 +378,18 @@ export function useReparaciones(
     },
     guardarCotizacion: async (id: string, datos: DatosCotizacion, enviar: boolean, operationKey: string, expectedLockVersion: number) => {
       try {
-        await cotizacionMutation.mutateAsync({ id, datos, enviar, operationKey, expectedLockVersion })
+        await guardarCotizacionConReintentoPersistente(
+          ambitoCotizacion(id, false),
+          { datos, enviar, expectedLockVersion },
+          operationKey,
+          (pendiente, clave) => cotizacionMutation.mutateAsync({
+            id,
+            datos: pendiente.datos,
+            enviar: pendiente.enviar,
+            operationKey: clave,
+            expectedLockVersion: pendiente.expectedLockVersion,
+          }),
+        )
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo guardar la cotización.')
@@ -378,7 +404,24 @@ export function useReparaciones(
       expectedLockVersion: number,
     ) => {
       try {
-        await revisarCotizacionMutation.mutateAsync({ repairId, quoteId, datos, enviar, operationKey, expectedLockVersion })
+        await guardarCotizacionConReintentoPersistente(
+          ambitoCotizacion(repairId, true),
+          { datos, enviar, expectedLockVersion, quoteId },
+          operationKey,
+          (pendiente, clave) => {
+            if (!pendiente.quoteId) {
+              throw new Error('No se pudo recuperar la revisión pendiente. No se enviará otra revisión.')
+            }
+            return revisarCotizacionMutation.mutateAsync({
+              repairId,
+              quoteId: pendiente.quoteId,
+              datos: pendiente.datos,
+              enviar: pendiente.enviar,
+              operationKey: clave,
+              expectedLockVersion: pendiente.expectedLockVersion,
+            })
+          },
+        )
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo crear la revisión de la cotización.')
@@ -412,7 +455,17 @@ export function useReparaciones(
     },
     reservarParte: async (repairId: string, datos: DatosReservaParte, operationKey: string, expectedLockVersion: number) => {
       try {
-        await reservaMutation.mutateAsync({ repairId, datos, operationKey, expectedLockVersion })
+        await reservarParteConReintentoPersistente(
+          ambitoReserva(repairId),
+          { datos, expectedLockVersion },
+          operationKey,
+          (pendiente, clave) => reservaMutation.mutateAsync({
+            repairId,
+            datos: pendiente.datos,
+            operationKey: clave,
+            expectedLockVersion: pendiente.expectedLockVersion,
+          }),
+        )
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo reservar el repuesto.')

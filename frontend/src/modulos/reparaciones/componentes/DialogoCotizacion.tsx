@@ -16,6 +16,7 @@ import {
   type ResultadoCatalogoReparacion,
   type Reparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
+import type { CotizacionPendiente } from '@/modulos/reparaciones/estado/creacionPendiente'
 import { SelectorCatalogoReparacion } from './SelectorCatalogoReparacion'
 
 function formatoMoneda(valor: number, moneda: 'PEN' | 'USD') {
@@ -29,7 +30,11 @@ function redondear(valor: number) {
   return Math.round((valor + Number.EPSILON) * 100) / 100
 }
 
-function datosIniciales(cotizacion: CotizacionReparacion | null): DatosCotizacion {
+function datosIniciales(
+  cotizacion: CotizacionReparacion | null,
+  operacionPendiente?: CotizacionPendiente | null,
+): DatosCotizacion {
+  if (operacionPendiente) return operacionPendiente.datos
   return {
     id: cotizacion?.estado === 'draft' ? cotizacion.id : undefined,
     moneda: cotizacion?.moneda ?? 'PEN',
@@ -53,6 +58,7 @@ interface DialogoCotizacionProps {
   reparacion: Reparacion
   cotizacion: CotizacionReparacion | null
   esRevision?: boolean
+  operacionPendiente?: CotizacionPendiente | null
   productos: readonly OpcionProductoReparacion[]
   totalProductos?: number
   buscarProductos?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>>
@@ -66,6 +72,7 @@ export function DialogoCotizacion({
   reparacion,
   cotizacion,
   esRevision = false,
+  operacionPendiente,
   productos,
   totalProductos = productos.length,
   buscarProductos,
@@ -113,9 +120,17 @@ export function DialogoCotizacion({
   useEffect(() => {
     // Conservar la intención enviada si los datos se refrescan tras un timeout.
     if (abierto && operacion.current) return
-    operacion.current = null
-    if (abierto) reset(datosIniciales(cotizacion))
-  }, [abierto, cotizacion, reset])
+    operacion.current = abierto && operacionPendiente
+      ? {
+          firma: JSON.stringify({
+            datos: operacionPendiente.datos,
+            enviar: operacionPendiente.enviar,
+          }),
+          clave: operacionPendiente.clave,
+        }
+      : null
+    if (abierto) reset(datosIniciales(cotizacion, operacionPendiente))
+  }, [abierto, cotizacion, operacionPendiente, reset])
 
   const guardar = async (datos: DatosCotizacion, enviar: boolean) => {
     setMensaje('')
@@ -242,11 +257,16 @@ export function DialogoCotizacion({
             </section>
           </form>
 
+          {operacionPendiente ? (
+            <p role="status" className="border-t bg-primary/5 px-5 py-3 text-sm text-primary sm:px-7">
+              Se recuperó una {operacionPendiente.enviar ? 'cotización pendiente de envío' : 'cotización pendiente de guardado'}. Reintenta la misma operación antes de realizar cambios.
+            </p>
+          ) : null}
           {mensaje ? <p role="alert" className="border-t bg-destructive/10 px-5 py-3 text-sm text-destructive sm:px-7">{mensaje}</p> : null}
           <footer className="flex flex-col-reverse gap-2 border-t bg-background px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
             <DialogPrimitive.Close asChild><Button type="button" variant="outline" size="lg">Cancelar</Button></DialogPrimitive.Close>
-            <Button type="button" variant="outline" size="lg" disabled={isSubmitting} onClick={() => void handleSubmit((datos) => guardar(datos, false))()}>Guardar borrador</Button>
-            <Button type="button" size="lg" disabled={isSubmitting} onClick={() => void handleSubmit((datos) => guardar(datos, true))()}>Enviar a aprobación</Button>
+            <Button type="button" variant="outline" size="lg" disabled={isSubmitting || operacionPendiente?.enviar === true} onClick={() => void handleSubmit((datos) => guardar(datos, false))()}>{operacionPendiente?.enviar === false ? 'Reintentar guardado' : 'Guardar borrador'}</Button>
+            <Button type="button" size="lg" disabled={isSubmitting || operacionPendiente?.enviar === false} onClick={() => void handleSubmit((datos) => guardar(datos, true))()}>{operacionPendiente?.enviar === true ? 'Reintentar envío' : 'Enviar a aprobación'}</Button>
           </footer>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
