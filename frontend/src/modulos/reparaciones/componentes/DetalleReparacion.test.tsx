@@ -139,6 +139,7 @@ function renderizarDetalle({
   estado = 'diagnosis',
   puedeEditar = false,
   puedeCambiarEstado = true,
+  puedeRealizarTecnica = true,
   puedeUsarPartes = false,
   solucionAplicada = '',
   conParte = false,
@@ -153,6 +154,7 @@ function renderizarDetalle({
   estado?: EstadoReparacion
   puedeEditar?: boolean
   puedeCambiarEstado?: boolean
+  puedeRealizarTecnica?: boolean
   puedeUsarPartes?: boolean
   solucionAplicada?: string
   conParte?: boolean
@@ -192,6 +194,7 @@ function renderizarDetalle({
       puedeEditar={puedeEditar}
       puedeAsignar={false}
       puedeCambiarEstado={puedeCambiarEstado}
+      puedeRealizarTecnica={puedeRealizarTecnica}
       puedeAprobarCotizacion={false}
       puedeUsarPartes={puedeUsarPartes}
       puedeEntregar={false}
@@ -347,6 +350,19 @@ describe('DetalleReparacion acciones técnicas', () => {
     expect(screen.queryByRole('button', { name: 'Registrar diagnóstico' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Registrar solución' })).not.toBeInTheDocument()
   })
+
+  it.each([
+    ['diagnosis', 'Registrar diagnóstico'],
+    ['received', 'Registrar solución'],
+    ['testing', 'Registrar prueba'],
+  ] as const)(
+    'oculta %s sin capacidad técnica aunque el usuario pueda cambiar estados',
+    (estado, accion) => {
+      renderizarDetalle({ estado, puedeCambiarEstado: true, puedeRealizarTecnica: false })
+
+      expect(screen.queryByRole('button', { name: accion })).not.toBeInTheDocument()
+    },
+  )
 
   it('permite a VENTAS abrir la edición general sin permisos técnicos', () => {
     const { editar } = renderizarDetalle({ puedeEditar: true, puedeCambiarEstado: false })
