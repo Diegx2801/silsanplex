@@ -162,6 +162,7 @@ export function ReparacionesPage() {
   const puedeEditar = hasPermission(PERMISSIONS.REPAIRS_UPDATE)
   const puedeAsignar = hasPermission(PERMISSIONS.REPAIRS_ASSIGN)
   const puedeCambiarEstado = hasPermission(PERMISSIONS.REPAIRS_CHANGE_STATUS)
+  const puedeRealizarTecnica = hasPermission(PERMISSIONS.REPAIRS_PERFORM_TECHNICAL)
   const puedeAprobarCotizacion = hasPermission(PERMISSIONS.REPAIRS_APPROVE_QUOTE)
   const puedeUsarPartes = hasPermission(PERMISSIONS.REPAIRS_USE_PARTS)
   const puedeEntregar = hasPermission(PERMISSIONS.REPAIRS_DELIVER)
@@ -316,6 +317,7 @@ export function ReparacionesPage() {
         puedeEditar={puedeEditar}
         puedeAsignar={puedeAsignar}
         puedeCambiarEstado={puedeCambiarEstado}
+        puedeRealizarTecnica={puedeRealizarTecnica}
         puedeAprobarCotizacion={puedeAprobarCotizacion}
         puedeUsarPartes={puedeUsarPartes}
         puedeEntregar={puedeEntregar}

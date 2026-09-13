@@ -154,6 +154,7 @@ interface DetalleReparacionProps {
   puedeEditar: boolean
   puedeAsignar: boolean
   puedeCambiarEstado: boolean
+  puedeRealizarTecnica: boolean
   puedeAprobarCotizacion: boolean
   puedeUsarPartes: boolean
   puedeEntregar: boolean
@@ -237,6 +238,7 @@ export function DetalleReparacion({
   puedeEditar,
   puedeAsignar,
   puedeCambiarEstado,
+  puedeRealizarTecnica,
   puedeAprobarCotizacion,
   puedeUsarPartes,
   puedeEntregar,
@@ -383,6 +385,7 @@ export function DetalleReparacion({
               puedeEditar={puedeEditar}
               puedeAsignar={puedeAsignar}
               puedeCambiarEstado={puedeCambiarEstado}
+              puedeRealizarTecnica={puedeRealizarTecnica}
               puedeAprobarCotizacion={puedeAprobarCotizacion}
               puedeUsarPartes={puedeUsarPartes && detalle.reparacion.estado !== 'testing'}
               puedeEntregar={puedeEntregar}
@@ -535,6 +538,7 @@ interface DetalleContenidoProps {
   puedeEditar: boolean
   puedeAsignar: boolean
   puedeCambiarEstado: boolean
+  puedeRealizarTecnica: boolean
   puedeAprobarCotizacion: boolean
   puedeUsarPartes: boolean
   puedeEntregar: boolean
@@ -666,6 +670,7 @@ function DetalleContenido({
   puedeEditar,
   puedeAsignar,
   puedeCambiarEstado,
+  puedeRealizarTecnica,
   puedeAprobarCotizacion,
   puedeUsarPartes,
   puedeEntregar,
@@ -684,11 +689,12 @@ function DetalleContenido({
   const puedeRevisar = puedeEditar && reparacion.estado === 'rejected' && cotizacionActiva?.estado === 'rejected'
   const puedeAprobar = puedeAprobarCotizacion && reparacion.estado === 'waiting_customer_approval' && cotizacionActiva?.estado === 'pending'
   const puedeReservar = puedeUsarPartes && ['quote_approved', 'warranty', 'in_repair', 'awaiting_parts'].includes(reparacion.estado)
-  const puedeRegistrarDiagnostico = puedeCambiarEstado && reparacion.estado === 'diagnosis'
-  const puedeRegistrarSolucion = puedeCambiarEstado
+  const puedeActuarComoTecnico = puedeCambiarEstado && puedeRealizarTecnica
+  const puedeRegistrarDiagnostico = puedeActuarComoTecnico && reparacion.estado === 'diagnosis'
+  const puedeRegistrarSolucion = puedeActuarComoTecnico
     && !estadoEsTerminal(reparacion.estado)
     && !['testing', 'ready_for_delivery'].includes(reparacion.estado)
-  const puedeRegistrarPrueba = puedeCambiarEstado && reparacion.estado === 'testing'
+  const puedeRegistrarPrueba = puedeActuarComoTecnico && reparacion.estado === 'testing'
   const puedeEntregarAhora = puedeEntregar && reparacion.estado === 'ready_for_delivery'
 
   return (
