@@ -1,6 +1,6 @@
 begin;
 
-select plan(92);
+select plan(93);
 
 -- ------------------------------------------------------------
 -- Contract and privileges
@@ -714,11 +714,16 @@ select is(
 );
 set local role service_role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select throws_ok($$
+  select public.record_repair_solution(
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000004","applied_solution":"Service solution without responsible"}'::jsonb)
+  )
+$$, 'P0001', 'REPAIR_TECHNICIAN_UNAVAILABLE', 'service_role must delegate a qualified technical responsible');
 select lives_ok($$
   select public.record_repair_solution(
-    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000004","applied_solution":"Service specialized solution"}'::jsonb)
+    pg_temp.with_repair_version('{"organization_id":"a1030000-0000-4000-8000-000000000001","repair_id":"a8030000-0000-4000-8000-000000000004","applied_solution":"Service specialized solution","technician_id":"a2030000-0000-4000-8000-000000000001"}'::jsonb)
   )
-$$, 'service_role can use the specialized RPC in a generic-editable received state');
+$$, 'service_role can use the specialized RPC with an explicit qualified responsible');
 
 reset role;
 select is(

@@ -52,6 +52,7 @@ language sql as $$
   select jsonb_build_object('organization_id', pg_temp.tech_id('org'),
     'repair_id', repair.id, 'expected_lock_version', repair.lock_version,
     'symptoms', 'No enciende', 'test_type', 'Encendido', 'result', 'Correcto', 'passed', true)
+    || jsonb_build_object('applied_solution', 'Fuente reemplazada')
   from public.repairs repair where repair.id = pg_temp.tech_id(state);
 $$;
 
@@ -81,6 +82,10 @@ select throws_ok($$
   select public.record_repair_test(pg_temp.tech_payload('testing') ||
     jsonb_build_object('performed_by', pg_temp.tech_id('worker')))
 $$, 'P0001', 'REPAIR_TECHNICIAN_UNAVAILABLE', 'test rejects an unqualified performer');
+select throws_ok($$
+  select public.record_repair_solution(pg_temp.tech_payload('diagnosis') ||
+    jsonb_build_object('technician_id', pg_temp.tech_id('worker')))
+$$, 'P0001', 'REPAIR_TECHNICIAN_UNAVAILABLE', 'solution rejects an unqualified responsible technician');
 
 reset role;
 -- A role containing only the capability proves there is no hardcoded ADMIN check.
@@ -108,6 +113,18 @@ select lives_ok($$
   select public.record_repair_test(pg_temp.tech_payload('testing') ||
     jsonb_build_object('performed_by', pg_temp.tech_id('worker')))
 $$, 'test accepts a qualified non-admin performer');
+select lives_ok($$
+  select public.record_repair_solution(pg_temp.tech_payload('diagnosis') ||
+    jsonb_build_object('technician_id', pg_temp.tech_id('worker')))
+$$, 'solution accepts a qualified non-admin responsible technician');
+select is((
+  select event.metadata ->> 'technician_id'
+  from public.repair_events event
+  where event.repair_id = pg_temp.tech_id('diagnosis')
+    and event.event_type = 'SOLUTION_RECORDED'
+  order by event.id desc
+  limit 1
+), pg_temp.tech_id('worker')::text, 'solution event records its validated technical responsible');
 
 reset role;
 update public.roles set is_active = false where code = 'TEST_TECH_CAPABILITY';
@@ -144,6 +161,10 @@ select throws_ok($$
   select public.record_repair_test(pg_temp.tech_payload('testing') ||
     jsonb_build_object('performed_by', pg_temp.tech_id('worker')))
 $$, 'P0001', 'REPAIR_TECHNICIAN_UNAVAILABLE', 'new tests reject a revoked technician');
+select throws_ok($$
+  select public.record_repair_solution(pg_temp.tech_payload('diagnosis') ||
+    jsonb_build_object('technician_id', pg_temp.tech_id('worker')))
+$$, 'P0001', 'REPAIR_TECHNICIAN_UNAVAILABLE', 'new solutions reject a revoked responsible technician');
 select is((select count(*) from public.repair_diagnostics where repair_id = pg_temp.tech_id('diagnosis')),
   1::bigint, 'revocation preserves historical diagnoses');
 select is((select count(*) from public.repair_tests where repair_id = pg_temp.tech_id('testing')),
@@ -156,6 +177,9 @@ set local role authenticated;
 select throws_ok($$
   select public.record_repair_test(pg_temp.tech_payload('testing'))
 $$, 'P0001', 'REPAIR_TECHNICIAN_UNAVAILABLE', 'command permission alone does not qualify the actor fallback');
+select throws_ok($$
+  select public.record_repair_solution(pg_temp.tech_payload('diagnosis'))
+$$, '42501', 'REPAIR_FORBIDDEN', 'solution requires technical capability from its command actor');
 
 select * from finish();
 rollback;

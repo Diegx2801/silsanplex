@@ -97,7 +97,11 @@ permitidas por `REPAIRS_CHANGE_STATUS` (incluida cancelación según el contrato
 existente). No concede `USERS_MANAGE`, asignación de técnicos, creación/edición
 comercial, aprobación de cotizaciones, gestión de repuestos ni entrega. ADMIN
 conserva sus permisos. La capacidad técnica requiere cuenta, membresía, rol,
-permiso y organización activos.
+permiso y organización activos. Registrar una solución exige simultáneamente
+`REPAIRS_CHANGE_STATUS` y `REPAIRS_PERFORM_TECHNICAL`; el responsable se resuelve
+desde `technician_id`, el técnico asignado o el actor y se valida con la misma
+capacidad antes de modificar la reparación. Las integraciones con `service_role`
+deben enviar `technician_id` cuando la reparación todavía no tiene técnico asignado.
 
 Despliegue: aplicar `20260905010000_add_repair_technician_role.sql`, desplegar
 la Edge Function `admin-users` y publicar el frontend. La asignación utiliza

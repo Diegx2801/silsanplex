@@ -113,6 +113,8 @@ select set_config('request.jwt.claims', jsonb_build_object('sub', pg_temp.tr_id(
   'role', 'authenticated', 'session_id', pg_temp.tr_id('technician-session'))::text, true);
 select throws_ok($$ select public.record_repair_test(pg_temp.tr_payload('testing')) $$,
   'P0001', 'REPAIR_TECHNICIAN_UNAVAILABLE', 'revoked capability rejects the technician with command permission');
+select throws_ok($$ select public.record_repair_solution(pg_temp.tr_payload('diagnosis')) $$,
+  '42501', 'REPAIR_FORBIDDEN', 'solution rejects a command actor whose technical capability was revoked');
 
 select * from finish();
 rollback;
