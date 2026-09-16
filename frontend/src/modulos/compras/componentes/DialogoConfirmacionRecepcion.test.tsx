@@ -70,6 +70,7 @@ function renderDialog(alConfirmar = vi.fn().mockResolvedValue(undefined)) {
 describe('DialogoConfirmacionRecepcion', () => {
   it('marca todos los campos inválidos de cada partida', async () => {
     const alConfirmar = renderDialog()
+    expect(screen.getByText(/unidad UND/)).toBeVisible()
     fireEvent.change(screen.getByLabelText(/Cantidad/), { target: { value: '' } })
     fireEvent.change(screen.getByLabelText(/Ubicación/), { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar recepción' }))

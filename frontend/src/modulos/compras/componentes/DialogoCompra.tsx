@@ -113,7 +113,7 @@ export function DialogoCompra({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25" />
         <DialogPrimitive.Content
-          className="fixed inset-y-0 end-0 z-50 flex w-full max-w-4xl flex-col border-s bg-background shadow-xl outline-none"
+          className="fixed start-1/2 top-1/2 z-50 flex max-h-[92svh] w-[calc(100%-2rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background shadow-xl outline-none sm:w-[calc(100%-3rem)]"
           onCloseAutoFocus={(evento) => {
             evento.preventDefault()
             alRestaurarFoco()
@@ -362,8 +362,8 @@ export function DialogoCompra({
                           <Trash2 aria-hidden="true" />
                         </Button>
                       </div>
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
-                        <div className="sm:col-span-2 lg:col-span-2">
+                      <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+                        <div className="min-w-0 sm:col-span-2 lg:col-span-2">
                           <label className="field-label">Producto *</label>
                           <select
                             className="field-control"
@@ -383,8 +383,8 @@ export function DialogoCompra({
                           {erroresLinea?.productoId ? (
                             <p className="field-error">{erroresLinea.productoId.message}</p>
                           ) : null}
-                          {producto ? <p className="mt-1 text-xs text-muted-foreground">
-                            Tipo: {producto.tipo === 'service' ? 'Servicio (atención administrativa)' : 'Producto físico (recepción e inventario)'}
+                          {producto ? <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                            {producto.tipo === 'service' ? 'Servicio (atención administrativa)' : 'Producto físico (recepción e inventario)'} · Unidad: {producto.unidadMedida}
                            </p> : null}
                            {producto && !producto.activo ? (
                              <p className="mt-1 text-xs text-amber-700">
@@ -393,11 +393,11 @@ export function DialogoCompra({
                            ) : null}
                         </div>
                         <div>
-                          <label className="field-label">Cantidad *</label>
+                          <label className="field-label">Cantidad{producto?.unidadMedida ? ` (${producto.unidadMedida})` : ''} *</label>
                           <input
                             inputMode="decimal"
                             className="field-control"
-                            aria-label={`Cantidad del producto ${indice + 1}`}
+                            aria-label={`Cantidad del producto ${indice + 1}${producto?.unidadMedida ? ` en ${producto.unidadMedida}` : ''}`}
                             aria-invalid={Boolean(erroresLinea?.cantidad)}
                             {...register(`lineas.${indice}.cantidad`)}
                           />

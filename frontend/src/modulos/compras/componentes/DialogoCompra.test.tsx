@@ -58,6 +58,15 @@ describe('DialogoCompra', () => {
     expect(screen.getByRole('combobox', { name: 'Producto 1' })).toHaveValue('')
     expect(screen.getByRole('option', { name: 'Seleccionar producto' })).toBeVisible()
 
+    fireEvent.change(screen.getByRole('combobox', { name: 'Producto 1' }), {
+      target: { value: producto.id },
+    })
+    expect(screen.getByText(/Unidad: Unidad/)).toBeVisible()
+    expect(screen.getByText('Cantidad (Unidad) *')).toBeVisible()
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Producto 1' }), {
+      target: { value: '' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }))
     expect(await screen.findByText('Selecciona un producto')).toBeVisible()
   })
