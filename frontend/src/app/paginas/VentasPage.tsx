@@ -551,8 +551,8 @@ export function VentasPage() {
           key={cotizacionSeleccionada?.id ?? 'nueva'}
           abierto={dialogoAbierto}
           cotizacion={cotizacionSeleccionada}
-          clientes={clientesActivos}
-          productos={productosActivos}
+          clientes={clientes}
+          productos={productos}
           alCambiarApertura={setDialogoAbierto}
           alGuardar={guardar}
           alRestaurarFoco={() => disparadorFormulario.current?.focus()}

@@ -86,4 +86,33 @@ describe('Combobox', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(onChange).toHaveBeenCalledWith('producto-2')
   })
+
+  it('permite limpiar con teclado una opción ya seleccionada', async () => {
+    const onChange = vi.fn()
+    function ComboboxControlado() {
+      const [value, setValue] = useState('producto-1')
+
+      return (
+        <Combobox
+          id="producto-seleccionado"
+          label="Producto seleccionado"
+          value={value}
+          options={opciones}
+          onChange={(nextValue) => {
+            setValue(nextValue)
+            onChange(nextValue)
+          }}
+        />
+      )
+    }
+
+    render(<ComboboxControlado />)
+
+    const input = screen.getByRole('combobox', { name: 'Producto seleccionado' })
+    fireEvent.focus(input)
+    fireEvent.keyDown(input, { key: 'Backspace' })
+
+    expect(onChange).toHaveBeenCalledWith('')
+    await waitFor(() => expect(input).toHaveValue(''))
+  })
 })

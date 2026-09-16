@@ -141,6 +141,13 @@ export function Combobox({
       if (option) seleccionar(option)
       return
     }
+    if ((evento.key === 'Backspace' || evento.key === 'Delete') && value && !busqueda) {
+      evento.preventDefault()
+      onChange('')
+      setAbierto(true)
+      setIndiceActivo(-1)
+      return
+    }
     if (evento.key === 'Escape' && abierto) {
       evento.preventDefault()
       setAbierto(false)

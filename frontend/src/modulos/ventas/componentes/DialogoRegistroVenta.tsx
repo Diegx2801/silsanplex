@@ -77,7 +77,14 @@ export function DialogoRegistroVenta({
               </div>
               <div>
                 <label htmlFor="fecha-venta" className="field-label">Fecha *</label>
-                <input id="fecha-venta" type="date" className="field-control" {...register('fechaVenta')} />
+                <input
+                  id="fecha-venta"
+                  type="date"
+                  className="field-control"
+                  aria-invalid={Boolean(errors.fechaVenta)}
+                  {...register('fechaVenta')}
+                />
+                {errors.fechaVenta ? <p className="field-error">{errors.fechaVenta.message}</p> : null}
               </div>
               <div>
                 <label htmlFor="serie-venta" className="field-label">Serie *</label>
