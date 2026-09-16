@@ -282,6 +282,7 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (message.includes('ORDER_ITEM_VALUES_INVALID')) return 'Las cantidades y precios deben ser válidos'
   if (message.includes('ORDER_OPERATION_KEY_REQUIRED')) return 'No se pudo identificar el reintento del pedido'
   if (message.includes('ORDER_DISPATCH_EXCEEDS_RESERVED')) return 'La cantidad supera el saldo reservado pendiente'
+  if (message.includes('ORDER_DISPATCH_QUANTITY_INVALID')) return 'La cantidad a despachar no es válida; revisa las cantidades e inténtalo de nuevo'
   if (message.includes('ORDER_DISPATCH_SALE_REQUIRED')) return 'La venta persistente no está disponible para despacho'
   if (message.includes('ORDER_DISPATCH_ITEM_INVALID')) return 'La línea de venta ya no es válida; recarga el documento'
   if (message.includes('ORDER_NOT_DISPATCHABLE')) return 'La venta ya no puede despacharse en su estado actual'

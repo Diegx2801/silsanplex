@@ -1,10 +1,34 @@
 import { z } from 'zod'
 
+/**
+ * Valida una fecha ISO de formulario sin permitir fechas de calendario
+ * inexistentes (por ejemplo, 31 de febrero). El tipo `date` del navegador
+ * ayuda a la interfaz, pero el contrato también debe protegerse antes de
+ * enviar una operación persistente.
+ */
+export function esFechaCalendarioValida(valor: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false
+  const fecha = new Date(`${valor}T00:00:00.000Z`)
+  return !Number.isNaN(fecha.getTime()) && fecha.toISOString().slice(0, 10) === valor
+}
+
+/** Devuelve la fecha del calendario local para controles HTML `date`. */
+export function fechaLocalActual() {
+  const fecha = new Date()
+  const año = fecha.getFullYear()
+  const mes = String(fecha.getMonth() + 1).padStart(2, '0')
+  const dia = String(fecha.getDate()).padStart(2, '0')
+  return `${año}-${mes}-${dia}`
+}
+
 export const esquemaDatosVenta = z.object({
   tipoDocumento: z.enum(['factura', 'boleta', 'nota-venta']),
   serie: z.string().trim().min(1, 'Ingresa la serie').max(10, 'Máximo 10 caracteres'),
   numeroDocumento: z.string().trim().min(1, 'Ingresa el número').max(20, 'Máximo 20 caracteres'),
-  fechaVenta: z.string().min(1, 'Selecciona la fecha de venta'),
+  fechaVenta: z.string()
+    .trim()
+    .min(1, 'Selecciona la fecha de venta')
+    .refine(esFechaCalendarioValida, 'Ingresa una fecha de venta válida'),
   almacen: z.string().trim().min(2, 'Ingresa el almacén').max(80, 'Máximo 80 caracteres'),
 })
 

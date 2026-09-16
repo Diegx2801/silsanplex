@@ -31,12 +31,14 @@ export function DialogoModificacionPedido({
   const [cantidades, setCantidades] = useState<Record<string, string>>(() =>
     Object.fromEntries(pedido.lineas.map((linea) => [linea.id, String(linea.cantidad)])),
   )
+  const [errores, setErrores] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [procesando, setProcesando] = useState(false)
   const operationKey = useRef(nuevaClaveOperacion())
 
   useEffect(() => {
     setCantidades(Object.fromEntries(pedido.lineas.map((linea) => [linea.id, String(linea.cantidad)])))
+    setErrores({})
     setError('')
     setProcesando(false)
     operationKey.current = nuevaClaveOperacion()
@@ -47,6 +49,12 @@ export function DialogoModificacionPedido({
     // Una edición distinta es una nueva operación; un retry sin editar
     // conserva la misma clave y permanece idempotente en PostgreSQL.
     operationKey.current = nuevaClaveOperacion()
+    setErrores((actuales) => {
+      if (!actuales[lineaId]) return actuales
+      const siguientes = { ...actuales }
+      delete siguientes[lineaId]
+      return siguientes
+    })
     setError('')
   }
 
@@ -54,28 +62,46 @@ export function DialogoModificacionPedido({
     evento.preventDefault()
     if (guardando || procesando) return
     const lineas: CantidadLineaPedido[] = []
+    const erroresCampos: Record<string, string> = {}
     for (const linea of pedido.lineas) {
       const cantidad = Number(cantidades[linea.id])
       if (!Number.isFinite(cantidad) || cantidad <= 0) {
-        setError(`Ingresa una cantidad válida para ${linea.productoDescripcion}`)
-        return
+        erroresCampos[linea.id] = `Ingresa una cantidad mayor a 0 para ${linea.productoDescripcion}`
+        continue
       }
       lineas.push({ orderItemId: linea.id, quantity: cantidad })
     }
-    setProcesando(true)
-    const resultado = await alGuardar(lineas, operationKey.current)
-    setProcesando(false)
-    if (resultado) {
-      setError(resultado)
+    if (Object.keys(erroresCampos).length) {
+      setErrores(erroresCampos)
+      setError('')
       return
     }
-    alCambiarApertura(false)
+    setErrores({})
+    setProcesando(true)
+    try {
+      const resultado = await alGuardar(lineas, operationKey.current)
+      if (resultado) {
+        setError(resultado)
+        setProcesando(false)
+        return
+      }
+      setProcesando(false)
+      alCambiarApertura(false)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'No se pudo modificar el pedido')
+      setProcesando(false)
+    }
   }
 
   const estaGuardando = guardando || procesando
 
   return (
-    <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
+    <DialogPrimitive.Root
+      open={abierto}
+      onOpenChange={(siguiente) => {
+        if (!estaGuardando) alCambiarApertura(siguiente)
+      }}
+    >
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25" />
         <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 border bg-background shadow-xl outline-none">
@@ -109,10 +135,13 @@ export function DialogoModificacionPedido({
                       step="0.001"
                       inputMode="decimal"
                       className="field-control"
+                      aria-invalid={Boolean(errores[linea.id])}
+                      aria-describedby={errores[linea.id] ? `error-cantidad-pedido-${linea.id}` : undefined}
                       value={cantidades[linea.id] ?? ''}
                       onChange={(evento) => cambiarCantidad(linea.id, evento.target.value)}
                       disabled={estaGuardando}
                     />
+                    {errores[linea.id] ? <p id={`error-cantidad-pedido-${linea.id}`} className="field-error">{errores[linea.id]}</p> : null}
                   </div>
                 </div>
               ))}
