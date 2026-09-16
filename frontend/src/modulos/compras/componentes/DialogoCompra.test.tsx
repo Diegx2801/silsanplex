@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { Producto } from '@/modulos/productos/modelo/producto'
+import type { Proveedor } from '@/modulos/proveedores/modelo/proveedor'
 
 import { DialogoCompra } from './DialogoCompra'
 
@@ -35,13 +36,39 @@ const producto = {
   unidadesAlternativas: [],
 } satisfies Producto
 
+const proveedor = {
+  id: 'proveedor-1',
+  organizationId: 'organizacion-1',
+  codigo: 'PROV-001',
+  tipoDocumento: 'ruc',
+  numeroDocumento: '20523621212',
+  razonSocial: 'LIMA EXPRESA S.A.C.',
+  nombreComercial: 'Lima Expresa',
+  contacto: 'Compras',
+  cargoContacto: '',
+  email: 'compras@example.com',
+  telefono: '',
+  direccion: '',
+  ubigeo: '',
+  estadoContribuyente: 'ACTIVO',
+  condicionDomicilio: 'HABIDO',
+  fuenteDatosFiscales: '',
+  fechaConsultaSunat: null,
+  condicionCredito: 'contado',
+  diasCredito: 0,
+  observaciones: '',
+  activo: true,
+  fechaRegistro: '2026-09-16T00:00:00.000Z',
+  fechaActualizacion: '2026-09-16T00:00:00.000Z',
+} satisfies Proveedor
+
 describe('DialogoCompra', () => {
-  it('inicia sin productos y exige agregarlos explícitamente', async () => {
+  it('inicia sin productos, permite buscarlos y muestra el error al retirarlos todos', async () => {
     render(
       <DialogoCompra
         abierto
         compra={null}
-        proveedores={[]}
+        proveedores={[proveedor]}
         productos={[producto]}
         almacenes={[]}
         alCambiarApertura={vi.fn()}
@@ -53,21 +80,31 @@ describe('DialogoCompra', () => {
     expect(screen.getByText('No hay productos agregados')).toBeVisible()
     expect(screen.queryByRole('combobox', { name: 'Producto 1' })).not.toBeInTheDocument()
 
+    expect(screen.getByRole('combobox', { name: 'Proveedor' })).toHaveValue(proveedor.razonSocial)
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Proveedor' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Proveedor' }), {
+      target: { value: proveedor.numeroDocumento },
+    })
+    expect(screen.getByRole('option', { name: /LIMA EXPRESA/ })).toBeVisible()
+    fireEvent.click(screen.getByRole('option', { name: /LIMA EXPRESA/ }))
+
     fireEvent.click(screen.getByRole('button', { name: 'Agregar producto' }))
 
     expect(screen.getByRole('combobox', { name: 'Producto 1' })).toHaveValue('')
-    expect(screen.getByRole('option', { name: 'Seleccionar producto' })).toBeVisible()
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Producto 1' }))
+    expect(screen.getByRole('listbox', { name: 'Producto 1' })).toBeVisible()
+    expect(screen.getByRole('option', { name: /PARA-500/ })).toBeVisible()
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Producto 1' }), {
-      target: { value: producto.id },
+      target: { value: 'paracetamol' },
     })
-    expect(screen.getByText(/Unidad: Unidad/)).toBeVisible()
+    fireEvent.click(screen.getByRole('option', { name: /PARA-500/ }))
+    expect(screen.getByText(/Producto físico \(recepción e inventario\)/)).toBeVisible()
     expect(screen.getByText('Cantidad (Unidad) *')).toBeVisible()
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Producto 1' }), {
-      target: { value: '' },
-    })
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar producto 1' }))
+    expect(screen.getByText('No hay productos agregados')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }))
-    expect(await screen.findByText('Selecciona un producto')).toBeVisible()
+    expect(await screen.findByText('Agrega al menos un producto')).toBeVisible()
   })
 })

@@ -1,9 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Plus, Trash2, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useFieldArray, useForm } from 'react-hook-form'
+import { Controller, useFieldArray, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import {
   calcularTotalesCompra,
   compraAFormulario,
@@ -98,6 +99,14 @@ export function DialogoCompra({
     })),
     preciosIncluyenIgv,
   )
+  const errorLineas = errors.lineas?.message ?? errors.lineas?.root?.message
+  const opcionesProveedores: ComboboxOption[] = proveedoresDisponibles.map((proveedor) => ({
+    value: proveedor.id,
+    label: proveedor.razonSocial,
+    secondaryText: [proveedor.numeroDocumento, proveedor.nombreComercial].filter(Boolean).join(' · '),
+    keywords: [proveedor.codigo, proveedor.numeroDocumento, proveedor.nombreComercial, proveedor.contacto, proveedor.email],
+    disabled: !proveedor.activo,
+  }))
 
   const guardar = async (datos: DatosCompra) => {
     const error = await alGuardar(datos, compra?.id)
@@ -156,25 +165,25 @@ export function DialogoCompra({
               </div>
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="sm:col-span-2 lg:col-span-4">
-                  <label htmlFor="proveedor-compra" className="field-label">
-                    Proveedor *
-                  </label>
-                  <select
-                    id="proveedor-compra"
-                    className="field-control"
-                    aria-invalid={Boolean(errors.proveedorId)}
-                    {...register('proveedorId')}
-                  >
-                    <option value="">Seleccionar proveedor</option>
-                    {proveedoresDisponibles.map((proveedor) => (
-                      <option key={proveedor.id} value={proveedor.id}>
-                        {proveedor.numeroDocumento} · {proveedor.razonSocial}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.proveedorId ? (
-                    <p className="field-error">{errors.proveedorId.message}</p>
-                  ) : null}
+                  <Controller
+                    control={control}
+                    name="proveedorId"
+                    render={({ field }) => (
+                      <Combobox
+                        id="proveedor-compra"
+                        label="Proveedor"
+                        value={field.value}
+                        options={opcionesProveedores}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        placeholder="Buscar proveedor…"
+                        helperText="Documento, código o razón social."
+                        error={errors.proveedorId?.message}
+                        required
+                        noOptionsMessage="No hay proveedores disponibles."
+                      />
+                    )}
+                  />
                 </div>
                 <div>
                   <label htmlFor="tipo-documento-compra" className="field-label">
@@ -333,8 +342,8 @@ export function DialogoCompra({
                   <p className="mt-1 text-sm text-muted-foreground">
                     Agrega al menos un producto para registrar la compra.
                   </p>
-                  {errors.lineas?.root?.message ? (
-                    <p className="field-error mt-3">{errors.lineas.root.message}</p>
+                  {errorLineas ? (
+                    <p role="alert" className="field-error mt-3">{errorLineas}</p>
                   ) : null}
                 </div>
               ) : null}
@@ -355,7 +364,6 @@ export function DialogoCompra({
                           type="button"
                           variant="ghost"
                           size="icon"
-                          disabled={fields.length === 1}
                           aria-label={`Quitar producto ${indice + 1}`}
                           onClick={() => remove(indice)}
                         >
@@ -364,25 +372,41 @@ export function DialogoCompra({
                       </div>
                       <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-6">
                         <div className="min-w-0 sm:col-span-2 lg:col-span-2">
-                          <label className="field-label">Producto *</label>
-                          <select
-                            className="field-control"
-                            aria-label={`Producto ${indice + 1}`}
-                            aria-invalid={Boolean(erroresLinea?.productoId)}
-                            {...register(`lineas.${indice}.productoId`)}
-                          >
-                            <option value="">Seleccionar producto</option>
-                            {productos
-                              .filter((item) => item.activo || item.id === lineas[indice]?.productoId)
-                              .map((item) => (
-                                <option key={item.id} value={item.id} disabled={!item.activo}>
-                                {item.codigo} · {item.descripcion}
-                              </option>
-                              ))}
-                          </select>
-                          {erroresLinea?.productoId ? (
-                            <p className="field-error">{erroresLinea.productoId.message}</p>
-                          ) : null}
+                          <Controller
+                            control={control}
+                            name={`lineas.${indice}.productoId`}
+                            render={({ field: campo }) => {
+                              const productoActualId = lineas[indice]?.productoId
+                              const opcionesProductos: ComboboxOption[] = productos
+                                .filter((item) =>
+                                  (item.activo || item.id === productoActualId) &&
+                                  !lineas.some((linea, otroIndice) => otroIndice !== indice && linea.productoId === item.id),
+                                )
+                                .map((item) => ({
+                                  value: item.id,
+                                  label: `${item.codigo} · ${item.descripcion}`,
+                                  secondaryText: `${item.tipo === 'service' ? 'Servicio' : 'Producto físico'} · Unidad: ${item.unidadMedida || 'Sin unidad'}`,
+                                  keywords: [item.codigo, item.codigoBarras, item.descripcion, item.laboratorio, item.presentacion, item.unidadMedida],
+                                  disabled: !item.activo,
+                                }))
+
+                              return (
+                                <Combobox
+                                  id={`producto-compra-${field.id}`}
+                                  label={`Producto ${indice + 1}`}
+                                  value={campo.value}
+                                  options={opcionesProductos}
+                                  onChange={campo.onChange}
+                                  onBlur={campo.onBlur}
+                                  placeholder="Buscar producto…"
+                                  helperText="Código, nombre o barras."
+                                  error={erroresLinea?.productoId?.message}
+                                  required
+                                  noOptionsMessage="No hay productos activos disponibles."
+                                />
+                              )
+                            }}
+                          />
                           {producto ? <p className="mt-1 text-xs leading-5 text-muted-foreground">
                             {producto.tipo === 'service' ? 'Servicio (atención administrativa)' : 'Producto físico (recepción e inventario)'} · Unidad: {producto.unidadMedida}
                            </p> : null}
