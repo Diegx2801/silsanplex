@@ -52,7 +52,6 @@ export function DialogoCompra({
   const almacenesDisponibles = almacenes.filter(
     (almacen) => almacen.activo || almacen.id === compra?.almacenId,
   )
-  const productosActivos = productos.filter((producto) => producto.activo)
   const valoresIniciales: DatosCompra = compra
     ? compraAFormulario(compra)
     : {
@@ -67,15 +66,7 @@ export function DialogoCompra({
         almacen: almacenesDisponibles[0]?.nombre ?? '',
         preciosIncluyenIgv: true,
         observacion: '',
-        lineas: [
-          {
-            productoId: productosActivos[0]?.id ?? '',
-            cantidad: '1',
-            costoUnitario: '',
-            lote: '',
-            fechaVencimiento: '',
-          },
-        ],
+        lineas: [],
       }
   const {
     control,
@@ -322,21 +313,31 @@ export function DialogoCompra({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() =>
-                    append({
-                      productoId: productosActivos[0]?.id ?? '',
-                      cantidad: '1',
-                      costoUnitario: '',
-                      lote: '',
-                      fechaVencimiento: '',
-                    })
-                  }
+                  disabled={!productos.some((producto) => producto.activo)}
+                  onClick={() => append({
+                    productoId: '',
+                    cantidad: '1',
+                    costoUnitario: '',
+                    lote: '',
+                    fechaVencimiento: '',
+                  })}
                 >
                   <Plus aria-hidden="true" />
                   Agregar producto
                 </Button>
               </div>
 
+              {!fields.length ? (
+                <div className="border border-dashed px-4 py-8 text-center">
+                  <p className="font-medium">No hay productos agregados</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Agrega al menos un producto para registrar la compra.
+                  </p>
+                  {errors.lineas?.root?.message ? (
+                    <p className="field-error mt-3">{errors.lineas.root.message}</p>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="space-y-4">
                 {fields.map((field, indice) => {
                   const producto = productos.find(
@@ -370,6 +371,7 @@ export function DialogoCompra({
                             aria-invalid={Boolean(erroresLinea?.productoId)}
                             {...register(`lineas.${indice}.productoId`)}
                           >
+                            <option value="">Seleccionar producto</option>
                             {productos
                               .filter((item) => item.activo || item.id === lineas[indice]?.productoId)
                               .map((item) => (
@@ -378,6 +380,9 @@ export function DialogoCompra({
                               </option>
                               ))}
                           </select>
+                          {erroresLinea?.productoId ? (
+                            <p className="field-error">{erroresLinea.productoId.message}</p>
+                          ) : null}
                           {producto ? <p className="mt-1 text-xs text-muted-foreground">
                             Tipo: {producto.tipo === 'service' ? 'Servicio (atención administrativa)' : 'Producto físico (recepción e inventario)'}
                            </p> : null}

@@ -24,6 +24,7 @@ import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
 import { DialogoCompra } from '@/modulos/compras/componentes/DialogoCompra'
 import { DialogoConfirmacionAnulacion } from '@/modulos/compras/componentes/DialogoConfirmacionAnulacion'
+import { DialogoConfirmacionEmision } from '@/modulos/compras/componentes/DialogoConfirmacionEmision'
 import { DialogoConfirmacionRecepcion } from '@/modulos/compras/componentes/DialogoConfirmacionRecepcion'
 import { useCompras } from '@/modulos/compras/estado/useCompras'
 import {
@@ -134,11 +135,13 @@ export function ComprasPage() {
   const [compraSeleccionada, setCompraSeleccionada] = useState<Compra | null>(
     null,
   )
+  const [compraPorEmitir, setCompraPorEmitir] = useState<Compra | null>(null)
   const [compraPorRecibir, setCompraPorRecibir] = useState<Compra | null>(null)
   const [compraPorAnular, setCompraPorAnular] = useState<Compra | null>(null)
   const [dialogoCompraAbierto, setDialogoCompraAbierto] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const disparadorCompra = useRef<HTMLButtonElement | null>(null)
+  const disparadorEmision = useRef<HTMLButtonElement | null>(null)
   const disparadorRecepcion = useRef<HTMLButtonElement | null>(null)
   const disparadorAnulacion = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
@@ -216,9 +219,19 @@ export function ComprasPage() {
     return error
   }
 
-  const emitirOrden = async (compra: Compra) => {
-    const error = await emitirCompra(compra.id)
-    setMensaje(error ?? `Orden ${compra.serie}-${compra.numero} emitida y pendiente de recepción.`)
+  const solicitarEmision = (
+    evento: ReactMouseEvent<HTMLButtonElement>,
+    compra: Compra,
+  ) => {
+    disparadorEmision.current = evento.currentTarget
+    setCompraPorEmitir(compra)
+  }
+
+  const confirmarEmision = async () => {
+    if (!compraPorEmitir) return undefined
+    const error = await emitirCompra(compraPorEmitir.id)
+    setMensaje(error ?? `Orden ${compraPorEmitir.serie}-${compraPorEmitir.numero} emitida y pendiente de recepción.`)
+    return error
   }
 
   const metricas = [
@@ -494,7 +507,7 @@ export function ComprasPage() {
                         <Button
                           type="button"
                           disabled={accionando}
-                          onClick={() => void emitirOrden(compra)}
+                          onClick={(evento) => solicitarEmision(evento, compra)}
                         >
                           <Send aria-hidden="true" /> Emitir
                         </Button>
@@ -588,7 +601,7 @@ export function ComprasPage() {
                                 title="Emitir orden"
                                 aria-label={`Emitir ${etiquetaDocumento(compra)}`}
                                 disabled={accionando}
-                                onClick={() => void emitirOrden(compra)}
+                                onClick={(evento) => solicitarEmision(evento, compra)}
                               >
                                 <Send aria-hidden="true" />
                               </Button>
@@ -672,6 +685,18 @@ export function ComprasPage() {
           alCambiarApertura={setDialogoCompraAbierto}
           alGuardar={guardarNuevaCompra}
           alRestaurarFoco={() => disparadorCompra.current?.focus()}
+        />
+      ) : null}
+
+      {compraPorEmitir && puedeGestionar ? (
+        <DialogoConfirmacionEmision
+          abierto={Boolean(compraPorEmitir)}
+          compra={compraPorEmitir}
+          alCambiarApertura={(abierto) => {
+            if (!abierto) setCompraPorEmitir(null)
+          }}
+          alConfirmar={confirmarEmision}
+          alRestaurarFoco={() => disparadorEmision.current?.focus()}
         />
       ) : null}
 
