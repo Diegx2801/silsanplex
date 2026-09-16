@@ -113,10 +113,18 @@ export function ComprasPage() {
     () => productos.filter((producto) => producto.activo),
     [productos],
   )
-  const { compras, guardarCompra, emitirCompra, recibirCompra, anularCompra } = useCompras(
-    productos,
-    proveedores,
-  )
+  const {
+    compras,
+    cargando: comprasCargando,
+    actualizando: comprasActualizando,
+    error: comprasError,
+    reintentar: reintentarCompras,
+    accionando,
+    guardarCompra,
+    emitirCompra,
+    recibirCompra,
+    anularCompra,
+  } = useCompras(productos, proveedores)
   const proveedoresActivos = useMemo(
     () => proveedores.filter((proveedor) => proveedor.activo),
     [proveedores],
@@ -349,7 +357,11 @@ export function ComprasPage() {
         </aside>
       )}
 
-      <section aria-labelledby="compras-title" className="ledger-sheet">
+      <section
+        aria-labelledby="compras-title"
+        aria-busy={comprasCargando || comprasActualizando}
+        className="ledger-sheet"
+      >
         <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(14rem,1fr)_16rem_12rem] lg:items-end">
           <div>
             <h2 id="compras-title" className="text-lg font-semibold">
@@ -401,7 +413,28 @@ export function ComprasPage() {
           </div>
         </div>
 
-        {!comprasFiltradas.length ? (
+        {comprasActualizando && !comprasCargando ? (
+          <p role="status" className="border-b px-5 py-3 text-sm text-muted-foreground sm:px-6">
+            Actualizando documentos de compra…
+          </p>
+        ) : null}
+
+        {comprasCargando ? (
+          <div role="status" className="px-5 py-14 text-center sm:px-6">
+            <p className="text-sm text-muted-foreground">Cargando documentos de compra…</p>
+          </div>
+        ) : comprasError ? (
+          <div role="alert" className="px-5 py-14 text-center sm:px-6">
+            <ShoppingCart aria-hidden="true" className="mx-auto size-8 text-destructive" />
+            <h3 className="mt-4 font-semibold">No se pudieron cargar las compras</h3>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+              Verifica tu conexión o tus permisos y vuelve a intentarlo.
+            </p>
+            <Button type="button" variant="outline" className="mt-5" onClick={() => void reintentarCompras()}>
+              Reintentar
+            </Button>
+          </div>
+        ) : !comprasFiltradas.length ? (
           <div className="px-5 py-14 text-center sm:px-6">
             <ShoppingCart aria-hidden="true" className="mx-auto size-8 text-primary" />
             <h3 className="mt-4 font-semibold">
@@ -453,12 +486,14 @@ export function ComprasPage() {
                         <Button
                           type="button"
                           variant="outline"
+                          disabled={accionando}
                           onClick={(evento) => abrirCompra(evento, compra)}
                         >
                           <Pencil aria-hidden="true" /> Editar
                         </Button>
                         <Button
                           type="button"
+                          disabled={accionando}
                           onClick={() => void emitirOrden(compra)}
                         >
                           <Send aria-hidden="true" /> Emitir
@@ -466,6 +501,7 @@ export function ComprasPage() {
                         <Button
                           type="button"
                           variant="ghost"
+                          disabled={accionando}
                           onClick={(evento) => solicitarAnulacion(evento, compra)}
                         >
                           <Ban aria-hidden="true" /> Anular
@@ -473,17 +509,17 @@ export function ComprasPage() {
                       </div>
                     ) : ['emitida', 'parcialmente-recibida'].includes(compra.estado) && puedeRecibir ? (
                       <div className="mt-4 flex gap-2">
-                        <Button type="button" onClick={(evento) => solicitarRecepcion(evento, compra)}>
+                        <Button type="button" disabled={accionando} onClick={(evento) => solicitarRecepcion(evento, compra)}>
                           <PackageCheck aria-hidden="true" /> Recibir
                         </Button>
                         {puedeGestionar ? (
-                          <Button type="button" variant="ghost" onClick={(evento) => solicitarAnulacion(evento, compra)}>
+                          <Button type="button" variant="ghost" disabled={accionando} onClick={(evento) => solicitarAnulacion(evento, compra)}>
                             <Ban aria-hidden="true" /> Anular
                           </Button>
                         ) : null}
                       </div>
                     ) : compra.estado === 'emitida' && puedeGestionar ? (
-                      <Button type="button" variant="ghost" className="mt-4" onClick={(evento) => solicitarAnulacion(evento, compra)}>
+                      <Button type="button" variant="ghost" className="mt-4" disabled={accionando} onClick={(evento) => solicitarAnulacion(evento, compra)}>
                         <Ban aria-hidden="true" /> Anular
                       </Button>
                     ) : null}
@@ -540,6 +576,7 @@ export function ComprasPage() {
                                 size="icon"
                                 title="Editar compra"
                                 aria-label={`Editar ${etiquetaDocumento(compra)}`}
+                                disabled={accionando}
                                 onClick={(evento) => abrirCompra(evento, compra)}
                               >
                                 <Pencil aria-hidden="true" />
@@ -550,6 +587,7 @@ export function ComprasPage() {
                                 size="icon"
                                 title="Emitir orden"
                                 aria-label={`Emitir ${etiquetaDocumento(compra)}`}
+                                disabled={accionando}
                                 onClick={() => void emitirOrden(compra)}
                               >
                                 <Send aria-hidden="true" />
@@ -560,6 +598,7 @@ export function ComprasPage() {
                                 size="icon"
                                 title="Anular orden"
                                 aria-label={`Anular ${etiquetaDocumento(compra)}`}
+                                disabled={accionando}
                                 onClick={(evento) => solicitarAnulacion(evento, compra)}
                               >
                                 <Ban aria-hidden="true" />
@@ -573,6 +612,7 @@ export function ComprasPage() {
                                 size="icon"
                                 title="Recibir mercadería"
                                 aria-label={`Recibir ${etiquetaDocumento(compra)}`}
+                                disabled={accionando}
                                 onClick={(evento) => solicitarRecepcion(evento, compra)}
                               >
                                 <PackageCheck aria-hidden="true" />
@@ -584,6 +624,7 @@ export function ComprasPage() {
                                   size="icon"
                                   title="Anular orden"
                                   aria-label={`Anular ${etiquetaDocumento(compra)}`}
+                                  disabled={accionando}
                                   onClick={(evento) => solicitarAnulacion(evento, compra)}
                                 >
                                   <Ban aria-hidden="true" />
@@ -598,6 +639,7 @@ export function ComprasPage() {
                                 size="icon"
                                 title="Anular orden"
                                 aria-label={`Anular ${etiquetaDocumento(compra)}`}
+                                disabled={accionando}
                                 onClick={(evento) => solicitarAnulacion(evento, compra)}
                               >
                                 <Ban aria-hidden="true" />

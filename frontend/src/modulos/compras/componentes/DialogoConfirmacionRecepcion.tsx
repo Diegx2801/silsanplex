@@ -7,6 +7,8 @@ import type { Compra, DatosRecepcionCompra, LineaRecepcionCompra } from '@/modul
 import type { UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
 
 interface FilaRecepcion extends LineaRecepcionCompra { id: string }
+type CampoError = 'general' | 'cantidad' | 'ubicacionId' | 'lote' | 'fechaVencimiento'
+type ErroresFila = Partial<Record<CampoError, string>>
 interface Props {
   abierto: boolean
   compra: Compra
@@ -35,12 +37,26 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
     })))
   const [procesando, setProcesando] = useState(false)
   const [error, setError] = useState('')
+  const [erroresFilas, setErroresFilas] = useState<Record<string, ErroresFila>>({})
 
-  const actualizar = (id: string, cambio: Partial<FilaRecepcion>) =>
+  const actualizar = (id: string, cambio: Partial<FilaRecepcion>) => {
     setFilas((actuales) => actuales.map((fila) => fila.id === id ? { ...fila, ...cambio } : fila))
+    setError('')
+    setErroresFilas((actuales) => {
+      if (!actuales[id]) return actuales
+      const { [id]: _omitido, ...resto } = actuales
+      return resto
+    })
+  }
 
   const agregarPartida = (purchaseOrderItemId: string) => {
-    const linea = compra.lineas.find((item) => item.id === purchaseOrderItemId)!
+    const linea = compra.lineas.find((item) => item.id === purchaseOrderItemId)
+    if (!linea) {
+      setError('La línea ya no está disponible. Cierra y vuelve a abrir la recepción.')
+      return
+    }
+    setError('')
+    setErroresFilas({})
     setFilas((actuales) => [...actuales, {
       id: crypto.randomUUID(), purchaseOrderItemId, cantidad: '',
       fulfillmentMode: linea.tipoProducto === 'service' ? 'administrative' : 'physical',
@@ -50,38 +66,69 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
     }])
   }
 
+  const quitarPartida = (id: string) => {
+    setFilas((actuales) => actuales.filter((item) => item.id !== id))
+    setError('')
+    setErroresFilas((actuales) => {
+      const { [id]: _omitido, ...resto } = actuales
+      return resto
+    })
+  }
+
   const confirmar = async () => {
     setError('')
+    setErroresFilas({})
     const cantidades = new Map<string, number>()
+    const errores: Record<string, ErroresFila> = {}
+    const agregarError = (filaId: string, campo: CampoError, mensaje: string) => {
+      const anterior = errores[filaId]?.[campo]
+      errores[filaId] = {
+        ...errores[filaId],
+        [campo]: campo === 'general' && anterior ? `${anterior} ${mensaje}` : mensaje,
+      }
+    }
+
     for (const fila of filas) {
       const cantidad = Number(fila.cantidad)
-      const linea = compra.lineas.find((item) => item.id === fila.purchaseOrderItemId)!
+      const linea = compra.lineas.find((item) => item.id === fila.purchaseOrderItemId)
+      if (!linea) {
+        agregarError(fila.id, 'general', 'La línea ya no está disponible. Cierra y vuelve a abrir la recepción.')
+        continue
+      }
       const esServicio = linea.tipoProducto === 'service'
-      if (!Number.isFinite(cantidad) || cantidad <= 0 || (!esServicio && !fila.ubicacionId)) {
-        setError(esServicio ? 'Completa una cantidad válida en todas las atenciones.' : 'Completa cantidad y ubicación en todas las partidas.')
-        return
+      if (!Number.isFinite(cantidad) || cantidad <= 0) {
+        agregarError(fila.id, 'cantidad', 'Ingresa una cantidad mayor que cero.')
+      }
+      if (!esServicio && !fila.ubicacionId) {
+        agregarError(fila.id, 'ubicacionId', 'Selecciona una ubicación activa.')
       }
       if (!linea.tipoProducto) {
-        setError(`Regulariza el tipo de producto de ${linea.productoDescripcion} antes de recibirla.`)
-        return
+        agregarError(fila.id, 'general', 'Regulariza el tipo de producto antes de recibir esta línea.')
       }
       if (linea.controlVencimiento === null) {
-        setError(`Regulariza el control de vencimiento de ${linea.productoDescripcion} antes de recibirla.`)
-        return
+        agregarError(fila.id, 'general', 'Regulariza el control de vencimiento antes de recibir esta línea.')
       }
       if (linea.controlLote && !fila.lote.trim()) {
-        setError(`Ingresa el lote de ${linea.productoDescripcion}.`)
-        return
+        agregarError(fila.id, 'lote', 'Ingresa el lote del producto.')
       }
       if (linea.controlVencimiento && !fila.fechaVencimiento) {
-        setError(`Ingresa el vencimiento de ${linea.productoDescripcion}.`)
-        return
+        agregarError(fila.id, 'fechaVencimiento', 'Ingresa la fecha de vencimiento.')
       }
-      cantidades.set(linea.id, (cantidades.get(linea.id) ?? 0) + cantidad)
+      if (Number.isFinite(cantidad) && cantidad > 0) {
+        cantidades.set(linea.id, (cantidades.get(linea.id) ?? 0) + cantidad)
+      }
     }
-    const excedida = compra.lineas.find((linea) => (cantidades.get(linea.id) ?? 0) > linea.cantidadPendiente)
-    if (excedida) {
-      setError(`La recepción supera el saldo pendiente de ${excedida.productoDescripcion}.`)
+
+    for (const linea of compra.lineas) {
+      if ((cantidades.get(linea.id) ?? 0) <= linea.cantidadPendiente) continue
+      for (const fila of filas.filter((item) => item.purchaseOrderItemId === linea.id)) {
+        agregarError(fila.id, 'cantidad', `La suma supera el saldo pendiente (${linea.cantidadPendiente}).`)
+      }
+    }
+
+    if (Object.keys(errores).length) {
+      setErroresFilas(errores)
+      setError('Revisa las líneas marcadas antes de confirmar la recepción.')
       return
     }
     setProcesando(true)
@@ -115,22 +162,32 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
                   <Button type="button" variant="outline" size="sm" onClick={() => agregarPartida(linea.id)}><Plus /> {linea.tipoProducto === 'service' ? 'Dividir atención' : 'Dividir lote'}</Button>
                 </div>
                 <div className="mt-4 space-y-3">
-                  {filas.filter((fila) => fila.purchaseOrderItemId === linea.id).map((fila, indice, partidas) => (
-                    <div key={fila.id} className={`grid gap-3 border-t pt-3 ${linea.tipoProducto === 'service' ? 'md:grid-cols-[8rem_auto]' : 'md:grid-cols-[8rem_1fr_1fr_10rem_auto]'}`}>
-                      <label><span className="field-label">Cantidad</span><input className="field-control" type="number" min="0.001" step="0.001" value={fila.cantidad} onChange={(e) => actualizar(fila.id, { cantidad: e.target.value })} /></label>
-                      {linea.tipoProducto === 'service' ? <p className="self-end pb-2 text-sm text-muted-foreground">Atención administrativa · sin inventario</p> : <>
-                        <label><span className="field-label">Ubicación</span><select className="field-control" value={fila.ubicacionId} onChange={(e) => actualizar(fila.id, { ubicacionId: e.target.value })}><option value="">Selecciona</option>{ubicacionesDestino.map((u) => <option key={u.id} value={u.id}>{u.codigo} · {u.nombre}</option>)}</select></label>
-                        <label><span className="field-label">Lote{linea.controlLote ? ' *' : ''}</span><input className="field-control" maxLength={60} value={fila.lote} onChange={(e) => actualizar(fila.id, { lote: e.target.value })} /></label>
-                        <label><span className="field-label">Vencimiento{linea.controlVencimiento ? ' *' : ''}</span><input className="field-control" type="date" value={fila.fechaVencimiento} onChange={(e) => actualizar(fila.id, { fechaVencimiento: e.target.value })} /></label>
-                      </>}
-                      <Button type="button" variant="ghost" size="icon" className="self-end" disabled={indice === 0 && partidas.length === 1} aria-label="Quitar partida" onClick={() => setFilas((actuales) => actuales.filter((item) => item.id !== fila.id))}><Trash2 /></Button>
-                    </div>
-                  ))}
+                  {filas.filter((fila) => fila.purchaseOrderItemId === linea.id).map((fila, indice, partidas) => {
+                    const erroresFila = erroresFilas[fila.id]
+                    const idError = (campo: CampoError) => `recepcion-${fila.id}-${campo}-error`
+                    return (
+                      <div key={fila.id} className={`grid gap-3 border-t pt-3 ${linea.tipoProducto === 'service' ? 'md:grid-cols-[8rem_auto]' : 'md:grid-cols-[8rem_1fr_1fr_10rem_auto]'}`}>
+                        {erroresFila?.general ? <p role="alert" className="md:col-span-full field-error">{erroresFila.general}</p> : null}
+                        <label htmlFor={`recepcion-${fila.id}-cantidad`}><span className="field-label">Cantidad</span><input id={`recepcion-${fila.id}-cantidad`} className="field-control" type="number" min="0.001" step="0.001" value={fila.cantidad} aria-invalid={Boolean(erroresFila?.cantidad)} aria-describedby={erroresFila?.cantidad ? idError('cantidad') : undefined} onChange={(e) => actualizar(fila.id, { cantidad: e.target.value })} />{erroresFila?.cantidad ? <span id={idError('cantidad')} className="field-error">{erroresFila.cantidad}</span> : null}</label>
+                        {linea.tipoProducto === 'service' ? <p className="self-end pb-2 text-sm text-muted-foreground">Atención administrativa · sin inventario</p> : <>
+                          <label htmlFor={`recepcion-${fila.id}-ubicacion`}><span className="field-label">Ubicación</span><select id={`recepcion-${fila.id}-ubicacion`} className="field-control" value={fila.ubicacionId} aria-invalid={Boolean(erroresFila?.ubicacionId)} aria-describedby={erroresFila?.ubicacionId ? idError('ubicacionId') : undefined} onChange={(e) => actualizar(fila.id, { ubicacionId: e.target.value })}><option value="">Selecciona</option>{ubicacionesDestino.map((u) => <option key={u.id} value={u.id}>{u.codigo} · {u.nombre}</option>)}</select>{erroresFila?.ubicacionId ? <span id={idError('ubicacionId')} className="field-error">{erroresFila.ubicacionId}</span> : null}</label>
+                          <label htmlFor={`recepcion-${fila.id}-lote`}><span className="field-label">Lote{linea.controlLote ? ' *' : ''}</span><input id={`recepcion-${fila.id}-lote`} className="field-control" maxLength={60} value={fila.lote} aria-invalid={Boolean(erroresFila?.lote)} aria-describedby={erroresFila?.lote ? idError('lote') : undefined} onChange={(e) => actualizar(fila.id, { lote: e.target.value })} />{erroresFila?.lote ? <span id={idError('lote')} className="field-error">{erroresFila.lote}</span> : null}</label>
+                          <label htmlFor={`recepcion-${fila.id}-vencimiento`}><span className="field-label">Vencimiento{linea.controlVencimiento ? ' *' : ''}</span><input id={`recepcion-${fila.id}-vencimiento`} className="field-control" type="date" value={fila.fechaVencimiento} aria-invalid={Boolean(erroresFila?.fechaVencimiento)} aria-describedby={erroresFila?.fechaVencimiento ? idError('fechaVencimiento') : undefined} onChange={(e) => actualizar(fila.id, { fechaVencimiento: e.target.value })} />{erroresFila?.fechaVencimiento ? <span id={idError('fechaVencimiento')} className="field-error">{erroresFila.fechaVencimiento}</span> : null}</label>
+                        </>}
+                        <Button type="button" variant="ghost" size="icon" className="self-end" disabled={indice === 0 && partidas.length === 1} aria-label="Quitar partida" onClick={() => quitarPartida(fila.id)}><Trash2 /></Button>
+                      </div>
+                    )
+                  })}
                 </div>
               </section>
             ))}
             <label><span className="field-label">Observación</span><textarea className="field-control min-h-20" maxLength={240} value={observacion} onChange={(e) => setObservacion(e.target.value)} /></label>
           </div>
+          {compra.lineas.some((linea) => linea.tipoProducto !== 'service' && linea.cantidadPendiente > 0) && !ubicacionesDestino.length ? (
+            <p role="alert" className="mt-4 border-s-4 border-amber-500 bg-amber-500/10 px-4 py-3 text-sm text-amber-900">
+              No hay ubicaciones activas en este almacén. Configura una ubicación en Inventario para recibir mercadería física.
+            </p>
+          ) : null}
           {error ? <p role="alert" className="mt-4 border-s-4 border-destructive bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</p> : null}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <DialogPrimitive.Close asChild><Button type="button" variant="outline" size="lg" disabled={procesando}>Cancelar</Button></DialogPrimitive.Close>

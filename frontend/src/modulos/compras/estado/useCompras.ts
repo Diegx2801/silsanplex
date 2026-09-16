@@ -48,7 +48,14 @@ export function useCompras(productos: readonly Producto[], proveedores: readonly
   return {
     compras: query.data ?? comprasVacias,
     cargando: query.isLoading,
+    actualizando: query.isFetching && !query.isLoading,
     error: query.error,
+    reintentar: () => query.refetch(),
+    accionando:
+      guardarMutation.isPending ||
+      emitirMutation.isPending ||
+      recibirMutation.isPending ||
+      anularMutation.isPending,
     guardarCompra: async (datos: DatosCompra, compraId?: string) => {
       const compraActual = compraId ? (query.data ?? []).find((item) => item.id === compraId) : undefined
       const proveedor = proveedores.find(
