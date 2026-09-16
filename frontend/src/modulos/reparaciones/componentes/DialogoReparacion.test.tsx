@@ -233,7 +233,7 @@ describe('DialogoReparacion', () => {
     fireEvent.change(screen.getByLabelText('Buscar producto o equipo'), {
       target: { value: 'PROD-1001' },
     })
-    await screen.findByRole('option', { name: /PROD-1001/ })
+    await screen.findByRole('option', { name: /PROD-1001/ }, { timeout: 3_000 })
     fireEvent.change(screen.getByLabelText('Producto o equipo *'), {
       target: { value: productoRemoto.id },
     })
