@@ -244,6 +244,10 @@ function mapearVenta(fila: VentaFila): Venta {
 
 function mensajeError(error: { code?: string; message?: string }) {
   const message = error.message ?? ''
+  if (message.includes('SALES_QUOTE_PRODUCT_CHANGED')) return 'Un producto de la cotización cambió en el catálogo; actualiza la cotización antes de crear el pedido'
+  if (message.includes('SALES_QUOTE_NOT_AVAILABLE')) return 'La cotización ya no está disponible para crear el pedido'
+  if (message.includes('SALES_QUOTE_EXPIRED')) return 'La cotización está vencida; emite una nueva propuesta antes de crear el pedido'
+  if (message.includes('SALES_QUOTE_NOT_FOUND')) return 'La cotización ya no existe o no está disponible; recarga el listado'
   if (message.includes('ORDER_TAX_AFFECTATION_LEGACY_UNKNOWN')) return 'El pedido histórico no tiene afectación tributaria reconstruible'
   if (message.includes('ORDER_TAX_AFFECTATION_UNDEFINED')) return 'No se puede crear o modificar un pedido con productos por definir tributariamente'
   if (message.includes('ORDER_MINIMUM_SALE_PRICE_VIOLATION')) return 'El precio unitario no puede ser menor al precio mínimo final del producto'

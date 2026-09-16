@@ -28,7 +28,7 @@ import { DialogoConfirmacionEmision } from '@/modulos/ventas/componentes/Dialogo
 import { DialogoCotizacion } from '@/modulos/ventas/componentes/DialogoCotizacion'
 import { DialogoSeleccionAlmacenPedido } from '@/modulos/ventas/componentes/DialogoSeleccionAlmacenPedido'
 import { PanelOperacionesVenta } from '@/modulos/ventas/componentes/PanelOperacionesVenta'
-import { useCotizacionesTemporales } from '@/modulos/ventas/estado/useCotizacionesTemporales'
+import { useCotizacionesPersistentes } from '@/modulos/ventas/estado/useCotizacionesPersistentes'
 import { useOperacionesVenta } from '@/modulos/ventas/estado/useOperacionesVenta'
 import {
   calcularTotalesCotizacion,
@@ -114,8 +114,11 @@ export function VentasPage() {
     cotizaciones,
     guardarCotizacion,
     emitirCotizacion,
-    aceptarCotizacion,
-  } = useCotizacionesTemporales(clientes, productos)
+    cargando: cargandoCotizaciones,
+    emitiendo: emitiendoCotizacion,
+    error: errorCotizaciones,
+    reintentar: reintentarCotizaciones,
+  } = useCotizacionesPersistentes(clientes, productos)
   const {
     pedidos,
     ventas,
@@ -135,7 +138,6 @@ export function VentasPage() {
     reintentar: reintentarOperaciones,
   } = useOperacionesVenta({
     cotizaciones,
-    aceptarCotizacion,
   })
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
@@ -189,9 +191,9 @@ export function VentasPage() {
     setDialogoAbierto(true)
   }
 
-  const guardar = (datos: DatosCotizacion, cotizacionId?: string) => {
+  const guardar = async (datos: DatosCotizacion, cotizacionId?: string) => {
     if (!puedeGestionarVentas) return 'No tienes permiso para administrar ventas'
-    const error = guardarCotizacion(datos, cotizacionId)
+    const error = await guardarCotizacion(datos, cotizacionId)
     if (!error) {
       setMensaje(
         cotizacionId
@@ -210,13 +212,13 @@ export function VentasPage() {
     setCotizacionPorEmitir(cotizacion)
   }
 
-  const confirmarEmision = () => {
+  const confirmarEmision = async () => {
     if (!puedeGestionarVentas) {
       setMensaje('No tienes permiso para administrar ventas')
       return
     }
     if (!cotizacionPorEmitir) return
-    const error = emitirCotizacion(cotizacionPorEmitir.id)
+    const error = await emitirCotizacion(cotizacionPorEmitir.id)
     setMensaje(error ?? `${cotizacionPorEmitir.numero} emitida correctamente.`)
     if (!error) setCotizacionPorEmitir(null)
   }
@@ -339,6 +341,19 @@ export function VentasPage() {
           </Link>
           .
         </aside>
+      ) : null}
+
+      {errorCotizaciones ? (
+        <aside role="alert" className="flex flex-col gap-3 border-s-4 border-destructive bg-destructive/10 px-5 py-4 text-sm leading-6 sm:flex-row sm:items-center sm:justify-between">
+          <span>No se pudieron cargar las cotizaciones persistentes.</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => void reintentarCotizaciones()}>
+            Reintentar
+          </Button>
+        </aside>
+      ) : cargandoCotizaciones ? (
+        <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+          Cargando cotizaciones…
+        </p>
       ) : null}
 
       <section aria-labelledby="cotizaciones-title" className="ledger-sheet">
@@ -552,6 +567,7 @@ export function VentasPage() {
             if (!abierto) setCotizacionPorEmitir(null)
           }}
           alConfirmar={confirmarEmision}
+          procesando={emitiendoCotizacion}
           alRestaurarFoco={() => disparadorEmision.current?.focus()}
         />
       ) : null}

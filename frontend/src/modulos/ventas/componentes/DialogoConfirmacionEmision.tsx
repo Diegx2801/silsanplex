@@ -16,7 +16,8 @@ interface DialogoConfirmacionEmisionProps {
   abierto: boolean
   cotizacion: Cotizacion
   alCambiarApertura: (abierto: boolean) => void
-  alConfirmar: () => void
+  alConfirmar: () => void | Promise<void>
+  procesando?: boolean
   alRestaurarFoco: () => void
 }
 
@@ -25,6 +26,7 @@ export function DialogoConfirmacionEmision({
   cotizacion,
   alCambiarApertura,
   alConfirmar,
+  procesando = false,
   alRestaurarFoco,
 }: DialogoConfirmacionEmisionProps) {
   const total = calcularTotalesCotizacion(
@@ -58,7 +60,9 @@ export function DialogoConfirmacionEmision({
               <Button type="button" variant="outline" size="lg">Revisar</Button>
             </AlertDialogPrimitive.Cancel>
             <AlertDialogPrimitive.Action asChild>
-              <Button type="button" size="lg" onClick={alConfirmar}>Emitir cotización</Button>
+              <Button type="button" size="lg" disabled={procesando} onClick={() => void alConfirmar()}>
+                {procesando ? 'Emitiendo…' : 'Emitir cotización'}
+              </Button>
             </AlertDialogPrimitive.Action>
           </div>
         </AlertDialogPrimitive.Content>

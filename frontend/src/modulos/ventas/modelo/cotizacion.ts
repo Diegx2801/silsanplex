@@ -59,6 +59,12 @@ export const esquemaLineaCotizacion = z.object({
   unidadMedida: z.string(),
   cantidad: z.number().positive(),
   precioUnitario: z.number().nonnegative(),
+  // The tax affectation is snapshotted when the quote is persisted. Older
+  // session-only quotes may not have it, so it remains optional for backward
+  // compatibility and defaults to gravado in the calculator.
+  afectacionIgv: z
+    .enum(['por-definir', 'gravado', 'exonerado', 'inafecto'])
+    .optional(),
 })
 
 export type LineaCotizacion = z.infer<typeof esquemaLineaCotizacion>
@@ -93,23 +99,48 @@ function redondearMoneda(valor: number) {
 }
 
 export function calcularTotalesCotizacion(
-  lineas: readonly Pick<LineaCotizacion, 'cantidad' | 'precioUnitario'>[],
+  lineas: readonly Pick<LineaCotizacion, 'cantidad' | 'precioUnitario' | 'afectacionIgv'>[],
   preciosIncluyenIgv: boolean,
 ): TotalesCotizacion {
-  const importe = lineas.reduce(
-    (total, linea) => total + linea.cantidad * linea.precioUnitario,
-    0,
-  )
+  let baseGravada = 0
+  let montoExonerado = 0
+  let montoInafecto = 0
+  let igv = 0
 
-  if (preciosIncluyenIgv) {
-    const total = redondearMoneda(importe)
-    const subtotal = redondearMoneda(total / 1.18)
-    return { subtotal, igv: redondearMoneda(total - subtotal), total }
+  for (const linea of lineas) {
+    const importe = redondearMoneda(linea.cantidad * linea.precioUnitario)
+    // Session-only quotes from previous versions did not carry affectation.
+    // Treating them as gravado preserves their historical totals while new
+    // persisted quotes use the product snapshot explicitly.
+    const afectacion = linea.afectacionIgv ?? 'gravado'
+    if (afectacion === 'exonerado') {
+      montoExonerado += importe
+      continue
+    }
+    if (afectacion === 'inafecto') {
+      montoInafecto += importe
+      continue
+    }
+    if (preciosIncluyenIgv) {
+      const base = redondearMoneda(importe / 1.18)
+      baseGravada += base
+      igv += redondearMoneda(importe - base)
+    } else {
+      baseGravada += importe
+      igv += redondearMoneda(importe * 0.18)
+    }
   }
 
-  const subtotal = redondearMoneda(importe)
-  const igv = redondearMoneda(subtotal * 0.18)
-  return { subtotal, igv, total: redondearMoneda(subtotal + igv) }
+  baseGravada = redondearMoneda(baseGravada)
+  montoExonerado = redondearMoneda(montoExonerado)
+  montoInafecto = redondearMoneda(montoInafecto)
+  igv = redondearMoneda(igv)
+  const subtotal = redondearMoneda(baseGravada + montoExonerado + montoInafecto)
+  return {
+    subtotal,
+    igv,
+    total: redondearMoneda(subtotal + igv),
+  }
 }
 
 export function obtenerPrecioMinimoCotizacion(
@@ -188,6 +219,7 @@ export function crearCotizacion(
         unidadMedida: producto.unidadMedida,
         cantidad: Number(linea.cantidad),
         precioUnitario: Number(linea.precioUnitario),
+        afectacionIgv: producto.afectacionIgv || 'por-definir',
       }
     }),
     estado: 'borrador',

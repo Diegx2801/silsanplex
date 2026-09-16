@@ -35,7 +35,7 @@ interface DialogoCotizacionProps {
   alGuardar: (
     datos: DatosCotizacion,
     cotizacionId?: string,
-  ) => string | undefined
+  ) => string | undefined | Promise<string | undefined>
   alRestaurarFoco: () => void
 }
 
@@ -84,12 +84,14 @@ export function DialogoCotizacion({
     lineas.map((linea) => ({
       cantidad: Number(linea.cantidad) || 0,
       precioUnitario: Number(linea.precioUnitario) || 0,
+      afectacionIgv:
+        productos.find((producto) => producto.id === linea.productoId)?.afectacionIgv || 'por-definir',
     })),
     preciosIncluyenIgv,
   )
 
-  const guardar = (datos: DatosCotizacion) => {
-    const error = alGuardar(datos, cotizacion?.id)
+  const guardar = async (datos: DatosCotizacion) => {
+    const error = await alGuardar(datos, cotizacion?.id)
     if (error) {
       setError('root', { message: error })
       return
