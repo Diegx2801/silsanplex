@@ -115,4 +115,23 @@ describe('Combobox', () => {
     expect(onChange).toHaveBeenCalledWith('')
     await waitFor(() => expect(input).toHaveValue(''))
   })
+
+  it('reserva el canal del desplazamiento sin convertirlo en una opción', () => {
+    render(
+      <Combobox
+        id="producto-scroll"
+        label="Producto"
+        value=""
+        options={opciones}
+        onChange={vi.fn()}
+        maxVisibleOptions={2}
+      />,
+    )
+
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Producto' }))
+
+    const listbox = screen.getByRole('listbox', { name: 'Producto' })
+    expect(listbox).toHaveClass('pe-2')
+    expect(listbox).toHaveStyle({ scrollbarGutter: 'stable' })
+  })
 })

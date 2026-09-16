@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { Cliente } from '@/modulos/clientes/modelo/cliente'
 import type { Producto } from '@/modulos/productos/modelo/producto'
+import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
 
 import { DialogoCotizacion } from './DialogoCotizacion'
 
@@ -63,6 +64,14 @@ const productos = [
   crearProducto('producto-1', 'MED-001', 'Paracetamol 500 mg', '23.60'),
   crearProducto('producto-2', 'MED-002', 'Ibuprofeno 400 mg', '18.50'),
 ]
+
+const productoSinAfectacion = {
+  ...productos[0],
+  id: 'producto-pendiente',
+  codigo: 'PEND-001',
+  descripcion: 'Producto pendiente de clasificación',
+  afectacionIgv: '',
+} satisfies Producto
 
 function renderDialog(alGuardar = vi.fn().mockResolvedValue(undefined)) {
   const alCambiarApertura = vi.fn()
@@ -141,5 +150,68 @@ describe('DialogoCotizacion', () => {
 
     expect(await screen.findByText('No se pudo guardar la cotización')).toBeVisible()
     expect(alCambiarApertura).not.toHaveBeenCalledWith(false)
+  })
+
+  it('advierte la afectación de IGV pendiente antes de emitir', () => {
+    render(
+      <DialogoCotizacion
+        abierto
+        cotizacion={null}
+        clientes={[cliente]}
+        productos={[productoSinAfectacion]}
+        alCambiarApertura={vi.fn()}
+        alGuardar={vi.fn().mockResolvedValue(undefined)}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Cliente' }))
+    fireEvent.click(screen.getByRole('option', { name: /Boticas El Sol SAC/ }))
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Producto 1' }))
+    fireEvent.click(screen.getByRole('option', { name: /PEND-001/ }))
+
+    expect(screen.getByRole('status')).toHaveTextContent('Producto pendiente de clasificación')
+    expect(screen.getByText(/no podrá emitirse/i)).toBeVisible()
+  })
+
+  it('respeta la afectación tributaria guardada en el snapshot del borrador', () => {
+    const cotizacion: Cotizacion = {
+      id: 'cotizacion-pendiente',
+      numero: 'COT-000009',
+      clienteId: cliente.id,
+      clienteDocumento: cliente.numeroDocumento,
+      clienteNombre: cliente.nombreRazonSocial,
+      fechaEmision: '2026-09-16',
+      fechaValidez: '2026-09-23',
+      preciosIncluyenIgv: true,
+      observacion: '',
+      lineas: [{
+        id: 'linea-pendiente',
+        productoId: productos[0].id,
+        productoCodigo: productos[0].codigo,
+        productoDescripcion: productos[0].descripcion,
+        unidadMedida: productos[0].unidadMedida,
+        cantidad: 1,
+        precioUnitario: 23.6,
+        afectacionIgv: 'por-definir',
+      }],
+      estado: 'borrador',
+      fechaRegistro: '2026-09-16T12:00:00.000Z',
+      fechaCambioEstado: null,
+    }
+
+    render(
+      <DialogoCotizacion
+        abierto
+        cotizacion={cotizacion}
+        clientes={[cliente]}
+        productos={productos}
+        alCambiarApertura={vi.fn()}
+        alGuardar={vi.fn().mockResolvedValue(undefined)}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent('Paracetamol 500 mg')
   })
 })

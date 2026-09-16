@@ -81,12 +81,29 @@ export function DialogoCotizacion({
   const lineas = watch('lineas')
   const clienteId = watch('clienteId')
   const preciosIncluyenIgv = watch('preciosIncluyenIgv')
+  const snapshotsPorProducto = new Map(
+    (cotizacion?.lineas ?? []).map((linea) => [linea.productoId, linea.afectacionIgv]),
+  )
+  const afectacionPorProducto = (productoId: string) => {
+    const snapshot = snapshotsPorProducto.get(productoId)
+    if (snapshot) return snapshot
+    return productos.find((producto) => producto.id === productoId)?.afectacionIgv || 'por-definir'
+  }
+  const lineasConAfectacionPendiente = lineas.flatMap((linea, indice) => {
+    if (!linea.productoId) return []
+    const producto = productos.find((item) => item.id === linea.productoId)
+    const afectacion = afectacionPorProducto(linea.productoId)
+    if (afectacion !== 'por-definir') return []
+    return [{
+      indice,
+      descripcion: producto?.descripcion ?? 'Producto seleccionado',
+    }]
+  })
   const totales = calcularTotalesCotizacion(
     lineas.map((linea) => ({
       cantidad: Number(linea.cantidad) || 0,
       precioUnitario: Number(linea.precioUnitario) || 0,
-      afectacionIgv:
-        productos.find((producto) => producto.id === linea.productoId)?.afectacionIgv || 'por-definir',
+      afectacionIgv: afectacionPorProducto(linea.productoId),
     })),
     preciosIncluyenIgv,
   )
@@ -407,20 +424,39 @@ export function DialogoCotizacion({
                   {...register('observacion')}
                 />
               </div>
-              <dl className="border bg-muted/25 px-4 py-2">
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">Subtotal</dt>
-                  <dd className="font-mono">{formatoMoneda.format(totales.subtotal)}</dd>
-                </div>
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">IGV</dt>
-                  <dd className="font-mono">{formatoMoneda.format(totales.igv)}</dd>
-                </div>
-                <div className="flex justify-between gap-4 py-3 font-semibold">
-                  <dt>Total</dt>
-                  <dd className="font-mono">{formatoMoneda.format(totales.total)}</dd>
-                </div>
-              </dl>
+              <div className="space-y-4">
+                {lineasConAfectacionPendiente.length ? (
+                  <aside
+                    role="status"
+                    aria-live="polite"
+                    className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-950"
+                  >
+                    <p className="font-medium">Falta definir la afectación de IGV.</p>
+                    <p className="mt-1">
+                      El borrador puede guardarse, pero la cotización no podrá emitirse hasta clasificar estos productos en el catálogo.
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 ps-5">
+                      {lineasConAfectacionPendiente.map(({ indice, descripcion }) => (
+                        <li key={`${indice}-${descripcion}`}>Producto {indice + 1}: {descripcion}</li>
+                      ))}
+                    </ul>
+                  </aside>
+                ) : null}
+                <dl className="border bg-muted/25 px-4 py-2">
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">Subtotal</dt>
+                    <dd className="font-mono">{formatoMoneda.format(totales.subtotal)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">IGV</dt>
+                    <dd className="font-mono">{formatoMoneda.format(totales.igv)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 py-3 font-semibold">
+                    <dt>Total</dt>
+                    <dd className="font-mono">{formatoMoneda.format(totales.total)}</dd>
+                  </div>
+                </dl>
+              </div>
             </section>
 
             {errors.root ? (

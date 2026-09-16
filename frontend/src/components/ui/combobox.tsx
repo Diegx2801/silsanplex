@@ -70,6 +70,7 @@ export function Combobox({
   const errorId = `${id}-error`
   const reactId = useId().replace(/:/g, '')
   const rootRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const [abierto, setAbierto] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [indiceActivo, setIndiceActivo] = useState(-1)
@@ -172,6 +173,7 @@ export function Combobox({
       <div className="relative">
         <Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
         <input
+          ref={inputRef}
           id={id}
           type="text"
           role="combobox"
@@ -221,7 +223,12 @@ export function Combobox({
           id={listboxId}
           role="listbox"
           aria-label={label}
-          className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-md border bg-background p-1 shadow-xl"
+          className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-md border bg-background p-1 pe-2 shadow-xl"
+          style={{ scrollbarGutter: 'stable' }}
+          onPointerUp={(evento) => {
+            const objetivo = evento.target as HTMLElement
+            if (!objetivo.closest('[role="option"]')) inputRef.current?.focus()
+          }}
         >
           {!opcionesFiltradas.length ? (
             <p className="px-3 py-2 text-sm text-muted-foreground" role="status">

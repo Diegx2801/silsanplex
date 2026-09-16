@@ -95,8 +95,25 @@ export function DialogoCompra({
   const snapshotsPorProducto = new Map(
     (compra?.lineas ?? []).map((linea) => [linea.productoId, linea.afectacionIgv]),
   )
+  const lineasConAfectacionPendiente = lineas.flatMap((linea, indice) => {
+    if (!linea.productoId) return []
+
+    const afectacion =
+      snapshotsPorProducto.get(linea.productoId) ??
+      afectacionProducto(
+        productos.find((producto) => producto.id === linea.productoId)?.afectacionIgv,
+      )
+    if (afectacion !== 'por-definir') return []
+
+    return [{
+      indice,
+      descripcion:
+        productos.find((producto) => producto.id === linea.productoId)?.descripcion ??
+        'Producto seleccionado',
+    }]
+  })
   const totales = calcularTotalesCompra(
-    lineas.map((linea) => ({
+    lineas.filter((linea) => linea.productoId).map((linea) => ({
       cantidad: Number(linea.cantidad) || 0,
       costoUnitario: Number(linea.costoUnitario) || 0,
       afectacionIgv:
@@ -509,49 +526,66 @@ export function DialogoCompra({
                   </span>
                 </label>
               </div>
-              {totales.estado === 'pending' ? (
-                <p className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-950">
-                  Completa la afectación tributaria de todos los productos para calcular los importes y emitir la orden.
-                </p>
-              ) : null}
-              <dl className="border bg-muted/25 px-4 py-2">
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">Base gravada</dt>
-                  <dd className="font-mono tabular-nums">
-                    {totales.baseGravada === null ? 'Pendiente' : formatoMoneda.format(totales.baseGravada)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">Exonerado</dt>
-                  <dd className="font-mono tabular-nums">
-                    {totales.montoExonerado === null ? 'Pendiente' : formatoMoneda.format(totales.montoExonerado)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">Inafecto</dt>
-                  <dd className="font-mono tabular-nums">
-                    {totales.montoInafecto === null ? 'Pendiente' : formatoMoneda.format(totales.montoInafecto)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">Subtotal</dt>
-                  <dd className="font-mono tabular-nums">
-                    {totales.subtotal === null ? 'Pendiente' : formatoMoneda.format(totales.subtotal)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">IGV</dt>
-                  <dd className="font-mono tabular-nums">
-                    {totales.igv === null ? 'Pendiente' : formatoMoneda.format(totales.igv)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4 py-3 font-semibold">
-                  <dt>Total</dt>
-                  <dd className="font-mono tabular-nums">
-                    {totales.total === null ? 'Pendiente' : formatoMoneda.format(totales.total)}
-                  </dd>
-                </div>
-              </dl>
+              <div className="space-y-4">
+                {lineasConAfectacionPendiente.length ? (
+                  <aside
+                    role="status"
+                    aria-live="polite"
+                    className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-950"
+                  >
+                    <p className="font-medium">Falta definir la afectación de IGV.</p>
+                    <p className="mt-1">
+                      Completa este dato en el catálogo de Productos para calcular los importes y emitir la orden.
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 ps-5">
+                      {lineasConAfectacionPendiente.map(({ indice, descripcion }) => (
+                        <li key={`${indice}-${descripcion}`}>Producto {indice + 1}: {descripcion}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-xs">
+                      Puedes guardar el borrador; la emisión de la orden quedará bloqueada hasta completar la clasificación.
+                    </p>
+                  </aside>
+                ) : null}
+                <dl className="border bg-muted/25 px-4 py-2">
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">Base gravada</dt>
+                    <dd className="font-mono tabular-nums">
+                      {totales.baseGravada === null ? 'Pendiente' : formatoMoneda.format(totales.baseGravada)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">Exonerado</dt>
+                    <dd className="font-mono tabular-nums">
+                      {totales.montoExonerado === null ? 'Pendiente' : formatoMoneda.format(totales.montoExonerado)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">Inafecto</dt>
+                    <dd className="font-mono tabular-nums">
+                      {totales.montoInafecto === null ? 'Pendiente' : formatoMoneda.format(totales.montoInafecto)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">Subtotal</dt>
+                    <dd className="font-mono tabular-nums">
+                      {totales.subtotal === null ? 'Pendiente' : formatoMoneda.format(totales.subtotal)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">IGV</dt>
+                    <dd className="font-mono tabular-nums">
+                      {totales.igv === null ? 'Pendiente' : formatoMoneda.format(totales.igv)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 py-3 font-semibold">
+                    <dt>Total</dt>
+                    <dd className="font-mono tabular-nums">
+                      {totales.total === null ? 'Pendiente' : formatoMoneda.format(totales.total)}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
             </section>
 
             {errors.root ? (

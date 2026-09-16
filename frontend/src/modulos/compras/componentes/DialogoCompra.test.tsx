@@ -36,6 +36,14 @@ const producto = {
   unidadesAlternativas: [],
 } satisfies Producto
 
+const productoSinAfectacion = {
+  ...producto,
+  id: 'producto-pendiente',
+  codigo: 'PEND-001',
+  descripcion: 'Producto pendiente de clasificación',
+  afectacionIgv: '',
+} satisfies Producto
+
 const proveedor = {
   id: 'proveedor-1',
   organizationId: 'organizacion-1',
@@ -99,6 +107,7 @@ describe('DialogoCompra', () => {
     )
 
     expect(screen.queryByText('No hay productos agregados')).not.toBeInTheDocument()
+    expect(screen.queryByText('Falta definir la afectación de IGV.')).not.toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Producto 1' })).toHaveValue('')
 
     expect(screen.getByRole('combobox', { name: 'Proveedor' })).toHaveValue('')
@@ -120,5 +129,26 @@ describe('DialogoCompra', () => {
     expect(screen.getByText(/Producto físico \(recepción e inventario\)/)).toBeVisible()
     expect(screen.getByText('Cantidad (Unidad) *')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Quitar producto 1' })).toBeDisabled()
+  })
+
+  it('identifica el producto cuya afectación de IGV debe completarse', async () => {
+    render(
+      <DialogoCompra
+        abierto
+        compra={null}
+        proveedores={[proveedor]}
+        productos={[productoSinAfectacion]}
+        almacenes={[]}
+        alCambiarApertura={vi.fn()}
+        alGuardar={vi.fn().mockResolvedValue(undefined)}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Producto 1' }))
+    fireEvent.click(screen.getByRole('option', { name: /PEND-001/ }))
+
+    expect(screen.getByRole('status')).toHaveTextContent('Producto pendiente de clasificación')
+    expect(screen.getByText(/la emisión de la orden quedará bloqueada/i)).toBeVisible()
   })
 })

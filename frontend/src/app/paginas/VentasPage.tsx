@@ -149,10 +149,17 @@ export function VentasPage() {
     useState<Cotizacion | null>(null)
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
   const [mensaje, setMensaje] = useState('')
+  const [mensajeEsError, setMensajeEsError] = useState(false)
+  const [errorEmision, setErrorEmision] = useState('')
   const disparadorFormulario = useRef<HTMLButtonElement | null>(null)
   const disparadorEmision = useRef<HTMLButtonElement | null>(null)
   const disparadorPedido = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
+
+  const notificar = (texto: string, esError = false) => {
+    setMensaje(texto)
+    setMensajeEsError(esError)
+  }
 
   const cotizacionesFiltradas = useMemo(() => {
     const termino = normalizar(busquedaDiferida.trim())
@@ -187,6 +194,8 @@ export function VentasPage() {
     cotizacion: Cotizacion | null = null,
   ) => {
     disparadorFormulario.current = evento.currentTarget
+    setMensaje('')
+    setMensajeEsError(false)
     setCotizacionSeleccionada(cotizacion)
     setDialogoAbierto(true)
   }
@@ -195,7 +204,7 @@ export function VentasPage() {
     if (!puedeGestionarVentas) return 'No tienes permiso para administrar ventas'
     const error = await guardarCotizacion(datos, cotizacionId)
     if (!error) {
-      setMensaje(
+      notificar(
         cotizacionId
           ? 'Cotización actualizada.'
           : 'Cotización guardada como borrador.',
@@ -209,17 +218,21 @@ export function VentasPage() {
     cotizacion: Cotizacion,
   ) => {
     disparadorEmision.current = evento.currentTarget
+    setMensaje('')
+    setMensajeEsError(false)
+    setErrorEmision('')
     setCotizacionPorEmitir(cotizacion)
   }
 
   const confirmarEmision = async () => {
     if (!puedeGestionarVentas) {
-      setMensaje('No tienes permiso para administrar ventas')
+      notificar('No tienes permiso para administrar ventas', true)
       return
     }
     if (!cotizacionPorEmitir) return
     const error = await emitirCotizacion(cotizacionPorEmitir.id)
-    setMensaje(error ?? `${cotizacionPorEmitir.numero} emitida correctamente.`)
+    setErrorEmision(error ?? '')
+    notificar(error ?? `${cotizacionPorEmitir.numero} emitida correctamente.`, Boolean(error))
     if (!error) setCotizacionPorEmitir(null)
   }
 
@@ -237,10 +250,10 @@ export function VentasPage() {
     const cotizacion = cotizacionPorCrearPedido
     const error = await crearPedido(cotizacion.id, almacenId)
     if (error) {
-      setMensaje(error)
+      notificar(error, true)
       return error
     }
-    setMensaje(`${cotizacion.numero} convertida en pedido correctamente.`)
+    notificar(`${cotizacion.numero} convertida en pedido correctamente.`)
     setCotizacionPorCrearPedido(null)
     return undefined
   }
@@ -304,7 +317,17 @@ export function VentasPage() {
         </div>
       </section>
 
-      <p role="status" aria-live="polite" className="sr-only">{mensaje}</p>
+      {mensaje && !cotizacionPorEmitir ? (
+        <p
+          role={mensajeEsError ? 'alert' : 'status'}
+          aria-live="polite"
+          className={mensajeEsError
+            ? 'border-s-4 border-destructive bg-destructive/10 px-5 py-4 text-sm leading-6 text-destructive'
+            : 'border-s-4 border-primary bg-accent/60 px-5 py-4 text-sm leading-6'}
+        >
+          {mensaje}
+        </p>
+      ) : null}
 
       {puedeGestionarVentas && (!clientesActivos.length || !productosActivos.length) ? (
         <aside className="border-s-4 border-primary bg-accent/60 px-5 py-4 text-sm leading-6">
@@ -536,7 +559,7 @@ export function VentasPage() {
         alCancelarPedido={puedeGestionarVentas ? cancelarPedido : undefined}
         alDespacharVenta={puedeDespachar ? despacharVenta : undefined}
         alCompletarServicios={puedeGestionarVentas ? completarServicios : undefined}
-        alNotificar={setMensaje}
+        alNotificar={notificar}
         cargando={cargandoOperaciones}
         error={errorOperaciones}
         alReintentar={reintentarOperaciones}
@@ -564,10 +587,14 @@ export function VentasPage() {
           abierto={Boolean(cotizacionPorEmitir)}
           cotizacion={cotizacionPorEmitir}
           alCambiarApertura={(abierto) => {
-            if (!abierto) setCotizacionPorEmitir(null)
+            if (!abierto) {
+              setCotizacionPorEmitir(null)
+              setErrorEmision('')
+            }
           }}
           alConfirmar={confirmarEmision}
           procesando={emitiendoCotizacion}
+          error={errorEmision}
           alRestaurarFoco={() => disparadorEmision.current?.focus()}
         />
       ) : null}

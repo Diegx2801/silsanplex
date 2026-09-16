@@ -18,6 +18,7 @@ interface DialogoConfirmacionEmisionProps {
   alCambiarApertura: (abierto: boolean) => void
   alConfirmar: () => void | Promise<void>
   procesando?: boolean
+  error?: string
   alRestaurarFoco: () => void
 }
 
@@ -27,6 +28,7 @@ export function DialogoConfirmacionEmision({
   alCambiarApertura,
   alConfirmar,
   procesando = false,
+  error = '',
   alRestaurarFoco,
 }: DialogoConfirmacionEmisionProps) {
   const total = calcularTotalesCotizacion(
@@ -55,15 +57,18 @@ export function DialogoConfirmacionEmision({
             La cotización de <strong className="font-medium text-foreground">{cotizacion.clienteNombre}</strong>{' '}
             por <strong className="font-medium text-foreground">{formatoMoneda.format(total)}</strong> quedará bloqueada para edición.
           </AlertDialogPrimitive.Description>
+          {error ? (
+            <p role="alert" className="mt-4 border-s-4 border-destructive bg-destructive/10 px-4 py-3 text-sm leading-6 text-destructive">
+              {error}
+            </p>
+          ) : null}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <AlertDialogPrimitive.Cancel asChild>
               <Button type="button" variant="outline" size="lg">Revisar</Button>
             </AlertDialogPrimitive.Cancel>
-            <AlertDialogPrimitive.Action asChild>
-              <Button type="button" size="lg" disabled={procesando} onClick={() => void alConfirmar()}>
-                {procesando ? 'Emitiendo…' : 'Emitir cotización'}
-              </Button>
-            </AlertDialogPrimitive.Action>
+            <Button type="button" size="lg" disabled={procesando} onClick={() => void alConfirmar()}>
+              {procesando ? 'Emitiendo…' : 'Emitir cotización'}
+            </Button>
           </div>
         </AlertDialogPrimitive.Content>
       </AlertDialogPrimitive.Portal>

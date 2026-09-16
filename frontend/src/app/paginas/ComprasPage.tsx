@@ -140,11 +140,17 @@ export function ComprasPage() {
   const [compraPorAnular, setCompraPorAnular] = useState<Compra | null>(null)
   const [dialogoCompraAbierto, setDialogoCompraAbierto] = useState(false)
   const [mensaje, setMensaje] = useState('')
+  const [mensajeEsError, setMensajeEsError] = useState(false)
   const disparadorCompra = useRef<HTMLButtonElement | null>(null)
   const disparadorEmision = useRef<HTMLButtonElement | null>(null)
   const disparadorRecepcion = useRef<HTMLButtonElement | null>(null)
   const disparadorAnulacion = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
+
+  const notificar = (texto: string, esError = false) => {
+    setMensaje(texto)
+    setMensajeEsError(esError)
+  }
 
   const comprasFiltradas = useMemo(() => {
     const termino = normalizar(busquedaDiferida.trim())
@@ -174,6 +180,8 @@ export function ComprasPage() {
     compra: Compra | null = null,
   ) => {
     disparadorCompra.current = evento.currentTarget
+    setMensaje('')
+    setMensajeEsError(false)
     setCompraSeleccionada(compra)
     setDialogoCompraAbierto(true)
   }
@@ -189,9 +197,10 @@ export function ComprasPage() {
   const confirmarRecepcion = async (datos: DatosRecepcionCompra) => {
     if (!compraPorRecibir) return undefined
     const error = await recibirCompra(compraPorRecibir.id, datos)
-    setMensaje(
+    notificar(
       error ??
         `Recepción de ${compraPorRecibir.serie}-${compraPorRecibir.numero} registrada e inventario actualizado.`,
+      Boolean(error),
     )
     return error
   }
@@ -207,14 +216,14 @@ export function ComprasPage() {
   const confirmarAnulacion = async (motivo: string) => {
     if (!compraPorAnular) return undefined
     const error = await anularCompra(compraPorAnular.id, motivo)
-    setMensaje(error ?? `Orden ${compraPorAnular.serie}-${compraPorAnular.numero} cerrada con motivo registrado.`)
+    notificar(error ?? `Orden ${compraPorAnular.serie}-${compraPorAnular.numero} cerrada con motivo registrado.`, Boolean(error))
     return error
   }
 
   const guardarNuevaCompra = async (datos: DatosCompra, compraId?: string) => {
     const error = await guardarCompra(datos, compraId)
     if (!error) {
-      setMensaje(compraId ? 'Compra actualizada.' : 'Compra guardada como borrador.')
+      notificar(compraId ? 'Compra actualizada.' : 'Compra guardada como borrador.')
     }
     return error
   }
@@ -224,13 +233,15 @@ export function ComprasPage() {
     compra: Compra,
   ) => {
     disparadorEmision.current = evento.currentTarget
+    setMensaje('')
+    setMensajeEsError(false)
     setCompraPorEmitir(compra)
   }
 
   const confirmarEmision = async () => {
     if (!compraPorEmitir) return undefined
     const error = await emitirCompra(compraPorEmitir.id)
-    setMensaje(error ?? `Orden ${compraPorEmitir.serie}-${compraPorEmitir.numero} emitida y pendiente de recepción.`)
+    notificar(error ?? `Orden ${compraPorEmitir.serie}-${compraPorEmitir.numero} emitida y pendiente de recepción.`, Boolean(error))
     return error
   }
 
@@ -323,9 +334,17 @@ export function ComprasPage() {
         </div>
       </section>
 
-      <p role="status" aria-live="polite" className="sr-only">
-        {mensaje}
-      </p>
+      {mensaje ? (
+        <p
+          role={mensajeEsError ? 'alert' : 'status'}
+          aria-live="polite"
+          className={mensajeEsError
+            ? 'border-s-4 border-destructive bg-destructive/10 px-5 py-4 text-sm leading-6 text-destructive'
+            : 'border-s-4 border-primary bg-accent/60 px-5 py-4 text-sm leading-6'}
+        >
+          {mensaje}
+        </p>
+      ) : null}
 
       {proveedoresQuery.isError ? (
         <aside role="alert" className="border-s-4 border-destructive bg-destructive/5 px-5 py-4 text-sm text-destructive">
