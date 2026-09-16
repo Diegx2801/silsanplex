@@ -81,13 +81,11 @@ function renderDialog(alGuardar = vi.fn().mockResolvedValue(undefined)) {
 }
 
 describe('DialogoCotizacion', () => {
-  it('usa búsquedas accesibles para cliente y producto y conserva un producto mínimo', () => {
+  it('inicia sin selecciones arbitrarias, busca cliente y producto y conserva una línea mínima', () => {
     renderDialog()
 
-    expect(screen.getByRole('combobox', { name: 'Cliente' })).toHaveValue(cliente.nombreRazonSocial)
-    expect(screen.getByRole('combobox', { name: 'Producto 1' })).toHaveValue(
-      'MED-001 · Paracetamol 500 mg',
-    )
+    expect(screen.getByRole('combobox', { name: 'Cliente' })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: 'Producto 1' })).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Quitar producto 1' })).toBeDisabled()
 
     fireEvent.focus(screen.getByRole('combobox', { name: 'Cliente' }))
@@ -96,6 +94,13 @@ describe('DialogoCotizacion', () => {
     })
     expect(screen.getByRole('option', { name: /Boticas El Sol SAC/ })).toBeVisible()
     fireEvent.click(screen.getByRole('option', { name: /Boticas El Sol SAC/ }))
+
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Producto 1' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Producto 1' }), {
+      target: { value: 'paracetamol' },
+    })
+    fireEvent.click(screen.getByRole('option', { name: /MED-001/ }))
+    expect(screen.getByLabelText('Precio unitario del producto 1')).toHaveValue('23.60')
 
     fireEvent.click(screen.getByRole('button', { name: 'Agregar producto' }))
     fireEvent.focus(screen.getByRole('combobox', { name: 'Producto 2' }))
@@ -127,6 +132,11 @@ describe('DialogoCotizacion', () => {
   it('conserva abierto el diálogo ante un error de guardado', async () => {
     const alGuardar = vi.fn().mockResolvedValue('No se pudo guardar la cotización')
     const alCambiarApertura = renderDialog(alGuardar)
+
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Cliente' }))
+    fireEvent.click(screen.getByRole('option', { name: /Boticas El Sol SAC/ }))
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Producto 1' }))
+    fireEvent.click(screen.getByRole('option', { name: /MED-001/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }))
 
     expect(await screen.findByText('No se pudo guardar la cotización')).toBeVisible()

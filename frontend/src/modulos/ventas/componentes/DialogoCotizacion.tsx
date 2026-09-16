@@ -49,20 +49,19 @@ export function DialogoCotizacion({
   alGuardar,
   alRestaurarFoco,
 }: DialogoCotizacionProps) {
-  const primerProducto = productos.find((producto) => producto.activo) ?? productos[0]
   const valoresIniciales: DatosCotizacion = cotizacion
     ? cotizacionAFormulario(cotizacion)
     : {
-        clienteId: clientes[0]?.id ?? '',
+        clienteId: '',
         fechaEmision: fechaEnDias(0),
         fechaValidez: fechaEnDias(7),
         preciosIncluyenIgv: true,
         observacion: '',
         lineas: [
           {
-            productoId: primerProducto?.id ?? '',
+            productoId: '',
             cantidad: '1',
-            precioUnitario: primerProducto?.precioVenta ?? '',
+            precioUnitario: '',
           },
         ],
       }

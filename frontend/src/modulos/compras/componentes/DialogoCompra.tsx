@@ -56,18 +56,26 @@ export function DialogoCompra({
   const valoresIniciales: DatosCompra = compra
     ? compraAFormulario(compra)
     : {
-        proveedorId: proveedoresDisponibles[0]?.id ?? '',
+        proveedorId: '',
         tipoDocumento: 'factura',
         serie: '',
         numero: '',
         fechaEmision: hoy(),
         fechaVencimientoPago: '',
         fechaEntregaEsperada: '',
-        almacenId: almacenesDisponibles[0]?.id ?? '',
-        almacen: almacenesDisponibles[0]?.nombre ?? '',
+        almacenId: '',
+        almacen: '',
         preciosIncluyenIgv: true,
         observacion: '',
-        lineas: [],
+        lineas: [
+          {
+            productoId: '',
+            cantidad: '1',
+            costoUnitario: '',
+            lote: '',
+            fechaVencimiento: '',
+          },
+        ],
       }
   const {
     control,
@@ -364,6 +372,7 @@ export function DialogoCompra({
                           type="button"
                           variant="ghost"
                           size="icon"
+                          disabled={fields.length === 1}
                           aria-label={`Quitar producto ${indice + 1}`}
                           onClick={() => remove(indice)}
                         >
