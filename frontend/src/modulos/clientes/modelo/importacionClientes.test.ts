@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { analizarRegistrosClientes, normalizarEncabezadoCliente } from './importacionClientes'
+import {
+  analizarRegistrosClientes,
+  analizarRegistrosDireccionesEntrega,
+  esquemaResultadoImportacionClientes,
+  normalizarEncabezadoCliente,
+} from './importacionClientes'
 
 describe('importacionClientes', () => {
   it('normaliza encabezados de la exportación de Codeplex', () => {
@@ -67,5 +72,47 @@ describe('importacionClientes', () => {
       'El correo no es válido.',
       'El ubigeo debe tener 6 dígitos.',
     ]))
+  })
+
+  it('valida la respuesta persistida de una importación antes de mostrarla', () => {
+    const resultado = esquemaResultadoImportacionClientes.safeParse({
+      created: 1,
+      updated: 0,
+      skipped: 1,
+      failed: 0,
+      rows: [{
+        rowNumber: 2,
+        documentNumber: '20131312955',
+        status: 'CREATED',
+        message: 'Cliente creado.',
+      }],
+    })
+
+    expect(resultado.success).toBe(true)
+    expect(esquemaResultadoImportacionClientes.safeParse({ created: '1' }).success).toBe(false)
+  })
+
+  it('agrupa direcciones por documento y exige una única principal', () => {
+    const result = analizarRegistrosDireccionesEntrega([
+      {
+        TIPO_DOCUMENTO: 'RUC', NUMERO_DOCUMENTO: '20131312955',
+        ETIQUETA: 'Principal', DIRECCION: 'Av. Uno 123', PRINCIPAL: 'SI',
+      },
+      {
+        TIPO_DOCUMENTO: 'RUC', NUMERO_DOCUMENTO: '20131312955',
+        ETIQUETA: 'Secundaria', DIRECCION: 'Av. Dos 456', PRINCIPAL: 'NO',
+      },
+    ])
+
+    expect(result.erroresPorCliente.size).toBe(0)
+    expect(result.porCliente.get('RUC:20131312955')).toHaveLength(2)
+
+    const invalid = analizarRegistrosDireccionesEntrega([{
+      TIPO_DOCUMENTO: 'RUC', NUMERO_DOCUMENTO: '20131312955',
+      DIRECCION: 'Av. Sin principal 789', PRINCIPAL: 'NO',
+    }])
+    expect(invalid.erroresPorCliente.get('RUC:20131312955')).toContain(
+      'La hoja de direcciones debe marcar exactamente una dirección como principal.',
+    )
   })
 })

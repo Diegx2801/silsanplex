@@ -21,6 +21,19 @@ export function esDocumentoNumerico(tipo: (typeof tiposDocumentoCliente)[number]
   return tipo === 'ruc' || tipo === 'dni'
 }
 
+export function validarTelefonoCliente(valor: string) {
+  const telefono = valor.trim()
+  if (!telefono) return null
+  if (!/^\+?[0-9()\-\s]+$/.test(telefono)) {
+    return 'El teléfono solo admite números y separadores (+, espacios, guiones y paréntesis)'
+  }
+  const digitos = telefono.replace(/\D/g, '')
+  if (digitos.length < 7 || digitos.length > 15) {
+    return 'El teléfono debe contener entre 7 y 15 dígitos'
+  }
+  return null
+}
+
 export const condicionesDomicilio = ['HABIDO', 'NO HABIDO', 'NO HALLADO', 'PENDIENTE'] as const
 
 export function normalizarFechaConsulta(valor: string | null | undefined) {
@@ -62,10 +75,10 @@ export const esquemaDatosCliente = z
         (valor) => valor === '' || z.string().email().safeParse(valor).success,
         'Ingresa un correo válido',
       ),
-    telefono: textoOpcional(30).refine(
-      (valor) => valor === '' || /^\d+$/.test(valor),
-      'El teléfono debe contener solo números',
-    ),
+    telefono: textoOpcional(30).superRefine((valor, contexto) => {
+      const error = validarTelefonoCliente(valor)
+      if (error) contexto.addIssue({ code: 'custom', message: error })
+    }),
     direccion: textoOpcional(240).refine(
       (valor) => valor === '' || valor.length >= 3,
       'La dirección fiscal debe tener al menos 3 caracteres',
@@ -95,8 +108,12 @@ export const esquemaDatosCliente = z
         message: 'El DNI debe contener 8 dígitos',
       })
     }
-    if (datos.direccionesEntrega.filter((direccion) => direccion.principal).length > 1) {
+    const direccionesPrincipales = datos.direccionesEntrega.filter((direccion) => direccion.principal).length
+    if (direccionesPrincipales > 1) {
       contexto.addIssue({ code: 'custom', path: ['direccionesEntrega', 'root'], message: 'Solo puede existir una dirección de entrega principal' })
+    }
+    if (datos.direccionesEntrega.length > 0 && direccionesPrincipales === 0) {
+      contexto.addIssue({ code: 'custom', path: ['direccionesEntrega', 'root'], message: 'Selecciona una dirección de entrega principal' })
     }
     if (datos.direccionesEntrega.length > 20) {
       contexto.addIssue({ code: 'custom', path: ['direccionesEntrega', 'root'], message: 'Solo puedes registrar hasta 20 direcciones de entrega' })

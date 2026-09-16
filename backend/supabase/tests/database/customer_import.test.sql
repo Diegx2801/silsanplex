@@ -1,6 +1,6 @@
 begin;
 
-select plan(18);
+select plan(22);
 
 select has_function('public', 'import_customers', array['jsonb'], 'existe importacion controlada');
 select is(has_function_privilege('authenticated', 'public.import_customers(jsonb)', 'EXECUTE'), true, 'authenticated puede importar con permiso');
@@ -43,13 +43,22 @@ select public.import_customers('{
     "ubigeoCode":"130101",
     "taxpayerStatus":"ACTIVO",
     "domicileCondition":"HABIDO",
-    "isActive":true
+    "isActive":true,
+    "direccionesEntrega":[{
+      "etiqueta":"Entrega principal",
+      "direccion":"Av. Entrega 10",
+      "ubigeo":"130102",
+      "referencia":"Puerta A",
+      "principal":true
+    }]
   }]
 }'::jsonb) as value;
 
 select is((select (value->>'created')::integer from import_result), 1, 'crea una fila valida');
 select is((select count(*) from public.customers where document_number = '20677777771'), 1::bigint, 'persiste el cliente');
 select is((select count(*) from public.customer_addresses address join public.customers customer on customer.id = address.customer_id where customer.document_number = '20677777771' and address.address_type = 'FISCAL'), 1::bigint, 'persiste la direccion fiscal');
+select is((select count(*) from public.customer_addresses address join public.customers customer on customer.id = address.customer_id where customer.document_number = '20677777771' and address.address_type = 'DELIVERY' and address.is_active), 1::bigint, 'persiste la direccion de entrega importada');
+select is((select count(*) from public.customer_addresses address join public.customers customer on customer.id = address.customer_id where customer.document_number = '20677777771' and address.address_type = 'DELIVERY' and address.is_default and address.is_active), 1::bigint, 'persiste la principal de entrega importada');
 select is((select count(*) from public.customer_contacts contact join public.customers customer on customer.id = contact.customer_id where customer.document_number = '20677777771' and contact.is_primary), 1::bigint, 'persiste el contacto principal');
 
 select is(
@@ -121,6 +130,25 @@ select is(
   null::text,
   'persiste los datos comerciales opcionales como NULL'
 );
+
+create temporary table invalid_delivery_import as
+select public.import_customers('{
+  "mode":"SKIP",
+  "rows":[{
+    "rowNumber":44,
+    "documentType":"RUC",
+    "documentNumber":"20677777772",
+    "legalName":"Cliente sin principal",
+    "direccionesEntrega":[{
+      "etiqueta":"Entrega sin principal",
+      "direccion":"Av. Sin principal 20",
+      "principal":false
+    }]
+  }]
+}'::jsonb) as value;
+
+select is((select (value->>'failed')::integer from invalid_delivery_import), 1, 'rechaza importaciones sin dirección principal');
+select is((select count(*) from public.customers where document_number = '20677777772'), 0::bigint, 'revierte el cliente cuando falla una dirección importada');
 
 select throws_ok(
   $$ select public.import_customers('{"mode":"SKIP","rows":[]}'::jsonb) $$,

@@ -1,6 +1,6 @@
 begin;
 
-select plan(38);
+select plan(40);
 
 select has_table('public', 'customers', 'existe customers');
 select has_table('public', 'customer_addresses', 'existe customer_addresses');
@@ -268,6 +268,47 @@ select is(
      and address.is_default),
   'Av. Entrega 200',
   'conserva la nueva dirección de entrega principal'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'c1111111-1111-4111-8111-111111111111', true);
+
+select throws_ok(
+  $$ select public.save_customer(
+    jsonb_build_object(
+      'id', (select id from public.customers where document_number = '20999999991'),
+      'documentType', 'RUC',
+      'documentNumber', '20999999991',
+      'legalName', 'Cliente editable S.A.C.',
+      'addresses', jsonb_build_array(
+        jsonb_build_object('addressType', 'DELIVERY', 'label', 'Sin principal', 'addressLine', 'Av. Sin principal 300', 'isDefault', false)
+      )
+    )
+  ) $$,
+  '22023', 'CUSTOMER_DELIVERY_ADDRESS_PRIMARY_REQUIRED',
+  'exige una dirección principal cuando existen entregas'
+);
+
+select throws_ok(
+  $$ select public.save_customer(
+    jsonb_build_object(
+      'id', (select id from public.customers where document_number = '20999999991'),
+      'documentType', 'RUC',
+      'documentNumber', '20999999991',
+      'legalName', 'Cliente editable S.A.C.',
+      'addresses', (
+        select jsonb_agg(jsonb_build_object(
+          'addressType', 'DELIVERY',
+          'label', 'Límite ' || item::text,
+          'addressLine', 'Av. Límite ' || item::text,
+          'isDefault', item = 1
+        ))
+        from generate_series(1, 21) as serie(item)
+      )
+    )
+  ) $$,
+  '22023', 'CUSTOMER_DELIVERY_ADDRESS_LIMIT',
+  'limita las direcciones de entrega en backend'
 );
 
 select * from finish();

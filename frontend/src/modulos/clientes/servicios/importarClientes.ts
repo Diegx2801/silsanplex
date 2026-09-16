@@ -1,14 +1,33 @@
 import {
   analizarRegistrosClientes,
+  analizarRegistrosDireccionesEntrega,
+  claveDocumentoImportado,
+  normalizarEncabezadoCliente,
   type AnalisisImportacionClientes,
   type FilaClienteImportada,
   type ModoImportacionClientes,
   type ResultadoImportacionClientes,
+  esquemaResultadoImportacionClientes,
 } from '@/modulos/clientes/modelo/importacionClientes'
 import { supabase } from '@/lib/supabase'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const MAX_ROWS = 500
+
+const mensajesErrorImportacion: Array<[string, string]> = [
+  ['AUTHENTICATION_REQUIRED', 'Tu sesión expiró. Inicia sesión nuevamente.'],
+  ['CUSTOMER_PERMISSION_REQUIRED', 'No tienes permiso para importar clientes.'],
+  ['INVALID_CUSTOMER_IMPORT_MODE', 'Selecciona una estrategia de importación válida.'],
+  ['INVALID_CUSTOMER_IMPORT_SIZE', `El archivo debe contener entre 1 y ${MAX_ROWS} filas válidas.`],
+]
+
+export function mensajeErrorImportacionCliente(error: { code?: string | null; message?: string | null }) {
+  const detalle = `${error.code ?? ''} ${error.message ?? ''}`
+  return mensajesErrorImportacion.find(([codigo]) => detalle.includes(codigo))?.[1]
+    ?? (error.code === '42501'
+      ? 'No tienes permiso para importar clientes.'
+      : 'No se pudo importar el archivo. Revisa el formato e inténtalo nuevamente.')
+}
 
 export async function analizarArchivoClientes(file: File): Promise<AnalisisImportacionClientes> {
   if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
@@ -21,6 +40,19 @@ export async function analizarArchivoClientes(file: File): Promise<AnalisisImpor
   const sheetName = workbook.SheetNames[0]
   const sheet = sheetName ? workbook.Sheets[sheetName] : undefined
   if (!sheet) throw new Error('El archivo no contiene una hoja legible.')
+  const encabezados = (utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    raw: false,
+    defval: '',
+    blankrows: false,
+  })[0] ?? []).map((value) => normalizarEncabezadoCliente(String(value)))
+  const tieneDocumento = ['RUC_DNI', 'NUMERO_DOCUMENTO', 'DOCUMENTO', 'RUC', 'DNI']
+    .some((encabezado) => encabezados.includes(encabezado))
+  const tieneNombre = ['RAZON_SOCIAL', 'RAZ_SOCIAL', 'CLIENTE', 'NOMBRE_RAZON_SOCIAL']
+    .some((encabezado) => encabezados.includes(encabezado))
+  if (!tieneDocumento || !tieneNombre) {
+    throw new Error('El archivo debe incluir las columnas RUC_DNI (o documento) y RAZON_SOCIAL (o cliente).')
+  }
   const records = utils.sheet_to_json<Record<string, unknown>>(sheet, {
     raw: false,
     defval: '',
@@ -30,6 +62,50 @@ export async function analizarArchivoClientes(file: File): Promise<AnalisisImpor
   if (records.length > MAX_ROWS) throw new Error(`El archivo supera el límite de ${MAX_ROWS} filas por lote.`)
 
   const analysis = analizarRegistrosClientes(records, file.name)
+  const addressSheetName = workbook.SheetNames.find((name) => {
+    const normalizedName = normalizarEncabezadoCliente(name)
+    return normalizedName === 'DIRECCIONES_ENTREGA' || normalizedName === 'DIRECCIONESENTREGA'
+  })
+  if (addressSheetName) {
+    const addressSheet = workbook.Sheets[addressSheetName]
+    const addressHeaders = (utils.sheet_to_json<unknown[]>(addressSheet, {
+      header: 1,
+      raw: false,
+      defval: '',
+      blankrows: false,
+    })[0] ?? []).map((value) => normalizarEncabezadoCliente(String(value)))
+    const addressHasDocument = ['RUC_DNI', 'NUMERO_DOCUMENTO', 'DOCUMENTO', 'RUC', 'DNI']
+      .some((header) => addressHeaders.includes(header))
+    const addressHasLine = ['DIRECCION', 'DIRECCION_ENTREGA', 'ADDRESS']
+      .some((header) => addressHeaders.includes(header))
+    if (addressSheet && (!addressHasDocument || !addressHasLine)) {
+      throw new Error('La hoja DireccionesEntrega debe incluir las columnas de documento y DIRECCION.')
+    }
+    const addressRecords = addressSheet
+      ? utils.sheet_to_json<Record<string, unknown>>(addressSheet, { raw: false, defval: '', blankrows: false })
+      : []
+    if (addressRecords.length > 0) {
+      const addressAnalysis = analizarRegistrosDireccionesEntrega(addressRecords)
+      const customerKeys = new Set(analysis.rows.map((row) => claveDocumentoImportado(row.documentType, row.documentNumber)))
+      const unknownCustomer = [...addressAnalysis.porCliente.keys()].find((key) => !customerKeys.has(key))
+      if (unknownCustomer) {
+        throw new Error('La hoja DireccionesEntrega contiene un documento que no existe en la hoja Clientes.')
+      }
+      analysis.rows = analysis.rows.map((row) => {
+        const key = claveDocumentoImportado(row.documentType, row.documentNumber)
+        const addressErrors = addressAnalysis.erroresPorCliente.get(key) ?? []
+        const errors = [...row.errors, ...addressErrors]
+        return {
+          ...row,
+          direccionesEntrega: addressAnalysis.porCliente.get(key) ?? [],
+          errors,
+          status: errors.length ? 'INVALID' : row.status,
+        }
+      })
+      analysis.validCount = analysis.rows.filter((row) => row.status === 'VALID').length
+      analysis.invalidCount = analysis.rows.filter((row) => row.status === 'INVALID').length
+    }
+  }
   const validRows = analysis.rows.filter((row) => row.status === 'VALID')
   if (!validRows.length) return analysis
 
@@ -58,8 +134,10 @@ export async function importarClientes(
   const { data, error } = await supabase.rpc('import_customers', {
     payload: { mode, rows: validRows },
   })
-  if (error) throw new Error(error.message)
-  return data as unknown as ResultadoImportacionClientes
+  if (error) throw new Error(mensajeErrorImportacionCliente(error))
+  const parsed = esquemaResultadoImportacionClientes.safeParse(data)
+  if (!parsed.success) throw new Error('El servidor devolvió un resultado de importación inválido.')
+  return parsed.data as ResultadoImportacionClientes
 }
 
 export async function descargarIncidenciasImportacion(

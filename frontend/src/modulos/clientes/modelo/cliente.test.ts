@@ -114,17 +114,20 @@ describe('esquemaDatosCliente', () => {
     expect(esquemaDatosCliente.safeParse({ ...cliente, ubigeo: '1501' }).success).toBe(false)
   })
 
-  it('permite omitir el teléfono y acepta únicamente dígitos cuando se ingresa', () => {
+  it('permite omitir el teléfono y acepta formatos telefónicos reales', () => {
     expect(esquemaDatosCliente.safeParse({ ...cliente, telefono: '' }).success).toBe(true)
     expect(esquemaDatosCliente.safeParse({ ...cliente, telefono: '987654321' }).success).toBe(true)
+    expect(esquemaDatosCliente.safeParse({ ...cliente, telefono: '+51 987-654-321' }).success).toBe(true)
+    expect(esquemaDatosCliente.safeParse({ ...cliente, telefono: '(01) 456-7890' }).success).toBe(true)
 
-    const resultado = esquemaDatosCliente.safeParse({ ...cliente, telefono: '+51 987-654-321' })
+    const resultado = esquemaDatosCliente.safeParse({ ...cliente, telefono: '987-654' })
     expect(resultado.success).toBe(false)
     if (!resultado.success) {
       expect(resultado.error.flatten().fieldErrors.telefono).toContain(
-        'El teléfono debe contener solo números',
+        'El teléfono debe contener entre 7 y 15 dígitos',
       )
     }
+    expect(esquemaDatosCliente.safeParse({ ...cliente, telefono: '999 ABC 777' }).success).toBe(false)
   })
 })
 

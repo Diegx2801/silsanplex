@@ -248,7 +248,7 @@ describe('DialogoCliente', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Registrar cliente' }))
 
     const telefono = screen.getByLabelText('Teléfono')
-    const error = await screen.findByText('El teléfono debe contener solo números')
+    const error = await screen.findByText('El teléfono debe contener entre 7 y 15 dígitos')
     expect(error).toHaveAttribute('role', 'alert')
     expect(telefono).toHaveAttribute('aria-invalid', 'true')
     expect(telefono).toHaveAttribute('aria-describedby', 'cliente-telefono-error')
@@ -306,7 +306,7 @@ describe('DialogoCliente', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }))
     fireEvent.click(screen.getByRole('button', { name: 'Agregar' }))
 
-    const principales = screen.getAllByRole('checkbox', { name: 'Dirección principal' })
+    const principales = screen.getAllByRole('radio', { name: 'Dirección principal' })
     expect(principales[0]).toBeChecked()
     expect(principales[1]).not.toBeChecked()
 
@@ -315,6 +315,18 @@ describe('DialogoCliente', () => {
       expect(principales[0]).not.toBeChecked()
       expect(principales[1]).toBeChecked()
     })
+  })
+
+  it('promueve otra dirección cuando se elimina la principal', async () => {
+    renderDialog()
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar' }))
+
+    const principales = screen.getAllByRole('radio', { name: 'Dirección principal' })
+    expect(principales[0]).toBeChecked()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Quitar' })[0])
+
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Dirección principal' })).toBeChecked())
   })
 
   it('valida el formato del DNI antes de consultar', async () => {

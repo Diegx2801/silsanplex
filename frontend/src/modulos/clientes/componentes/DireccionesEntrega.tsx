@@ -1,6 +1,6 @@
 import { Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { FieldErrors, UseFieldArrayReturn, UseFormClearErrors, UseFormGetValues, UseFormRegister, UseFormSetValue } from 'react-hook-form'
+import type { Control, FieldErrors, UseFieldArrayReturn, UseFormClearErrors, UseFormGetValues, UseFormRegister, UseFormSetValue } from 'react-hook-form'
 import { Button } from '@/components/ui/button'
 import type { DatosCliente } from '@/modulos/clientes/modelo/cliente'
 import { DireccionEntregaCard } from './DireccionEntregaCard'
@@ -12,9 +12,10 @@ interface Props {
   getValues: UseFormGetValues<DatosCliente>
   setValue: UseFormSetValue<DatosCliente>
   clearErrors: UseFormClearErrors<DatosCliente>
+  control: Control<DatosCliente>
 }
 
-export function DireccionesEntrega({ fieldArray, errors, register, getValues, setValue, clearErrors }: Props) {
+export function DireccionesEntrega({ fieldArray, errors, register, getValues, setValue, clearErrors, control }: Props) {
   const { fields, append, remove } = fieldArray
   const [abiertas, setAbiertas] = useState<Record<string, boolean>>({})
   const cantidadAnterior = useRef(fields.length)
@@ -45,8 +46,18 @@ export function DireccionesEntrega({ fieldArray, errors, register, getValues, se
     clearErrors('direccionesEntrega')
   }
 
-  return <fieldset className="space-y-3 border-t pt-5 sm:col-span-2"><legend className="font-semibold">Direcciones de entrega</legend><div className="flex justify-end"><Button type="button" variant="outline" onClick={agregar} disabled={fields.length >= 20}><Plus /> Agregar</Button></div><p className="text-sm text-muted-foreground">Registra hasta 20 direcciones. La principal se usará como destino predeterminado.</p>
-    {fields.length === 0 ? <p className="border border-dashed px-4 py-4 text-sm text-muted-foreground">Sin direcciones adicionales.</p> : <div className="space-y-2">{fields.map((field, index) => <DireccionEntregaCard key={field.fieldKey} field={field} index={index} abierta={Boolean(abiertas[field.fieldKey])} errores={erroresDirecciones?.[index] as { etiqueta?: { message?: string }; ubigeo?: { message?: string }; direccion?: { message?: string }; referencia?: { message?: string }; principal?: { message?: string } } | undefined} register={register} getValues={getValues} setValue={setValue} clearErrors={clearErrors} alAlternar={() => setAbiertas((actuales) => ({ ...actuales, [field.fieldKey]: !actuales[field.fieldKey] }))} alQuitar={() => { remove(index); clearErrors('direccionesEntrega') }} />)}</div>}
+  const quitar = (index: number) => {
+    const actuales = getValues('direccionesEntrega')
+    const eliminada = actuales[index]
+    remove(index)
+    if (eliminada?.principal && actuales.length > 1) {
+      setValue('direccionesEntrega.0.principal', true, { shouldDirty: true, shouldValidate: true })
+    }
+    clearErrors('direccionesEntrega')
+  }
+
+  return <fieldset className="space-y-3 border-t pt-5 sm:col-span-2"><legend className="font-semibold">Direcciones de entrega</legend><div className="flex justify-end"><Button type="button" variant="outline" onClick={agregar} disabled={fields.length >= 20}><Plus /> Agregar</Button></div><p className="text-sm text-muted-foreground">Registra hasta 20 direcciones. Si agregas una, debes mantener una como principal.</p>
+    {fields.length === 0 ? <p className="border border-dashed px-4 py-4 text-sm text-muted-foreground">Sin direcciones adicionales.</p> : <div className="space-y-2">{fields.map((field, index) => <DireccionEntregaCard key={field.fieldKey} field={field} index={index} abierta={Boolean(abiertas[field.fieldKey])} errores={erroresDirecciones?.[index] as { etiqueta?: { message?: string }; ubigeo?: { message?: string }; direccion?: { message?: string }; referencia?: { message?: string }; principal?: { message?: string } } | undefined} register={register} control={control} getValues={getValues} setValue={setValue} clearErrors={clearErrors} alAlternar={() => setAbiertas((actuales) => ({ ...actuales, [field.fieldKey]: !actuales[field.fieldKey] }))} alQuitar={() => quitar(index)} />)}</div>}
     {erroresDirecciones?.root?.message ? <p role="alert" className="field-error">{erroresDirecciones.root.message}</p> : null}
   </fieldset>
 }
