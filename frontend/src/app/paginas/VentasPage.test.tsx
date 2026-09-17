@@ -181,4 +181,41 @@ describe('VentasPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(error)
     expect(screen.getAllByText('COT-000001').length).toBeGreaterThan(0)
   })
+
+  it('abre el detalle de una cotización desde la acción de consulta', async () => {
+    const cotizacion: Cotizacion = {
+      id: 'cotizacion-1',
+      numero: 'COT-000001',
+      clienteId: cliente.id,
+      clienteDocumento: cliente.numeroDocumento,
+      clienteNombre: cliente.nombreRazonSocial,
+      fechaEmision: '2026-09-16',
+      fechaValidez: '2026-09-23',
+      preciosIncluyenIgv: true,
+      observacion: 'Entrega coordinada.',
+      lineas: [{
+        id: 'linea-1', productoId: producto.id, productoCodigo: producto.codigo,
+        productoDescripcion: producto.descripcion, unidadMedida: producto.unidadMedida,
+        cantidad: 2, precioUnitario: 23.6, afectacionIgv: 'gravado',
+      }],
+      estado: 'emitida',
+      fechaRegistro: '2026-09-16T12:00:00.000Z',
+      fechaCambioEstado: '2026-09-16T12:00:00.000Z',
+    }
+    mocks.useCotizacionesPersistentes.mockReturnValue({
+      cotizaciones: [cotizacion],
+      guardarCotizacion: vi.fn().mockResolvedValue(undefined),
+      emitirCotizacion: vi.fn().mockResolvedValue(undefined),
+      cargando: false,
+      emitiendo: false,
+      error: null,
+      reintentar: vi.fn(),
+    })
+
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalle de COT-000001' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Detalle de COT-000001' })).toBeVisible()
+    expect(screen.getByText('Entrega coordinada.')).toBeVisible()
+  })
 })

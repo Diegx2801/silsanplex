@@ -1,5 +1,6 @@
 import {
   CalendarClock,
+  Eye,
   FileCheck2,
   FilePenLine,
   Pencil,
@@ -26,6 +27,7 @@ import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
 import { DialogoConfirmacionEmision } from '@/modulos/ventas/componentes/DialogoConfirmacionEmision'
 import { DialogoCotizacion } from '@/modulos/ventas/componentes/DialogoCotizacion'
+import { DialogoDetalleCotizacion } from '@/modulos/ventas/componentes/DialogoDetalleCotizacion'
 import { DialogoSeleccionAlmacenPedido } from '@/modulos/ventas/componentes/DialogoSeleccionAlmacenPedido'
 import { PanelOperacionesVenta } from '@/modulos/ventas/componentes/PanelOperacionesVenta'
 import { useCotizacionesPersistentes } from '@/modulos/ventas/estado/useCotizacionesPersistentes'
@@ -147,6 +149,8 @@ export function VentasPage() {
     useState<Cotizacion | null>(null)
   const [cotizacionPorCrearPedido, setCotizacionPorCrearPedido] =
     useState<Cotizacion | null>(null)
+  const [cotizacionPorConsultar, setCotizacionPorConsultar] =
+    useState<Cotizacion | null>(null)
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const [mensajeEsError, setMensajeEsError] = useState(false)
@@ -154,6 +158,7 @@ export function VentasPage() {
   const disparadorFormulario = useRef<HTMLButtonElement | null>(null)
   const disparadorEmision = useRef<HTMLButtonElement | null>(null)
   const disparadorPedido = useRef<HTMLButtonElement | null>(null)
+  const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
 
   const notificar = (texto: string, esError = false) => {
@@ -242,6 +247,14 @@ export function VentasPage() {
   ) => {
     disparadorPedido.current = evento.currentTarget
     setCotizacionPorCrearPedido(cotizacion)
+  }
+
+  const abrirDetalle = (
+    evento: ReactMouseEvent<HTMLButtonElement>,
+    cotizacion: Cotizacion,
+  ) => {
+    disparadorDetalle.current = evento.currentTarget
+    setCotizacionPorConsultar(cotizacion)
   }
 
   const confirmarPedido = async (almacenId: string) => {
@@ -464,22 +477,25 @@ export function VentasPage() {
                         <dd className="mt-1 font-mono font-semibold">{formatoMoneda.format(total)}</dd>
                       </div>
                     </dl>
-                    {puedeGestionarVentas && cotizacion.estado === 'borrador' ? (
-                      <div className="mt-4 flex gap-2">
-                        <Button type="button" variant="outline" onClick={(evento) => abrirFormulario(evento, cotizacion)}>
-                          <Pencil aria-hidden="true" /> Editar
-                        </Button>
-                        <Button type="button" onClick={(evento) => solicitarEmision(evento, cotizacion)}>
-                          <Send aria-hidden="true" /> Emitir
-                        </Button>
-                      </div>
-                    ) : puedeGestionarVentas && estadoVisible(cotizacion) === 'emitida' ? (
-                      <Button type="button" className="mt-4" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
-                        <ShoppingCart aria-hidden="true" /> {creandoPedido ? 'Creando pedido…' : 'Crear pedido'}
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button type="button" variant="outline" onClick={(evento) => abrirDetalle(evento, cotizacion)}>
+                        <Eye aria-hidden="true" /> Ver detalle
                       </Button>
-                    ) : puedeGestionarVentas ? null : (
-                      <p className="mt-4 text-sm text-muted-foreground">Solo consulta</p>
-                    )}
+                      {puedeGestionarVentas && cotizacion.estado === 'borrador' ? (
+                        <>
+                          <Button type="button" variant="outline" onClick={(evento) => abrirFormulario(evento, cotizacion)}>
+                            <Pencil aria-hidden="true" /> Editar
+                          </Button>
+                          <Button type="button" onClick={(evento) => solicitarEmision(evento, cotizacion)}>
+                            <Send aria-hidden="true" /> Emitir
+                          </Button>
+                        </>
+                      ) : puedeGestionarVentas && estadoVisible(cotizacion) === 'emitida' ? (
+                        <Button type="button" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
+                          <ShoppingCart aria-hidden="true" /> {creandoPedido ? 'Creando pedido…' : 'Crear pedido'}
+                        </Button>
+                      ) : null}
+                    </div>
                   </article>
                 )
               })}
@@ -518,28 +534,25 @@ export function VentasPage() {
                         <td className="px-4 py-4 text-end font-mono font-semibold">{formatoMoneda.format(total)}</td>
                         <td className="px-4 py-4"><EstadoCotizacionEtiqueta cotizacion={cotizacion} /></td>
                         <td className="px-6 py-4">
-                          {puedeGestionarVentas && cotizacion.estado === 'borrador' ? (
-                            <div className="flex justify-end gap-1">
-                              <Button type="button" variant="ghost" size="icon" title="Editar cotización" aria-label={`Editar ${cotizacion.numero}`} onClick={(evento) => abrirFormulario(evento, cotizacion)}>
-                                <Pencil aria-hidden="true" />
-                              </Button>
-                              <Button type="button" variant="ghost" size="icon" title="Emitir cotización" aria-label={`Emitir ${cotizacion.numero}`} onClick={(evento) => solicitarEmision(evento, cotizacion)}>
-                                <Send aria-hidden="true" />
-                              </Button>
-                            </div>
-                          ) : puedeGestionarVentas && estadoVisible(cotizacion) === 'emitida' ? (
-                            <div className="flex justify-end">
+                          <div className="flex justify-end gap-1">
+                            <Button type="button" variant="ghost" size="icon" title="Ver detalle de cotización" aria-label={`Ver detalle de ${cotizacion.numero}`} onClick={(evento) => abrirDetalle(evento, cotizacion)}>
+                              <Eye aria-hidden="true" />
+                            </Button>
+                            {puedeGestionarVentas && cotizacion.estado === 'borrador' ? (
+                              <>
+                                <Button type="button" variant="ghost" size="icon" title="Editar cotización" aria-label={`Editar ${cotizacion.numero}`} onClick={(evento) => abrirFormulario(evento, cotizacion)}>
+                                  <Pencil aria-hidden="true" />
+                                </Button>
+                                <Button type="button" variant="ghost" size="icon" title="Emitir cotización" aria-label={`Emitir ${cotizacion.numero}`} onClick={(evento) => solicitarEmision(evento, cotizacion)}>
+                                  <Send aria-hidden="true" />
+                                </Button>
+                              </>
+                            ) : puedeGestionarVentas && estadoVisible(cotizacion) === 'emitida' ? (
                               <Button type="button" variant="outline" size="sm" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
                                 <ShoppingCart aria-hidden="true" /> {creandoPedido ? 'Creando pedido…' : 'Crear pedido'}
                               </Button>
-                            </div>
-                          ) : puedeGestionarVentas ? (
-                            <span className="block text-end text-xs text-muted-foreground">
-                              {cotizacion.estado === 'aceptada' ? 'Pedido creado' : 'Sin acciones'}
-                            </span>
-                          ) : (
-                            <span className="block text-end text-xs text-muted-foreground">Solo consulta</span>
-                          )}
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     )
@@ -610,6 +623,17 @@ export function VentasPage() {
           }}
           alConfirmar={confirmarPedido}
           alRestaurarFoco={() => disparadorPedido.current?.focus()}
+        />
+      ) : null}
+
+      {cotizacionPorConsultar ? (
+        <DialogoDetalleCotizacion
+          abierto
+          cotizacion={cotizacionPorConsultar}
+          alCambiarApertura={(abierto) => {
+            if (!abierto) setCotizacionPorConsultar(null)
+          }}
+          alRestaurarFoco={() => disparadorDetalle.current?.focus()}
         />
       ) : null}
     </div>
