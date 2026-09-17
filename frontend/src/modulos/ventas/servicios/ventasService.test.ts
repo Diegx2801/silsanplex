@@ -100,11 +100,15 @@ describe('ventasService', () => {
   it('expone un error de stock asignable insuficiente', async () => {
     supabaseMock.rpc.mockResolvedValue({
       data: null,
-      error: { code: 'P0001', message: 'INVENTORY_FEFO_INSUFFICIENT_STOCK' },
+      error: {
+        code: 'P0001',
+        message: 'INVENTORY_FEFO_INSUFFICIENT_STOCK',
+        details: 'assignable_quantity=0,requested_quantity=2',
+      },
     })
 
     await expect(crearPedidoPersistente('org-1', cotizacion, 'warehouse-1'))
-      .rejects.toThrow('No hay stock asignable suficiente en el almacén seleccionado')
+      .rejects.toThrow('No hay stock asignable suficiente en el almacén seleccionado. Solicitado: 2; disponible: 0.')
   })
 
   it('expone la violación autoritativa del precio mínimo', async () => {

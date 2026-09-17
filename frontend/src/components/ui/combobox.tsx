@@ -71,6 +71,7 @@ export function Combobox({
   const reactId = useId().replace(/:/g, '')
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const interactuandoListaRef = useRef(false)
   const [abierto, setAbierto] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [indiceActivo, setIndiceActivo] = useState(-1)
@@ -198,6 +199,7 @@ export function Combobox({
           }}
           onBlur={(evento) => {
             window.setTimeout(() => {
+              if (interactuandoListaRef.current) return
               if (!rootRef.current?.contains(document.activeElement)) {
                 setAbierto(false)
                 setBusqueda('')
@@ -225,9 +227,31 @@ export function Combobox({
           aria-label={label}
           className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-md border bg-background p-1 pe-2 shadow-xl"
           style={{ scrollbarGutter: 'stable' }}
+          onPointerDown={() => {
+            interactuandoListaRef.current = true
+          }}
+          onMouseDown={(evento) => {
+            // Al hacer clic o arrastrar la barra no debemos perder el foco ni
+            // cerrar la lista antes de que el navegador pueda desplazarla.
+            const objetivo = evento.target as HTMLElement
+            if (!objetivo.closest('[role="option"]')) {
+              const rectangulo = evento.currentTarget.getBoundingClientRect()
+              const anchoBarra = evento.currentTarget.offsetWidth - evento.currentTarget.clientWidth
+              const estaEnBarra = anchoBarra > 0 && evento.clientX >= rectangulo.right - anchoBarra
+              if (!estaEnBarra) {
+                evento.preventDefault()
+                inputRef.current?.focus()
+              }
+              setAbierto(true)
+            }
+          }}
           onPointerUp={(evento) => {
+            interactuandoListaRef.current = false
             const objetivo = evento.target as HTMLElement
             if (!objetivo.closest('[role="option"]')) inputRef.current?.focus()
+          }}
+          onPointerCancel={() => {
+            interactuandoListaRef.current = false
           }}
         >
           {!opcionesFiltradas.length ? (

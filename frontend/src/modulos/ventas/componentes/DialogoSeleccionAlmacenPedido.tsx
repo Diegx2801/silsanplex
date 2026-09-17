@@ -3,6 +3,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useEffect, useState, type FormEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import type { Almacen } from '@/modulos/inventario/modelo/almacen'
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
 
@@ -25,7 +26,7 @@ export function DialogoSeleccionAlmacenPedido({
   alConfirmar,
   alRestaurarFoco,
 }: DialogoSeleccionAlmacenPedidoProps) {
-  const [almacenId, setAlmacenId] = useState(almacenes[0]?.id ?? '')
+  const [almacenId, setAlmacenId] = useState('')
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
@@ -33,10 +34,20 @@ export function DialogoSeleccionAlmacenPedido({
 
   useEffect(() => {
     if (!abierto) return
-    setAlmacenId(almacenes[0]?.id ?? '')
+    // El operador debe elegir explícitamente el almacén de preparación.
+    // Tomar la primera fila es inseguro cuando existen varios almacenes.
+    setAlmacenId('')
     setError('')
     setEnviando(false)
   }, [abierto, almacenes])
+
+  const opcionesAlmacenes: ComboboxOption[] = almacenes.map((almacen) => ({
+    value: almacen.id,
+    label: `${almacen.codigo} · ${almacen.nombre}`,
+    secondaryText: almacen.direccion || 'Sin dirección registrada',
+    keywords: [almacen.codigo, almacen.nombre, almacen.direccion],
+    disabled: !almacen.activo,
+  }))
 
   const guardar = async (evento: FormEvent<HTMLFormElement>) => {
     evento.preventDefault()
@@ -95,27 +106,22 @@ export function DialogoSeleccionAlmacenPedido({
 
           <form className="px-5 py-6 sm:px-7" onSubmit={(evento) => void guardar(evento)}>
             <div className="space-y-4">
-              <div>
-                <label htmlFor="almacen-pedido" className="field-label">Almacén de preparación *</label>
-                <select
-                  id="almacen-pedido"
-                  value={almacenId}
-                  onChange={(evento) => {
-                    setAlmacenId(evento.target.value)
-                    setError('')
-                  }}
-                  className="field-control"
-                  disabled={estaGuardando || !almacenes.length}
-                  aria-invalid={Boolean(error)}
-                >
-                  <option value="">Selecciona un almacén</option>
-                  {almacenes.map((almacen) => (
-                    <option key={almacen.id} value={almacen.id}>
-                      {almacen.codigo} · {almacen.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <Combobox
+                id="almacen-pedido"
+                label="Almacén de preparación"
+                value={almacenId}
+                options={opcionesAlmacenes}
+                onChange={(valor) => {
+                  setAlmacenId(valor)
+                  setError('')
+                }}
+                placeholder="Buscar almacén…"
+                helperText="Código, nombre o dirección."
+                error={error && !almacenId ? error : undefined}
+                required
+                disabled={estaGuardando || !almacenes.length}
+                noOptionsMessage="No hay almacenes activos disponibles."
+              />
               <p className="text-xs text-muted-foreground">
                 {cotizacion.lineas.length} {cotizacion.lineas.length === 1 ? 'producto' : 'productos'} quedarán asociados al almacén seleccionado.
               </p>

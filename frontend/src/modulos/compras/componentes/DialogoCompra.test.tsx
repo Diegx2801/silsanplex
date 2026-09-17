@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { Producto } from '@/modulos/productos/modelo/producto'
 import type { Proveedor } from '@/modulos/proveedores/modelo/proveedor'
+import type { Almacen } from '@/modulos/inventario/modelo/almacen'
 
 import { DialogoCompra } from './DialogoCompra'
 
@@ -70,6 +71,10 @@ const proveedor = {
   fechaActualizacion: '2026-09-16T00:00:00.000Z',
 } satisfies Proveedor
 
+const almacen = {
+  id: 'almacen-1', codigo: 'CENTRAL', nombre: 'Almacén central', direccion: 'Av. Principal 100', activo: true,
+} satisfies Almacen
+
 describe('DialogoCompra', () => {
   it('marca los campos de selección requeridos al guardar el borrador inicial', async () => {
     render(
@@ -129,6 +134,29 @@ describe('DialogoCompra', () => {
     expect(screen.getByText(/Producto físico \(recepción e inventario\)/)).toBeVisible()
     expect(screen.getByText('Cantidad (Unidad) *')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Quitar producto 1' })).toBeDisabled()
+  })
+
+  it('exige seleccionar explícitamente el almacén y permite buscarlo por dirección', () => {
+    render(
+      <DialogoCompra
+        abierto
+        compra={null}
+        proveedores={[proveedor]}
+        productos={[producto]}
+        almacenes={[almacen]}
+        alCambiarApertura={vi.fn()}
+        alGuardar={vi.fn().mockResolvedValue(undefined)}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    const control = screen.getByRole('combobox', { name: 'Almacén de recepción' })
+    expect(control).toHaveValue('')
+    fireEvent.focus(control)
+    fireEvent.change(control, { target: { value: 'principal 100' } })
+    fireEvent.click(screen.getByRole('option', { name: /CENTRAL · Almacén central/ }))
+
+    expect(control).toHaveValue('CENTRAL · Almacén central')
   })
 
   it('identifica el producto cuya afectación de IGV debe completarse', async () => {

@@ -132,6 +132,13 @@ export function DialogoCompra({
     keywords: [proveedor.codigo, proveedor.numeroDocumento, proveedor.nombreComercial, proveedor.contacto, proveedor.email],
     disabled: !proveedor.activo,
   }))
+  const opcionesAlmacenes: ComboboxOption[] = almacenesDisponibles.map((almacen) => ({
+    value: almacen.id,
+    label: `${almacen.codigo} · ${almacen.nombre}`,
+    secondaryText: almacen.direccion || 'Sin dirección registrada',
+    keywords: [almacen.codigo, almacen.nombre, almacen.direccion],
+    disabled: !almacen.activo,
+  }))
 
   const guardar = async (datos: DatosCompra) => {
     const error = await alGuardar(datos, compra?.id)
@@ -299,37 +306,32 @@ export function DialogoCompra({
                   ) : null}
                 </div>
                 <div>
-                  <label htmlFor="almacen-compra" className="field-label">
-                    Almacén de recepción *
-                  </label>
-                  <select
-                    id="almacen-compra"
-                    className="field-control"
-                    aria-invalid={Boolean(errors.almacenId || errors.almacen)}
-                    {...register('almacenId', {
-                      onChange: (evento) => {
-                        const almacen = almacenesDisponibles.find(
-                          (item) => item.id === evento.target.value,
-                        )
-                        setValue('almacen', almacen?.nombre ?? '', {
-                          shouldValidate: true,
-                        })
-                      },
-                    })}
-                  >
-                    <option value="">Seleccionar almacén</option>
-                    {almacenesDisponibles.map((almacen) => (
-                      <option key={almacen.id} value={almacen.id}>
-                        {almacen.codigo} · {almacen.nombre}
-                      </option>
-                    ))}
-                  </select>
+                  <Controller
+                    control={control}
+                    name="almacenId"
+                    render={({ field }) => (
+                      <Combobox
+                        id="almacen-compra"
+                        label="Almacén de recepción"
+                        value={field.value}
+                        options={opcionesAlmacenes}
+                        onChange={(valor) => {
+                          field.onChange(valor)
+                          const almacen = almacenesDisponibles.find((item) => item.id === valor)
+                          setValue('almacen', almacen?.nombre ?? '', {
+                            shouldValidate: true,
+                          })
+                        }}
+                        onBlur={field.onBlur}
+                        placeholder="Buscar almacén…"
+                        helperText="Código, nombre o dirección."
+                        error={errors.almacenId?.message ?? errors.almacen?.message}
+                        required
+                        noOptionsMessage="No hay almacenes activos disponibles."
+                      />
+                    )}
+                  />
                   <input type="hidden" {...register('almacen')} />
-                  {errors.almacenId || errors.almacen ? (
-                    <p className="field-error">
-                      {errors.almacenId?.message ?? errors.almacen?.message}
-                    </p>
-                  ) : null}
                 </div>
               </div>
             </section>
