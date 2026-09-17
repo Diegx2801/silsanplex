@@ -2,6 +2,7 @@ import { Eye, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 
 import { Button } from '@/components/ui/button'
+import { fechaPeruDesdeTimestamp, formatearFechaCalendarioPeru } from '@/lib/fechas'
 import type { PedidoVenta, Venta } from '@/modulos/ventas/modelo/operacionVenta'
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', {
@@ -9,12 +10,6 @@ const formatoMoneda = new Intl.NumberFormat('es-PE', {
   currency: 'PEN',
 })
 const formatoCantidad = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 3 })
-const formatoFecha = new Intl.DateTimeFormat('es-PE', {
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-})
-
 interface DialogoDetalleOperacionVentaProps {
   abierto: boolean
   pedido: PedidoVenta
@@ -23,9 +18,8 @@ interface DialogoDetalleOperacionVentaProps {
   alRestaurarFoco: () => void
 }
 
-function fechaLocal(fecha: string) {
-  const valor = fecha.length === 10 ? `${fecha}T12:00:00` : fecha
-  return formatoFecha.format(new Date(valor))
+function fechaPedido(pedido: PedidoVenta) {
+  return pedido.fechaPedido ?? fechaPeruDesdeTimestamp(pedido.fechaRegistro)
 }
 
 function etiquetaEstado(pedido: PedidoVenta, venta?: Venta) {
@@ -93,7 +87,7 @@ export function DialogoDetalleOperacionVenta({
 
               <dl className="mt-6 grid gap-4 border-t pt-5 sm:grid-cols-4">
                 <div><dt className="text-xs text-muted-foreground">Origen</dt><dd className="mt-1 font-mono">{pedido.cotizacionNumero}</dd></div>
-                <div><dt className="text-xs text-muted-foreground">Pedido registrado</dt><dd className="mt-1">{fechaLocal(pedido.fechaRegistro)}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Fecha del pedido</dt><dd className="mt-1">{formatearFechaCalendarioPeru(fechaPedido(pedido))}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Almacén</dt><dd className="mt-1">{pedido.almacenNombre ?? 'No definido'}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Precios</dt><dd className="mt-1">{pedido.preciosIncluyenIgv ? 'Incluyen IGV' : 'No incluyen IGV'}</dd></div>
               </dl>
@@ -149,7 +143,7 @@ export function DialogoDetalleOperacionVenta({
                   {venta ? (
                     <dl className="grid gap-2 sm:grid-cols-3">
                       <div><dt className="text-xs">Comprobante</dt><dd className="font-mono text-foreground">{venta.serie}-{venta.numeroDocumento}</dd></div>
-                      <div><dt className="text-xs">Fecha</dt><dd className="text-foreground">{fechaLocal(venta.fechaVenta)}</dd></div>
+                      <div><dt className="text-xs">Fecha</dt><dd className="text-foreground">{formatearFechaCalendarioPeru(venta.fechaVenta)}</dd></div>
                       <div><dt className="text-xs">Estado</dt><dd className="text-foreground">{venta.estado === 'despachada' ? 'Despachada' : 'Registrada'}</dd></div>
                     </dl>
                   ) : 'Todavía no se ha registrado una venta para este pedido.'}

@@ -5,6 +5,7 @@ import { Controller, useFieldArray, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
+import { fechaActualPeru } from '@/lib/fechas'
 import {
   calcularTotalesCompra,
   compraAFormulario,
@@ -20,7 +21,7 @@ const formatoMoneda = new Intl.NumberFormat('es-PE', {
   style: 'currency',
   currency: 'PEN',
 })
-const hoy = () => new Date().toISOString().slice(0, 10)
+const hoy = fechaActualPeru
 
 function afectacionProducto(valor: Producto['afectacionIgv'] | undefined): AfectacionTributaria {
   return valor || 'por-definir'

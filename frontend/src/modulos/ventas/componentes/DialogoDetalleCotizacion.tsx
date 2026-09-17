@@ -2,6 +2,7 @@ import { Eye, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 
 import { Button } from '@/components/ui/button'
+import { fechaActualPeru, formatearFechaCalendarioPeru } from '@/lib/fechas'
 import {
   calcularTotalesCotizacion,
   type Cotizacion,
@@ -15,12 +16,6 @@ const formatoMoneda = new Intl.NumberFormat('es-PE', {
 const formatoCantidad = new Intl.NumberFormat('es-PE', {
   maximumFractionDigits: 4,
 })
-const formatoFecha = new Intl.DateTimeFormat('es-PE', {
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-})
-
 const etiquetasEstado: Record<EstadoCotizacion | 'vencida', string> = {
   borrador: 'Borrador',
   emitida: 'Emitida',
@@ -44,11 +39,11 @@ interface DialogoDetalleCotizacionProps {
 }
 
 function fechaLocal(fecha: string) {
-  return formatoFecha.format(new Date(`${fecha}T12:00:00`))
+  return formatearFechaCalendarioPeru(fecha)
 }
 
 function estadoCotizacion(cotizacion: Cotizacion): 'borrador' | 'emitida' | 'aceptada' | 'rechazada' | 'vencida' {
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = fechaActualPeru()
   return cotizacion.estado === 'emitida' && cotizacion.fechaValidez < hoy
     ? 'vencida'
     : cotizacion.estado

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
+import { fechaActualPeru } from '@/lib/fechas'
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
 import type { DatosVenta } from '@/modulos/ventas/modelo/operacionVenta'
 import { inventoryQueryKeys } from '@/modulos/inventario/estado/inventoryQueryKeys'
@@ -53,7 +54,7 @@ export function useOperacionesVenta({
       if (!cotizacion || cotizacion.estado !== 'emitida') {
         throw new Error('La cotización debe estar emitida para crear el pedido')
       }
-      if (cotizacion.fechaValidez < new Date().toISOString().slice(0, 10)) {
+      if (cotizacion.fechaValidez < fechaActualPeru()) {
         throw new Error('La cotización está vencida; emite una nueva propuesta antes de crear el pedido')
       }
       const pedidoId = await crearPedidoPersistente(organizationId, cotizacion, warehouseId)

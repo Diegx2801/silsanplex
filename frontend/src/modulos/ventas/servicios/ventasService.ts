@@ -185,6 +185,7 @@ function mapearPedido(fila: PedidoFila): PedidoVenta {
     clienteId: fila.customer_id,
     clienteDocumento: cliente.document_number,
     clienteNombre: cliente.legal_name,
+    fechaPedido: fila.order_date,
     preciosIncluyenIgv: fila.prices_include_tax,
     baseGravada: importeOpcional(fila.taxable_base),
     montoExonerado: importeOpcional(fila.exempt_amount),

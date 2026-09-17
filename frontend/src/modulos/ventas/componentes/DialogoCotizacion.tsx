@@ -4,6 +4,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { Controller, useFieldArray, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
+import { fechaPeruEnDias } from '@/lib/fechas'
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import type { Cliente } from '@/modulos/clientes/modelo/cliente'
 import type { Producto } from '@/modulos/productos/modelo/producto'
@@ -22,9 +23,7 @@ const formatoMoneda = new Intl.NumberFormat('es-PE', {
 })
 
 function fechaEnDias(dias: number) {
-  const fecha = new Date()
-  fecha.setDate(fecha.getDate() + dias)
-  return fecha.toISOString().slice(0, 10)
+  return fechaPeruEnDias(dias)
 }
 
 interface DialogoCotizacionProps {

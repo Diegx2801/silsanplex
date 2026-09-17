@@ -136,7 +136,7 @@ describe('ventasService', () => {
     }))
 
     await expect(listarPedidosPersistentes('org-1')).resolves.toEqual([
-      expect.objectContaining({ id: 'pedido-1', numero: 'PED-000001', clienteNombre: 'Cliente Uno', almacenId: 'warehouse-1', almacenNombre: 'Almacén principal', lineas: [expect.objectContaining({ cantidad: 2, afectacionIgv: 'gravado' })] }),
+      expect.objectContaining({ id: 'pedido-1', numero: 'PED-000001', clienteNombre: 'Cliente Uno', fechaPedido: '2026-09-01', almacenId: 'warehouse-1', almacenNombre: 'Almacén principal', lineas: [expect.objectContaining({ cantidad: 2, afectacionIgv: 'gravado' })] }),
     ])
   })
 

@@ -290,6 +290,20 @@ describe('PanelOperacionesVenta', () => {
     expect(screen.getByRole('button', { name: 'Cerrar detalle de operación' })).toBeVisible()
   })
 
+  it('filtra por fecha comercial del pedido y valida rangos invertidos', () => {
+    const pedidoDelDieciseis = { ...pedido, fechaPedido: '2026-09-16' }
+    const pedidoDelDiecisiete = { ...pedido, id: 'pedido-2', numero: 'PED-000002', fechaPedido: '2026-09-17' }
+    renderPanel({ pedidos: [pedidoDelDieciseis, pedidoDelDiecisiete] })
+
+    fireEvent.change(screen.getByLabelText('Fecha desde'), { target: { value: '2026-09-17' } })
+    expect(screen.getByText('1 de 2 operaciones visibles')).toBeVisible()
+    expect(screen.getByText('PED-000002')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText('Fecha hasta'), { target: { value: '2026-09-16' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('La fecha desde no puede ser posterior')
+    expect(screen.getByText('0 de 2 operaciones visibles')).toBeVisible()
+  })
+
   it('permite modificar cantidades con la clave idempotente del diálogo', async () => {
     const alActualizarPedido = vi.fn().mockResolvedValue(undefined)
     renderPanel({ pedidos: [pedido], alActualizarPedido })

@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { fechaActualPeru } from '@/lib/fechas'
+
 /**
  * Valida una fecha ISO de formulario sin permitir fechas de calendario
  * inexistentes (por ejemplo, 31 de febrero). El tipo `date` del navegador
@@ -14,11 +16,7 @@ export function esFechaCalendarioValida(valor: string) {
 
 /** Devuelve la fecha del calendario local para controles HTML `date`. */
 export function fechaLocalActual() {
-  const fecha = new Date()
-  const año = fecha.getFullYear()
-  const mes = String(fecha.getMonth() + 1).padStart(2, '0')
-  const dia = String(fecha.getDate()).padStart(2, '0')
-  return `${año}-${mes}-${dia}`
+  return fechaActualPeru()
 }
 
 export const esquemaDatosVenta = z.object({
@@ -70,6 +68,8 @@ export const esquemaPedidoVenta = z.object({
   clienteId: z.string().min(1),
   clienteDocumento: z.string().min(1),
   clienteNombre: z.string().min(1),
+  // Fecha comercial del pedido; los registros antiguos pueden no tenerla.
+  fechaPedido: z.string().min(1).optional(),
   preciosIncluyenIgv: z.boolean(),
   baseGravada: z.number().nonnegative().nullable(),
   montoExonerado: z.number().nonnegative().nullable(),

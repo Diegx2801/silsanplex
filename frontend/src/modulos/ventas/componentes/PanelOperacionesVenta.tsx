@@ -4,6 +4,7 @@ import { useDeferredValue, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { PaginacionListado, type TamanioPaginaListado } from '@/components/ui/PaginacionListado'
+import { fechaPeruDesdeTimestamp, formatearFechaCalendarioPeru } from '@/lib/fechas'
 import { DialogoDespachoPersistente } from '@/modulos/ventas/componentes/DialogoDespachoPersistente'
 import { DialogoCumplimientoServicios } from '@/modulos/ventas/componentes/DialogoCumplimientoServicios'
 import { DialogoDetalleOperacionVenta } from '@/modulos/ventas/componentes/DialogoDetalleOperacionVenta'
@@ -56,7 +57,10 @@ const etiquetasFiltroOperacion: Record<FiltroOperacion, string> = {
 }
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' })
-const formatoFecha = new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
+
+function fechaPedidoOperacion(pedido: PedidoVenta) {
+  return pedido.fechaPedido ?? fechaPeruDesdeTimestamp(pedido.fechaRegistro)
+}
 
 function etiquetaCumplimiento(
   bienes: Venta['lineas'],
@@ -129,6 +133,7 @@ export function PanelOperacionesVenta({
   const [fechaHasta, setFechaHasta] = useState('')
   const [pagina, setPagina] = useState(1)
   const [tamanioPagina, setTamanioPagina] = useState<TamanioPaginaListado>(10)
+  const rangoFechasInvalido = Boolean(fechaDesde && fechaHasta && fechaDesde > fechaHasta)
   const claveCancelacion = useRef<string | null>(null)
   const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
   const ventasPorPedido = useMemo(
@@ -136,11 +141,15 @@ export function PanelOperacionesVenta({
     [ventas],
   )
   const pedidosOrdenados = useMemo(
-    () => pedidos.toSorted((a, b) => b.fechaRegistro.localeCompare(a.fechaRegistro)),
+    () => pedidos.toSorted((a, b) => {
+      const diferenciaFecha = fechaPedidoOperacion(b).localeCompare(fechaPedidoOperacion(a))
+      return diferenciaFecha || b.fechaRegistro.localeCompare(a.fechaRegistro)
+    }),
     [pedidos],
   )
   const busquedaDiferida = useDeferredValue(busqueda)
   const operacionesFiltradas = useMemo(() => {
+    if (rangoFechasInvalido) return []
     const termino = normalizar(busquedaDiferida.trim())
     return pedidosOrdenados.filter((pedido) => {
       const venta = ventasPorPedido.get(pedido.id)
@@ -155,7 +164,7 @@ export function PanelOperacionesVenta({
         venta?.numeroInterno ?? '',
         venta ? `${venta.serie}-${venta.numeroDocumento}` : '',
       ].join(' '))
-      const fecha = pedido.fechaRegistro.slice(0, 10)
+      const fecha = fechaPedidoOperacion(pedido)
       return (
         (filtroEstado === 'todos' || estado === filtroEstado)
         && (!filtroAlmacen || pedido.almacenId === filtroAlmacen)
@@ -164,7 +173,7 @@ export function PanelOperacionesVenta({
         && (!termino || texto.includes(termino))
       )
     })
-  }, [busquedaDiferida, fechaDesde, fechaHasta, filtroAlmacen, filtroEstado, pedidosOrdenados, ventasPorPedido])
+  }, [busquedaDiferida, fechaDesde, fechaHasta, filtroAlmacen, filtroEstado, pedidosOrdenados, rangoFechasInvalido, ventasPorPedido])
   const totalPaginas = Math.max(1, Math.ceil(operacionesFiltradas.length / tamanioPagina))
   const paginaVisible = Math.min(pagina, totalPaginas)
   const pedidosVisibles = operacionesFiltradas.slice(
@@ -240,11 +249,11 @@ export function PanelOperacionesVenta({
       <div className="grid gap-4 border-b bg-muted/20 px-5 py-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-[14rem_14rem_1fr] lg:items-end">
         <div>
           <label htmlFor="fecha-desde-operacion-venta" className="field-label">Fecha desde</label>
-          <input id="fecha-desde-operacion-venta" type="date" value={fechaDesde} onChange={(evento) => { setFechaDesde(evento.target.value); setPagina(1) }} className="field-control" />
+          <input id="fecha-desde-operacion-venta" type="date" value={fechaDesde} aria-invalid={rangoFechasInvalido} onChange={(evento) => { setFechaDesde(evento.target.value); setPagina(1) }} className="field-control" />
         </div>
         <div>
           <label htmlFor="fecha-hasta-operacion-venta" className="field-label">Fecha hasta</label>
-          <input id="fecha-hasta-operacion-venta" type="date" value={fechaHasta} onChange={(evento) => { setFechaHasta(evento.target.value); setPagina(1) }} className="field-control" />
+          <input id="fecha-hasta-operacion-venta" type="date" value={fechaHasta} aria-invalid={rangoFechasInvalido} onChange={(evento) => { setFechaHasta(evento.target.value); setPagina(1) }} className="field-control" />
         </div>
         <div className="flex items-end justify-end">
           {(busqueda || filtroEstado !== 'todos' || filtroAlmacen || fechaDesde || fechaHasta) ? (
@@ -252,6 +261,11 @@ export function PanelOperacionesVenta({
           ) : null}
         </div>
       </div>
+      {rangoFechasInvalido ? (
+        <p role="alert" className="border-b border-s-4 border-destructive bg-destructive/10 px-5 py-3 text-sm text-destructive sm:px-6">
+          La fecha desde no puede ser posterior a la fecha hasta.
+        </p>
+      ) : null}
 
       <div className="border-b px-5 py-4 text-sm text-muted-foreground sm:px-6">
         {operacionesFiltradas.length} de {pedidos.length} operaciones visibles
@@ -296,7 +310,7 @@ export function PanelOperacionesVenta({
                     <span className="status-label" data-tone={pedido.estado === 'atendido' ? 'listo' : 'revision'}>{pedido.estado}</span>
                   </div>
                   <h3 className="mt-2 font-semibold">{pedido.clienteNombre}</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Origen: {pedido.cotizacionNumero} · {formatoFecha.format(new Date(pedido.fechaRegistro))}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Origen: {pedido.cotizacionNumero} · {formatearFechaCalendarioPeru(fechaPedidoOperacion(pedido))}</p>
                   <p className="mt-1 text-xs text-muted-foreground">Almacén: {pedido.almacenNombre ?? 'No definido (histórico)'}</p>
                 </div>
                 <div className="grid grid-cols-3 gap-3 border-y py-3 text-sm lg:border-y-0 lg:border-s lg:ps-5">

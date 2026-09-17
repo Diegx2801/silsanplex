@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { PaginacionListado, type TamanioPaginaListado } from '@/components/ui/PaginacionListado'
 import { useAuth } from '@/features/auth/useAuth'
 import { PERMISSIONS } from '@/features/auth/permissions'
+import { fechaActualPeru, formatearFechaCalendarioPeru } from '@/lib/fechas'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
 import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
@@ -47,13 +48,6 @@ const formatoMoneda = new Intl.NumberFormat('es-PE', {
   style: 'currency',
   currency: 'PEN',
 })
-const formatoFecha = new Intl.DateTimeFormat('es-PE', {
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-})
-const hoy = new Date().toISOString().slice(0, 10)
-
 function normalizar(valor: string) {
   return valor
     .normalize('NFD')
@@ -62,6 +56,7 @@ function normalizar(valor: string) {
 }
 
 function estadoVisible(cotizacion: Cotizacion): FiltroEstado {
+  const hoy = fechaActualPeru()
   if (
     cotizacion.estado === 'emitida' &&
     cotizacion.fechaValidez < hoy
@@ -504,7 +499,7 @@ export function VentasPage() {
                     <dl className="mt-4 grid grid-cols-3 gap-3 border-t pt-4 text-sm">
                       <div>
                         <dt className="text-xs text-muted-foreground">Válida hasta</dt>
-                        <dd className="mt-1">{formatoFecha.format(new Date(`${cotizacion.fechaValidez}T12:00:00`))}</dd>
+                        <dd className="mt-1">{formatearFechaCalendarioPeru(cotizacion.fechaValidez)}</dd>
                       </div>
                       <div>
                         <dt className="text-xs text-muted-foreground">Productos</dt>
@@ -565,8 +560,8 @@ export function VentasPage() {
                           <p className="mt-1 text-xs text-muted-foreground">{cotizacion.clienteDocumento}</p>
                         </td>
                         <td className="px-4 py-4 text-muted-foreground">
-                          <p>{formatoFecha.format(new Date(`${cotizacion.fechaEmision}T12:00:00`))}</p>
-                          <p className="mt-1 text-xs">hasta {formatoFecha.format(new Date(`${cotizacion.fechaValidez}T12:00:00`))}</p>
+                          <p>{formatearFechaCalendarioPeru(cotizacion.fechaEmision)}</p>
+                          <p className="mt-1 text-xs">hasta {formatearFechaCalendarioPeru(cotizacion.fechaValidez)}</p>
                         </td>
                         <td className="px-4 py-4 text-end font-mono">{cotizacion.lineas.length}</td>
                         <td className="px-4 py-4 text-end font-mono font-semibold">{formatoMoneda.format(total)}</td>
