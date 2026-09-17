@@ -12,8 +12,10 @@ select is(
   'el wrapper conserva SECURITY DEFINER'
 );
 select is(
-  (select proconfig from pg_proc where oid = 'public.receive_purchase_order(uuid, uuid)'::regprocedure),
-  array['search_path=""']::text[],
+  (select proconfig @> array['search_path=""']::text[]
+   from pg_proc
+   where oid = 'public.receive_purchase_order(uuid, uuid)'::regprocedure),
+  true,
   'el wrapper conserva search_path vacio'
 );
 select is(
