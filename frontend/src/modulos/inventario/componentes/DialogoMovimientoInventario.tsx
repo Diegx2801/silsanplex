@@ -1,12 +1,13 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowDownToLine, ArrowUpFromLine, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
 import { fechaActualPeru } from '@/lib/fechas'
 import { useCandidatosFefo } from '@/modulos/inventario/estado/useCandidatosFefo'
+import { SelectorProductoInventario } from '@/modulos/inventario/componentes/SelectorProductoInventario'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
 import {
   esquemaDatosMovimientoInventario,
@@ -14,13 +15,13 @@ import {
   tiposMovimientoInventario,
   type DatosMovimientoInventario,
 } from '@/modulos/inventario/modelo/inventario'
-import type { Producto } from '@/modulos/productos/modelo/producto'
+import type { ProductoInventarioOpcion } from '@/modulos/inventario/modelo/productoInventarioRead'
 
 const hoy = fechaActualPeru
 
 interface DialogoMovimientoInventarioProps {
   abierto: boolean
-  productos: readonly Producto[]
+  organizationId: string
   almacenes: readonly Almacen[]
   ubicaciones: readonly UbicacionAlmacen[]
   alCambiarApertura: (abierto: boolean) => void
@@ -30,14 +31,14 @@ interface DialogoMovimientoInventarioProps {
 
 export function DialogoMovimientoInventario({
   abierto,
-  productos,
+  organizationId,
   almacenes,
   ubicaciones,
   alCambiarApertura,
   alGuardar,
   alRestaurarFoco,
 }: DialogoMovimientoInventarioProps) {
-  const productosInventariables = productos.filter((producto) => producto.tipo === 'good')
+  const [producto, setProducto] = useState<ProductoInventarioOpcion | null>(null)
   const {
     register,
     handleSubmit,
@@ -48,7 +49,7 @@ export function DialogoMovimientoInventario({
   } = useForm<DatosMovimientoInventario>({
     resolver: zodResolver(esquemaDatosMovimientoInventario),
     defaultValues: {
-      productoId: productosInventariables[0]?.id ?? '',
+      productoId: '',
       tipo: 'entrada',
       cantidad: '',
       almacen: almacenes[0]?.nombre ?? 'Almacen principal',
@@ -66,10 +67,6 @@ export function DialogoMovimientoInventario({
   const tipo = watch('tipo')
   const almacenId = watch('almacenId')
   const estadoStock = watch('estadoStock')
-  const producto = useMemo(
-    () => productosInventariables.find((item) => item.id === productoId),
-    [productoId, productosInventariables],
-  )
   const esSalida = movimientoEsSalida(tipo)
   const usarFefo = tipo === 'salida' && estadoStock === 'available'
   const { candidatos, cargando: cargandoFefo, error: errorFefo } =
@@ -181,21 +178,19 @@ export function DialogoMovimientoInventario({
               </div>
 
               <div className="sm:col-span-2">
-                <label htmlFor="producto-movimiento" className="field-label">
-                  Producto *
-                </label>
-                <select
+                <input type="hidden" {...register('productoId')} />
+                <SelectorProductoInventario
                   id="producto-movimiento"
-                  className="field-control"
-                  aria-invalid={Boolean(errors.productoId)}
-                  {...register('productoId')}
-                >
-                  {productosInventariables.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.codigo} · {item.descripcion}
-                    </option>
-                  ))}
-                </select>
+                  name="producto-selector"
+                  etiqueta="Producto"
+                  organizationId={organizationId}
+                  value={productoId}
+                  selectedOption={producto}
+                  onValueChange={(nextValue, opcion) => {
+                    setValue('productoId', nextValue, { shouldValidate: true })
+                    setProducto(opcion ?? null)
+                  }}
+                />
                 {errors.productoId ? (
                   <p className="field-error">{errors.productoId.message}</p>
                 ) : null}

@@ -10,7 +10,6 @@ import {
 } from 'lucide-react'
 import {
   type MouseEvent as ReactMouseEvent,
-  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -35,7 +34,6 @@ import {
   type OrdenExistenciasInventario,
 } from '@/modulos/inventario/modelo/inventario'
 import type { TamanioPaginaInventario } from '@/modulos/inventario/modelo/paginacionInventario'
-import { useProductos } from '@/modulos/productos/estado/useProductos'
 
 const formatoCantidad = new Intl.NumberFormat('es-PE', {
   maximumFractionDigits: 3,
@@ -111,13 +109,9 @@ function MovimientoFila({ movimiento }: { movimiento: MovimientoInventario }) {
 }
 
 export function InventarioPage() {
-  const { hasPermission } = useAuth()
+  const { access, hasPermission } = useAuth()
+  const organizationId = access?.organizationId ?? ''
   const puedeGestionar = hasPermission(PERMISSIONS.INVENTORY_MANAGE)
-  const { productos } = useProductos()
-  const productosActivos = useMemo(
-    () => productos.filter((producto) => producto.activo),
-    [productos],
-  )
   const [busqueda, setBusqueda] = useState('')
   const busquedaDebounced = useDebounceInventario(busqueda)
   const [filtroStock, setFiltroStock] = useState<FiltroStockInventario>('todos')
@@ -217,7 +211,7 @@ export function InventarioPage() {
         {puedeGestionar ? <Button
           type="button"
           size="lg"
-          disabled={!productosActivos.length || !gestionAlmacenes.almacenes.length}
+          disabled={!gestionAlmacenes.almacenes.length}
           onClick={abrirMovimiento}
         >
           <Plus aria-hidden="true" />
@@ -547,9 +541,9 @@ export function InventarioPage() {
       </section>
 
       <PanelGestionAlmacenes
+        organizationId={organizationId}
         almacenes={gestionAlmacenes.almacenes}
         ubicaciones={gestionAlmacenes.ubicaciones}
-        productos={productos}
         puedeGestionar={puedeGestionar}
         transferir={gestionAlmacenes.transferir}
         reclasificar={gestionAlmacenes.reclasificar}
@@ -559,7 +553,7 @@ export function InventarioPage() {
       {dialogoAbierto && puedeGestionar ? (
         <DialogoMovimientoInventario
           abierto={dialogoAbierto}
-          productos={productosActivos}
+          organizationId={organizationId}
           almacenes={gestionAlmacenes.almacenes.filter((almacen) => almacen.activo)}
           ubicaciones={gestionAlmacenes.ubicaciones}
           alCambiarApertura={setDialogoAbierto}

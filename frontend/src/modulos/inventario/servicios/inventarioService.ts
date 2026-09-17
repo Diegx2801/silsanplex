@@ -14,6 +14,7 @@ import {
   normalizarPaginacion,
   type ResultadoPaginadoInventario,
 } from '@/modulos/inventario/modelo/paginacionInventario'
+import { leerRespuestaReadInventario } from '@/modulos/inventario/servicios/productoInventarioReadService'
 
 interface MovimientoFila {
   id: string
@@ -56,9 +57,6 @@ interface ExistenciaFila {
   bucket_count: number
   lot_count: number
 }
-
-const columnasExistencia =
-  'product_id,product_code,product_description,laboratory,unit_of_measure,physical_quantity,sanitary_available_quantity,reserved_quantity,assignable_quantity,quarantine_quantity,damaged_quantity,expired_quantity,inventory_value,warehouse_count,bucket_count,lot_count' as const
 
 function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
   return {
@@ -136,51 +134,20 @@ export async function listarExistenciasInventario(
   organizationId: string,
   consulta: ConsultaExistenciasInventario,
 ): Promise<ResultadoPaginadoInventario<ExistenciaInventario>> {
-  const { desde, hasta } = normalizarPaginacion(consulta)
-  let query = supabase
-    .from('inventory_product_stock_summary')
-    .select(columnasExistencia, { count: 'exact' })
-    .eq('organization_id', organizationId)
+  const { desde } = normalizarPaginacion(consulta)
   const busqueda = normalizarBusquedaInventario(consulta.busqueda)
-
-  if (busqueda) {
-    query = query.or(
-      `product_code.ilike.%${busqueda}%,product_description.ilike.%${busqueda}%,laboratory.ilike.%${busqueda}%`,
-    )
-  }
-  if (consulta.filtroStock === 'con-stock') {
-    query = query.gt('assignable_quantity', 0)
-  } else if (consulta.filtroStock === 'sin-stock') {
-    query = query.lte('assignable_quantity', 0)
-  }
-
-  switch (consulta.orden) {
-    case 'producto-desc':
-      query = query.order('product_description', { ascending: false })
-      break
-    case 'codigo-asc':
-      query = query.order('product_code', { ascending: true })
-      break
-    case 'codigo-desc':
-      query = query.order('product_code', { ascending: false })
-      break
-    case 'stock-asc':
-      query = query.order('assignable_quantity', { ascending: true })
-      break
-    case 'stock-desc':
-      query = query.order('assignable_quantity', { ascending: false })
-      break
-    case 'producto-asc':
-      query = query.order('product_description', { ascending: true })
-      break
-  }
-
-  const { data, error, count } = await query
-    .order('product_id', { ascending: true })
-    .range(desde, hasta)
+  const { data, error } = await supabase.rpc('inventory_product_stock_summary_read', {
+    requested_organization_id: organizationId,
+    search_term: busqueda,
+    requested_stock_filter: consulta.filtroStock,
+    requested_sort: consulta.orden,
+    requested_limit: consulta.tamanioPagina,
+    requested_offset: desde,
+  })
   if (error) throw new Error('No se pudieron consultar las existencias')
 
-  const elementos = ((data ?? []) as ExistenciaFila[]).map((fila) => ({
+  const respuesta = leerRespuestaReadInventario<ExistenciaFila>(data)
+  const elementos = respuesta.items.map((fila) => ({
     productoId: fila.product_id,
     productoCodigo: fila.product_code,
     productoDescripcion: fila.product_description,
@@ -199,29 +166,34 @@ export async function listarExistenciasInventario(
     lotesConStock: Number(fila.lot_count),
   }))
 
-  return crearResultadoPaginado(elementos, count, consulta)
+  return crearResultadoPaginado(elementos, respuesta.totalCount, consulta)
 }
 
 export async function contarResumenExistencias(
   organizationId: string,
 ): Promise<ResumenExistenciasInventario> {
-  const base = () =>
-    supabase
-      .from('inventory_product_stock_summary')
-      .select('product_id', { count: 'exact', head: true })
-      .eq('organization_id', organizationId)
-  const [todos, conStock, sinStock] = await Promise.all([
-    base(),
-    base().gt('assignable_quantity', 0),
-    base().lte('assignable_quantity', 0),
+  const consultarTotal = async (filtro: 'todos' | 'con-stock' | 'sin-stock') => {
+    const { data, error } = await supabase.rpc('inventory_product_stock_summary_read', {
+      requested_organization_id: organizationId,
+      search_term: '',
+      requested_stock_filter: filtro,
+      requested_sort: 'producto-asc',
+      requested_limit: 1,
+      requested_offset: 0,
+    })
+    if (error) throw new Error('No se pudo consultar el resumen de existencias')
+    return leerRespuestaReadInventario<ExistenciaFila>(data).totalCount
+  }
+  const [productos, productosConStock, productosSinStock] = await Promise.all([
+    consultarTotal('todos'),
+    consultarTotal('con-stock'),
+    consultarTotal('sin-stock'),
   ])
-  const error = todos.error ?? conStock.error ?? sinStock.error
-  if (error) throw new Error('No se pudo consultar el resumen de existencias')
 
   return {
-    productos: todos.count ?? 0,
-    productosConStock: conStock.count ?? 0,
-    productosSinStock: sinStock.count ?? 0,
+    productos,
+    productosConStock,
+    productosSinStock,
   }
 }
 

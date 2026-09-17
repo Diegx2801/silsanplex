@@ -49,9 +49,16 @@ describe('listados paginados de almacén', () => {
   })
 
   it('pagina alertas con conteo exacto', async () => {
-    const query = crearQuery([], 1_205)
+    rpc.mockResolvedValue({ data: { items: [], total_count: 1_205 }, error: null })
     const resultado = await listarAlertasStock('org-1', { ...base, orden: 'stock-asc' })
-    expect(query.order).toHaveBeenNthCalledWith(1, 'assignable_quantity', { ascending: true })
+    expect(rpc).toHaveBeenCalledWith('inventory_low_stock_alerts_read', {
+      requested_organization_id: 'org-1',
+      search_term: '',
+      requested_warehouse_id: null,
+      requested_sort: 'stock-asc',
+      requested_limit: 50,
+      requested_offset: 50,
+    })
     expect(resultado.total).toBe(1_205)
     expect(resultado.totalPaginas).toBe(25)
   })

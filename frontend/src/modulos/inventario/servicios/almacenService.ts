@@ -21,6 +21,7 @@ import {
   normalizarBusquedaInventario,
   normalizarPaginacion,
 } from '@/modulos/inventario/modelo/paginacionInventario'
+import { leerRespuestaReadInventario } from '@/modulos/inventario/servicios/productoInventarioReadService'
 
 function errorAlmacen(error: { code?: string; message?: string }) {
   const mensaje = error.message ?? ''
@@ -132,21 +133,28 @@ export async function listarAlertasStock(
   organizationId: string,
   consulta: ConsultaAlertasStock,
 ) {
-  const { desde, hasta } = normalizarPaginacion(consulta)
-  let query = aplicarBusqueda(
-    supabase.from('inventory_low_stock_alerts').select('*', { count: 'exact' }).eq('organization_id', organizationId).eq('has_low_stock_alert', true),
-    consulta.busqueda,
-  )
-  if (consulta.almacenId) query = query.eq('warehouse_id', consulta.almacenId)
-  query = consulta.orden === 'stock-asc'
-    ? query.order('assignable_quantity', { ascending: true })
-    : query.order('product_description', { ascending: true })
-  const { data, error, count } = await query
-    .order('product_id', { ascending: true })
-    .order('warehouse_id', { ascending: true })
-    .range(desde, hasta)
+  const { desde } = normalizarPaginacion(consulta)
+  const { data, error } = await supabase.rpc('inventory_low_stock_alerts_read', {
+    requested_organization_id: organizationId,
+    search_term: normalizarBusquedaInventario(consulta.busqueda),
+    requested_warehouse_id: consulta.almacenId || null,
+    requested_sort: consulta.orden,
+    requested_limit: consulta.tamanioPagina,
+    requested_offset: desde,
+  })
   if (error) throw new Error(errorAlmacen(error))
-  const elementos = (data ?? []).map((fila) => ({
+  const respuesta = leerRespuestaReadInventario<{
+    product_id: string
+    product_code: string
+    product_description: string
+    unit_of_measure: string | null
+    warehouse_id: string
+    warehouse_code: string
+    warehouse_name: string
+    assignable_quantity: number
+    minimum_stock: number
+  }>(data)
+  const elementos = respuesta.items.map((fila) => ({
       productoId: fila.product_id,
       productoCodigo: fila.product_code,
       productoDescripcion: fila.product_description,
@@ -170,7 +178,7 @@ export async function listarAlertasStock(
       diasParaVencer: null,
       estadoVencimiento: null,
   })) as AlertaInventario[]
-  return crearResultadoPaginado(elementos, count, consulta)
+  return crearResultadoPaginado(elementos, respuesta.totalCount, consulta)
 }
 
 export async function listarVencimientos(
