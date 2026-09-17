@@ -17,9 +17,10 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { PaginacionListado, type TamanioPaginaListado } from '@/components/ui/PaginacionListado'
 import { useAuth } from '@/features/auth/useAuth'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
@@ -40,6 +41,7 @@ import {
 } from '@/modulos/ventas/modelo/cotizacion'
 
 type FiltroEstado = 'todos' | EstadoCotizacion | 'vencida'
+type VistaVentas = 'cotizaciones' | 'ejecucion'
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', {
   style: 'currency',
@@ -92,6 +94,8 @@ function EstadoCotizacionEtiqueta({ cotizacion }: { cotizacion: Cotizacion }) {
 }
 
 export function VentasPage() {
+  const [parametros, setParametros] = useSearchParams()
+  const vista: VistaVentas = parametros.get('vista') === 'ejecucion' ? 'ejecucion' : 'cotizaciones'
   const { hasPermission } = useAuth()
   const puedeGestionarVentas = hasPermission(PERMISSIONS.SALES_MANAGE)
   const puedeDespachar =
@@ -143,6 +147,8 @@ export function VentasPage() {
   })
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
+  const [paginaCotizaciones, setPaginaCotizaciones] = useState(1)
+  const [tamanioPaginaCotizaciones, setTamanioPaginaCotizaciones] = useState<TamanioPaginaListado>(10)
   const [cotizacionSeleccionada, setCotizacionSeleccionada] =
     useState<Cotizacion | null>(null)
   const [cotizacionPorEmitir, setCotizacionPorEmitir] =
@@ -160,6 +166,10 @@ export function VentasPage() {
   const disparadorPedido = useRef<HTMLButtonElement | null>(null)
   const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
+
+  const cambiarVista = (siguiente: VistaVentas) => {
+    setParametros(siguiente === 'cotizaciones' ? {} : { vista: siguiente })
+  }
 
   const notificar = (texto: string, esError = false) => {
     setMensaje(texto)
@@ -179,6 +189,12 @@ export function VentasPage() {
       })
       .toSorted((a, b) => b.fechaRegistro.localeCompare(a.fechaRegistro))
   }, [busquedaDiferida, cotizaciones, filtroEstado])
+  const totalPaginasCotizaciones = Math.max(1, Math.ceil(cotizacionesFiltradas.length / tamanioPaginaCotizaciones))
+  const paginaCotizacionesVisible = Math.min(paginaCotizaciones, totalPaginasCotizaciones)
+  const cotizacionesVisibles = cotizacionesFiltradas.slice(
+    (paginaCotizacionesVisible - 1) * tamanioPaginaCotizaciones,
+    paginaCotizacionesVisible * tamanioPaginaCotizaciones,
+  )
 
   let borradores = 0
   let emitidas = 0
@@ -306,6 +322,27 @@ export function VentasPage() {
         ) : null}
       </header>
 
+      <nav aria-label="Secciones de ventas" role="tablist" className="flex flex-wrap gap-2 border-b pb-2">
+        <Link
+          to="/ventas"
+          role="tab"
+          aria-selected={vista === 'cotizaciones'}
+          className={vista === 'cotizaciones' ? 'border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary' : 'px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground'}
+          onClick={(evento) => { evento.preventDefault(); cambiarVista('cotizaciones') }}
+        >
+          Cotizaciones
+        </Link>
+        <Link
+          to="/ventas?vista=ejecucion"
+          role="tab"
+          aria-selected={vista === 'ejecucion'}
+          className={vista === 'ejecucion' ? 'border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary' : 'px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground'}
+          onClick={(evento) => { evento.preventDefault(); cambiarVista('ejecucion') }}
+        >
+          Ejecución comercial
+        </Link>
+      </nav>
+
       <section aria-label="Resumen comercial" className="ledger-sheet">
         <div className="grid sm:grid-cols-2 xl:grid-cols-4">
           {metricas.map((metrica) => {
@@ -392,7 +429,8 @@ export function VentasPage() {
         </p>
       ) : null}
 
-      <section aria-labelledby="cotizaciones-title" className="ledger-sheet">
+      {vista === 'cotizaciones' ? (
+        <section aria-labelledby="cotizaciones-title" className="ledger-sheet">
         <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(14rem,1fr)_17rem_12rem] lg:items-end">
           <div>
             <h2 id="cotizaciones-title" className="text-lg font-semibold">
@@ -410,7 +448,7 @@ export function VentasPage() {
                 id="buscar-cotizacion"
                 type="search"
                 value={busqueda}
-                onChange={(evento) => setBusqueda(evento.target.value)}
+                onChange={(evento) => { setBusqueda(evento.target.value); setPaginaCotizaciones(1) }}
                 className="field-control ps-9"
                 placeholder="Número, cliente o documento"
               />
@@ -421,7 +459,7 @@ export function VentasPage() {
             <select
               id="estado-cotizacion"
               value={filtroEstado}
-              onChange={(evento) => setFiltroEstado(evento.target.value as FiltroEstado)}
+              onChange={(evento) => { setFiltroEstado(evento.target.value as FiltroEstado); setPaginaCotizaciones(1) }}
               className="field-control"
             >
               <option value="todos">Todos</option>
@@ -449,7 +487,7 @@ export function VentasPage() {
         ) : (
           <>
             <div className="divide-y md:hidden">
-              {cotizacionesFiltradas.map((cotizacion) => {
+              {cotizacionesVisibles.map((cotizacion) => {
                 const total = calcularTotalesCotizacion(
                   cotizacion.lineas,
                   cotizacion.preciosIncluyenIgv,
@@ -514,7 +552,7 @@ export function VentasPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {cotizacionesFiltradas.map((cotizacion) => {
+                  {cotizacionesVisibles.map((cotizacion) => {
                     const total = calcularTotalesCotizacion(
                       cotizacion.lineas,
                       cotizacion.preciosIncluyenIgv,
@@ -562,25 +600,41 @@ export function VentasPage() {
             </div>
           </>
         )}
-      </section>
+        {cotizacionesFiltradas.length ? (
+          <PaginacionListado
+            etiqueta="cotizaciones"
+            pagina={paginaCotizacionesVisible}
+            tamanioPagina={tamanioPaginaCotizaciones}
+            total={cotizacionesFiltradas.length}
+            totalPaginas={totalPaginasCotizaciones}
+            cantidadVisible={cotizacionesVisibles.length}
+            alCambiarPagina={setPaginaCotizaciones}
+            alCambiarTamanio={(siguiente) => { setTamanioPaginaCotizaciones(siguiente); setPaginaCotizaciones(1) }}
+          />
+        ) : null}
+        </section>
+      ) : null}
 
-      <PanelOperacionesVenta
-        pedidos={pedidos}
-        ventas={ventas}
-        alRegistrarVenta={puedeGestionarVentas ? registrarVenta : undefined}
-        alActualizarPedido={puedeGestionarVentas ? actualizarPedido : undefined}
-        alCancelarPedido={puedeGestionarVentas ? cancelarPedido : undefined}
-        alDespacharVenta={puedeDespachar ? despacharVenta : undefined}
-        alCompletarServicios={puedeGestionarVentas ? completarServicios : undefined}
-        alNotificar={notificar}
-        cargando={cargandoOperaciones}
-        error={errorOperaciones}
-        alReintentar={reintentarOperaciones}
-        actualizandoPedido={actualizandoPedido}
-        cancelandoPedido={cancelandoPedido}
-        despachandoVenta={despachandoVenta}
-        completandoServicios={completandoServicios}
-      />
+      {vista === 'ejecucion' ? (
+        <PanelOperacionesVenta
+          pedidos={pedidos}
+          ventas={ventas}
+          almacenes={almacenesActivos}
+          alRegistrarVenta={puedeGestionarVentas ? registrarVenta : undefined}
+          alActualizarPedido={puedeGestionarVentas ? actualizarPedido : undefined}
+          alCancelarPedido={puedeGestionarVentas ? cancelarPedido : undefined}
+          alDespacharVenta={puedeDespachar ? despacharVenta : undefined}
+          alCompletarServicios={puedeGestionarVentas ? completarServicios : undefined}
+          alNotificar={notificar}
+          cargando={cargandoOperaciones}
+          error={errorOperaciones}
+          alReintentar={reintentarOperaciones}
+          actualizandoPedido={actualizandoPedido}
+          cancelandoPedido={cancelandoPedido}
+          despachandoVenta={despachandoVenta}
+          completandoServicios={completandoServicios}
+        />
+      ) : null}
 
       {puedeGestionarVentas && dialogoAbierto ? (
         <DialogoCotizacion

@@ -1,10 +1,12 @@
-import { Ban, ClipboardCheck, PackageCheck, Pencil, ReceiptText } from 'lucide-react'
+import { Ban, ClipboardCheck, Eye, PackageCheck, Pencil, ReceiptText, Search } from 'lucide-react'
 import { AlertDialog as AlertDialogPrimitive } from 'radix-ui'
-import { useRef, useState } from 'react'
+import { useDeferredValue, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { PaginacionListado, type TamanioPaginaListado } from '@/components/ui/PaginacionListado'
 import { DialogoDespachoPersistente } from '@/modulos/ventas/componentes/DialogoDespachoPersistente'
 import { DialogoCumplimientoServicios } from '@/modulos/ventas/componentes/DialogoCumplimientoServicios'
+import { DialogoDetalleOperacionVenta } from '@/modulos/ventas/componentes/DialogoDetalleOperacionVenta'
 import { DialogoModificacionPedido } from '@/modulos/ventas/componentes/DialogoModificacionPedido'
 import { DialogoRegistroVenta } from '@/modulos/ventas/componentes/DialogoRegistroVenta'
 import type {
@@ -15,6 +17,43 @@ import type {
 import type { CantidadLineaPedido } from '@/modulos/ventas/servicios/ventasService'
 import type { CantidadDespacho } from '@/modulos/ventas/servicios/ventasService'
 import type { CantidadCumplimientoServicio } from '@/modulos/ventas/servicios/ventasService'
+
+type FiltroOperacion =
+  | 'todos'
+  | 'pedido-confirmado'
+  | 'por-despachar'
+  | 'parcial'
+  | 'completado'
+  | 'cancelado'
+
+interface AlmacenOperacion {
+  id: string
+  nombre: string
+}
+
+function normalizar(valor: string) {
+  return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-PE')
+}
+
+function estadoOperacion(pedido: PedidoVenta, venta?: Venta): FiltroOperacion {
+  if (pedido.estado === 'cancelado') return 'cancelado'
+  if (!venta) return 'pedido-confirmado'
+  if (venta.estado === 'despachada') return 'completado'
+  const tieneCumplimiento = venta.lineas.some((linea) => {
+    const pendiente = linea.cantidadPendiente ?? linea.cantidad
+    return pendiente < linea.cantidad
+  })
+  return tieneCumplimiento ? 'parcial' : 'por-despachar'
+}
+
+const etiquetasFiltroOperacion: Record<FiltroOperacion, string> = {
+  todos: 'Todos',
+  'pedido-confirmado': 'Pedidos confirmados',
+  'por-despachar': 'Por despachar',
+  parcial: 'Despacho parcial',
+  completado: 'Completados',
+  cancelado: 'Cancelados',
+}
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' })
 const formatoFecha = new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -42,6 +81,7 @@ function etiquetaCumplimiento(
 interface PanelOperacionesVentaProps {
   pedidos: readonly PedidoVenta[]
   ventas: readonly Venta[]
+  almacenes?: readonly AlmacenOperacion[]
   alRegistrarVenta?: (pedidoId: string, datos: DatosVenta) => string | undefined | Promise<string | undefined>
   alActualizarPedido?: (pedidoId: string, lineas: readonly CantidadLineaPedido[], operationKey: string) => string | undefined | Promise<string | undefined>
   alCancelarPedido?: (pedidoId: string, operationKey: string) => string | undefined | Promise<string | undefined>
@@ -60,6 +100,7 @@ interface PanelOperacionesVentaProps {
 export function PanelOperacionesVenta({
   pedidos,
   ventas,
+  almacenes = [],
   alRegistrarVenta,
   alActualizarPedido,
   alCancelarPedido,
@@ -80,9 +121,65 @@ export function PanelOperacionesVenta({
   const [errorCancelacion, setErrorCancelacion] = useState('')
   const [ventaPorDespachar, setVentaPorDespachar] = useState<Venta | null>(null)
   const [ventaPorCompletarServicios, setVentaPorCompletarServicios] = useState<Venta | null>(null)
+  const [pedidoPorConsultar, setPedidoPorConsultar] = useState<PedidoVenta | null>(null)
+  const [busqueda, setBusqueda] = useState('')
+  const [filtroEstado, setFiltroEstado] = useState<FiltroOperacion>('todos')
+  const [filtroAlmacen, setFiltroAlmacen] = useState('')
+  const [fechaDesde, setFechaDesde] = useState('')
+  const [fechaHasta, setFechaHasta] = useState('')
+  const [pagina, setPagina] = useState(1)
+  const [tamanioPagina, setTamanioPagina] = useState<TamanioPaginaListado>(10)
   const claveCancelacion = useRef<string | null>(null)
-  const ventasPorPedido = new Map(ventas.map((venta) => [venta.pedidoId, venta]))
-  const pedidosOrdenados = pedidos.toSorted((a, b) => b.fechaRegistro.localeCompare(a.fechaRegistro))
+  const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
+  const ventasPorPedido = useMemo(
+    () => new Map(ventas.map((venta) => [venta.pedidoId, venta])),
+    [ventas],
+  )
+  const pedidosOrdenados = useMemo(
+    () => pedidos.toSorted((a, b) => b.fechaRegistro.localeCompare(a.fechaRegistro)),
+    [pedidos],
+  )
+  const busquedaDiferida = useDeferredValue(busqueda)
+  const operacionesFiltradas = useMemo(() => {
+    const termino = normalizar(busquedaDiferida.trim())
+    return pedidosOrdenados.filter((pedido) => {
+      const venta = ventasPorPedido.get(pedido.id)
+      const estado = estadoOperacion(pedido, venta)
+      const texto = normalizar([
+        pedido.numero,
+        pedido.cotizacionNumero,
+        pedido.clienteNombre,
+        pedido.clienteDocumento,
+        pedido.almacenNombre ?? '',
+        ...(pedido.lineas.flatMap((linea) => [linea.productoCodigo, linea.productoDescripcion])),
+        venta?.numeroInterno ?? '',
+        venta ? `${venta.serie}-${venta.numeroDocumento}` : '',
+      ].join(' '))
+      const fecha = pedido.fechaRegistro.slice(0, 10)
+      return (
+        (filtroEstado === 'todos' || estado === filtroEstado)
+        && (!filtroAlmacen || pedido.almacenId === filtroAlmacen)
+        && (!fechaDesde || fecha >= fechaDesde)
+        && (!fechaHasta || fecha <= fechaHasta)
+        && (!termino || texto.includes(termino))
+      )
+    })
+  }, [busquedaDiferida, fechaDesde, fechaHasta, filtroAlmacen, filtroEstado, pedidosOrdenados, ventasPorPedido])
+  const totalPaginas = Math.max(1, Math.ceil(operacionesFiltradas.length / tamanioPagina))
+  const paginaVisible = Math.min(pagina, totalPaginas)
+  const pedidosVisibles = operacionesFiltradas.slice(
+    (paginaVisible - 1) * tamanioPagina,
+    paginaVisible * tamanioPagina,
+  )
+
+  const limpiarFiltros = () => {
+    setBusqueda('')
+    setFiltroEstado('todos')
+    setFiltroAlmacen('')
+    setFechaDesde('')
+    setFechaHasta('')
+    setPagina(1)
+  }
 
   return (
     <section aria-labelledby="operaciones-venta-title" className="ledger-sheet">
@@ -99,6 +196,67 @@ export function PanelOperacionesVenta({
         </div>
       </div>
 
+      <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(18rem,1fr)_14rem_14rem] lg:items-end">
+        <div>
+          <label htmlFor="buscar-operacion-venta" className="field-label">Buscar</label>
+          <div className="relative">
+            <Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              id="buscar-operacion-venta"
+              type="search"
+              value={busqueda}
+              onChange={(evento) => { setBusqueda(evento.target.value); setPagina(1) }}
+              className="field-control ps-9"
+              placeholder="Pedido, cliente, producto o comprobante"
+            />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="estado-operacion-venta" className="field-label">Estado operativo</label>
+          <select
+            id="estado-operacion-venta"
+            value={filtroEstado}
+            onChange={(evento) => { setFiltroEstado(evento.target.value as FiltroOperacion); setPagina(1) }}
+            className="field-control"
+          >
+            {(Object.entries(etiquetasFiltroOperacion) as Array<[FiltroOperacion, string]>).map(([valor, etiqueta]) => (
+              <option key={valor} value={valor}>{etiqueta}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="almacen-operacion-venta" className="field-label">Almacén</label>
+          <select
+            id="almacen-operacion-venta"
+            value={filtroAlmacen}
+            onChange={(evento) => { setFiltroAlmacen(evento.target.value); setPagina(1) }}
+            className="field-control"
+          >
+            <option value="">Todos</option>
+            {almacenes.map((almacen) => <option key={almacen.id} value={almacen.id}>{almacen.nombre}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="grid gap-4 border-b bg-muted/20 px-5 py-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-[14rem_14rem_1fr] lg:items-end">
+        <div>
+          <label htmlFor="fecha-desde-operacion-venta" className="field-label">Fecha desde</label>
+          <input id="fecha-desde-operacion-venta" type="date" value={fechaDesde} onChange={(evento) => { setFechaDesde(evento.target.value); setPagina(1) }} className="field-control" />
+        </div>
+        <div>
+          <label htmlFor="fecha-hasta-operacion-venta" className="field-label">Fecha hasta</label>
+          <input id="fecha-hasta-operacion-venta" type="date" value={fechaHasta} onChange={(evento) => { setFechaHasta(evento.target.value); setPagina(1) }} className="field-control" />
+        </div>
+        <div className="flex items-end justify-end">
+          {(busqueda || filtroEstado !== 'todos' || filtroAlmacen || fechaDesde || fechaHasta) ? (
+            <Button type="button" variant="ghost" onClick={limpiarFiltros}>Limpiar filtros</Button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="border-b px-5 py-4 text-sm text-muted-foreground sm:px-6">
+        {operacionesFiltradas.length} de {pedidos.length} operaciones visibles
+      </div>
+
       {error ? (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 border-s-4 border-destructive bg-destructive/10 px-5 py-5 sm:px-6">
           <p className="text-sm">No se pudieron cargar los pedidos o ventas persistentes.</p>
@@ -112,9 +270,16 @@ export function PanelOperacionesVenta({
           <h3 className="mt-4 font-semibold">Todavía no hay pedidos</h3>
           <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">Emite una cotización y usa “Crear pedido” para iniciar el flujo operativo.</p>
         </div>
+      ) : !pedidosVisibles.length ? (
+        <div className="px-5 py-14 text-center sm:px-6">
+          <ClipboardCheck aria-hidden="true" className="mx-auto size-8 text-primary" />
+          <h3 className="mt-4 font-semibold">No hay operaciones que coincidan</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Prueba con otro término o limpia los filtros activos.</p>
+          <Button type="button" variant="outline" className="mt-5" onClick={limpiarFiltros}>Limpiar filtros</Button>
+        </div>
       ) : (
         <div className="divide-y">
-          {pedidosOrdenados.map((pedido) => {
+          {pedidosVisibles.map((pedido) => {
             const venta = ventasPorPedido.get(pedido.id)
             const fiscalCalculado = pedido.estadoCalculoTributario === 'calculated'
             const bienes = venta?.lineas.filter((linea) => linea.tipoProducto === 'good') ?? []
@@ -147,7 +312,10 @@ export function PanelOperacionesVenta({
                     ) : null}
                   </div>
                 </div>
-                <div className="flex justify-start lg:justify-end">
+                <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
+                  <Button type="button" variant="outline" size="sm" onClick={(evento) => { disparadorDetalle.current = evento.currentTarget; setPedidoPorConsultar(pedido) }}>
+                    <Eye aria-hidden="true" /> Ver detalle
+                  </Button>
                   {!venta && pedido.estado === 'confirmado' && !fiscalCalculado ? (
                     <span className="text-sm font-medium text-muted-foreground">Cálculo tributario {pedido.estadoCalculoTributario === 'pending' ? 'pendiente' : 'no reconstruible'}</span>
                   ) : !venta && pedido.estado === 'confirmado' ? (
@@ -201,6 +369,18 @@ export function PanelOperacionesVenta({
           })}
         </div>
       )}
+      {operacionesFiltradas.length ? (
+        <PaginacionListado
+          etiqueta="operaciones comerciales"
+          pagina={paginaVisible}
+          tamanioPagina={tamanioPagina}
+          total={operacionesFiltradas.length}
+          totalPaginas={totalPaginas}
+          cantidadVisible={pedidosVisibles.length}
+          alCambiarPagina={setPagina}
+          alCambiarTamanio={(siguiente) => { setTamanioPagina(siguiente); setPagina(1) }}
+        />
+      ) : null}
 
       {pedidoSeleccionado && alRegistrarVenta ? (
         <DialogoRegistroVenta
@@ -228,6 +408,16 @@ export function PanelOperacionesVenta({
             }
             return error
           }}
+        />
+      ) : null}
+
+      {pedidoPorConsultar ? (
+        <DialogoDetalleOperacionVenta
+          abierto
+          pedido={pedidoPorConsultar}
+          venta={ventasPorPedido.get(pedidoPorConsultar.id)}
+          alCambiarApertura={(abierto) => { if (!abierto) setPedidoPorConsultar(null) }}
+          alRestaurarFoco={() => disparadorDetalle.current?.focus()}
         />
       ) : null}
 

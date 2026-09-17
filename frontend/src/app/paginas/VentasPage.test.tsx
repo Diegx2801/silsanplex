@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router'
 
 import { PERMISSIONS } from '@/features/auth/permissions'
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
@@ -88,7 +89,11 @@ const almacen = {
 }
 
 function renderPage() {
-  return render(<VentasPage />)
+  return render(
+    <MemoryRouter>
+      <VentasPage />
+    </MemoryRouter>,
+  )
 }
 
 describe('VentasPage', () => {
@@ -217,5 +222,15 @@ describe('VentasPage', () => {
 
     expect(await screen.findByRole('dialog', { name: 'Detalle de COT-000001' })).toBeVisible()
     expect(screen.getByText('Entrega coordinada.')).toBeVisible()
+  })
+
+  it('separa cotizaciones y ejecución comercial sin salir del módulo Ventas', () => {
+    renderPage()
+    fireEvent.click(screen.getByRole('tab', { name: 'Ejecución comercial' }))
+
+    expect(screen.getByRole('heading', { name: 'Pedidos, ventas y despachos' })).toBeVisible()
+    expect(screen.getByLabelText('Buscar')).toHaveAttribute('placeholder', 'Pedido, cliente, producto o comprobante')
+    expect(screen.getByLabelText('Estado operativo')).toBeVisible()
+    expect(screen.getByText('Todavía no hay pedidos')).toBeVisible()
   })
 })

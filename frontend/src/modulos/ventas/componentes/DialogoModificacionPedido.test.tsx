@@ -57,6 +57,7 @@ describe('DialogoModificacionPedido', () => {
     renderDialog(alGuardar)
     fireEvent.change(screen.getByLabelText('Nueva cantidad'), { target: { value: '6' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cantidades' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar modificación' }))
 
     await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(
       [{ orderItemId: 'linea-1', quantity: 6 }],

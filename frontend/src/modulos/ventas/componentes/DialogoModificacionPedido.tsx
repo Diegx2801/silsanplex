@@ -3,6 +3,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { calcularTotalesCotizacion } from '@/modulos/ventas/modelo/cotizacion'
 import type { CantidadLineaPedido } from '@/modulos/ventas/servicios/ventasService'
 import type { PedidoVenta } from '@/modulos/ventas/modelo/operacionVenta'
 
@@ -21,6 +22,8 @@ function nuevaClaveOperacion() {
   return crypto.randomUUID()
 }
 
+const formatoMoneda = new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' })
+
 export function DialogoModificacionPedido({
   abierto,
   pedido,
@@ -34,6 +37,7 @@ export function DialogoModificacionPedido({
   const [errores, setErrores] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [procesando, setProcesando] = useState(false)
+  const [requiereConfirmacion, setRequiereConfirmacion] = useState(false)
   const operationKey = useRef(nuevaClaveOperacion())
 
   useEffect(() => {
@@ -41,6 +45,7 @@ export function DialogoModificacionPedido({
     setErrores({})
     setError('')
     setProcesando(false)
+    setRequiereConfirmacion(false)
     operationKey.current = nuevaClaveOperacion()
   }, [pedido])
 
@@ -56,6 +61,7 @@ export function DialogoModificacionPedido({
       return siguientes
     })
     setError('')
+    setRequiereConfirmacion(false)
   }
 
   const guardar = async (evento: FormEvent<HTMLFormElement>) => {
@@ -77,6 +83,11 @@ export function DialogoModificacionPedido({
       return
     }
     setErrores({})
+    const hayCambios = lineas.some((linea, indice) => linea.quantity !== pedido.lineas[indice]?.cantidad)
+    if (hayCambios && !requiereConfirmacion) {
+      setRequiereConfirmacion(true)
+      return
+    }
     setProcesando(true)
     try {
       const resultado = await alGuardar(lineas, operationKey.current)
@@ -94,6 +105,14 @@ export function DialogoModificacionPedido({
   }
 
   const estaGuardando = guardando || procesando
+  const totalNuevo = calcularTotalesCotizacion(
+    pedido.lineas.map((linea) => ({
+      cantidad: Number(cantidades[linea.id]) || 0,
+      precioUnitario: linea.precioUnitario,
+      afectacionIgv: linea.afectacionIgv ?? undefined,
+    })),
+    pedido.preciosIncluyenIgv,
+  ).total
 
   return (
     <DialogPrimitive.Root
@@ -146,10 +165,18 @@ export function DialogoModificacionPedido({
                 </div>
               ))}
             </div>
+            {requiereConfirmacion ? (
+              <aside role="alert" className="mt-5 border-s-4 border-primary bg-accent/60 px-4 py-4 text-sm leading-6">
+                <p className="font-medium">Confirma el cambio del pedido</p>
+                <p className="mt-1 text-muted-foreground">
+                  El total pasará de <span className="font-mono font-medium text-foreground">{formatoMoneda.format(pedido.total)}</span> a <span className="font-mono font-medium text-foreground">{formatoMoneda.format(totalNuevo)}</span>. Se ajustarán las reservas del almacén; la cotización original no se modifica.
+                </p>
+              </aside>
+            ) : null}
             {error ? <p role="alert" className="mt-5 border-s-4 border-destructive bg-destructive/10 px-4 py-3 text-sm">{error}</p> : null}
             <footer className="mt-6 flex justify-end gap-3 border-t pt-5">
               <DialogPrimitive.Close asChild><Button type="button" variant="outline" disabled={estaGuardando}>Cerrar</Button></DialogPrimitive.Close>
-              <Button type="submit" disabled={estaGuardando}>{estaGuardando ? 'Guardando…' : 'Guardar cantidades'}</Button>
+              <Button type="submit" disabled={estaGuardando}>{estaGuardando ? 'Guardando…' : requiereConfirmacion ? 'Confirmar modificación' : 'Guardar cantidades'}</Button>
             </footer>
           </form>
         </DialogPrimitive.Content>

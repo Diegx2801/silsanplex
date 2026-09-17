@@ -123,7 +123,7 @@ export function DialogoDespachoPersistente({
             <div>
             <DialogPrimitive.Title className="text-xl font-semibold">Despachar venta</DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">
-                {venta.numeroInterno} · Los bienes consumen reservas FEFO y actualizan el inventario.
+                {venta.numeroInterno} · Registra la cantidad de esta entrega; el saldo pendiente queda disponible para despachos posteriores.
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close asChild>
@@ -170,7 +170,7 @@ export function DialogoDespachoPersistente({
                       </p>
                     </div>
                     <div>
-                      <label htmlFor={`cantidad-despacho-${linea.id}`} className="field-label">Cantidad a despachar</label>
+                      <label htmlFor={`cantidad-despacho-${linea.id}`} className="field-label">Cantidad de esta entrega</label>
                       <input
                         id={`cantidad-despacho-${linea.id}`}
                         type="number"
