@@ -1,5 +1,6 @@
 import {
   CalendarClock,
+  Eye,
   FileCheck2,
   FilePenLine,
   Pencil,
@@ -16,19 +17,22 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { PaginacionListado, type TamanioPaginaListado } from '@/components/ui/PaginacionListado'
 import { useAuth } from '@/features/auth/useAuth'
 import { PERMISSIONS } from '@/features/auth/permissions'
+import { fechaActualPeru, formatearFechaCalendarioPeru } from '@/lib/fechas'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
 import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
 import { DialogoConfirmacionEmision } from '@/modulos/ventas/componentes/DialogoConfirmacionEmision'
 import { DialogoCotizacion } from '@/modulos/ventas/componentes/DialogoCotizacion'
+import { DialogoDetalleCotizacion } from '@/modulos/ventas/componentes/DialogoDetalleCotizacion'
 import { DialogoSeleccionAlmacenPedido } from '@/modulos/ventas/componentes/DialogoSeleccionAlmacenPedido'
 import { PanelOperacionesVenta } from '@/modulos/ventas/componentes/PanelOperacionesVenta'
-import { useCotizacionesTemporales } from '@/modulos/ventas/estado/useCotizacionesTemporales'
+import { useCotizacionesPersistentes } from '@/modulos/ventas/estado/useCotizacionesPersistentes'
 import { useOperacionesVenta } from '@/modulos/ventas/estado/useOperacionesVenta'
 import {
   calcularTotalesCotizacion,
@@ -38,18 +42,12 @@ import {
 } from '@/modulos/ventas/modelo/cotizacion'
 
 type FiltroEstado = 'todos' | EstadoCotizacion | 'vencida'
+type VistaVentas = 'cotizaciones' | 'ejecucion'
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', {
   style: 'currency',
   currency: 'PEN',
 })
-const formatoFecha = new Intl.DateTimeFormat('es-PE', {
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-})
-const hoy = new Date().toISOString().slice(0, 10)
-
 function normalizar(valor: string) {
   return valor
     .normalize('NFD')
@@ -58,6 +56,7 @@ function normalizar(valor: string) {
 }
 
 function estadoVisible(cotizacion: Cotizacion): FiltroEstado {
+  const hoy = fechaActualPeru()
   if (
     cotizacion.estado === 'emitida' &&
     cotizacion.fechaValidez < hoy
@@ -90,6 +89,8 @@ function EstadoCotizacionEtiqueta({ cotizacion }: { cotizacion: Cotizacion }) {
 }
 
 export function VentasPage() {
+  const [parametros, setParametros] = useSearchParams()
+  const vista: VistaVentas = parametros.get('vista') === 'ejecucion' ? 'ejecucion' : 'cotizaciones'
   const { hasPermission } = useAuth()
   const puedeGestionarVentas = hasPermission(PERMISSIONS.SALES_MANAGE)
   const puedeDespachar =
@@ -114,8 +115,11 @@ export function VentasPage() {
     cotizaciones,
     guardarCotizacion,
     emitirCotizacion,
-    aceptarCotizacion,
-  } = useCotizacionesTemporales(clientes, productos)
+    cargando: cargandoCotizaciones,
+    emitiendo: emitiendoCotizacion,
+    error: errorCotizaciones,
+    reintentar: reintentarCotizaciones,
+  } = useCotizacionesPersistentes(clientes, productos)
   const {
     pedidos,
     ventas,
@@ -135,22 +139,37 @@ export function VentasPage() {
     reintentar: reintentarOperaciones,
   } = useOperacionesVenta({
     cotizaciones,
-    aceptarCotizacion,
   })
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
+  const [paginaCotizaciones, setPaginaCotizaciones] = useState(1)
+  const [tamanioPaginaCotizaciones, setTamanioPaginaCotizaciones] = useState<TamanioPaginaListado>(10)
   const [cotizacionSeleccionada, setCotizacionSeleccionada] =
     useState<Cotizacion | null>(null)
   const [cotizacionPorEmitir, setCotizacionPorEmitir] =
     useState<Cotizacion | null>(null)
   const [cotizacionPorCrearPedido, setCotizacionPorCrearPedido] =
     useState<Cotizacion | null>(null)
+  const [cotizacionPorConsultar, setCotizacionPorConsultar] =
+    useState<Cotizacion | null>(null)
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
   const [mensaje, setMensaje] = useState('')
+  const [mensajeEsError, setMensajeEsError] = useState(false)
+  const [errorEmision, setErrorEmision] = useState('')
   const disparadorFormulario = useRef<HTMLButtonElement | null>(null)
   const disparadorEmision = useRef<HTMLButtonElement | null>(null)
   const disparadorPedido = useRef<HTMLButtonElement | null>(null)
+  const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
+
+  const cambiarVista = (siguiente: VistaVentas) => {
+    setParametros(siguiente === 'cotizaciones' ? {} : { vista: siguiente })
+  }
+
+  const notificar = (texto: string, esError = false) => {
+    setMensaje(texto)
+    setMensajeEsError(esError)
+  }
 
   const cotizacionesFiltradas = useMemo(() => {
     const termino = normalizar(busquedaDiferida.trim())
@@ -165,6 +184,12 @@ export function VentasPage() {
       })
       .toSorted((a, b) => b.fechaRegistro.localeCompare(a.fechaRegistro))
   }, [busquedaDiferida, cotizaciones, filtroEstado])
+  const totalPaginasCotizaciones = Math.max(1, Math.ceil(cotizacionesFiltradas.length / tamanioPaginaCotizaciones))
+  const paginaCotizacionesVisible = Math.min(paginaCotizaciones, totalPaginasCotizaciones)
+  const cotizacionesVisibles = cotizacionesFiltradas.slice(
+    (paginaCotizacionesVisible - 1) * tamanioPaginaCotizaciones,
+    paginaCotizacionesVisible * tamanioPaginaCotizaciones,
+  )
 
   let borradores = 0
   let emitidas = 0
@@ -185,15 +210,17 @@ export function VentasPage() {
     cotizacion: Cotizacion | null = null,
   ) => {
     disparadorFormulario.current = evento.currentTarget
+    setMensaje('')
+    setMensajeEsError(false)
     setCotizacionSeleccionada(cotizacion)
     setDialogoAbierto(true)
   }
 
-  const guardar = (datos: DatosCotizacion, cotizacionId?: string) => {
+  const guardar = async (datos: DatosCotizacion, cotizacionId?: string) => {
     if (!puedeGestionarVentas) return 'No tienes permiso para administrar ventas'
-    const error = guardarCotizacion(datos, cotizacionId)
+    const error = await guardarCotizacion(datos, cotizacionId)
     if (!error) {
-      setMensaje(
+      notificar(
         cotizacionId
           ? 'Cotización actualizada.'
           : 'Cotización guardada como borrador.',
@@ -207,17 +234,21 @@ export function VentasPage() {
     cotizacion: Cotizacion,
   ) => {
     disparadorEmision.current = evento.currentTarget
+    setMensaje('')
+    setMensajeEsError(false)
+    setErrorEmision('')
     setCotizacionPorEmitir(cotizacion)
   }
 
-  const confirmarEmision = () => {
+  const confirmarEmision = async () => {
     if (!puedeGestionarVentas) {
-      setMensaje('No tienes permiso para administrar ventas')
+      notificar('No tienes permiso para administrar ventas', true)
       return
     }
     if (!cotizacionPorEmitir) return
-    const error = emitirCotizacion(cotizacionPorEmitir.id)
-    setMensaje(error ?? `${cotizacionPorEmitir.numero} emitida correctamente.`)
+    const error = await emitirCotizacion(cotizacionPorEmitir.id)
+    setErrorEmision(error ?? '')
+    notificar(error ?? `${cotizacionPorEmitir.numero} emitida correctamente.`, Boolean(error))
     if (!error) setCotizacionPorEmitir(null)
   }
 
@@ -229,16 +260,24 @@ export function VentasPage() {
     setCotizacionPorCrearPedido(cotizacion)
   }
 
+  const abrirDetalle = (
+    evento: ReactMouseEvent<HTMLButtonElement>,
+    cotizacion: Cotizacion,
+  ) => {
+    disparadorDetalle.current = evento.currentTarget
+    setCotizacionPorConsultar(cotizacion)
+  }
+
   const confirmarPedido = async (almacenId: string) => {
     if (!puedeGestionarVentas) return 'No tienes permiso para administrar ventas'
     if (!cotizacionPorCrearPedido) return 'Selecciona una cotización válida'
     const cotizacion = cotizacionPorCrearPedido
     const error = await crearPedido(cotizacion.id, almacenId)
     if (error) {
-      setMensaje(error)
+      notificar(error, true)
       return error
     }
-    setMensaje(`${cotizacion.numero} convertida en pedido correctamente.`)
+    notificar(`${cotizacion.numero} convertida en pedido correctamente.`)
     setCotizacionPorCrearPedido(null)
     return undefined
   }
@@ -278,6 +317,27 @@ export function VentasPage() {
         ) : null}
       </header>
 
+      <nav aria-label="Secciones de ventas" role="tablist" className="flex flex-wrap gap-2 border-b pb-2">
+        <Link
+          to="/ventas"
+          role="tab"
+          aria-selected={vista === 'cotizaciones'}
+          className={vista === 'cotizaciones' ? 'border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary' : 'px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground'}
+          onClick={(evento) => { evento.preventDefault(); cambiarVista('cotizaciones') }}
+        >
+          Cotizaciones
+        </Link>
+        <Link
+          to="/ventas?vista=ejecucion"
+          role="tab"
+          aria-selected={vista === 'ejecucion'}
+          className={vista === 'ejecucion' ? 'border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary' : 'px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground'}
+          onClick={(evento) => { evento.preventDefault(); cambiarVista('ejecucion') }}
+        >
+          Ejecución comercial
+        </Link>
+      </nav>
+
       <section aria-label="Resumen comercial" className="ledger-sheet">
         <div className="grid sm:grid-cols-2 xl:grid-cols-4">
           {metricas.map((metrica) => {
@@ -302,7 +362,17 @@ export function VentasPage() {
         </div>
       </section>
 
-      <p role="status" aria-live="polite" className="sr-only">{mensaje}</p>
+      {mensaje && !cotizacionPorEmitir ? (
+        <p
+          role={mensajeEsError ? 'alert' : 'status'}
+          aria-live="polite"
+          className={mensajeEsError
+            ? 'border-s-4 border-destructive bg-destructive/10 px-5 py-4 text-sm leading-6 text-destructive'
+            : 'border-s-4 border-primary bg-accent/60 px-5 py-4 text-sm leading-6'}
+        >
+          {mensaje}
+        </p>
+      ) : null}
 
       {puedeGestionarVentas && (!clientesActivos.length || !productosActivos.length) ? (
         <aside className="border-s-4 border-primary bg-accent/60 px-5 py-4 text-sm leading-6">
@@ -341,7 +411,21 @@ export function VentasPage() {
         </aside>
       ) : null}
 
-      <section aria-labelledby="cotizaciones-title" className="ledger-sheet">
+      {errorCotizaciones ? (
+        <aside role="alert" className="flex flex-col gap-3 border-s-4 border-destructive bg-destructive/10 px-5 py-4 text-sm leading-6 sm:flex-row sm:items-center sm:justify-between">
+          <span>No se pudieron cargar las cotizaciones persistentes.</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => void reintentarCotizaciones()}>
+            Reintentar
+          </Button>
+        </aside>
+      ) : cargandoCotizaciones ? (
+        <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+          Cargando cotizaciones…
+        </p>
+      ) : null}
+
+      {vista === 'cotizaciones' ? (
+        <section aria-labelledby="cotizaciones-title" className="ledger-sheet">
         <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(14rem,1fr)_17rem_12rem] lg:items-end">
           <div>
             <h2 id="cotizaciones-title" className="text-lg font-semibold">
@@ -359,7 +443,7 @@ export function VentasPage() {
                 id="buscar-cotizacion"
                 type="search"
                 value={busqueda}
-                onChange={(evento) => setBusqueda(evento.target.value)}
+                onChange={(evento) => { setBusqueda(evento.target.value); setPaginaCotizaciones(1) }}
                 className="field-control ps-9"
                 placeholder="Número, cliente o documento"
               />
@@ -370,7 +454,7 @@ export function VentasPage() {
             <select
               id="estado-cotizacion"
               value={filtroEstado}
-              onChange={(evento) => setFiltroEstado(evento.target.value as FiltroEstado)}
+              onChange={(evento) => { setFiltroEstado(evento.target.value as FiltroEstado); setPaginaCotizaciones(1) }}
               className="field-control"
             >
               <option value="todos">Todos</option>
@@ -398,7 +482,7 @@ export function VentasPage() {
         ) : (
           <>
             <div className="divide-y md:hidden">
-              {cotizacionesFiltradas.map((cotizacion) => {
+              {cotizacionesVisibles.map((cotizacion) => {
                 const total = calcularTotalesCotizacion(
                   cotizacion.lineas,
                   cotizacion.preciosIncluyenIgv,
@@ -415,7 +499,7 @@ export function VentasPage() {
                     <dl className="mt-4 grid grid-cols-3 gap-3 border-t pt-4 text-sm">
                       <div>
                         <dt className="text-xs text-muted-foreground">Válida hasta</dt>
-                        <dd className="mt-1">{formatoFecha.format(new Date(`${cotizacion.fechaValidez}T12:00:00`))}</dd>
+                        <dd className="mt-1">{formatearFechaCalendarioPeru(cotizacion.fechaValidez)}</dd>
                       </div>
                       <div>
                         <dt className="text-xs text-muted-foreground">Productos</dt>
@@ -426,22 +510,25 @@ export function VentasPage() {
                         <dd className="mt-1 font-mono font-semibold">{formatoMoneda.format(total)}</dd>
                       </div>
                     </dl>
-                    {puedeGestionarVentas && cotizacion.estado === 'borrador' ? (
-                      <div className="mt-4 flex gap-2">
-                        <Button type="button" variant="outline" onClick={(evento) => abrirFormulario(evento, cotizacion)}>
-                          <Pencil aria-hidden="true" /> Editar
-                        </Button>
-                        <Button type="button" onClick={(evento) => solicitarEmision(evento, cotizacion)}>
-                          <Send aria-hidden="true" /> Emitir
-                        </Button>
-                      </div>
-                    ) : puedeGestionarVentas && estadoVisible(cotizacion) === 'emitida' ? (
-                      <Button type="button" className="mt-4" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
-                        <ShoppingCart aria-hidden="true" /> {creandoPedido ? 'Creando pedido…' : 'Crear pedido'}
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button type="button" variant="outline" onClick={(evento) => abrirDetalle(evento, cotizacion)}>
+                        <Eye aria-hidden="true" /> Ver detalle
                       </Button>
-                    ) : puedeGestionarVentas ? null : (
-                      <p className="mt-4 text-sm text-muted-foreground">Solo consulta</p>
-                    )}
+                      {puedeGestionarVentas && cotizacion.estado === 'borrador' ? (
+                        <>
+                          <Button type="button" variant="outline" onClick={(evento) => abrirFormulario(evento, cotizacion)}>
+                            <Pencil aria-hidden="true" /> Editar
+                          </Button>
+                          <Button type="button" onClick={(evento) => solicitarEmision(evento, cotizacion)}>
+                            <Send aria-hidden="true" /> Emitir
+                          </Button>
+                        </>
+                      ) : puedeGestionarVentas && estadoVisible(cotizacion) === 'emitida' ? (
+                        <Button type="button" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
+                          <ShoppingCart aria-hidden="true" /> {creandoPedido ? 'Creando pedido…' : 'Crear pedido'}
+                        </Button>
+                      ) : null}
+                    </div>
                   </article>
                 )
               })}
@@ -460,7 +547,7 @@ export function VentasPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {cotizacionesFiltradas.map((cotizacion) => {
+                  {cotizacionesVisibles.map((cotizacion) => {
                     const total = calcularTotalesCotizacion(
                       cotizacion.lineas,
                       cotizacion.preciosIncluyenIgv,
@@ -473,35 +560,32 @@ export function VentasPage() {
                           <p className="mt-1 text-xs text-muted-foreground">{cotizacion.clienteDocumento}</p>
                         </td>
                         <td className="px-4 py-4 text-muted-foreground">
-                          <p>{formatoFecha.format(new Date(`${cotizacion.fechaEmision}T12:00:00`))}</p>
-                          <p className="mt-1 text-xs">hasta {formatoFecha.format(new Date(`${cotizacion.fechaValidez}T12:00:00`))}</p>
+                          <p>{formatearFechaCalendarioPeru(cotizacion.fechaEmision)}</p>
+                          <p className="mt-1 text-xs">hasta {formatearFechaCalendarioPeru(cotizacion.fechaValidez)}</p>
                         </td>
                         <td className="px-4 py-4 text-end font-mono">{cotizacion.lineas.length}</td>
                         <td className="px-4 py-4 text-end font-mono font-semibold">{formatoMoneda.format(total)}</td>
                         <td className="px-4 py-4"><EstadoCotizacionEtiqueta cotizacion={cotizacion} /></td>
                         <td className="px-6 py-4">
-                          {puedeGestionarVentas && cotizacion.estado === 'borrador' ? (
-                            <div className="flex justify-end gap-1">
-                              <Button type="button" variant="ghost" size="icon" title="Editar cotización" aria-label={`Editar ${cotizacion.numero}`} onClick={(evento) => abrirFormulario(evento, cotizacion)}>
-                                <Pencil aria-hidden="true" />
-                              </Button>
-                              <Button type="button" variant="ghost" size="icon" title="Emitir cotización" aria-label={`Emitir ${cotizacion.numero}`} onClick={(evento) => solicitarEmision(evento, cotizacion)}>
-                                <Send aria-hidden="true" />
-                              </Button>
-                            </div>
-                          ) : puedeGestionarVentas && estadoVisible(cotizacion) === 'emitida' ? (
-                            <div className="flex justify-end">
+                          <div className="flex justify-end gap-1">
+                            <Button type="button" variant="ghost" size="icon" title="Ver detalle de cotización" aria-label={`Ver detalle de ${cotizacion.numero}`} onClick={(evento) => abrirDetalle(evento, cotizacion)}>
+                              <Eye aria-hidden="true" />
+                            </Button>
+                            {puedeGestionarVentas && cotizacion.estado === 'borrador' ? (
+                              <>
+                                <Button type="button" variant="ghost" size="icon" title="Editar cotización" aria-label={`Editar ${cotizacion.numero}`} onClick={(evento) => abrirFormulario(evento, cotizacion)}>
+                                  <Pencil aria-hidden="true" />
+                                </Button>
+                                <Button type="button" variant="ghost" size="icon" title="Emitir cotización" aria-label={`Emitir ${cotizacion.numero}`} onClick={(evento) => solicitarEmision(evento, cotizacion)}>
+                                  <Send aria-hidden="true" />
+                                </Button>
+                              </>
+                            ) : puedeGestionarVentas && estadoVisible(cotizacion) === 'emitida' ? (
                               <Button type="button" variant="outline" size="sm" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
                                 <ShoppingCart aria-hidden="true" /> {creandoPedido ? 'Creando pedido…' : 'Crear pedido'}
                               </Button>
-                            </div>
-                          ) : puedeGestionarVentas ? (
-                            <span className="block text-end text-xs text-muted-foreground">
-                              {cotizacion.estado === 'aceptada' ? 'Pedido creado' : 'Sin acciones'}
-                            </span>
-                          ) : (
-                            <span className="block text-end text-xs text-muted-foreground">Solo consulta</span>
-                          )}
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     )
@@ -511,33 +595,49 @@ export function VentasPage() {
             </div>
           </>
         )}
-      </section>
+        {cotizacionesFiltradas.length ? (
+          <PaginacionListado
+            etiqueta="cotizaciones"
+            pagina={paginaCotizacionesVisible}
+            tamanioPagina={tamanioPaginaCotizaciones}
+            total={cotizacionesFiltradas.length}
+            totalPaginas={totalPaginasCotizaciones}
+            cantidadVisible={cotizacionesVisibles.length}
+            alCambiarPagina={setPaginaCotizaciones}
+            alCambiarTamanio={(siguiente) => { setTamanioPaginaCotizaciones(siguiente); setPaginaCotizaciones(1) }}
+          />
+        ) : null}
+        </section>
+      ) : null}
 
-      <PanelOperacionesVenta
-        pedidos={pedidos}
-        ventas={ventas}
-        alRegistrarVenta={puedeGestionarVentas ? registrarVenta : undefined}
-        alActualizarPedido={puedeGestionarVentas ? actualizarPedido : undefined}
-        alCancelarPedido={puedeGestionarVentas ? cancelarPedido : undefined}
-        alDespacharVenta={puedeDespachar ? despacharVenta : undefined}
-        alCompletarServicios={puedeGestionarVentas ? completarServicios : undefined}
-        alNotificar={setMensaje}
-        cargando={cargandoOperaciones}
-        error={errorOperaciones}
-        alReintentar={reintentarOperaciones}
-        actualizandoPedido={actualizandoPedido}
-        cancelandoPedido={cancelandoPedido}
-        despachandoVenta={despachandoVenta}
-        completandoServicios={completandoServicios}
-      />
+      {vista === 'ejecucion' ? (
+        <PanelOperacionesVenta
+          pedidos={pedidos}
+          ventas={ventas}
+          almacenes={almacenesActivos}
+          alRegistrarVenta={puedeGestionarVentas ? registrarVenta : undefined}
+          alActualizarPedido={puedeGestionarVentas ? actualizarPedido : undefined}
+          alCancelarPedido={puedeGestionarVentas ? cancelarPedido : undefined}
+          alDespacharVenta={puedeDespachar ? despacharVenta : undefined}
+          alCompletarServicios={puedeGestionarVentas ? completarServicios : undefined}
+          alNotificar={notificar}
+          cargando={cargandoOperaciones}
+          error={errorOperaciones}
+          alReintentar={reintentarOperaciones}
+          actualizandoPedido={actualizandoPedido}
+          cancelandoPedido={cancelandoPedido}
+          despachandoVenta={despachandoVenta}
+          completandoServicios={completandoServicios}
+        />
+      ) : null}
 
       {puedeGestionarVentas && dialogoAbierto ? (
         <DialogoCotizacion
           key={cotizacionSeleccionada?.id ?? 'nueva'}
           abierto={dialogoAbierto}
           cotizacion={cotizacionSeleccionada}
-          clientes={clientesActivos}
-          productos={productosActivos}
+          clientes={clientes}
+          productos={productos}
           alCambiarApertura={setDialogoAbierto}
           alGuardar={guardar}
           alRestaurarFoco={() => disparadorFormulario.current?.focus()}
@@ -549,9 +649,14 @@ export function VentasPage() {
           abierto={Boolean(cotizacionPorEmitir)}
           cotizacion={cotizacionPorEmitir}
           alCambiarApertura={(abierto) => {
-            if (!abierto) setCotizacionPorEmitir(null)
+            if (!abierto) {
+              setCotizacionPorEmitir(null)
+              setErrorEmision('')
+            }
           }}
           alConfirmar={confirmarEmision}
+          procesando={emitiendoCotizacion}
+          error={errorEmision}
           alRestaurarFoco={() => disparadorEmision.current?.focus()}
         />
       ) : null}
@@ -567,6 +672,17 @@ export function VentasPage() {
           }}
           alConfirmar={confirmarPedido}
           alRestaurarFoco={() => disparadorPedido.current?.focus()}
+        />
+      ) : null}
+
+      {cotizacionPorConsultar ? (
+        <DialogoDetalleCotizacion
+          abierto
+          cotizacion={cotizacionPorConsultar}
+          alCambiarApertura={(abierto) => {
+            if (!abierto) setCotizacionPorConsultar(null)
+          }}
+          alRestaurarFoco={() => disparadorDetalle.current?.focus()}
         />
       ) : null}
     </div>

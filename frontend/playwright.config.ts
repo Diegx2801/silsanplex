@@ -42,11 +42,10 @@ if (missingE2eVariables.length > 0) {
 
 export default defineConfig({
   testDir: './tests/e2e',
-  // Los escenarios comparten una organización local y modifican autenticación e
-  // inventario. En CI se serializan para evitar interferencia entre archivos sobre
-  // un único Supabase; el desarrollo local conserva la ejecución paralela rápida.
-  fullyParallel: !isCI,
-  workers: isCI ? 1 : undefined,
+  // Los escenarios comparten una organización local, usuarios E2E e inventario.
+  // Serializar evita que una prueba altere el estado que otra está verificando.
+  fullyParallel: false,
+  workers: 1,
   retries: isCI ? 2 : 0,
   reporter: 'list',
   use: {

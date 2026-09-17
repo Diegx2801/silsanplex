@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
 import type { CantidadDespacho } from '@/modulos/ventas/servicios/ventasService'
-import type { Venta } from '@/modulos/ventas/modelo/operacionVenta'
+import { esFechaCalendarioValida, fechaLocalActual, type Venta } from '@/modulos/ventas/modelo/operacionVenta'
 
 interface DialogoDespachoPersistenteProps {
   abierto: boolean
@@ -22,10 +22,6 @@ function nuevaClaveOperacion() {
   return crypto.randomUUID()
 }
 
-function fechaActual() {
-  return new Date().toISOString().slice(0, 10)
-}
-
 export function DialogoDespachoPersistente({
   abierto,
   venta,
@@ -37,14 +33,16 @@ export function DialogoDespachoPersistente({
   const [cantidades, setCantidades] = useState<Record<string, string>>(() =>
     Object.fromEntries(bienes.map((linea) => [linea.id, String(linea.cantidadPendiente ?? linea.cantidad)])),
   )
-  const [fechaDespacho, setFechaDespacho] = useState(fechaActual)
+  const [fechaDespacho, setFechaDespacho] = useState(fechaLocalActual)
+  const [errores, setErrores] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [procesando, setProcesando] = useState(false)
   const operationKey = useRef(nuevaClaveOperacion())
 
   useEffect(() => {
     setCantidades(Object.fromEntries(venta.lineas.filter((linea) => linea.tipoProducto === 'good').map((linea) => [linea.id, String(linea.cantidadPendiente ?? linea.cantidad)])))
-    setFechaDespacho(fechaActual())
+    setFechaDespacho(fechaLocalActual())
+    setErrores({})
     setError('')
     setProcesando(false)
     operationKey.current = nuevaClaveOperacion()
@@ -53,42 +51,71 @@ export function DialogoDespachoPersistente({
   const cambiarCantidad = (lineaId: string, valor: string) => {
     setCantidades((actuales) => ({ ...actuales, [lineaId]: valor }))
     operationKey.current = nuevaClaveOperacion()
+    setErrores((actuales) => {
+      if (!actuales[lineaId]) return actuales
+      const siguientes = { ...actuales }
+      delete siguientes[lineaId]
+      return siguientes
+    })
     setError('')
   }
 
   const guardar = async (evento: FormEvent<HTMLFormElement>) => {
     evento.preventDefault()
     if (guardando || procesando) return
+    if (!esFechaCalendarioValida(fechaDespacho)) {
+      setErrores({ fecha: 'Ingresa una fecha de despacho válida' })
+      setError('')
+      return
+    }
     const lineas: CantidadDespacho[] = []
+    const erroresCampos: Record<string, string> = {}
     for (const linea of bienes) {
       const pendiente = linea.cantidadPendiente ?? linea.cantidad
       if (pendiente <= 0) continue
       const cantidad = Number(cantidades[linea.id])
       if (!Number.isFinite(cantidad) || cantidad < 0 || cantidad > pendiente) {
-        setError(`Ingresa una cantidad entre 0 y ${pendiente} para ${linea.productoDescripcion}`)
-        return
+        erroresCampos[linea.id] = `Ingresa una cantidad entre 0 y ${pendiente} para ${linea.productoDescripcion}`
+        continue
       }
       if (cantidad === 0) continue
       lineas.push({ orderItemId: linea.pedidoLineaId ?? linea.id, quantity: cantidad })
     }
+    if (Object.keys(erroresCampos).length) {
+      setErrores(erroresCampos)
+      setError('')
+      return
+    }
+    setErrores({})
     if (!lineas.length) {
       setError('Selecciona al menos una línea para despachar')
       return
     }
     setProcesando(true)
-    const resultado = await alGuardar(lineas, operationKey.current, fechaDespacho)
-    setProcesando(false)
-    if (resultado) {
-      setError(resultado)
-      return
+    try {
+      const resultado = await alGuardar(lineas, operationKey.current, fechaDespacho)
+      if (resultado) {
+        setError(resultado)
+        setProcesando(false)
+        return
+      }
+      setProcesando(false)
+      alCambiarApertura(false)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'No se pudo despachar la venta')
+      setProcesando(false)
     }
-    alCambiarApertura(false)
   }
 
   const estaGuardando = guardando || procesando
 
   return (
-    <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
+    <DialogPrimitive.Root
+      open={abierto}
+      onOpenChange={(siguiente) => {
+        if (!estaGuardando) alCambiarApertura(siguiente)
+      }}
+    >
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25" />
         <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 border bg-background shadow-xl outline-none">
@@ -96,7 +123,7 @@ export function DialogoDespachoPersistente({
             <div>
             <DialogPrimitive.Title className="text-xl font-semibold">Despachar venta</DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">
-                {venta.numeroInterno} · Los bienes consumen reservas FEFO y actualizan el inventario.
+                {venta.numeroInterno} · Registra la cantidad de esta entrega; el saldo pendiente queda disponible para despachos posteriores.
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close asChild>
@@ -116,10 +143,19 @@ export function DialogoDespachoPersistente({
                 onChange={(evento) => {
                   setFechaDespacho(evento.target.value)
                   operationKey.current = nuevaClaveOperacion()
+                  setErrores((actuales) => {
+                    if (!actuales.fecha) return actuales
+                    const siguientes = { ...actuales }
+                    delete siguientes.fecha
+                    return siguientes
+                  })
                   setError('')
                 }}
                 disabled={estaGuardando}
+                aria-invalid={Boolean(errores.fecha)}
+                aria-describedby={errores.fecha ? 'error-fecha-despacho-persistente' : undefined}
               />
+              {errores.fecha ? <p id="error-fecha-despacho-persistente" className="field-error">{errores.fecha}</p> : null}
             </div>
             <div className="mt-5 space-y-4">
               {bienes.map((linea) => {
@@ -134,7 +170,7 @@ export function DialogoDespachoPersistente({
                       </p>
                     </div>
                     <div>
-                      <label htmlFor={`cantidad-despacho-${linea.id}`} className="field-label">Cantidad a despachar</label>
+                      <label htmlFor={`cantidad-despacho-${linea.id}`} className="field-label">Cantidad de esta entrega</label>
                       <input
                         id={`cantidad-despacho-${linea.id}`}
                         type="number"
@@ -143,10 +179,13 @@ export function DialogoDespachoPersistente({
                         step="0.001"
                         inputMode="decimal"
                         className="field-control"
+                        aria-invalid={Boolean(errores[linea.id])}
+                        aria-describedby={errores[linea.id] ? `error-cantidad-despacho-${linea.id}` : undefined}
                         value={cantidades[linea.id] ?? ''}
                         onChange={(evento) => cambiarCantidad(linea.id, evento.target.value)}
                         disabled={estaGuardando || pendiente <= 0}
                       />
+                      {errores[linea.id] ? <p id={`error-cantidad-despacho-${linea.id}`} className="field-error">{errores[linea.id]}</p> : null}
                     </div>
                   </div>
                 )

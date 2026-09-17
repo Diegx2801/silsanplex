@@ -3,6 +3,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { calcularTotalesCotizacion } from '@/modulos/ventas/modelo/cotizacion'
 import type { CantidadLineaPedido } from '@/modulos/ventas/servicios/ventasService'
 import type { PedidoVenta } from '@/modulos/ventas/modelo/operacionVenta'
 
@@ -21,6 +22,8 @@ function nuevaClaveOperacion() {
   return crypto.randomUUID()
 }
 
+const formatoMoneda = new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' })
+
 export function DialogoModificacionPedido({
   abierto,
   pedido,
@@ -31,14 +34,18 @@ export function DialogoModificacionPedido({
   const [cantidades, setCantidades] = useState<Record<string, string>>(() =>
     Object.fromEntries(pedido.lineas.map((linea) => [linea.id, String(linea.cantidad)])),
   )
+  const [errores, setErrores] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [procesando, setProcesando] = useState(false)
+  const [requiereConfirmacion, setRequiereConfirmacion] = useState(false)
   const operationKey = useRef(nuevaClaveOperacion())
 
   useEffect(() => {
     setCantidades(Object.fromEntries(pedido.lineas.map((linea) => [linea.id, String(linea.cantidad)])))
+    setErrores({})
     setError('')
     setProcesando(false)
+    setRequiereConfirmacion(false)
     operationKey.current = nuevaClaveOperacion()
   }, [pedido])
 
@@ -47,35 +54,73 @@ export function DialogoModificacionPedido({
     // Una edición distinta es una nueva operación; un retry sin editar
     // conserva la misma clave y permanece idempotente en PostgreSQL.
     operationKey.current = nuevaClaveOperacion()
+    setErrores((actuales) => {
+      if (!actuales[lineaId]) return actuales
+      const siguientes = { ...actuales }
+      delete siguientes[lineaId]
+      return siguientes
+    })
     setError('')
+    setRequiereConfirmacion(false)
   }
 
   const guardar = async (evento: FormEvent<HTMLFormElement>) => {
     evento.preventDefault()
     if (guardando || procesando) return
     const lineas: CantidadLineaPedido[] = []
+    const erroresCampos: Record<string, string> = {}
     for (const linea of pedido.lineas) {
       const cantidad = Number(cantidades[linea.id])
       if (!Number.isFinite(cantidad) || cantidad <= 0) {
-        setError(`Ingresa una cantidad válida para ${linea.productoDescripcion}`)
-        return
+        erroresCampos[linea.id] = `Ingresa una cantidad mayor a 0 para ${linea.productoDescripcion}`
+        continue
       }
       lineas.push({ orderItemId: linea.id, quantity: cantidad })
     }
-    setProcesando(true)
-    const resultado = await alGuardar(lineas, operationKey.current)
-    setProcesando(false)
-    if (resultado) {
-      setError(resultado)
+    if (Object.keys(erroresCampos).length) {
+      setErrores(erroresCampos)
+      setError('')
       return
     }
-    alCambiarApertura(false)
+    setErrores({})
+    const hayCambios = lineas.some((linea, indice) => linea.quantity !== pedido.lineas[indice]?.cantidad)
+    if (hayCambios && !requiereConfirmacion) {
+      setRequiereConfirmacion(true)
+      return
+    }
+    setProcesando(true)
+    try {
+      const resultado = await alGuardar(lineas, operationKey.current)
+      if (resultado) {
+        setError(resultado)
+        setProcesando(false)
+        return
+      }
+      setProcesando(false)
+      alCambiarApertura(false)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'No se pudo modificar el pedido')
+      setProcesando(false)
+    }
   }
 
   const estaGuardando = guardando || procesando
+  const totalNuevo = calcularTotalesCotizacion(
+    pedido.lineas.map((linea) => ({
+      cantidad: Number(cantidades[linea.id]) || 0,
+      precioUnitario: linea.precioUnitario,
+      afectacionIgv: linea.afectacionIgv ?? undefined,
+    })),
+    pedido.preciosIncluyenIgv,
+  ).total
 
   return (
-    <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
+    <DialogPrimitive.Root
+      open={abierto}
+      onOpenChange={(siguiente) => {
+        if (!estaGuardando) alCambiarApertura(siguiente)
+      }}
+    >
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25" />
         <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 border bg-background shadow-xl outline-none">
@@ -109,18 +154,29 @@ export function DialogoModificacionPedido({
                       step="0.001"
                       inputMode="decimal"
                       className="field-control"
+                      aria-invalid={Boolean(errores[linea.id])}
+                      aria-describedby={errores[linea.id] ? `error-cantidad-pedido-${linea.id}` : undefined}
                       value={cantidades[linea.id] ?? ''}
                       onChange={(evento) => cambiarCantidad(linea.id, evento.target.value)}
                       disabled={estaGuardando}
                     />
+                    {errores[linea.id] ? <p id={`error-cantidad-pedido-${linea.id}`} className="field-error">{errores[linea.id]}</p> : null}
                   </div>
                 </div>
               ))}
             </div>
+            {requiereConfirmacion ? (
+              <aside role="alert" className="mt-5 border-s-4 border-primary bg-accent/60 px-4 py-4 text-sm leading-6">
+                <p className="font-medium">Confirma el cambio del pedido</p>
+                <p className="mt-1 text-muted-foreground">
+                  El total pasará de <span className="font-mono font-medium text-foreground">{formatoMoneda.format(pedido.total)}</span> a <span className="font-mono font-medium text-foreground">{formatoMoneda.format(totalNuevo)}</span>. Se ajustarán las reservas del almacén; la cotización original no se modifica.
+                </p>
+              </aside>
+            ) : null}
             {error ? <p role="alert" className="mt-5 border-s-4 border-destructive bg-destructive/10 px-4 py-3 text-sm">{error}</p> : null}
             <footer className="mt-6 flex justify-end gap-3 border-t pt-5">
               <DialogPrimitive.Close asChild><Button type="button" variant="outline" disabled={estaGuardando}>Cerrar</Button></DialogPrimitive.Close>
-              <Button type="submit" disabled={estaGuardando}>{estaGuardando ? 'Guardando…' : 'Guardar cantidades'}</Button>
+              <Button type="submit" disabled={estaGuardando}>{estaGuardando ? 'Guardando…' : requiereConfirmacion ? 'Confirmar modificación' : 'Guardar cantidades'}</Button>
             </footer>
           </form>
         </DialogPrimitive.Content>

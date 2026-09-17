@@ -38,6 +38,17 @@ function renderDialog(alGuardar: React.ComponentProps<typeof DialogoRegistroVent
 }
 
 describe('DialogoRegistroVenta', () => {
+  it('marca la fecha cuando se intenta registrar sin una fecha válida', async () => {
+    const alGuardar = vi.fn()
+    renderDialog(alGuardar)
+    fireEvent.change(screen.getByLabelText('Fecha *'), { target: { value: '' } })
+    completarFormulario()
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar venta' }))
+
+    expect(await screen.findByText('Selecciona la fecha de venta')).toBeVisible()
+    expect(alGuardar).not.toHaveBeenCalled()
+  })
+
   it('muestra el error de la RPC y conserva abierto el formulario', async () => {
     const alCambiarApertura = renderDialog(vi.fn().mockResolvedValue('No hay disponibilidad'))
     completarFormulario()

@@ -6,11 +6,10 @@ import { useForm } from 'react-hook-form'
 import { Button } from '@/components/ui/button'
 import {
   esquemaDatosVenta,
+  fechaLocalActual,
   type DatosVenta,
   type PedidoVenta,
 } from '@/modulos/ventas/modelo/operacionVenta'
-
-const hoy = () => new Date().toISOString().slice(0, 10)
 
 interface DialogoRegistroVentaProps {
   abierto: boolean
@@ -36,19 +35,35 @@ export function DialogoRegistroVenta({
       tipoDocumento: 'factura',
       serie: '',
       numeroDocumento: '',
-      fechaVenta: hoy(),
-      almacen: 'Almacén principal',
+      fechaVenta: fechaLocalActual(),
+      // El pedido es la fuente canónica del almacén. Solo los pedidos
+      // históricos sin esa relación permiten completar el dato manualmente.
+      almacen: pedido.almacenNombre ?? (pedido.almacenId ? '' : 'Almacén principal'),
     },
   })
 
   const guardar = async (datos: DatosVenta) => {
-    const error = await alGuardar(datos)
-    if (error) return setError('root', { message: error })
-    alCambiarApertura(false)
+    try {
+      const error = await alGuardar(datos)
+      if (error) {
+        setError('root', { message: error })
+        return
+      }
+      alCambiarApertura(false)
+    } catch (error) {
+      setError('root', {
+        message: error instanceof Error ? error.message : 'No se pudo registrar la venta',
+      })
+    }
   }
 
   return (
-    <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
+    <DialogPrimitive.Root
+      open={abierto}
+      onOpenChange={(siguiente) => {
+        if (!isSubmitting) alCambiarApertura(siguiente)
+      }}
+    >
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25" />
         <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 border bg-background shadow-xl outline-none">
@@ -60,7 +75,7 @@ export function DialogoRegistroVenta({
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close asChild>
-              <button type="button" aria-label="Cerrar" className="grid size-9 place-items-center rounded-md hover:bg-muted">
+              <button type="button" aria-label="Cerrar" className="grid size-9 place-items-center rounded-md hover:bg-muted" disabled={isSubmitting}>
                 <X aria-hidden="true" className="size-5" />
               </button>
             </DialogPrimitive.Close>
@@ -77,7 +92,14 @@ export function DialogoRegistroVenta({
               </div>
               <div>
                 <label htmlFor="fecha-venta" className="field-label">Fecha *</label>
-                <input id="fecha-venta" type="date" className="field-control" {...register('fechaVenta')} />
+                <input
+                  id="fecha-venta"
+                  type="date"
+                  className="field-control"
+                  aria-invalid={Boolean(errors.fechaVenta)}
+                  {...register('fechaVenta')}
+                />
+                {errors.fechaVenta ? <p className="field-error">{errors.fechaVenta.message}</p> : null}
               </div>
               <div>
                 <label htmlFor="serie-venta" className="field-label">Serie *</label>
@@ -91,13 +113,27 @@ export function DialogoRegistroVenta({
               </div>
               <div className="sm:col-span-2">
                 <label htmlFor="almacen-venta" className="field-label">Almacén de despacho *</label>
-                <input id="almacen-venta" autoComplete="off" className="field-control" aria-invalid={Boolean(errors.almacen)} {...register('almacen')} />
+                <input
+                  id="almacen-venta"
+                  autoComplete="off"
+                  className="field-control"
+                  readOnly={Boolean(pedido.almacenNombre)}
+                  aria-invalid={Boolean(errors.almacen)}
+                  {...register('almacen')}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {pedido.almacenNombre
+                    ? 'Se conserva el almacén definido en el pedido para mantener la reserva coherente.'
+                    : pedido.almacenId
+                      ? 'No se pudo resolver el nombre del almacén asociado; completa el dato antes de registrar la venta.'
+                      : 'Pedido histórico sin almacén asociado; verifica este dato antes de registrar la venta.'}
+                </p>
                 {errors.almacen ? <p className="field-error">{errors.almacen.message}</p> : null}
               </div>
             </div>
             {errors.root ? <p role="alert" className="mt-5 border-s-4 border-destructive bg-destructive/10 px-4 py-3 text-sm">{errors.root.message}</p> : null}
             <footer className="mt-6 flex justify-end gap-3 border-t pt-5">
-              <DialogPrimitive.Close asChild><Button type="button" variant="outline">Cancelar</Button></DialogPrimitive.Close>
+              <DialogPrimitive.Close asChild><Button type="button" variant="outline" disabled={isSubmitting}>Cancelar</Button></DialogPrimitive.Close>
               <Button type="submit" disabled={isSubmitting}>Registrar venta</Button>
             </footer>
           </form>

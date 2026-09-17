@@ -1,9 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Plus, Trash2, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useFieldArray, useForm } from 'react-hook-form'
+import { Controller, useFieldArray, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
+import { fechaPeruEnDias } from '@/lib/fechas'
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import type { Cliente } from '@/modulos/clientes/modelo/cliente'
 import type { Producto } from '@/modulos/productos/modelo/producto'
 import {
@@ -21,9 +23,7 @@ const formatoMoneda = new Intl.NumberFormat('es-PE', {
 })
 
 function fechaEnDias(dias: number) {
-  const fecha = new Date()
-  fecha.setDate(fecha.getDate() + dias)
-  return fecha.toISOString().slice(0, 10)
+  return fechaPeruEnDias(dias)
 }
 
 interface DialogoCotizacionProps {
@@ -35,7 +35,7 @@ interface DialogoCotizacionProps {
   alGuardar: (
     datos: DatosCotizacion,
     cotizacionId?: string,
-  ) => string | undefined
+  ) => string | undefined | Promise<string | undefined>
   alRestaurarFoco: () => void
 }
 
@@ -48,20 +48,19 @@ export function DialogoCotizacion({
   alGuardar,
   alRestaurarFoco,
 }: DialogoCotizacionProps) {
-  const primerProducto = productos[0]
   const valoresIniciales: DatosCotizacion = cotizacion
     ? cotizacionAFormulario(cotizacion)
     : {
-        clienteId: clientes[0]?.id ?? '',
+        clienteId: '',
         fechaEmision: fechaEnDias(0),
         fechaValidez: fechaEnDias(7),
         preciosIncluyenIgv: true,
         observacion: '',
         lineas: [
           {
-            productoId: primerProducto?.id ?? '',
+            productoId: '',
             cantidad: '1',
-            precioUnitario: primerProducto?.precioVenta ?? '',
+            precioUnitario: '',
           },
         ],
       }
@@ -79,17 +78,57 @@ export function DialogoCotizacion({
   })
   const { fields, append, remove } = useFieldArray({ control, name: 'lineas' })
   const lineas = watch('lineas')
+  const clienteId = watch('clienteId')
   const preciosIncluyenIgv = watch('preciosIncluyenIgv')
+  const snapshotsPorProducto = new Map(
+    (cotizacion?.lineas ?? []).map((linea) => [linea.productoId, linea.afectacionIgv]),
+  )
+  const afectacionPorProducto = (productoId: string) => {
+    const snapshot = snapshotsPorProducto.get(productoId)
+    if (snapshot) return snapshot
+    return productos.find((producto) => producto.id === productoId)?.afectacionIgv || 'por-definir'
+  }
+  const lineasConAfectacionPendiente = lineas.flatMap((linea, indice) => {
+    if (!linea.productoId) return []
+    const producto = productos.find((item) => item.id === linea.productoId)
+    const afectacion = afectacionPorProducto(linea.productoId)
+    if (afectacion !== 'por-definir') return []
+    return [{
+      indice,
+      descripcion: producto?.descripcion ?? 'Producto seleccionado',
+    }]
+  })
   const totales = calcularTotalesCotizacion(
     lineas.map((linea) => ({
       cantidad: Number(linea.cantidad) || 0,
       precioUnitario: Number(linea.precioUnitario) || 0,
+      afectacionIgv: afectacionPorProducto(linea.productoId),
     })),
     preciosIncluyenIgv,
   )
+  const errorLineas = errors.lineas?.message ?? errors.lineas?.root?.message
+  const clientesDisponibles = clientes.filter(
+    (cliente) => cliente.activo || cliente.id === clienteId,
+  )
+  const opcionesClientes: ComboboxOption[] = clientesDisponibles.map((cliente) => ({
+    value: cliente.id,
+    label: cliente.nombreRazonSocial,
+    secondaryText: [cliente.numeroDocumento, cliente.nombreComercial]
+      .filter(Boolean)
+      .join(' · '),
+    keywords: [
+      cliente.numeroDocumento,
+      cliente.nombreRazonSocial,
+      cliente.nombreComercial,
+      cliente.contacto,
+      cliente.email,
+      cliente.telefono,
+    ],
+    disabled: !cliente.activo,
+  }))
 
-  const guardar = (datos: DatosCotizacion) => {
-    const error = alGuardar(datos, cotizacion?.id)
+  const guardar = async (datos: DatosCotizacion) => {
+    const error = await alGuardar(datos, cotizacion?.id)
     if (error) {
       setError('root', { message: error })
       return
@@ -102,7 +141,7 @@ export function DialogoCotizacion({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25" />
         <DialogPrimitive.Content
-          className="fixed inset-y-0 end-0 z-50 flex w-full max-w-4xl flex-col border-s bg-background shadow-xl outline-none"
+          className="fixed start-1/2 top-1/2 z-50 flex max-h-[92svh] w-[calc(100%-2rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background shadow-xl outline-none sm:w-[calc(100%-3rem)]"
           onCloseAutoFocus={(evento) => {
             evento.preventDefault()
             alRestaurarFoco()
@@ -144,22 +183,25 @@ export function DialogoCotizacion({
               </div>
               <div className="grid gap-5 sm:grid-cols-3">
                 <div className="sm:col-span-3">
-                  <label htmlFor="cliente-cotizacion" className="field-label">
-                    Cliente *
-                  </label>
-                  <select
-                    id="cliente-cotizacion"
-                    autoFocus
-                    className="field-control"
-                    aria-invalid={Boolean(errors.clienteId)}
-                    {...register('clienteId')}
-                  >
-                    {clientes.map((cliente) => (
-                      <option key={cliente.id} value={cliente.id}>
-                        {cliente.numeroDocumento} · {cliente.nombreRazonSocial}
-                      </option>
-                    ))}
-                  </select>
+                  <Controller
+                    control={control}
+                    name="clienteId"
+                    render={({ field }) => (
+                      <Combobox
+                        id="cliente-cotizacion"
+                        label="Cliente"
+                        value={field.value}
+                        options={opcionesClientes}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        placeholder="Buscar cliente…"
+                        helperText="Documento, nombre o razón social."
+                        error={errors.clienteId?.message}
+                        required
+                        noOptionsMessage="No hay clientes activos disponibles."
+                      />
+                    )}
+                  />
                 </div>
                 <div>
                   <label htmlFor="emision-cotizacion" className="field-label">
@@ -169,8 +211,12 @@ export function DialogoCotizacion({
                     id="emision-cotizacion"
                     type="date"
                     className="field-control"
+                    aria-invalid={Boolean(errors.fechaEmision)}
                     {...register('fechaEmision')}
                   />
+                  {errors.fechaEmision ? (
+                    <p className="field-error">{errors.fechaEmision.message}</p>
+                  ) : null}
                 </div>
                 <div>
                   <label htmlFor="validez-cotizacion" className="field-label">
@@ -213,9 +259,9 @@ export function DialogoCotizacion({
                   variant="outline"
                   onClick={() =>
                     append({
-                      productoId: primerProducto?.id ?? '',
+                      productoId: '',
                       cantidad: '1',
-                      precioUnitario: primerProducto?.precioVenta ?? '',
+                      precioUnitario: '',
                     })
                   }
                 >
@@ -223,14 +269,17 @@ export function DialogoCotizacion({
                 </Button>
               </div>
 
+              {errorLineas ? (
+                <p role="alert" className="field-error mb-4">
+                  {errorLineas}
+                </p>
+              ) : null}
+
               <div className="space-y-4">
                 {fields.map((field, indice) => {
                   const erroresLinea = errors.lineas?.[indice]
                   const productoSeleccionado = productos.find(
                     (producto) => producto.id === lineas[indice]?.productoId,
-                  )
-                  const registroProducto = register(
-                    `lineas.${indice}.productoId`,
                   )
 
                   return (
@@ -252,29 +301,61 @@ export function DialogoCotizacion({
                       </div>
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_1fr_1fr_1fr]">
                         <div>
-                          <label className="field-label">Producto *</label>
-                          <select
-                            className="field-control"
-                            aria-label={`Producto ${indice + 1}`}
-                            {...registroProducto}
-                            onChange={(evento) => {
-                              registroProducto.onChange(evento)
-                              const producto = productos.find(
-                                (item) => item.id === evento.target.value,
-                              )
-                              setValue(
-                                `lineas.${indice}.precioUnitario`,
-                                producto?.precioVenta ?? '',
-                                { shouldValidate: true },
+                          <Controller
+                            control={control}
+                            name={`lineas.${indice}.productoId`}
+                            render={({ field: campo }) => {
+                              const productoActualId = lineas[indice]?.productoId
+                              const opcionesProductos: ComboboxOption[] = productos
+                                .filter(
+                                  (producto) =>
+                                    (producto.activo || producto.id === productoActualId) &&
+                                    !lineas.some(
+                                      (linea, otroIndice) =>
+                                        otroIndice !== indice &&
+                                        linea.productoId === producto.id,
+                                    ),
+                                )
+                                .map((producto) => ({
+                                  value: producto.id,
+                                  label: `${producto.codigo} · ${producto.descripcion}`,
+                                  secondaryText: `${producto.tipo === 'service' ? 'Servicio' : 'Producto físico'} · Unidad: ${producto.unidadMedida || 'Sin unidad'}`,
+                                  keywords: [
+                                    producto.codigo,
+                                    producto.codigoBarras,
+                                    producto.descripcion,
+                                    producto.laboratorio,
+                                    producto.presentacion,
+                                    producto.unidadMedida,
+                                  ],
+                                  disabled: !producto.activo,
+                                }))
+
+                              return (
+                                <Combobox
+                                  id={`producto-cotizacion-${field.id}`}
+                                  label={`Producto ${indice + 1}`}
+                                  value={campo.value}
+                                  options={opcionesProductos}
+                                  onChange={(value) => {
+                                    campo.onChange(value)
+                                    const producto = productos.find((item) => item.id === value)
+                                    setValue(
+                                      `lineas.${indice}.precioUnitario`,
+                                      producto?.precioVenta ?? '',
+                                      { shouldValidate: true, shouldDirty: true },
+                                    )
+                                  }}
+                                  onBlur={campo.onBlur}
+                                  placeholder="Buscar producto…"
+                                  helperText="Código, nombre o barras."
+                                  error={erroresLinea?.productoId?.message}
+                                  required
+                                  noOptionsMessage="No hay productos activos disponibles."
+                                />
                               )
                             }}
-                          >
-                            {productos.map((producto) => (
-                              <option key={producto.id} value={producto.id}>
-                                {producto.codigo} · {producto.descripcion}
-                              </option>
-                            ))}
-                          </select>
+                          />
                         </div>
                         <div>
                           <label className="field-label">Cantidad *</label>
@@ -342,20 +423,39 @@ export function DialogoCotizacion({
                   {...register('observacion')}
                 />
               </div>
-              <dl className="border bg-muted/25 px-4 py-2">
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">Subtotal</dt>
-                  <dd className="font-mono">{formatoMoneda.format(totales.subtotal)}</dd>
-                </div>
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">IGV</dt>
-                  <dd className="font-mono">{formatoMoneda.format(totales.igv)}</dd>
-                </div>
-                <div className="flex justify-between gap-4 py-3 font-semibold">
-                  <dt>Total</dt>
-                  <dd className="font-mono">{formatoMoneda.format(totales.total)}</dd>
-                </div>
-              </dl>
+              <div className="space-y-4">
+                {lineasConAfectacionPendiente.length ? (
+                  <aside
+                    role="status"
+                    aria-live="polite"
+                    className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-950"
+                  >
+                    <p className="font-medium">Falta definir la afectación de IGV.</p>
+                    <p className="mt-1">
+                      El borrador puede guardarse, pero la cotización no podrá emitirse hasta clasificar estos productos en el catálogo.
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 ps-5">
+                      {lineasConAfectacionPendiente.map(({ indice, descripcion }) => (
+                        <li key={`${indice}-${descripcion}`}>Producto {indice + 1}: {descripcion}</li>
+                      ))}
+                    </ul>
+                  </aside>
+                ) : null}
+                <dl className="border bg-muted/25 px-4 py-2">
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">Subtotal</dt>
+                    <dd className="font-mono">{formatoMoneda.format(totales.subtotal)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">IGV</dt>
+                    <dd className="font-mono">{formatoMoneda.format(totales.igv)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4 py-3 font-semibold">
+                    <dt>Total</dt>
+                    <dd className="font-mono">{formatoMoneda.format(totales.total)}</dd>
+                  </div>
+                </dl>
+              </div>
             </section>
 
             {errors.root ? (

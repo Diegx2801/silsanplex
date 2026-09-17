@@ -185,6 +185,8 @@ select results_eq(
   $$select item.product_id, receipt_item.tax_affectation
     from public.purchase_receipt_items receipt_item
     join public.purchase_order_items item on item.id = receipt_item.purchase_order_item_id
+    where receipt_item.organization_id = 'a1b10000-0000-4000-8000-000000000001'
+      and item.organization_id = 'a1b10000-0000-4000-8000-000000000001'
     order by item.product_id$$,
   $$values
     ('a1b70000-0000-4000-8000-000000000001'::uuid, 'gravado'::text),
@@ -216,6 +218,8 @@ select results_eq(
   $$select item.product_id, receipt_item.tax_affectation
     from public.purchase_receipt_items receipt_item
     join public.purchase_order_items item on item.id = receipt_item.purchase_order_item_id
+    where receipt_item.organization_id = 'a1b10000-0000-4000-8000-000000000001'
+      and item.organization_id = 'a1b10000-0000-4000-8000-000000000001'
     order by item.product_id$$,
   $$values
     ('a1b70000-0000-4000-8000-000000000001'::uuid, 'gravado'::text),

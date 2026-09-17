@@ -185,6 +185,7 @@ function mapearPedido(fila: PedidoFila): PedidoVenta {
     clienteId: fila.customer_id,
     clienteDocumento: cliente.document_number,
     clienteNombre: cliente.legal_name,
+    fechaPedido: fila.order_date,
     preciosIncluyenIgv: fila.prices_include_tax,
     baseGravada: importeOpcional(fila.taxable_base),
     montoExonerado: importeOpcional(fila.exempt_amount),
@@ -242,8 +243,34 @@ function mapearVenta(fila: VentaFila): Venta {
   }
 }
 
-function mensajeError(error: { code?: string; message?: string }) {
+function formatoCantidad(valor: number) {
+  return new Intl.NumberFormat('es-PE', { maximumFractionDigits: 3 }).format(valor)
+}
+
+function detalleStock(error: { details?: string }) {
+  const detalle = error.details ?? ''
+  const asignable = detalle.match(/assignable_quantity=([\d.-]+)/i)
+  const solicitada = detalle.match(/requested_quantity=([\d.-]+)/i)
+  if (asignable && solicitada) {
+    return `No hay stock asignable suficiente en el almacén seleccionado. Solicitado: ${formatoCantidad(Number(solicitada[1]))}; disponible: ${formatoCantidad(Number(asignable[1]))}.`
+  }
+
+  const fisico = detalle.match(/physical_quantity=([\d.-]+)/i)
+  const reservado = detalle.match(/reserved_by_others=([\d.-]+)/i)
+  const salida = detalle.match(/outbound_quantity=([\d.-]+)/i)
+  if (fisico && reservado && salida) {
+    const disponible = Math.max(Number(fisico[1]) - Number(reservado[1]), 0)
+    return `No hay stock asignable suficiente en el almacén seleccionado. Solicitado: ${formatoCantidad(Number(salida[1]))}; disponible: ${formatoCantidad(disponible)}.`
+  }
+  return undefined
+}
+
+function mensajeError(error: { code?: string; message?: string; details?: string }) {
   const message = error.message ?? ''
+  if (message.includes('SALES_QUOTE_PRODUCT_CHANGED')) return 'Un producto de la cotización cambió en el catálogo; actualiza la cotización antes de crear el pedido'
+  if (message.includes('SALES_QUOTE_NOT_AVAILABLE')) return 'La cotización ya no está disponible para crear el pedido'
+  if (message.includes('SALES_QUOTE_EXPIRED')) return 'La cotización está vencida; emite una nueva propuesta antes de crear el pedido'
+  if (message.includes('SALES_QUOTE_NOT_FOUND')) return 'La cotización ya no existe o no está disponible; recarga el listado'
   if (message.includes('ORDER_TAX_AFFECTATION_LEGACY_UNKNOWN')) return 'El pedido histórico no tiene afectación tributaria reconstruible'
   if (message.includes('ORDER_TAX_AFFECTATION_UNDEFINED')) return 'No se puede crear o modificar un pedido con productos por definir tributariamente'
   if (message.includes('ORDER_MINIMUM_SALE_PRICE_VIOLATION')) return 'El precio unitario no puede ser menor al precio mínimo final del producto'
@@ -266,7 +293,7 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (message.includes('ORDER_WAREHOUSE_REQUIRED')) return 'Selecciona un almacén para el pedido'
   if (message.includes('ORDER_WAREHOUSE_UNAVAILABLE')) return 'El almacén seleccionado ya no está disponible'
   if (message.includes('ORDER_PRODUCT_UNAVAILABLE')) return 'Uno de los productos ya no está disponible'
-  if (message.includes('INVENTORY_FEFO_INSUFFICIENT_STOCK') || message.includes('INVENTORY_RESERVED_STOCK')) return 'No hay stock asignable suficiente en el almacén seleccionado'
+  if (message.includes('INVENTORY_FEFO_INSUFFICIENT_STOCK') || message.includes('INVENTORY_RESERVED_STOCK')) return detalleStock(error) ?? 'No hay stock asignable suficiente en el almacén seleccionado'
   if (message.includes('ORDER_RESERVATION_STATE_INVALID')) return 'La reserva del pedido ya no coincide con su cantidad; recarga el pedido antes de continuar'
   if (message.includes('ORDER_NOT_MODIFIABLE')) return 'El pedido ya no puede modificar sus cantidades'
   if (message.includes('ORDER_NOT_CANCELLABLE')) return 'El pedido ya no puede cancelarse'
@@ -278,6 +305,7 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (message.includes('ORDER_ITEM_VALUES_INVALID')) return 'Las cantidades y precios deben ser válidos'
   if (message.includes('ORDER_OPERATION_KEY_REQUIRED')) return 'No se pudo identificar el reintento del pedido'
   if (message.includes('ORDER_DISPATCH_EXCEEDS_RESERVED')) return 'La cantidad supera el saldo reservado pendiente'
+  if (message.includes('ORDER_DISPATCH_QUANTITY_INVALID')) return 'La cantidad a despachar no es válida; revisa las cantidades e inténtalo de nuevo'
   if (message.includes('ORDER_DISPATCH_SALE_REQUIRED')) return 'La venta persistente no está disponible para despacho'
   if (message.includes('ORDER_DISPATCH_ITEM_INVALID')) return 'La línea de venta ya no es válida; recarga el documento'
   if (message.includes('ORDER_NOT_DISPATCHABLE')) return 'La venta ya no puede despacharse en su estado actual'

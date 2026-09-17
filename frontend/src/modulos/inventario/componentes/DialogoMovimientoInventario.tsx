@@ -5,6 +5,7 @@ import { useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
+import { fechaActualPeru } from '@/lib/fechas'
 import { useCandidatosFefo } from '@/modulos/inventario/estado/useCandidatosFefo'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
 import {
@@ -15,7 +16,7 @@ import {
 } from '@/modulos/inventario/modelo/inventario'
 import type { Producto } from '@/modulos/productos/modelo/producto'
 
-const hoy = () => new Date().toISOString().slice(0, 10)
+const hoy = fechaActualPeru
 
 interface DialogoMovimientoInventarioProps {
   abierto: boolean

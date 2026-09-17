@@ -232,8 +232,8 @@ describe('PanelOperacionesVenta', () => {
       alDespacharVenta,
     })
     fireEvent.click(screen.getByRole('button', { name: 'Despachar bienes' }))
-    expect(screen.getAllByLabelText('Cantidad a despachar')).toHaveLength(1)
-    fireEvent.change(screen.getByLabelText('Cantidad a despachar'), { target: { value: '4' } })
+    expect(screen.getAllByLabelText('Cantidad de esta entrega')).toHaveLength(1)
+    fireEvent.change(screen.getByLabelText('Cantidad de esta entrega'), { target: { value: '4' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar despacho' }))
     await waitFor(() => expect(alDespacharVenta).toHaveBeenCalledWith(
       'pedido-1', 'venta-1', [{ orderItemId: 'linea-1', quantity: 4 }],
@@ -269,12 +269,48 @@ describe('PanelOperacionesVenta', () => {
     expect(screen.getByText('Almacén: Almacén central')).toBeVisible()
   })
 
+  it('filtra operaciones y abre un detalle de solo lectura', () => {
+    const otroPedido = {
+      ...pedido,
+      id: 'pedido-2',
+      numero: 'PED-000002',
+      clienteNombre: 'Cliente Dos',
+      lineas: [{ ...pedido.lineas[0], id: 'linea-2', productoCodigo: 'P-2', productoDescripcion: 'Otro producto' }],
+    }
+    renderPanel({ pedidos: [pedido, otroPedido] })
+
+    expect(screen.getByText('2 de 2 operaciones visibles')).toBeVisible()
+    fireEvent.change(screen.getByLabelText('Buscar'), { target: { value: 'P-1' } })
+    expect(screen.getByText('1 de 2 operaciones visibles')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalle' }))
+
+    expect(screen.getByRole('dialog', { name: 'Detalle de PED-000001' })).toBeVisible()
+    expect(screen.getByText('Productos del pedido')).toBeVisible()
+    expect(screen.getByText('Pendiente de venta')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Cerrar detalle de operación' })).toBeVisible()
+  })
+
+  it('filtra por fecha comercial del pedido y valida rangos invertidos', () => {
+    const pedidoDelDieciseis = { ...pedido, fechaPedido: '2026-09-16' }
+    const pedidoDelDiecisiete = { ...pedido, id: 'pedido-2', numero: 'PED-000002', fechaPedido: '2026-09-17' }
+    renderPanel({ pedidos: [pedidoDelDieciseis, pedidoDelDiecisiete] })
+
+    fireEvent.change(screen.getByLabelText('Fecha desde'), { target: { value: '2026-09-17' } })
+    expect(screen.getByText('1 de 2 operaciones visibles')).toBeVisible()
+    expect(screen.getByText('PED-000002')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText('Fecha hasta'), { target: { value: '2026-09-16' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('La fecha desde no puede ser posterior')
+    expect(screen.getByText('0 de 2 operaciones visibles')).toBeVisible()
+  })
+
   it('permite modificar cantidades con la clave idempotente del diálogo', async () => {
     const alActualizarPedido = vi.fn().mockResolvedValue(undefined)
     renderPanel({ pedidos: [pedido], alActualizarPedido })
     fireEvent.click(screen.getByRole('button', { name: 'Modificar cantidades' }))
     fireEvent.change(screen.getByLabelText('Nueva cantidad'), { target: { value: '2' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cantidades' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar modificación' }))
 
     await waitFor(() => expect(alActualizarPedido).toHaveBeenCalledWith(
       'pedido-1', [{ orderItemId: 'linea-1', quantity: 2 }], expect.stringMatching(/^[0-9a-f-]{36}$/),
@@ -296,7 +332,7 @@ describe('PanelOperacionesVenta', () => {
     const alDespacharVenta = vi.fn().mockResolvedValue(undefined)
     renderPanel({ pedidos: [pedido], ventas: [venta], alDespacharVenta })
     fireEvent.click(screen.getByRole('button', { name: 'Despachar bienes' }))
-    fireEvent.change(screen.getByLabelText('Cantidad a despachar'), { target: { value: '6' } })
+    fireEvent.change(screen.getByLabelText('Cantidad de esta entrega'), { target: { value: '6' } })
     const confirmar = screen.getByRole('button', { name: 'Confirmar despacho' })
     fireEvent.click(confirmar)
     fireEvent.click(confirmar)

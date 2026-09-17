@@ -1,9 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Plus, Trash2, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useFieldArray, useForm } from 'react-hook-form'
+import { Controller, useFieldArray, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
+import { fechaActualPeru } from '@/lib/fechas'
 import {
   calcularTotalesCompra,
   compraAFormulario,
@@ -19,7 +21,7 @@ const formatoMoneda = new Intl.NumberFormat('es-PE', {
   style: 'currency',
   currency: 'PEN',
 })
-const hoy = () => new Date().toISOString().slice(0, 10)
+const hoy = fechaActualPeru
 
 function afectacionProducto(valor: Producto['afectacionIgv'] | undefined): AfectacionTributaria {
   return valor || 'por-definir'
@@ -52,24 +54,23 @@ export function DialogoCompra({
   const almacenesDisponibles = almacenes.filter(
     (almacen) => almacen.activo || almacen.id === compra?.almacenId,
   )
-  const productosActivos = productos.filter((producto) => producto.activo)
   const valoresIniciales: DatosCompra = compra
     ? compraAFormulario(compra)
     : {
-        proveedorId: proveedoresDisponibles[0]?.id ?? '',
+        proveedorId: '',
         tipoDocumento: 'factura',
         serie: '',
         numero: '',
         fechaEmision: hoy(),
         fechaVencimientoPago: '',
         fechaEntregaEsperada: '',
-        almacenId: almacenesDisponibles[0]?.id ?? '',
-        almacen: almacenesDisponibles[0]?.nombre ?? '',
+        almacenId: '',
+        almacen: '',
         preciosIncluyenIgv: true,
         observacion: '',
         lineas: [
           {
-            productoId: productosActivos[0]?.id ?? '',
+            productoId: '',
             cantidad: '1',
             costoUnitario: '',
             lote: '',
@@ -95,8 +96,25 @@ export function DialogoCompra({
   const snapshotsPorProducto = new Map(
     (compra?.lineas ?? []).map((linea) => [linea.productoId, linea.afectacionIgv]),
   )
+  const lineasConAfectacionPendiente = lineas.flatMap((linea, indice) => {
+    if (!linea.productoId) return []
+
+    const afectacion =
+      snapshotsPorProducto.get(linea.productoId) ??
+      afectacionProducto(
+        productos.find((producto) => producto.id === linea.productoId)?.afectacionIgv,
+      )
+    if (afectacion !== 'por-definir') return []
+
+    return [{
+      indice,
+      descripcion:
+        productos.find((producto) => producto.id === linea.productoId)?.descripcion ??
+        'Producto seleccionado',
+    }]
+  })
   const totales = calcularTotalesCompra(
-    lineas.map((linea) => ({
+    lineas.filter((linea) => linea.productoId).map((linea) => ({
       cantidad: Number(linea.cantidad) || 0,
       costoUnitario: Number(linea.costoUnitario) || 0,
       afectacionIgv:
@@ -107,6 +125,21 @@ export function DialogoCompra({
     })),
     preciosIncluyenIgv,
   )
+  const errorLineas = errors.lineas?.message ?? errors.lineas?.root?.message
+  const opcionesProveedores: ComboboxOption[] = proveedoresDisponibles.map((proveedor) => ({
+    value: proveedor.id,
+    label: proveedor.razonSocial,
+    secondaryText: [proveedor.numeroDocumento, proveedor.nombreComercial].filter(Boolean).join(' · '),
+    keywords: [proveedor.codigo, proveedor.numeroDocumento, proveedor.nombreComercial, proveedor.contacto, proveedor.email],
+    disabled: !proveedor.activo,
+  }))
+  const opcionesAlmacenes: ComboboxOption[] = almacenesDisponibles.map((almacen) => ({
+    value: almacen.id,
+    label: `${almacen.codigo} · ${almacen.nombre}`,
+    secondaryText: almacen.direccion || 'Sin dirección registrada',
+    keywords: [almacen.codigo, almacen.nombre, almacen.direccion],
+    disabled: !almacen.activo,
+  }))
 
   const guardar = async (datos: DatosCompra) => {
     const error = await alGuardar(datos, compra?.id)
@@ -122,7 +155,7 @@ export function DialogoCompra({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25" />
         <DialogPrimitive.Content
-          className="fixed inset-y-0 end-0 z-50 flex w-full max-w-4xl flex-col border-s bg-background shadow-xl outline-none"
+          className="fixed start-1/2 top-1/2 z-50 flex max-h-[92svh] w-[calc(100%-2rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background shadow-xl outline-none sm:w-[calc(100%-3rem)]"
           onCloseAutoFocus={(evento) => {
             evento.preventDefault()
             alRestaurarFoco()
@@ -165,25 +198,25 @@ export function DialogoCompra({
               </div>
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="sm:col-span-2 lg:col-span-4">
-                  <label htmlFor="proveedor-compra" className="field-label">
-                    Proveedor *
-                  </label>
-                  <select
-                    id="proveedor-compra"
-                    className="field-control"
-                    aria-invalid={Boolean(errors.proveedorId)}
-                    {...register('proveedorId')}
-                  >
-                    <option value="">Seleccionar proveedor</option>
-                    {proveedoresDisponibles.map((proveedor) => (
-                      <option key={proveedor.id} value={proveedor.id}>
-                        {proveedor.numeroDocumento} · {proveedor.razonSocial}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.proveedorId ? (
-                    <p className="field-error">{errors.proveedorId.message}</p>
-                  ) : null}
+                  <Controller
+                    control={control}
+                    name="proveedorId"
+                    render={({ field }) => (
+                      <Combobox
+                        id="proveedor-compra"
+                        label="Proveedor"
+                        value={field.value}
+                        options={opcionesProveedores}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        placeholder="Buscar proveedor…"
+                        helperText="Documento, código o razón social."
+                        error={errors.proveedorId?.message}
+                        required
+                        noOptionsMessage="No hay proveedores disponibles."
+                      />
+                    )}
+                  />
                 </div>
                 <div>
                   <label htmlFor="tipo-documento-compra" className="field-label">
@@ -274,37 +307,32 @@ export function DialogoCompra({
                   ) : null}
                 </div>
                 <div>
-                  <label htmlFor="almacen-compra" className="field-label">
-                    Almacén de recepción *
-                  </label>
-                  <select
-                    id="almacen-compra"
-                    className="field-control"
-                    aria-invalid={Boolean(errors.almacenId || errors.almacen)}
-                    {...register('almacenId', {
-                      onChange: (evento) => {
-                        const almacen = almacenesDisponibles.find(
-                          (item) => item.id === evento.target.value,
-                        )
-                        setValue('almacen', almacen?.nombre ?? '', {
-                          shouldValidate: true,
-                        })
-                      },
-                    })}
-                  >
-                    <option value="">Seleccionar almacén</option>
-                    {almacenesDisponibles.map((almacen) => (
-                      <option key={almacen.id} value={almacen.id}>
-                        {almacen.codigo} · {almacen.nombre}
-                      </option>
-                    ))}
-                  </select>
+                  <Controller
+                    control={control}
+                    name="almacenId"
+                    render={({ field }) => (
+                      <Combobox
+                        id="almacen-compra"
+                        label="Almacén de recepción"
+                        value={field.value}
+                        options={opcionesAlmacenes}
+                        onChange={(valor) => {
+                          field.onChange(valor)
+                          const almacen = almacenesDisponibles.find((item) => item.id === valor)
+                          setValue('almacen', almacen?.nombre ?? '', {
+                            shouldValidate: true,
+                          })
+                        }}
+                        onBlur={field.onBlur}
+                        placeholder="Buscar almacén…"
+                        helperText="Código, nombre o dirección."
+                        error={errors.almacenId?.message ?? errors.almacen?.message}
+                        required
+                        noOptionsMessage="No hay almacenes activos disponibles."
+                      />
+                    )}
+                  />
                   <input type="hidden" {...register('almacen')} />
-                  {errors.almacenId || errors.almacen ? (
-                    <p className="field-error">
-                      {errors.almacenId?.message ?? errors.almacen?.message}
-                    </p>
-                  ) : null}
                 </div>
               </div>
             </section>
@@ -322,21 +350,31 @@ export function DialogoCompra({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() =>
-                    append({
-                      productoId: productosActivos[0]?.id ?? '',
-                      cantidad: '1',
-                      costoUnitario: '',
-                      lote: '',
-                      fechaVencimiento: '',
-                    })
-                  }
+                  disabled={!productos.some((producto) => producto.activo)}
+                  onClick={() => append({
+                    productoId: '',
+                    cantidad: '1',
+                    costoUnitario: '',
+                    lote: '',
+                    fechaVencimiento: '',
+                  })}
                 >
                   <Plus aria-hidden="true" />
                   Agregar producto
                 </Button>
               </div>
 
+              {!fields.length ? (
+                <div className="border border-dashed px-4 py-8 text-center">
+                  <p className="font-medium">No hay productos agregados</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Agrega al menos un producto para registrar la compra.
+                  </p>
+                  {errorLineas ? (
+                    <p role="alert" className="field-error mt-3">{errorLineas}</p>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="space-y-4">
                 {fields.map((field, indice) => {
                   const producto = productos.find(
@@ -361,25 +399,45 @@ export function DialogoCompra({
                           <Trash2 aria-hidden="true" />
                         </Button>
                       </div>
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
-                        <div className="sm:col-span-2 lg:col-span-2">
-                          <label className="field-label">Producto *</label>
-                          <select
-                            className="field-control"
-                            aria-label={`Producto ${indice + 1}`}
-                            aria-invalid={Boolean(erroresLinea?.productoId)}
-                            {...register(`lineas.${indice}.productoId`)}
-                          >
-                            {productos
-                              .filter((item) => item.activo || item.id === lineas[indice]?.productoId)
-                              .map((item) => (
-                                <option key={item.id} value={item.id} disabled={!item.activo}>
-                                {item.codigo} · {item.descripcion}
-                              </option>
-                              ))}
-                          </select>
-                          {producto ? <p className="mt-1 text-xs text-muted-foreground">
-                            Tipo: {producto.tipo === 'service' ? 'Servicio (atención administrativa)' : 'Producto físico (recepción e inventario)'}
+                      <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+                        <div className="min-w-0 sm:col-span-2 lg:col-span-2">
+                          <Controller
+                            control={control}
+                            name={`lineas.${indice}.productoId`}
+                            render={({ field: campo }) => {
+                              const productoActualId = lineas[indice]?.productoId
+                              const opcionesProductos: ComboboxOption[] = productos
+                                .filter((item) =>
+                                  (item.activo || item.id === productoActualId) &&
+                                  !lineas.some((linea, otroIndice) => otroIndice !== indice && linea.productoId === item.id),
+                                )
+                                .map((item) => ({
+                                  value: item.id,
+                                  label: `${item.codigo} · ${item.descripcion}`,
+                                  secondaryText: `${item.tipo === 'service' ? 'Servicio' : 'Producto físico'} · Unidad: ${item.unidadMedida || 'Sin unidad'}`,
+                                  keywords: [item.codigo, item.codigoBarras, item.descripcion, item.laboratorio, item.presentacion, item.unidadMedida],
+                                  disabled: !item.activo,
+                                }))
+
+                              return (
+                                <Combobox
+                                  id={`producto-compra-${field.id}`}
+                                  label={`Producto ${indice + 1}`}
+                                  value={campo.value}
+                                  options={opcionesProductos}
+                                  onChange={campo.onChange}
+                                  onBlur={campo.onBlur}
+                                  placeholder="Buscar producto…"
+                                  helperText="Código, nombre o barras."
+                                  error={erroresLinea?.productoId?.message}
+                                  required
+                                  noOptionsMessage="No hay productos activos disponibles."
+                                />
+                              )
+                            }}
+                          />
+                          {producto ? <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                            {producto.tipo === 'service' ? 'Servicio (atención administrativa)' : 'Producto físico (recepción e inventario)'} · Unidad: {producto.unidadMedida}
                            </p> : null}
                            {producto && !producto.activo ? (
                              <p className="mt-1 text-xs text-amber-700">
@@ -388,11 +446,11 @@ export function DialogoCompra({
                            ) : null}
                         </div>
                         <div>
-                          <label className="field-label">Cantidad *</label>
+                          <label className="field-label">Cantidad{producto?.unidadMedida ? ` (${producto.unidadMedida})` : ''} *</label>
                           <input
                             inputMode="decimal"
                             className="field-control"
-                            aria-label={`Cantidad del producto ${indice + 1}`}
+                            aria-label={`Cantidad del producto ${indice + 1}${producto?.unidadMedida ? ` en ${producto.unidadMedida}` : ''}`}
                             aria-invalid={Boolean(erroresLinea?.cantidad)}
                             {...register(`lineas.${indice}.cantidad`)}
                           />
@@ -471,49 +529,66 @@ export function DialogoCompra({
                   </span>
                 </label>
               </div>
-              {totales.estado === 'pending' ? (
-                <p className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-950">
-                  Completa la afectación tributaria de todos los productos para calcular los importes y emitir la orden.
-                </p>
-              ) : null}
-              <dl className="border bg-muted/25 px-4 py-2">
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">Base gravada</dt>
-                  <dd className="font-mono tabular-nums">
-                    {totales.baseGravada === null ? 'Pendiente' : formatoMoneda.format(totales.baseGravada)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">Exonerado</dt>
-                  <dd className="font-mono tabular-nums">
-                    {totales.montoExonerado === null ? 'Pendiente' : formatoMoneda.format(totales.montoExonerado)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">Inafecto</dt>
-                  <dd className="font-mono tabular-nums">
-                    {totales.montoInafecto === null ? 'Pendiente' : formatoMoneda.format(totales.montoInafecto)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">Subtotal</dt>
-                  <dd className="font-mono tabular-nums">
-                    {totales.subtotal === null ? 'Pendiente' : formatoMoneda.format(totales.subtotal)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4 border-b py-3 text-sm">
-                  <dt className="text-muted-foreground">IGV</dt>
-                  <dd className="font-mono tabular-nums">
-                    {totales.igv === null ? 'Pendiente' : formatoMoneda.format(totales.igv)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4 py-3 font-semibold">
-                  <dt>Total</dt>
-                  <dd className="font-mono tabular-nums">
-                    {totales.total === null ? 'Pendiente' : formatoMoneda.format(totales.total)}
-                  </dd>
-                </div>
-              </dl>
+              <div className="space-y-4">
+                {lineasConAfectacionPendiente.length ? (
+                  <aside
+                    role="status"
+                    aria-live="polite"
+                    className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-950"
+                  >
+                    <p className="font-medium">Falta definir la afectación de IGV.</p>
+                    <p className="mt-1">
+                      Completa este dato en el catálogo de Productos para calcular los importes y emitir la orden.
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 ps-5">
+                      {lineasConAfectacionPendiente.map(({ indice, descripcion }) => (
+                        <li key={`${indice}-${descripcion}`}>Producto {indice + 1}: {descripcion}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-xs">
+                      Puedes guardar el borrador; la emisión de la orden quedará bloqueada hasta completar la clasificación.
+                    </p>
+                  </aside>
+                ) : null}
+                <dl className="border bg-muted/25 px-4 py-2">
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">Base gravada</dt>
+                    <dd className="font-mono tabular-nums">
+                      {totales.baseGravada === null ? 'Pendiente' : formatoMoneda.format(totales.baseGravada)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">Exonerado</dt>
+                    <dd className="font-mono tabular-nums">
+                      {totales.montoExonerado === null ? 'Pendiente' : formatoMoneda.format(totales.montoExonerado)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">Inafecto</dt>
+                    <dd className="font-mono tabular-nums">
+                      {totales.montoInafecto === null ? 'Pendiente' : formatoMoneda.format(totales.montoInafecto)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">Subtotal</dt>
+                    <dd className="font-mono tabular-nums">
+                      {totales.subtotal === null ? 'Pendiente' : formatoMoneda.format(totales.subtotal)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 border-b py-3 text-sm">
+                    <dt className="text-muted-foreground">IGV</dt>
+                    <dd className="font-mono tabular-nums">
+                      {totales.igv === null ? 'Pendiente' : formatoMoneda.format(totales.igv)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4 py-3 font-semibold">
+                    <dt>Total</dt>
+                    <dd className="font-mono tabular-nums">
+                      {totales.total === null ? 'Pendiente' : formatoMoneda.format(totales.total)}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
             </section>
 
             {errors.root ? (

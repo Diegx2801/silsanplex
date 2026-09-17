@@ -9,10 +9,11 @@
     "lint": "oxlint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "pretest:e2e": "npm run test:e2e:prepare",
     "test:e2e": "playwright test",
     "test:e2e:typecheck": "tsc --project tsconfig.e2e.json",
     "test:e2e:prepare": "npm --prefix ../backend run e2e:prepare",
-    "test:e2e:local": "npm run test:e2e:prepare && playwright test",
+    "test:e2e:local": "npm run test:e2e",
     "preview": "vite preview"
   },
   "dependencies": {

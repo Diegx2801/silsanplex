@@ -14,8 +14,8 @@ const cotizacion = {
 } satisfies Cotizacion
 
 const almacenes: Almacen[] = [
-  { id: 'warehouse-1', codigo: 'CENTRAL', nombre: 'Almacén central', direccion: '', activo: true },
-  { id: 'warehouse-2', codigo: 'NORTE', nombre: 'Almacén norte', direccion: '', activo: true },
+  { id: 'warehouse-1', codigo: 'CENTRAL', nombre: 'Almacén central', direccion: 'Av. Principal 100', activo: true },
+  { id: 'warehouse-2', codigo: 'NORTE', nombre: 'Almacén norte', direccion: 'Jr. Los Pinos 200', activo: true },
 ]
 
 function renderDialog(alConfirmar: React.ComponentProps<typeof DialogoSeleccionAlmacenPedido>['alConfirmar']) {
@@ -37,15 +37,32 @@ describe('DialogoSeleccionAlmacenPedido', () => {
   it('envía el UUID del almacén seleccionado', async () => {
     const alConfirmar = vi.fn().mockResolvedValue(undefined)
     renderDialog(alConfirmar)
-    fireEvent.change(screen.getByLabelText('Almacén de preparación *'), { target: { value: 'warehouse-2' } })
+    const almacen = screen.getByRole('combobox', { name: 'Almacén de preparación' })
+    expect(almacen).toHaveValue('')
+    fireEvent.focus(almacen)
+    fireEvent.change(almacen, { target: { value: 'norte' } })
+    fireEvent.click(screen.getByRole('option', { name: /NORTE · Almacén norte/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
 
     await waitFor(() => expect(alConfirmar).toHaveBeenCalledWith('warehouse-2'))
   })
 
+  it('filtra los almacenes por dirección', () => {
+    renderDialog(vi.fn())
+    const almacen = screen.getByRole('combobox', { name: 'Almacén de preparación' })
+    fireEvent.focus(almacen)
+    fireEvent.change(almacen, { target: { value: 'pinos' } })
+
+    expect(screen.getByRole('option', { name: /NORTE · Almacén norte/ })).toBeVisible()
+    expect(screen.queryByRole('option', { name: /CENTRAL · Almacén central/ })).not.toBeInTheDocument()
+  })
+
   it('muestra el error del RPC y conserva abierto el diálogo', async () => {
     const alConfirmar = vi.fn().mockResolvedValue('El almacén seleccionado ya no está disponible')
     const alCambiarApertura = renderDialog(alConfirmar)
+    const almacen = screen.getByRole('combobox', { name: 'Almacén de preparación' })
+    fireEvent.focus(almacen)
+    fireEvent.click(screen.getByRole('option', { name: /CENTRAL · Almacén central/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('El almacén seleccionado ya no está disponible')
@@ -56,6 +73,9 @@ describe('DialogoSeleccionAlmacenPedido', () => {
     let resolver: (resultado?: string) => void = () => undefined
     const alConfirmar = vi.fn(() => new Promise<string | undefined>((resolve) => { resolver = resolve }))
     renderDialog(alConfirmar)
+    const almacen = screen.getByRole('combobox', { name: 'Almacén de preparación' })
+    fireEvent.focus(almacen)
+    fireEvent.click(screen.getByRole('option', { name: /CENTRAL · Almacén central/ }))
     const boton = screen.getByRole('button', { name: 'Confirmar pedido' })
     fireEvent.click(boton)
     await waitFor(() => expect(boton).toBeDisabled())

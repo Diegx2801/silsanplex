@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
+import { fechaActualPeru } from '@/lib/fechas'
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
 import type { DatosVenta } from '@/modulos/ventas/modelo/operacionVenta'
 import { inventoryQueryKeys } from '@/modulos/inventario/estado/inventoryQueryKeys'
@@ -17,10 +18,12 @@ import {
   type CantidadDespacho,
   type CantidadCumplimientoServicio,
 } from '@/modulos/ventas/servicios/ventasService'
+import { cotizacionesQueryKeys } from '@/modulos/ventas/estado/useCotizacionesPersistentes'
 
 interface UseOperacionesVentaProps {
   cotizaciones: readonly Cotizacion[]
-  aceptarCotizacion: (cotizacionId: string) => string | undefined
+  /** Kept optional for legacy consumers; persistent quotes are accepted by the DB RPC. */
+  aceptarCotizacion?: (cotizacionId: string) => string | undefined
 }
 
 export function useOperacionesVenta({
@@ -51,13 +54,13 @@ export function useOperacionesVenta({
       if (!cotizacion || cotizacion.estado !== 'emitida') {
         throw new Error('La cotización debe estar emitida para crear el pedido')
       }
-      if (cotizacion.fechaValidez < new Date().toISOString().slice(0, 10)) {
+      if (cotizacion.fechaValidez < fechaActualPeru()) {
         throw new Error('La cotización está vencida; emite una nueva propuesta antes de crear el pedido')
       }
       const pedidoId = await crearPedidoPersistente(organizationId, cotizacion, warehouseId)
-      // La cotización sigue siendo un borrador temporal. Su actualización no
-      // participa en la transacción del pedido y nunca decide su existencia.
-      aceptarCotizacion(cotizacionId)
+      // New persistent quotes are accepted atomically by create_order. The
+      // optional callback only preserves compatibility with legacy consumers.
+      aceptarCotizacion?.(cotizacionId)
       return pedidoId
     },
     onSuccess: async () => {
@@ -65,6 +68,7 @@ export function useOperacionesVenta({
         queryClient.invalidateQueries({ queryKey: pedidosQueryKey }),
         queryClient.invalidateQueries({ queryKey: inventoryQueryKey }),
         queryClient.invalidateQueries({ queryKey: inventoryFefoQueryKey }),
+        queryClient.invalidateQueries({ queryKey: cotizacionesQueryKeys.all(organizationId) }),
       ])
     },
   })

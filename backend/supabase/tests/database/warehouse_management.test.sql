@@ -2,6 +2,16 @@ begin;
 
 select plan(50);
 
+-- Keep non-expired inventory fixtures stable as the calendar advances. The
+-- 30-day window also preserves the expiration-alert assertion below.
+create or replace function pg_temp.warehouse_test_expiration_date()
+returns date
+language sql
+stable
+as $$
+  select current_date + 30;
+$$;
+
 select has_table('public', 'warehouses', 'existe el maestro de almacenes');
 select has_table('public', 'warehouse_locations', 'existen ubicaciones fisicas');
 select has_table('public', 'product_warehouse_settings', 'existe configuracion de stock');
@@ -138,11 +148,36 @@ $$, 'configura minimo y ventana de vencimiento');
 select is((select has_low_stock_alert from public.inventory_alerts where product_id = '83000000-0000-4000-8000-000000000001'), true, 'alerta stock cero aun sin movimientos');
 
 select lives_ok($$
-  select public.record_inventory_movement('{"organization_id":"81000000-0000-4000-8000-000000000001","product_id":"83000000-0000-4000-8000-000000000001","warehouse_id":"84000000-0000-4000-8000-000000000001","location_id":"85000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":"10","unit_cost":"7.5","stock_status":"available","lot":"L-2026","expiration_date":"2026-09-15","operation_date":"2026-08-21","reason":"Entrada inicial valorizada"}'::jsonb)
+  select public.record_inventory_movement(jsonb_build_object(
+    'organization_id', '81000000-0000-4000-8000-000000000001',
+    'product_id', '83000000-0000-4000-8000-000000000001',
+    'warehouse_id', '84000000-0000-4000-8000-000000000001',
+    'location_id', '85000000-0000-4000-8000-000000000001',
+    'movement_type', 'entrada',
+    'quantity', '10',
+    'unit_cost', '7.5',
+    'stock_status', 'available',
+    'lot', 'L-2026',
+    'expiration_date', pg_temp.warehouse_test_expiration_date(),
+    'operation_date', '2026-08-21',
+    'reason', 'Entrada inicial valorizada'
+  ))
 $$, 'registra entrada por almacen, ubicacion y lote');
 
 select throws_ok($$
-  select public.record_inventory_movement('{"organization_id":"81000000-0000-4000-8000-000000000001","product_id":"83000000-0000-4000-8000-000000000001","warehouse_id":"84000000-0000-4000-8000-000000000001","location_id":"85000000-0000-4000-8000-000000000001","movement_type":"ajuste-negativo","quantity":"1","stock_status":"available","lot":"L-2026","expiration_date":"2026-10-15","operation_date":"2026-08-21","reason":"Vencimiento sin saldo"}'::jsonb)
+  select public.record_inventory_movement(jsonb_build_object(
+    'organization_id', '81000000-0000-4000-8000-000000000001',
+    'product_id', '83000000-0000-4000-8000-000000000001',
+    'warehouse_id', '84000000-0000-4000-8000-000000000001',
+    'location_id', '85000000-0000-4000-8000-000000000001',
+    'movement_type', 'ajuste-negativo',
+    'quantity', '1',
+    'stock_status', 'available',
+    'lot', 'L-2026',
+    'expiration_date', pg_temp.warehouse_test_expiration_date() + 30,
+    'operation_date', '2026-08-21',
+    'reason', 'Vencimiento sin saldo'
+  ))
 $$, 'P0001', 'INVENTORY_INSUFFICIENT_STOCK', 'no usa el saldo de otro vencimiento del mismo lote');
 
 select results_eq(
@@ -153,17 +188,55 @@ select results_eq(
 select is((select has_low_stock_alert from public.inventory_alerts where product_id = '83000000-0000-4000-8000-000000000001'), true, 'genera alerta de stock minimo');
 select is((select has_expiration_alert from public.inventory_alerts where product_id = '83000000-0000-4000-8000-000000000001'), true, 'genera alerta de vencimiento');
 select throws_ok($$
-  select public.record_inventory_movement('{"organization_id":"81000000-0000-4000-8000-000000000001","product_id":"83000000-0000-4000-8000-000000000001","warehouse_id":"84000000-0000-4000-8000-000000000001","location_id":"85000000-0000-4000-8000-000000000001","movement_type":"salida","quantity":"11","stock_status":"available","lot":"L-2026","expiration_date":"2026-09-15","operation_date":"2026-08-21","reason":"Salida excesiva"}'::jsonb)
+  select public.record_inventory_movement(jsonb_build_object(
+    'organization_id', '81000000-0000-4000-8000-000000000001',
+    'product_id', '83000000-0000-4000-8000-000000000001',
+    'warehouse_id', '84000000-0000-4000-8000-000000000001',
+    'location_id', '85000000-0000-4000-8000-000000000001',
+    'movement_type', 'salida',
+    'quantity', '11',
+    'stock_status', 'available',
+    'lot', 'L-2026',
+    'expiration_date', pg_temp.warehouse_test_expiration_date(),
+    'operation_date', '2026-08-21',
+    'reason', 'Salida excesiva'
+  ))
 $$, 'P0001', 'INVENTORY_INSUFFICIENT_STOCK', 'impide stock negativo');
 
 select lives_ok($$
-  select public.reclassify_inventory('{"organization_id":"81000000-0000-4000-8000-000000000001","product_id":"83000000-0000-4000-8000-000000000001","warehouse_id":"84000000-0000-4000-8000-000000000001","location_id":"85000000-0000-4000-8000-000000000001","source_status":"available","destination_status":"damaged","quantity":"2","lot":"L-2026","expiration_date":"2026-09-15","reason":"Envase deteriorado"}'::jsonb)
+  select public.reclassify_inventory(jsonb_build_object(
+    'organization_id', '81000000-0000-4000-8000-000000000001',
+    'product_id', '83000000-0000-4000-8000-000000000001',
+    'warehouse_id', '84000000-0000-4000-8000-000000000001',
+    'location_id', '85000000-0000-4000-8000-000000000001',
+    'source_status', 'available',
+    'destination_status', 'damaged',
+    'quantity', '2',
+    'lot', 'L-2026',
+    'expiration_date', pg_temp.warehouse_test_expiration_date(),
+    'reason', 'Envase deteriorado'
+  ))
 $$, 'inmoviliza producto danado con doble asiento');
 select is((select quantity from public.inventory_balances where product_id = '83000000-0000-4000-8000-000000000001' and stock_status = 'available'), 8.000::numeric, 'reduce stock disponible al inmovilizar');
 select is((select quantity from public.inventory_balances where product_id = '83000000-0000-4000-8000-000000000001' and stock_status = 'damaged'), 2.000::numeric, 'conserva stock danado separado');
 
 select lives_ok($$
-  select public.transfer_inventory('{"organization_id":"81000000-0000-4000-8000-000000000001","reference":"TR-0001","source_warehouse_id":"84000000-0000-4000-8000-000000000001","destination_warehouse_id":"84000000-0000-4000-8000-000000000002","notes":"Reposicion norte","items":[{"product_id":"83000000-0000-4000-8000-000000000001","source_location_id":"85000000-0000-4000-8000-000000000001","destination_location_id":"85000000-0000-4000-8000-000000000002","quantity":"3","lot":"L-2026","expiration_date":"2026-09-15","stock_status":"available"}]}'::jsonb)
+  select public.transfer_inventory(jsonb_build_object(
+    'organization_id', '81000000-0000-4000-8000-000000000001',
+    'reference', 'TR-0001',
+    'source_warehouse_id', '84000000-0000-4000-8000-000000000001',
+    'destination_warehouse_id', '84000000-0000-4000-8000-000000000002',
+    'notes', 'Reposicion norte',
+    'items', jsonb_build_array(jsonb_build_object(
+      'product_id', '83000000-0000-4000-8000-000000000001',
+      'source_location_id', '85000000-0000-4000-8000-000000000001',
+      'destination_location_id', '85000000-0000-4000-8000-000000000002',
+      'quantity', '3',
+      'lot', 'L-2026',
+      'expiration_date', pg_temp.warehouse_test_expiration_date(),
+      'stock_status', 'available'
+    ))
+  ))
 $$, 'transfiere stock atomico entre almacenes');
 select is((select count(*) from public.warehouse_transfer_items), 1::bigint, 'persiste detalle de transferencia');
 select is((select count(*) from public.inventory_movements where source_type = 'warehouse-transfer'), 2::bigint, 'transferencia crea salida y entrada trazables');
@@ -177,7 +250,21 @@ select throws_ok($$update public.inventory_movements set reason = 'Alterado' whe
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '82000000-0000-4000-8000-000000000001', true);
 select throws_ok($$
-  select public.transfer_inventory('{"organization_id":"81000000-0000-4000-8000-000000000001","reference":"TR-0002","source_warehouse_id":"84000000-0000-4000-8000-000000000001","destination_warehouse_id":"84000000-0000-4000-8000-000000000002","items":[{"product_id":"83000000-0000-4000-8000-000000000001","source_location_id":"85000000-0000-4000-8000-000000000001","destination_location_id":"85000000-0000-4000-8000-000000000002","quantity":"99","lot":"L-2026","expiration_date":"2026-09-15","stock_status":"available"}]}'::jsonb)
+  select public.transfer_inventory(jsonb_build_object(
+    'organization_id', '81000000-0000-4000-8000-000000000001',
+    'reference', 'TR-0002',
+    'source_warehouse_id', '84000000-0000-4000-8000-000000000001',
+    'destination_warehouse_id', '84000000-0000-4000-8000-000000000002',
+    'items', jsonb_build_array(jsonb_build_object(
+      'product_id', '83000000-0000-4000-8000-000000000001',
+      'source_location_id', '85000000-0000-4000-8000-000000000001',
+      'destination_location_id', '85000000-0000-4000-8000-000000000002',
+      'quantity', '99',
+      'lot', 'L-2026',
+      'expiration_date', pg_temp.warehouse_test_expiration_date(),
+      'stock_status', 'available'
+    ))
+  ))
 $$, 'P0001', 'INVENTORY_INSUFFICIENT_STOCK', 'transferencia no produce stock negativo');
 select is((select count(*) from public.warehouse_transfers), 1::bigint, 'transferencia fallida revierte cabecera');
 
