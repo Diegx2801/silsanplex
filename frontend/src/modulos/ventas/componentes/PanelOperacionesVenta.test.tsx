@@ -287,6 +287,7 @@ describe('PanelOperacionesVenta', () => {
     })
 
     const almacen = screen.getByRole('combobox', { name: 'Almacén' })
+    expect(screen.queryByText('Filtra por nombre del almacén.')).not.toBeInTheDocument()
     fireEvent.focus(almacen)
     fireEvent.change(almacen, { target: { value: 'norte' } })
     fireEvent.click(screen.getByRole('option', { name: 'Almacén norte' }))

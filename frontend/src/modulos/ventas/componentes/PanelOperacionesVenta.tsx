@@ -249,7 +249,6 @@ export function PanelOperacionesVenta({
           options={opcionesAlmacenes}
           onChange={(valor) => { setFiltroAlmacen(valor); setPagina(1) }}
           placeholder="Todos los almacenes"
-          helperText="Filtra por nombre del almacén."
           noOptionsMessage="No hay almacenes disponibles."
         />
       </div>
