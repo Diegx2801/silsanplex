@@ -1,7 +1,9 @@
 import { FileDown, Pencil, Plus, Search, Truck } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router'
 
+import { PaginacionListado, type TamanioPaginaListado } from '@/components/ui/PaginacionListado'
 import { Button } from '@/components/ui/button'
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import { useAuth } from '@/features/auth/useAuth'
@@ -46,17 +48,30 @@ const etiquetasModalidad: Record<string, string> = {
   movilidad_externa: 'Movilidad externa',
   recojo_cliente: 'Recojo del cliente',
 }
+type VistaDistribucion = 'pendientes' | 'seguimiento'
+
+function normalizarBusqueda(valor: string) {
+  return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-PE')
+}
 
 export function DistribucionPage() {
+  const [parametros, setParametros] = useSearchParams()
+  const vista: VistaDistribucion = parametros.get('vista') === 'seguimiento' ? 'seguimiento' : 'pendientes'
   const { hasPermission } = useAuth()
   const puedeGestionarDistribucion = hasPermission(PERMISSIONS.DISTRIBUTION_MANAGE)
   const { clientes } = useClientes()
   const { pedidos, cargando: cargandoPedidos, error: errorPedidos, reintentar: reintentarPedidos } = usePedidosPersistentes()
   const { ventas, cargando: cargandoVentas, error: errorVentas, reintentar: reintentarVentas } = useVentasPersistentes()
   const { programaciones, guardar, actualizarEstado, error: errorProgramaciones, reintentar: reintentarProgramaciones } = useProgramacionesEntrega()
+  const [busquedaPendientes, setBusquedaPendientes] = useState('')
+  const [filtroAlmacenPendientes, setFiltroAlmacenPendientes] = useState('')
+  const [paginaPendientes, setPaginaPendientes] = useState(1)
+  const [tamanioPaginaPendientes, setTamanioPaginaPendientes] = useState<TamanioPaginaListado>(10)
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<'todos' | ProgramacionEntrega['estado']>('todos')
   const [filtroFecha, setFiltroFecha] = useState('')
+  const [paginaSeguimiento, setPaginaSeguimiento] = useState(1)
+  const [tamanioPaginaSeguimiento, setTamanioPaginaSeguimiento] = useState<TamanioPaginaListado>(10)
   const [formularioAbierto, setFormularioAbierto] = useState(false)
   const [edicion, setEdicion] = useState<ProgramacionEntrega | null>(null)
   const [direccionSeleccionadaId, setDireccionSeleccionadaId] = useState('')
@@ -87,20 +102,41 @@ export function DistribucionPage() {
     lineas: [],
   })
   const busquedaDiferida = useDeferredValue(busqueda)
-  const ventaPorPedido = new Map(ventas.map((venta) => [venta.pedidoId, venta]))
-  const pedidoTieneVenta = (pedidoId: string) => ventaPorPedido.has(pedidoId)
-  const pedidoTieneBienes = (pedido: typeof pedidos[number]) => pedido.lineas.some((linea) => linea.tipoProducto === 'good')
-  const pedidosDisponibles = pedidos.filter((pedido) =>
-    pedidoTieneBienes(pedido) && pedidoTieneVenta(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id && item.id !== edicion?.id),
-  )
-  const pedidosPorProgramar = pedidos.filter(
-    (pedido) => pedido.estado !== 'cancelado' && pedidoTieneBienes(pedido) && pedidoTieneVenta(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id),
+  const ventaPorPedido = useMemo(() => new Map(ventas.map((venta) => [venta.pedidoId, venta])), [ventas])
+  const pedidosDisponibles = useMemo(() => pedidos.filter((pedido) =>
+    pedido.lineas.some((linea) => linea.tipoProducto === 'good') && ventaPorPedido.has(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id && item.id !== edicion?.id),
+  ), [edicion?.id, pedidos, programaciones, ventaPorPedido])
+  const pedidosPorProgramar = useMemo(() => pedidos.filter(
+    (pedido) => pedido.estado !== 'cancelado' && pedido.lineas.some((linea) => linea.tipoProducto === 'good') && ventaPorPedido.has(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id),
+  ), [pedidos, programaciones, ventaPorPedido])
+  const almacenesPendientes = useMemo(() => Array.from(new Set(pedidosPorProgramar.map((pedido) => pedido.almacenNombre).filter((almacen): almacen is string => Boolean(almacen)))).sort((a, b) => a.localeCompare(b, 'es-PE')), [pedidosPorProgramar])
+  const pedidosPorProgramarFiltrados = useMemo(() => {
+    const termino = normalizarBusqueda(busquedaPendientes.trim())
+    return pedidosPorProgramar
+      .filter((pedido) => {
+        const texto = normalizarBusqueda(`${pedido.numero} ${pedido.clienteNombre} ${pedido.almacenNombre ?? ''}`)
+        const coincideAlmacen = !filtroAlmacenPendientes || pedido.almacenNombre === filtroAlmacenPendientes
+        return coincideAlmacen && (!termino || texto.includes(termino))
+      })
+      .toSorted((a, b) => (b.fechaRegistro ?? '').localeCompare(a.fechaRegistro ?? ''))
+  }, [busquedaPendientes, filtroAlmacenPendientes, pedidosPorProgramar])
+  const totalPaginasPendientes = Math.max(1, Math.ceil(pedidosPorProgramarFiltrados.length / tamanioPaginaPendientes))
+  const paginaPendientesVisible = Math.min(paginaPendientes, totalPaginasPendientes)
+  const pedidosPorProgramarVisibles = pedidosPorProgramarFiltrados.slice(
+    (paginaPendientesVisible - 1) * tamanioPaginaPendientes,
+    paginaPendientesVisible * tamanioPaginaPendientes,
   )
   const filtradas = filtrarProgramacionesEntrega(programaciones, {
     busqueda: busquedaDiferida,
     estado: filtroEstado,
     fecha: filtroFecha,
   })
+  const totalPaginasSeguimiento = Math.max(1, Math.ceil(filtradas.length / tamanioPaginaSeguimiento))
+  const paginaSeguimientoVisible = Math.min(paginaSeguimiento, totalPaginasSeguimiento)
+  const entregasVisibles = filtradas.slice(
+    (paginaSeguimientoVisible - 1) * tamanioPaginaSeguimiento,
+    paginaSeguimientoVisible * tamanioPaginaSeguimiento,
+  )
   const resumen = resumirEntregas(programaciones, hoy)
   const entregasAtrasadas = listarEntregasAtrasadas(programaciones, hoy)
 
@@ -123,6 +159,10 @@ export function DistribucionPage() {
   const estadoRequiereTransporte = ['en_curso', 'en_destino', 'entregado', 'entrega_parcial'].includes(datos.estado)
   const requiereDatosTransporte = estadoRequiereTransporte && !esRecojoCliente
   const requiereTransportista = requiereDatosTransporte && datos.tipoTransporte === 'externo'
+
+  const cambiarVista = (siguiente: VistaDistribucion) => {
+    setParametros(siguiente === 'pendientes' ? {} : { vista: siguiente })
+  }
 
   useEffect(() => {
     if (!formularioAbierto || !datos.pedidoId || datos.direccionEntrega || !direccionesCliente.length) return
@@ -419,6 +459,27 @@ export function DistribucionPage() {
         {puedeGestionarDistribucion ? <Button type="button" size="lg" onClick={() => abrirFormulario()}><Plus aria-hidden="true" /> Programar entrega</Button> : null}
       </header>
 
+      <nav aria-label="Secciones de distribución" role="tablist" className="flex flex-wrap gap-2 border-b pb-2 print:hidden">
+        <Link
+          to="/distribucion"
+          role="tab"
+          aria-selected={vista === 'pendientes'}
+          className={vista === 'pendientes' ? 'border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary' : 'px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground'}
+          onClick={(evento) => { evento.preventDefault(); cambiarVista('pendientes') }}
+        >
+          Por programar
+        </Link>
+        <Link
+          to="/distribucion?vista=seguimiento"
+          role="tab"
+          aria-selected={vista === 'seguimiento'}
+          className={vista === 'seguimiento' ? 'border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary' : 'px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground'}
+          onClick={(evento) => { evento.preventDefault(); cambiarVista('seguimiento') }}
+        >
+          Seguimiento de entregas
+        </Link>
+      </nav>
+
       <section aria-label="Resumen de distribución" className="ledger-sheet">
         <div className="grid sm:grid-cols-3">
           {[
@@ -445,92 +506,82 @@ export function DistribucionPage() {
           <Button type="button" variant="outline" onClick={() => { void reintentarPedidos(); void reintentarVentas(); void reintentarProgramaciones() }}>Reintentar</Button>
         </aside>
       ) : null}
-      {entregasAtrasadas.length ? (
-        <section aria-label="Alertas de entregas atrasadas" className="ledger-sheet border border-amber-200 bg-amber-50/80">
-          <div className="border-b border-amber-200 px-5 py-4 sm:px-6">
-            <h2 className="text-base font-semibold text-amber-900">Alertas operativas</h2>
-          </div>
-          <div className="divide-y divide-amber-200">
-            {entregasAtrasadas.slice(0, 4).map((entrega) => (
-              <article key={entrega.id} className="flex flex-col gap-2 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                <div>
-                  <p className="font-mono text-xs text-amber-700">{entrega.pedidoNumero}</p>
-                  <p className="font-medium text-amber-900">{entrega.clienteNombre}</p>
-                </div>
-                <div className="text-amber-800">
-                  <span className="font-semibold">{entrega.diasAtraso} día{entrega.diasAtraso === 1 ? '' : 's'} de retraso</span>
-                  {entrega.incidencias.length ? <span className="ml-2">· {entrega.incidencias[0]}</span> : null}
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
-      <section aria-labelledby="pendientes-programacion-title" className="ledger-sheet">
-        <div className="border-b px-5 py-5 sm:px-6">
-          <h2 id="pendientes-programacion-title" className="text-lg font-semibold">Pedidos por programar</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Pedidos confirmados que todavía no tienen una entrega asignada.</p>
-        </div>
-        {cargandoPedidos || cargandoVentas ? (
-          <p className="px-5 py-6 text-sm text-muted-foreground sm:px-6">Cargando pedidos persistentes…</p>
-        ) : !pedidosPorProgramar.length ? (
-          <p className="px-5 py-6 text-sm text-muted-foreground sm:px-6">No hay pedidos pendientes de programación.</p>
-        ) : (
-          <div className="divide-y">{pedidosPorProgramar.map((pedido) => (
-            <article key={pedido.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-              <div><p className="font-mono text-xs text-primary">{pedido.numero}</p><h3 className="mt-1 font-semibold">{pedido.clienteNombre}</h3><p className="mt-1 text-xs text-muted-foreground">{pedido.lineas.length} producto{pedido.lineas.length === 1 ? '' : 's'} · Pedido confirmado</p></div>
-              {puedeGestionarDistribucion ? <Button type="button" onClick={() => prepararPedido(pedido.id)}><Plus aria-hidden="true" /> Programar</Button> : null}
-            </article>
-          ))}</div>
-        )}
-      </section>
-      <section aria-labelledby="entregas-title" className="ledger-sheet">
-        <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[1fr_18rem_18rem] lg:items-end print:hidden">
-          <div><h2 id="entregas-title" className="text-lg font-semibold">Entregas programadas</h2><p className="mt-1 text-sm text-muted-foreground">{filtradas.length} de {programaciones.length} entregas</p></div>
-          <div><label htmlFor="buscar-entrega" className="field-label">Buscar</label><div className="relative"><Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input id="buscar-entrega" type="search" value={busqueda} onChange={(evento) => setBusqueda(evento.target.value)} className="field-control ps-9" placeholder="Pedido, cliente o guía" /></div></div>
-          <div>
-            <label htmlFor="estado-filtro" className="field-label">Estado</label>
-            <select id="estado-filtro" value={filtroEstado} onChange={(evento) => setFiltroEstado(evento.target.value as 'todos' | ProgramacionEntrega['estado'])} className="field-control">
-              <option value="todos">Todos</option>
-              {Object.entries(etiquetasEstado).map(([valor, etiqueta]) => (
-                <option key={valor} value={valor}>{etiqueta}</option>
-              ))}
-            </select>
-          </div>
-          <div className="lg:col-span-3">
-            <label htmlFor="fecha-filtro" className="field-label">Fecha</label>
-            <div className="flex gap-2">
-              <input id="fecha-filtro" type="date" value={filtroFecha} onChange={(evento) => setFiltroFecha(evento.target.value)} className="field-control" />
-              {filtroFecha || filtroEstado !== 'todos' || busqueda ? (
-                <Button type="button" variant="outline" onClick={() => { setBusqueda(''); setFiltroEstado('todos'); setFiltroFecha('') }}>Limpiar</Button>
-              ) : null}
+      {vista === 'pendientes' ? (
+        <section aria-labelledby="pendientes-programacion-title" className="ledger-sheet">
+          <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(14rem,1fr)_minmax(15rem,18rem)_minmax(13rem,16rem)] lg:items-end">
+            <div>
+              <h2 id="pendientes-programacion-title" className="text-lg font-semibold">Pedidos por programar</h2>
+              <p className="mt-1 text-sm text-muted-foreground">{pedidosPorProgramarFiltrados.length} de {pedidosPorProgramar.length} pedidos sin entrega asignada.</p>
+            </div>
+            <div>
+              <label htmlFor="buscar-pedido-pendiente" className="field-label">Buscar</label>
+              <div className="relative"><Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input id="buscar-pedido-pendiente" type="search" value={busquedaPendientes} onChange={(evento) => { setBusquedaPendientes(evento.target.value); setPaginaPendientes(1) }} className="field-control ps-9" placeholder="Pedido, cliente o almacén" /></div>
+            </div>
+            <div>
+              <label htmlFor="almacen-pendiente" className="field-label">Almacén</label>
+              <select id="almacen-pendiente" value={filtroAlmacenPendientes} onChange={(evento) => { setFiltroAlmacenPendientes(evento.target.value); setPaginaPendientes(1) }} className="field-control">
+                <option value="">Todos</option>
+                {almacenesPendientes.map((almacen) => <option key={almacen} value={almacen}>{almacen}</option>)}
+              </select>
             </div>
           </div>
-        </div>
-        {!filtradas.length ? (
-          <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{programaciones.length ? 'No hay coincidencias' : 'Aún no hay entregas programadas'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Programa una entrega desde un pedido confirmado para iniciar el seguimiento.</p></div>
-        ) : (
-          <div className="divide-y">{filtradas.map((item) => (
-            <article key={item.id} className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[1.1fr_1fr_1fr_auto] lg:items-center">
-              <div className="print-delivery-header"><p className="font-mono text-xs text-primary">SILSANPLEX · CONSTANCIA DE ENTREGA</p><p className="font-mono text-xs text-muted-foreground">Emisión: {formatearFechaDistribucion(item.fechaEmision)}</p></div>
-              <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · {item.ventaNumero ? `Venta ${item.ventaNumero} · ` : ''}Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{item.lineas.length ? item.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · pedidas <span className="font-mono font-semibold">{linea.cantidad}</span> · despachadas <span className="font-mono font-semibold">{linea.cantidadDespachada ?? 0}</span> · pendientes <span className="font-mono font-semibold">{linea.cantidadPendiente ?? linea.cantidad}</span> {linea.unidadMedida}</p>) : <p>Detalle del pedido no disponible</p>}</div></div>
-              <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted-foreground">Emisión</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEmision)}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEntrega)}</dd></div></dl>
-              <div>
-                <p className="text-sm">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</p>
-                {puedeGestionarDistribucion ? (
-                  <select aria-label={`Estado de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => { void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado']).then((error) => setMensaje(error ?? `Estado actualizado para ${item.pedidoNumero}.`)) }} className="field-control mt-2">
-                    {[item.estado, ...obtenerEstadosSiguientes(item.estado)].map((valor) => (
-                      <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>
-                    ))}
-                  </select>
-                ) : <p className="mt-2 text-sm text-muted-foreground">Solo consulta</p>}
-                {item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}
+          {cargandoPedidos || cargandoVentas ? (
+            <p className="px-5 py-6 text-sm text-muted-foreground sm:px-6">Cargando pedidos persistentes…</p>
+          ) : !pedidosPorProgramarFiltrados.length ? (
+            <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{pedidosPorProgramar.length ? 'No hay coincidencias' : 'No hay pedidos pendientes de programación'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{pedidosPorProgramar.length ? 'Prueba con otra búsqueda o limpia el filtro de almacén.' : 'Cuando exista un pedido confirmado con venta persistente aparecerá aquí.'}</p></div>
+          ) : (
+            <div className="divide-y">{pedidosPorProgramarVisibles.map((pedido) => (
+              <article key={pedido.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div><p className="font-mono text-xs text-primary">{pedido.numero}</p><h3 className="mt-1 font-semibold">{pedido.clienteNombre}</h3><p className="mt-1 text-xs text-muted-foreground">{pedido.lineas.filter((linea) => linea.tipoProducto === 'good').length} producto{pedido.lineas.filter((linea) => linea.tipoProducto === 'good').length === 1 ? '' : 's'} · {pedido.almacenNombre ?? 'Almacén no especificado'} · Pedido confirmado</p></div>
+                {puedeGestionarDistribucion ? <Button type="button" onClick={() => prepararPedido(pedido.id)}><Plus aria-hidden="true" /> Programar</Button> : null}
+              </article>
+            ))}</div>
+          )}
+          {pedidosPorProgramarFiltrados.length ? <PaginacionListado etiqueta="pedidos por programar" pagina={paginaPendientesVisible} tamanioPagina={tamanioPaginaPendientes} total={pedidosPorProgramarFiltrados.length} totalPaginas={totalPaginasPendientes} cantidadVisible={pedidosPorProgramarVisibles.length} alCambiarPagina={setPaginaPendientes} alCambiarTamanio={(siguiente) => { setTamanioPaginaPendientes(siguiente); setPaginaPendientes(1) }} /> : null}
+        </section>
+      ) : null}
+
+      {vista === 'seguimiento' ? (
+        <>
+          {entregasAtrasadas.length ? (
+            <section aria-label="Alertas de entregas atrasadas" className="ledger-sheet border border-amber-200 bg-amber-50/80">
+              <div className="border-b border-amber-200 px-5 py-4 sm:px-6">
+                <h2 className="text-base font-semibold text-amber-900">Alertas operativas</h2>
               </div>
-              <div className="flex gap-2 print:hidden">{puedeGestionarDistribucion ? <Button type="button" variant="outline" onClick={() => abrirFormulario(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}<Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
-            </article>
-          ))}</div>
-        )}
-      </section>
+              <div className="divide-y divide-amber-200">
+                {entregasAtrasadas.slice(0, 4).map((entrega) => (
+                  <article key={entrega.id} className="flex flex-col gap-2 px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                    <div><p className="font-mono text-xs text-amber-700">{entrega.pedidoNumero}</p><p className="font-medium text-amber-900">{entrega.clienteNombre}</p></div>
+                    <div className="text-amber-800"><span className="font-semibold">{entrega.diasAtraso} día{entrega.diasAtraso === 1 ? '' : 's'} de retraso</span>{entrega.incidencias.length ? <span className="ml-2">· {entrega.incidencias[0]}</span> : null}</div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          <section aria-labelledby="entregas-title" className="ledger-sheet">
+            <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(14rem,1fr)_minmax(15rem,18rem)_minmax(13rem,16rem)] lg:items-end print:hidden">
+              <div><h2 id="entregas-title" className="text-lg font-semibold">Seguimiento de entregas</h2><p className="mt-1 text-sm text-muted-foreground">{filtradas.length} de {programaciones.length} entregas visibles</p></div>
+              <div><label htmlFor="buscar-entrega" className="field-label">Buscar</label><div className="relative"><Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input id="buscar-entrega" type="search" value={busqueda} onChange={(evento) => { setBusqueda(evento.target.value); setPaginaSeguimiento(1) }} className="field-control ps-9" placeholder="Pedido, cliente o guía" /></div></div>
+              <div><label htmlFor="estado-filtro" className="field-label">Estado</label><select id="estado-filtro" value={filtroEstado} onChange={(evento) => { setFiltroEstado(evento.target.value as 'todos' | ProgramacionEntrega['estado']); setPaginaSeguimiento(1) }} className="field-control"><option value="todos">Todos</option>{Object.entries(etiquetasEstado).map(([valor, etiqueta]) => <option key={valor} value={valor}>{etiqueta}</option>)}</select></div>
+              <div className="lg:col-span-3"><label htmlFor="fecha-filtro" className="field-label">Fecha de programación o entrega</label><div className="flex gap-2"><input id="fecha-filtro" type="date" value={filtroFecha} onChange={(evento) => { setFiltroFecha(evento.target.value); setPaginaSeguimiento(1) }} className="field-control" />{filtroFecha || filtroEstado !== 'todos' || busqueda ? <Button type="button" variant="outline" onClick={() => { setBusqueda(''); setFiltroEstado('todos'); setFiltroFecha(''); setPaginaSeguimiento(1) }}>Limpiar</Button> : null}</div></div>
+            </div>
+            {!filtradas.length ? (
+              <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{programaciones.length ? 'No hay coincidencias' : 'Aún no hay entregas programadas'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{programaciones.length ? 'Prueba con otra búsqueda o limpia los filtros.' : 'Programa una entrega desde un pedido confirmado para iniciar el seguimiento.'}</p></div>
+            ) : (
+              <div className="divide-y">{entregasVisibles.map((item) => (
+                <article key={item.id} className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[1.1fr_1fr_1fr_auto] lg:items-center">
+                  <div className="print-delivery-header"><p className="font-mono text-xs text-primary">SILSANPLEX · CONSTANCIA DE ENTREGA</p><p className="font-mono text-xs text-muted-foreground">Emisión: {formatearFechaDistribucion(item.fechaEmision)}</p></div>
+                  <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · {item.ventaNumero ? `Venta ${item.ventaNumero} · ` : ''}Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{item.lineas.length ? item.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · pedidas <span className="font-mono font-semibold">{linea.cantidad}</span> · despachadas <span className="font-mono font-semibold">{linea.cantidadDespachada ?? 0}</span> · pendientes <span className="font-mono font-semibold">{linea.cantidadPendiente ?? linea.cantidad}</span> {linea.unidadMedida}</p>) : <p>Detalle del pedido no disponible</p>}</div></div>
+                  <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted-foreground">Programada</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaProgramada)}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega real</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEntrega)}</dd></div></dl>
+                  <div><p className="text-sm">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</p>{puedeGestionarDistribucion ? <select aria-label={`Estado de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => { void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado']).then((error) => setMensaje(error ?? `Estado actualizado para ${item.pedidoNumero}.`)) }} className="field-control mt-2">{[item.estado, ...obtenerEstadosSiguientes(item.estado)].map((valor) => <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>)}</select> : <p className="mt-2 text-sm text-muted-foreground">Solo consulta</p>}{item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}</div>
+                  <div className="flex gap-2 print:hidden">{puedeGestionarDistribucion ? <Button type="button" variant="outline" onClick={() => abrirFormulario(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}<Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
+                </article>
+              ))}</div>
+            )}
+            {filtradas.length ? <PaginacionListado etiqueta="seguimiento de entregas" pagina={paginaSeguimientoVisible} tamanioPagina={tamanioPaginaSeguimiento} total={filtradas.length} totalPaginas={totalPaginasSeguimiento} cantidadVisible={entregasVisibles.length} alCambiarPagina={setPaginaSeguimiento} alCambiarTamanio={(siguiente) => { setTamanioPaginaSeguimiento(siguiente); setPaginaSeguimiento(1) }} /> : null}
+          </section>
+        </>
+      ) : null}
 
       {puedeGestionarDistribucion && formularioAbierto ? (
         <div role="dialog" aria-modal="true" aria-labelledby="programar-title" className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
