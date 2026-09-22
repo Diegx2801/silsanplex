@@ -177,6 +177,9 @@ function normalizarTexto(valor: string) {
 export type FiltroProgramacionesEntrega = {
   busqueda?: string
   estado?: 'todos' | ProgramacionEntrega['estado']
+  fechaDesde?: string
+  fechaHasta?: string
+  /** Compatibilidad con consumidores anteriores que filtraban por un único día. */
   fecha?: string
 }
 
@@ -186,12 +189,15 @@ export function filtrarProgramacionesEntrega(
 ): ProgramacionEntrega[] {
   const busqueda = normalizarTexto(filtro.busqueda ?? '')
   const estado = filtro.estado ?? 'todos'
-  const fecha = filtro.fecha ?? ''
+  const fechaDesde = filtro.fechaDesde ?? filtro.fecha ?? ''
+  const fechaHasta = filtro.fechaHasta ?? filtro.fecha ?? ''
 
   return programaciones.filter((item) => {
     const coincideBusqueda = !busqueda || normalizarTexto(`${item.pedidoNumero} ${item.clienteNombre} ${item.numeroGuiaRemision}`).includes(busqueda)
     const coincideEstado = estado === 'todos' || item.estado === estado
-    const coincideFecha = !fecha || [item.fechaEmision, item.fechaProgramada, item.fechaEntrega].some((valor) => valor === fecha)
+    const coincideFecha = (!fechaDesde && !fechaHasta) || [item.fechaEmision, item.fechaProgramada, item.fechaEntrega]
+      .filter(Boolean)
+      .some((valor) => (!fechaDesde || valor >= fechaDesde) && (!fechaHasta || valor <= fechaHasta))
 
     return coincideBusqueda && coincideEstado && coincideFecha
   })

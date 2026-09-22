@@ -35,6 +35,22 @@ export type DatosVenta = z.infer<typeof esquemaDatosVenta>
 export const esquemaEstadoCalculoTributario = z.enum(['calculated', 'pending', 'legacy_unknown'])
 export type EstadoCalculoTributario = z.infer<typeof esquemaEstadoCalculoTributario>
 
+/** Contrato de cumplimiento persistente del pedido. Se mantiene opcional en
+ * lecturas para que los pedidos históricos sigan siendo renderizables hasta
+ * completar la migración local/remota. */
+export const MODOS_CUMPLIMIENTO_PEDIDO = ['delivery', 'pickup'] as const
+export const ESTADOS_CUMPLIMIENTO_PEDIDO = [
+  'pending',
+  'preparing',
+  'dispatched',
+  'delivered',
+  'partially_fulfilled',
+  'out_of_stock',
+  'cancelled',
+] as const
+export type ModoCumplimientoPedido = typeof MODOS_CUMPLIMIENTO_PEDIDO[number]
+export type EstadoCumplimientoPedido = typeof ESTADOS_CUMPLIMIENTO_PEDIDO[number]
+
 export const esquemaLineaOperacionVenta = z.object({
   id: z.string().min(1),
   productoId: z.string().min(1),
@@ -81,6 +97,8 @@ export const esquemaPedidoVenta = z.object({
   observacion: z.string(),
   lineas: z.array(esquemaLineaOperacionVenta).min(1),
   estado: z.enum(['confirmado', 'atendido', 'cancelado']),
+  modalidadCumplimiento: z.enum(MODOS_CUMPLIMIENTO_PEDIDO).optional(),
+  estadoCumplimiento: z.enum(ESTADOS_CUMPLIMIENTO_PEDIDO).optional(),
   fechaRegistro: z.string().datetime(),
   fechaAtencion: z.string().datetime().nullable(),
   // Algunos pedidos históricos migrados todavía no tienen almacén canónico.

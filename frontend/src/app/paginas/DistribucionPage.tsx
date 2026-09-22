@@ -1,6 +1,6 @@
-import { FileDown, Pencil, Plus, Search, Truck } from 'lucide-react'
+import { Eye, FileDown, Pencil, Plus, Search, Truck } from 'lucide-react'
 import { jsPDF } from 'jspdf'
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 
 import { PaginacionListado, type TamanioPaginaListado } from '@/components/ui/PaginacionListado'
@@ -10,6 +10,7 @@ import { useAuth } from '@/features/auth/useAuth'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { fechaActualPeru, ZONA_HORARIA_NEGOCIO } from '@/lib/fechas'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
+import { DialogoDetalleEntrega } from '@/modulos/distribucion/componentes/DialogoDetalleEntrega'
 import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
 import {
   esquemaDatosProgramacionEntrega,
@@ -21,6 +22,8 @@ import {
   type ProgramacionEntrega,
 } from '@/modulos/distribucion/modelo/programacionEntrega'
 import { formatearFechaDistribucion } from '@/modulos/distribucion/servicios/formatoDistribucion'
+import { DialogoDetalleOperacionVenta } from '@/modulos/ventas/componentes/DialogoDetalleOperacionVenta'
+import type { PedidoVenta } from '@/modulos/ventas/modelo/operacionVenta'
 import { usePedidosPersistentes } from '@/modulos/ventas/estado/usePedidosPersistentes'
 import { useVentasPersistentes } from '@/modulos/ventas/estado/useVentasPersistentes'
 
@@ -48,6 +51,12 @@ const etiquetasModalidad: Record<string, string> = {
   movilidad_externa: 'Movilidad externa',
   recojo_cliente: 'Recojo del cliente',
 }
+
+function tonoEstadoDistribucion(estado: ProgramacionEntrega['estado']) {
+  if (estado === 'entregado') return 'listo'
+  if (estado === 'rechazado' || estado === 'devuelto' || estado === 'cancelado') return 'revision'
+  return 'pendiente'
+}
 type VistaDistribucion = 'pendientes' | 'seguimiento'
 
 function normalizarBusqueda(valor: string) {
@@ -69,11 +78,15 @@ export function DistribucionPage() {
   const [tamanioPaginaPendientes, setTamanioPaginaPendientes] = useState<TamanioPaginaListado>(10)
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<'todos' | ProgramacionEntrega['estado']>('todos')
-  const [filtroFecha, setFiltroFecha] = useState('')
+  const [filtroFechaDesde, setFiltroFechaDesde] = useState('')
+  const [filtroFechaHasta, setFiltroFechaHasta] = useState('')
   const [paginaSeguimiento, setPaginaSeguimiento] = useState(1)
   const [tamanioPaginaSeguimiento, setTamanioPaginaSeguimiento] = useState<TamanioPaginaListado>(10)
   const [formularioAbierto, setFormularioAbierto] = useState(false)
   const [edicion, setEdicion] = useState<ProgramacionEntrega | null>(null)
+  const [pedidoDetalle, setPedidoDetalle] = useState<PedidoVenta | null>(null)
+  const [entregaDetalle, setEntregaDetalle] = useState<ProgramacionEntrega | null>(null)
+  const disparadorPedidoDetalle = useRef<HTMLButtonElement | null>(null)
   const [direccionSeleccionadaId, setDireccionSeleccionadaId] = useState('')
   const [mensaje, setMensaje] = useState('')
   const [datos, setDatos] = useState<DatosProgramacionEntrega>({
@@ -104,10 +117,10 @@ export function DistribucionPage() {
   const busquedaDiferida = useDeferredValue(busqueda)
   const ventaPorPedido = useMemo(() => new Map(ventas.map((venta) => [venta.pedidoId, venta])), [ventas])
   const pedidosDisponibles = useMemo(() => pedidos.filter((pedido) =>
-    pedido.lineas.some((linea) => linea.tipoProducto === 'good') && ventaPorPedido.has(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id && item.id !== edicion?.id),
+    pedido.estado === 'confirmado' && pedido.lineas.some((linea) => linea.tipoProducto === 'good') && ventaPorPedido.has(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id && item.id !== edicion?.id),
   ), [edicion?.id, pedidos, programaciones, ventaPorPedido])
   const pedidosPorProgramar = useMemo(() => pedidos.filter(
-    (pedido) => pedido.estado !== 'cancelado' && pedido.lineas.some((linea) => linea.tipoProducto === 'good') && ventaPorPedido.has(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id),
+    (pedido) => pedido.estado === 'confirmado' && pedido.lineas.some((linea) => linea.tipoProducto === 'good') && ventaPorPedido.has(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id),
   ), [pedidos, programaciones, ventaPorPedido])
   const almacenesPendientes = useMemo(() => Array.from(new Set(pedidosPorProgramar.map((pedido) => pedido.almacenNombre).filter((almacen): almacen is string => Boolean(almacen)))).sort((a, b) => a.localeCompare(b, 'es-PE')), [pedidosPorProgramar])
   const pedidosPorProgramarFiltrados = useMemo(() => {
@@ -129,7 +142,8 @@ export function DistribucionPage() {
   const filtradas = filtrarProgramacionesEntrega(programaciones, {
     busqueda: busquedaDiferida,
     estado: filtroEstado,
-    fecha: filtroFecha,
+    fechaDesde: filtroFechaDesde,
+    fechaHasta: filtroFechaHasta,
   })
   const totalPaginasSeguimiento = Math.max(1, Math.ceil(filtradas.length / tamanioPaginaSeguimiento))
   const paginaSeguimientoVisible = Math.min(paginaSeguimiento, totalPaginasSeguimiento)
@@ -530,12 +544,7 @@ export function DistribucionPage() {
           ) : !pedidosPorProgramarFiltrados.length ? (
             <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{pedidosPorProgramar.length ? 'No hay coincidencias' : 'No hay pedidos pendientes de programación'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{pedidosPorProgramar.length ? 'Prueba con otra búsqueda o limpia el filtro de almacén.' : 'Cuando exista un pedido confirmado con venta persistente aparecerá aquí.'}</p></div>
           ) : (
-            <div className="divide-y">{pedidosPorProgramarVisibles.map((pedido) => (
-              <article key={pedido.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                <div><p className="font-mono text-xs text-primary">{pedido.numero}</p><h3 className="mt-1 font-semibold">{pedido.clienteNombre}</h3><p className="mt-1 text-xs text-muted-foreground">{pedido.lineas.filter((linea) => linea.tipoProducto === 'good').length} producto{pedido.lineas.filter((linea) => linea.tipoProducto === 'good').length === 1 ? '' : 's'} · {pedido.almacenNombre ?? 'Almacén no especificado'} · Pedido confirmado</p></div>
-                {puedeGestionarDistribucion ? <Button type="button" onClick={() => prepararPedido(pedido.id)}><Plus aria-hidden="true" /> Programar</Button> : null}
-              </article>
-            ))}</div>
+            <div className="overflow-x-auto"><table className="w-full min-w-[58rem] border-collapse text-left text-sm"><thead className="border-b bg-muted/45"><tr><th className="px-5 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Pedido</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Cliente</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Almacén</th><th className="px-4 py-3 text-end font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Productos</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Estado</th><th className="px-5 py-3 text-end font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Acciones</th></tr></thead><tbody className="divide-y">{pedidosPorProgramarVisibles.map((pedido) => { const cantidadProductos = pedido.lineas.filter((linea) => linea.tipoProducto === 'good').length; return <tr key={pedido.id} className="hover:bg-muted/35"><td className="px-5 py-4 font-mono text-xs font-medium text-primary">{pedido.numero}</td><td className="max-w-[18rem] px-4 py-4"><p className="truncate font-medium">{pedido.clienteNombre}</p><p className="mt-1 text-xs text-muted-foreground">{pedido.clienteDocumento}</p></td><td className="px-4 py-4 text-sm text-muted-foreground">{pedido.almacenNombre ?? 'No especificado'}</td><td className="px-4 py-4 text-end font-mono tabular-nums">{cantidadProductos}</td><td className="px-4 py-4"><span className="status-label" data-tone="pendiente">Confirmado</span></td><td className="px-5 py-4 text-end"><div className="flex justify-end gap-1"> <Button type="button" variant="ghost" size="icon" title="Ver detalle del pedido" aria-label={`Ver detalle de ${pedido.numero}`} onClick={(evento) => { disparadorPedidoDetalle.current = evento.currentTarget; setPedidoDetalle(pedido) }}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion ? <Button type="button" onClick={() => prepararPedido(pedido.id)}><Plus aria-hidden="true" /> Programar</Button> : null}</div></td></tr> })}</tbody></table></div>
           )}
           {pedidosPorProgramarFiltrados.length ? <PaginacionListado etiqueta="pedidos por programar" pagina={paginaPendientesVisible} tamanioPagina={tamanioPaginaPendientes} total={pedidosPorProgramarFiltrados.length} totalPaginas={totalPaginasPendientes} cantidadVisible={pedidosPorProgramarVisibles.length} alCambiarPagina={setPaginaPendientes} alCambiarTamanio={(siguiente) => { setTamanioPaginaPendientes(siguiente); setPaginaPendientes(1) }} /> : null}
         </section>
@@ -563,7 +572,11 @@ export function DistribucionPage() {
               <div><h2 id="entregas-title" className="text-lg font-semibold">Seguimiento de entregas</h2><p className="mt-1 text-sm text-muted-foreground">{filtradas.length} de {programaciones.length} entregas visibles</p></div>
               <div><label htmlFor="buscar-entrega" className="field-label">Buscar</label><div className="relative"><Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input id="buscar-entrega" type="search" value={busqueda} onChange={(evento) => { setBusqueda(evento.target.value); setPaginaSeguimiento(1) }} className="field-control ps-9" placeholder="Pedido, cliente o guía" /></div></div>
               <div><label htmlFor="estado-filtro" className="field-label">Estado</label><select id="estado-filtro" value={filtroEstado} onChange={(evento) => { setFiltroEstado(evento.target.value as 'todos' | ProgramacionEntrega['estado']); setPaginaSeguimiento(1) }} className="field-control"><option value="todos">Todos</option>{Object.entries(etiquetasEstado).map(([valor, etiqueta]) => <option key={valor} value={valor}>{etiqueta}</option>)}</select></div>
-              <div className="lg:col-span-3"><label htmlFor="fecha-filtro" className="field-label">Fecha de programación o entrega</label><div className="flex gap-2"><input id="fecha-filtro" type="date" value={filtroFecha} onChange={(evento) => { setFiltroFecha(evento.target.value); setPaginaSeguimiento(1) }} className="field-control" />{filtroFecha || filtroEstado !== 'todos' || busqueda ? <Button type="button" variant="outline" onClick={() => { setBusqueda(''); setFiltroEstado('todos'); setFiltroFecha(''); setPaginaSeguimiento(1) }}>Limpiar</Button> : null}</div></div>
+            </div>
+            <div className="grid gap-4 border-b bg-muted/20 px-5 py-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-[1fr_1fr_auto] lg:items-end print:hidden">
+              <div><label htmlFor="fecha-filtro-desde" className="field-label">Fecha desde</label><input id="fecha-filtro-desde" type="date" value={filtroFechaDesde} max={filtroFechaHasta || undefined} onChange={(evento) => { setFiltroFechaDesde(evento.target.value); setPaginaSeguimiento(1) }} className="field-control" /></div>
+              <div><label htmlFor="fecha-filtro-hasta" className="field-label">Fecha hasta</label><input id="fecha-filtro-hasta" type="date" value={filtroFechaHasta} min={filtroFechaDesde || undefined} onChange={(evento) => { setFiltroFechaHasta(evento.target.value); setPaginaSeguimiento(1) }} className="field-control" /></div>
+              {filtroFechaDesde || filtroFechaHasta || filtroEstado !== 'todos' || busqueda ? <Button type="button" variant="outline" onClick={() => { setBusqueda(''); setFiltroEstado('todos'); setFiltroFechaDesde(''); setFiltroFechaHasta(''); setPaginaSeguimiento(1) }}>Limpiar filtros</Button> : <span aria-hidden="true" />}
             </div>
             {!filtradas.length ? (
               <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{programaciones.length ? 'No hay coincidencias' : 'Aún no hay entregas programadas'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{programaciones.length ? 'Prueba con otra búsqueda o limpia los filtros.' : 'Programa una entrega desde un pedido confirmado para iniciar el seguimiento.'}</p></div>
@@ -573,8 +586,8 @@ export function DistribucionPage() {
                   <div className="print-delivery-header"><p className="font-mono text-xs text-primary">SILSANPLEX · CONSTANCIA DE ENTREGA</p><p className="font-mono text-xs text-muted-foreground">Emisión: {formatearFechaDistribucion(item.fechaEmision)}</p></div>
                   <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · {item.ventaNumero ? `Venta ${item.ventaNumero} · ` : ''}Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{item.lineas.length ? item.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · pedidas <span className="font-mono font-semibold">{linea.cantidad}</span> · despachadas <span className="font-mono font-semibold">{linea.cantidadDespachada ?? 0}</span> · pendientes <span className="font-mono font-semibold">{linea.cantidadPendiente ?? linea.cantidad}</span> {linea.unidadMedida}</p>) : <p>Detalle del pedido no disponible</p>}</div></div>
                   <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted-foreground">Programada</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaProgramada)}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega real</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEntrega)}</dd></div></dl>
-                  <div><p className="text-sm">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</p>{puedeGestionarDistribucion ? <select aria-label={`Estado de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => { void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado']).then((error) => setMensaje(error ?? `Estado actualizado para ${item.pedidoNumero}.`)) }} className="field-control mt-2">{[item.estado, ...obtenerEstadosSiguientes(item.estado)].map((valor) => <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>)}</select> : <p className="mt-2 text-sm text-muted-foreground">Solo consulta</p>}{item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}</div>
-                  <div className="flex gap-2 print:hidden">{puedeGestionarDistribucion ? <Button type="button" variant="outline" onClick={() => abrirFormulario(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}<Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
+                  <div><div className="flex flex-wrap items-center gap-2"><span className="status-label" data-tone={tonoEstadoDistribucion(item.estado)}>{etiquetasEstado[item.estado]}</span><span className="text-sm text-muted-foreground">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</span></div>{puedeGestionarDistribucion ? <select aria-label={`Cambiar estado de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => { void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado']).then((error) => setMensaje(error ?? `Estado actualizado para ${item.pedidoNumero}.`)) }} className="field-control mt-2">{[item.estado, ...obtenerEstadosSiguientes(item.estado)].map((valor) => <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>)}</select> : <p className="mt-2 text-sm text-muted-foreground">Solo consulta</p>}{item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}</div>
+                  <div className="flex gap-1 print:hidden"><Button type="button" variant="ghost" size="icon" title="Ver detalle de la entrega" aria-label={`Ver detalle de la entrega ${item.pedidoNumero}`} onClick={() => setEntregaDetalle(item)}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion ? <Button type="button" variant="outline" onClick={() => abrirFormulario(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}<Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
                 </article>
               ))}</div>
             )}
@@ -582,6 +595,9 @@ export function DistribucionPage() {
           </section>
         </>
       ) : null}
+
+      {pedidoDetalle ? <DialogoDetalleOperacionVenta abierto={Boolean(pedidoDetalle)} pedido={pedidoDetalle} venta={ventaPorPedidoId(pedidoDetalle.id)} alCambiarApertura={(abierto) => { if (!abierto) setPedidoDetalle(null) }} alRestaurarFoco={() => disparadorPedidoDetalle.current?.focus()} /> : null}
+      {entregaDetalle ? <DialogoDetalleEntrega abierto={Boolean(entregaDetalle)} entrega={entregaDetalle} alCambiarApertura={(abierto) => { if (!abierto) setEntregaDetalle(null) }} /> : null}
 
       {puedeGestionarDistribucion && formularioAbierto ? (
         <div role="dialog" aria-modal="true" aria-labelledby="programar-title" className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
@@ -591,7 +607,7 @@ export function DistribucionPage() {
               <section aria-labelledby="referencia-entrega-title" className="space-y-4">
                 <div><h3 id="referencia-entrega-title" className="text-sm font-semibold uppercase tracking-[.06em] text-primary">Referencia comercial</h3><p className="mt-1 text-sm text-muted-foreground">Estos datos provienen del pedido y no se pueden alterar desde Distribución.</p></div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="sm:col-span-2"><label htmlFor="pedido-entrega" className="field-label">Pedido</label><select id="pedido-entrega" required disabled={Boolean(edicion)} value={datos.pedidoId} onChange={(evento) => seleccionarPedido(evento.target.value)} className="field-control"><option value="">Selecciona un pedido</option>{pedidosDisponibles.filter((pedido) => pedido.estado !== 'cancelado').map((pedido) => <option key={pedido.id} value={pedido.id}>{pedido.numero} · {pedido.clienteNombre}</option>)}</select></div>
+                  <div className="sm:col-span-2"><label htmlFor="pedido-entrega" className="field-label">Pedido</label><select id="pedido-entrega" required disabled={Boolean(edicion)} value={datos.pedidoId} onChange={(evento) => seleccionarPedido(evento.target.value)} className="field-control"><option value="">Selecciona un pedido</option>{pedidosDisponibles.map((pedido) => <option key={pedido.id} value={pedido.id}>{pedido.numero} · {pedido.clienteNombre}</option>)}</select></div>
                   <div><label htmlFor="cliente-entrega" className="field-label">Cliente</label><input id="cliente-entrega" value={pedidoSeleccionado?.clienteNombre ?? datos.clienteNombre} readOnly className="field-control bg-muted/30" aria-readonly="true" /></div>
                   <div><label htmlFor="almacen-entrega" className="field-label">Almacén de origen</label><input id="almacen-entrega" value={pedidoSeleccionado?.almacenNombre ?? 'No especificado en el pedido'} readOnly className="field-control bg-muted/30" aria-readonly="true" /></div>
                 </div>

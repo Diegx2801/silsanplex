@@ -36,6 +36,8 @@ interface PedidoFila {
   warehouse_id: string | null
   order_date: string
   status: PedidoVenta['estado']
+  fulfillment_mode?: PedidoVenta['modalidadCumplimiento'] | null
+  fulfillment_status?: PedidoVenta['estadoCumplimiento'] | null
   prices_include_tax: boolean
   taxable_base: number | string | null
   exempt_amount: number | string | null
@@ -92,6 +94,8 @@ const columnasPedido = [
   'warehouse_id',
   'order_date',
   'status',
+  'fulfillment_mode',
+  'fulfillment_status',
   'prices_include_tax',
   'taxable_base',
   'exempt_amount',
@@ -197,6 +201,8 @@ function mapearPedido(fila: PedidoFila): PedidoVenta {
     observacion: fila.notes,
     lineas: fila.order_items.map(mapearLinea),
     estado: fila.status,
+    modalidadCumplimiento: fila.fulfillment_mode ?? 'delivery',
+    estadoCumplimiento: fila.fulfillment_status ?? 'pending',
     fechaRegistro: fila.created_at,
     fechaAtencion: null,
     almacenId: fila.warehouse_id ?? undefined,

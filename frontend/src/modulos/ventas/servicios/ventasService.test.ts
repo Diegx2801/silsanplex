@@ -126,7 +126,7 @@ describe('ventasService', () => {
       .mockReturnValueOnce(cadena({
       data: [{
         id: 'pedido-1', organization_id: 'org-1', order_number: 'PED-000001', source_quote_id: 'cotizacion-1', source_quote_number: 'COT-000001',
-        customer_id: 'cliente-1', warehouse_id: 'warehouse-1', order_date: '2026-09-01', status: 'confirmado', prices_include_tax: true,
+        customer_id: 'cliente-1', warehouse_id: 'warehouse-1', order_date: '2026-09-01', status: 'confirmado', fulfillment_mode: 'pickup', fulfillment_status: 'pending', prices_include_tax: true,
         taxable_base: 16.95, exempt_amount: 0, unaffected_amount: 0, subtotal: 16.95, tax: 3.05, total: 20, tax_calculation_status: 'calculated', notes: '', created_at: '2026-09-01T12:00:00.000Z',
         customers: { document_type: 'RUC', document_number: '20548796321', legal_name: 'Cliente Uno' },
         warehouses: { code: 'MAIN', name: 'Almacén principal' },
@@ -136,7 +136,7 @@ describe('ventasService', () => {
     }))
 
     await expect(listarPedidosPersistentes('org-1')).resolves.toEqual([
-      expect.objectContaining({ id: 'pedido-1', numero: 'PED-000001', clienteNombre: 'Cliente Uno', fechaPedido: '2026-09-01', almacenId: 'warehouse-1', almacenNombre: 'Almacén principal', lineas: [expect.objectContaining({ cantidad: 2, afectacionIgv: 'gravado' })] }),
+      expect.objectContaining({ id: 'pedido-1', numero: 'PED-000001', clienteNombre: 'Cliente Uno', fechaPedido: '2026-09-01', almacenId: 'warehouse-1', almacenNombre: 'Almacén principal', modalidadCumplimiento: 'pickup', estadoCumplimiento: 'pending', lineas: [expect.objectContaining({ cantidad: 2, afectacionIgv: 'gravado' })] }),
     ])
   })
 

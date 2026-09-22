@@ -435,10 +435,12 @@ describe('programación de entrega', () => {
 
     const porEstado = filtrarProgramacionesEntrega(entregas, { estado: 'en_curso' })
     const porFecha = filtrarProgramacionesEntrega(entregas, { fecha: '2026-09-03' })
+    const porRango = filtrarProgramacionesEntrega(entregas, { fechaDesde: '2026-09-02', fechaHasta: '2026-09-03' })
     const combinado = filtrarProgramacionesEntrega(entregas, { estado: 'en_curso', fecha: '2026-09-02', busqueda: 'cliente a' })
 
     expect(porEstado).toHaveLength(1)
     expect(porFecha).toHaveLength(1)
+    expect(porRango).toHaveLength(2)
     expect(combinado).toHaveLength(1)
   })
 
