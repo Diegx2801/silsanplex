@@ -384,15 +384,16 @@ export async function listarProductos(organizationId: string): Promise<Producto[
 export async function buscarProductos(
   organizationId: string,
   busqueda: string,
+  soloActivos = true,
 ): Promise<Producto[]> {
   const termino = normalizarTerminoBusqueda(busqueda)
-  if (!termino) return listarProductos(organizationId)
-
-  const { data, error } = await supabase
+  let query = supabase
     .from('products')
     .select(columnasProducto)
     .eq('organization_id', organizationId)
-    .or(
+
+  if (termino) {
+    query = query.or(
       [
         'code',
         'description',
@@ -407,9 +408,16 @@ export async function buscarProductos(
         .map((columna) => `${columna}.ilike.%${termino}%`)
         .join(','),
     )
-    .order('code', { ascending: true })
-    .order('id', { ascending: true })
+  }
 
+  if (soloActivos) {
+    // Los selectores operativos no deben ofrecer productos que ya no pueden
+    // utilizarse; el tercer argumento permite mantener la búsqueda histórica.
+    query = query.eq('is_active', true)
+  }
+
+  query = query.order('code', { ascending: true }).order('id', { ascending: true }).limit(tamanioPaginaMaximo)
+  const { data, error } = await query
   if (error) throw new Error(mensajeError(error, 'consultar'))
   return ((data ?? []) as ProductoFila[]).map(mapearProducto)
 }

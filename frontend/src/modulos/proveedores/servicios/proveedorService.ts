@@ -130,6 +130,33 @@ export async function listarProveedores(
   return ((data ?? []) as ProveedorFila[]).map(mapearProveedor)
 }
 
+export async function buscarProveedores(
+  organizationId: string,
+  busqueda: string,
+  limite = 50,
+): Promise<Proveedor[]> {
+  const termino = busqueda.trim().replace(/[\\%_(),*]/g, ' ').replace(/\s+/g, ' ').slice(0, 100)
+  const columnas = [
+    'document_number',
+    'business_name',
+    'trade_name',
+    'code',
+    'contact_name',
+    'email',
+  ]
+  let query = supabase
+    .from('suppliers')
+    .select(columnasProveedor)
+    .eq('organization_id', organizationId)
+    .eq('is_active', true)
+  if (termino) query = query.or(columnas.map((columna) => `${columna}.ilike.%${termino}%`).join(','))
+  query = query.order('business_name', { ascending: true }).order('id', { ascending: true }).limit(Math.min(Math.max(limite, 1), 50))
+
+  const { data, error } = await query
+  if (error) throw new Error(mensajeError(error))
+  return ((data ?? []) as ProveedorFila[]).map(mapearProveedor)
+}
+
 export async function guardarProveedor(
   organizationId: string,
   userId: string,

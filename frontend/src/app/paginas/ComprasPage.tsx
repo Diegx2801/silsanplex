@@ -13,6 +13,7 @@ import {
 import {
   type MouseEvent as ReactMouseEvent,
   useDeferredValue,
+  useCallback,
   useMemo,
   useRef,
   useState,
@@ -34,8 +35,9 @@ import {
   type EstadoCompra,
 } from '@/modulos/compras/modelo/compras'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
-import { listarAlmacenesCompra, listarUbicacionesCompra } from '@/modulos/compras/servicios/compraService'
-import { listarProveedores } from '@/modulos/proveedores/servicios/proveedorService'
+import { buscarAlmacenesCompra, listarAlmacenesCompra, listarUbicacionesCompra } from '@/modulos/compras/servicios/compraService'
+import { buscarProveedores, listarProveedores } from '@/modulos/proveedores/servicios/proveedorService'
+import { buscarProductos } from '@/modulos/productos/servicios/productosService'
 
 type FiltroEstado = 'todos' | EstadoCompra
 const proveedoresVacios = [] as const
@@ -129,6 +131,18 @@ export function ComprasPage() {
   const proveedoresActivos = useMemo(
     () => proveedores.filter((proveedor) => proveedor.activo),
     [proveedores],
+  )
+  const buscarProveedoresRemotos = useCallback(
+    (busqueda: string) => organizationId ? buscarProveedores(organizationId, busqueda) : Promise.resolve([]),
+    [organizationId],
+  )
+  const buscarProductosRemotos = useCallback(
+    (busqueda: string) => organizationId ? buscarProductos(organizationId, busqueda) : Promise.resolve([]),
+    [organizationId],
+  )
+  const buscarAlmacenesRemotos = useCallback(
+    (busqueda: string) => organizationId ? buscarAlmacenesCompra(organizationId, busqueda) : Promise.resolve([]),
+    [organizationId],
   )
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('todos')
@@ -701,6 +715,9 @@ export function ComprasPage() {
           proveedores={proveedoresActivos}
           productos={productos}
           almacenes={almacenes}
+          buscarProveedores={buscarProveedoresRemotos}
+          buscarProductos={buscarProductosRemotos}
+          buscarAlmacenes={buscarAlmacenesRemotos}
           alCambiarApertura={setDialogoCompraAbierto}
           alGuardar={guardarNuevaCompra}
           alRestaurarFoco={() => disparadorCompra.current?.focus()}

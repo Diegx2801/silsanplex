@@ -13,6 +13,7 @@ import {
 import {
   type MouseEvent as ReactMouseEvent,
   useDeferredValue,
+  useCallback,
   useMemo,
   useRef,
   useState,
@@ -27,6 +28,9 @@ import { fechaActualPeru, formatearFechaCalendarioPeru } from '@/lib/fechas'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
 import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
+import { buscarClientes as buscarClientesServicio } from '@/modulos/clientes/servicios/customerService'
+import { buscarProductos as buscarProductosServicio } from '@/modulos/productos/servicios/productosService'
+import { buscarAlmacenesDisponibles } from '@/modulos/inventario/servicios/almacenService'
 import { DialogoConfirmacionEmision } from '@/modulos/ventas/componentes/DialogoConfirmacionEmision'
 import { DialogoCotizacion } from '@/modulos/ventas/componentes/DialogoCotizacion'
 import { DialogoDetalleCotizacion } from '@/modulos/ventas/componentes/DialogoDetalleCotizacion'
@@ -91,7 +95,8 @@ function EstadoCotizacionEtiqueta({ cotizacion }: { cotizacion: Cotizacion }) {
 export function VentasPage() {
   const [parametros, setParametros] = useSearchParams()
   const vista: VistaVentas = parametros.get('vista') === 'ejecucion' ? 'ejecucion' : 'cotizaciones'
-  const { hasPermission } = useAuth()
+  const { access, hasPermission } = useAuth()
+  const organizationId = access?.organizationId ?? ''
   const puedeGestionarVentas = hasPermission(PERMISSIONS.SALES_MANAGE)
   const puedeDespachar =
     hasPermission(PERMISSIONS.DISTRIBUTION_MANAGE) &&
@@ -110,6 +115,18 @@ export function VentasPage() {
   const almacenesActivos = useMemo(
     () => almacenes.filter((almacen) => almacen.activo),
     [almacenes],
+  )
+  const buscarClientesRemotos = useCallback(
+    (busqueda: string) => organizationId ? buscarClientesServicio(organizationId, busqueda) : Promise.resolve([]),
+    [organizationId],
+  )
+  const buscarProductosRemotos = useCallback(
+    (busqueda: string) => organizationId ? buscarProductosServicio(organizationId, busqueda) : Promise.resolve([]),
+    [organizationId],
+  )
+  const buscarAlmacenesRemotos = useCallback(
+    (busqueda: string) => organizationId ? buscarAlmacenesDisponibles(organizationId, busqueda) : Promise.resolve([]),
+    [organizationId],
   )
   const {
     cotizaciones,
@@ -615,6 +632,7 @@ export function VentasPage() {
           pedidos={pedidos}
           ventas={ventas}
           almacenes={almacenesActivos}
+          buscarAlmacenes={buscarAlmacenesRemotos}
           alRegistrarVenta={puedeGestionarVentas ? registrarVenta : undefined}
           alActualizarPedido={puedeGestionarVentas ? actualizarPedido : undefined}
           alCancelarPedido={puedeGestionarVentas ? cancelarPedido : undefined}
@@ -638,6 +656,8 @@ export function VentasPage() {
           cotizacion={cotizacionSeleccionada}
           clientes={clientes}
           productos={productos}
+          buscarClientes={buscarClientesRemotos}
+          buscarProductos={buscarProductosRemotos}
           alCambiarApertura={setDialogoAbierto}
           alGuardar={guardar}
           alRestaurarFoco={() => disparadorFormulario.current?.focus()}
@@ -666,6 +686,7 @@ export function VentasPage() {
           abierto={Boolean(cotizacionPorCrearPedido)}
           cotizacion={cotizacionPorCrearPedido}
           almacenes={almacenesActivos}
+          buscarAlmacenes={buscarAlmacenesRemotos}
           guardando={creandoPedido}
           alCambiarApertura={(abierto) => {
             if (!abierto) setCotizacionPorCrearPedido(null)

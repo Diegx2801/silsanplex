@@ -31,6 +31,8 @@ interface DialogoCotizacionProps {
   cotizacion: Cotizacion | null
   clientes: readonly Cliente[]
   productos: readonly Producto[]
+  buscarClientes?: (busqueda: string) => Promise<readonly Cliente[]>
+  buscarProductos?: (busqueda: string) => Promise<readonly Producto[]>
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (
     datos: DatosCotizacion,
@@ -44,6 +46,8 @@ export function DialogoCotizacion({
   cotizacion,
   clientes,
   productos,
+  buscarClientes,
+  buscarProductos,
   alCambiarApertura,
   alGuardar,
   alRestaurarFoco,
@@ -194,6 +198,13 @@ export function DialogoCotizacion({
                         options={opcionesClientes}
                         onChange={field.onChange}
                         onBlur={field.onBlur}
+                        loadOptions={buscarClientes ? async (busqueda) => (await buscarClientes(busqueda)).map((cliente) => ({
+                          value: cliente.id,
+                          label: cliente.nombreRazonSocial,
+                          secondaryText: [cliente.numeroDocumento, cliente.nombreComercial].filter(Boolean).join(' · '),
+                          keywords: [cliente.numeroDocumento, cliente.nombreRazonSocial, cliente.nombreComercial, cliente.contacto, cliente.email, cliente.telefono],
+                          disabled: !cliente.activo,
+                        })) : undefined}
                         placeholder="Buscar cliente…"
                         helperText="Documento, nombre o razón social."
                         error={errors.clienteId?.message}
@@ -347,6 +358,15 @@ export function DialogoCotizacion({
                                     )
                                   }}
                                   onBlur={campo.onBlur}
+                                  loadOptions={buscarProductos ? async (busqueda) => (await buscarProductos(busqueda))
+                                    .filter((producto) => (producto.activo || producto.id === productoActualId) && !lineas.some((linea, otroIndice) => otroIndice !== indice && linea.productoId === producto.id))
+                                    .map((producto) => ({
+                                      value: producto.id,
+                                      label: `${producto.codigo} · ${producto.descripcion}`,
+                                      secondaryText: `${producto.tipo === 'service' ? 'Servicio' : 'Producto físico'} · Unidad: ${producto.unidadMedida || 'Sin unidad'}`,
+                                      keywords: [producto.codigo, producto.codigoBarras, producto.descripcion, producto.laboratorio, producto.presentacion, producto.unidadMedida],
+                                      disabled: !producto.activo,
+                                    })) : undefined}
                                   placeholder="Buscar producto…"
                                   helperText="Código, nombre o barras."
                                   error={erroresLinea?.productoId?.message}

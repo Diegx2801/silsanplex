@@ -87,6 +87,7 @@ interface PanelOperacionesVentaProps {
   pedidos: readonly PedidoVenta[]
   ventas: readonly Venta[]
   almacenes?: readonly AlmacenOperacion[]
+  buscarAlmacenes?: (busqueda: string) => Promise<readonly AlmacenOperacion[]>
   alRegistrarVenta?: (pedidoId: string, datos: DatosVenta) => string | undefined | Promise<string | undefined>
   alActualizarPedido?: (pedidoId: string, lineas: readonly CantidadLineaPedido[], operationKey: string) => string | undefined | Promise<string | undefined>
   alCancelarPedido?: (pedidoId: string, operationKey: string) => string | undefined | Promise<string | undefined>
@@ -106,6 +107,7 @@ export function PanelOperacionesVenta({
   pedidos,
   ventas,
   almacenes = [],
+  buscarAlmacenes,
   alRegistrarVenta,
   alActualizarPedido,
   alCancelarPedido,
@@ -247,6 +249,11 @@ export function PanelOperacionesVenta({
           label="Almacén"
           value={filtroAlmacen}
           options={opcionesAlmacenes}
+          loadOptions={buscarAlmacenes ? async (busqueda) => (await buscarAlmacenes(busqueda)).map((almacen) => ({
+            value: almacen.id,
+            label: almacen.nombre,
+            keywords: [almacen.nombre],
+          })) : undefined}
           onChange={(valor) => { setFiltroAlmacen(valor); setPagina(1) }}
           placeholder="Todos los almacenes"
           noOptionsMessage="No hay almacenes disponibles."

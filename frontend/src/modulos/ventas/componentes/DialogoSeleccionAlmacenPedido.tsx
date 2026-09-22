@@ -11,6 +11,7 @@ interface DialogoSeleccionAlmacenPedidoProps {
   abierto: boolean
   cotizacion: Cotizacion
   almacenes: readonly Almacen[]
+  buscarAlmacenes?: (busqueda: string) => Promise<readonly Almacen[]>
   guardando?: boolean
   alCambiarApertura: (abierto: boolean) => void
   alConfirmar: (almacenId: string) => string | undefined | Promise<string | undefined>
@@ -21,6 +22,7 @@ export function DialogoSeleccionAlmacenPedido({
   abierto,
   cotizacion,
   almacenes,
+  buscarAlmacenes,
   guardando = false,
   alCambiarApertura,
   alConfirmar,
@@ -115,6 +117,13 @@ export function DialogoSeleccionAlmacenPedido({
                   setAlmacenId(valor)
                   setError('')
                 }}
+                loadOptions={buscarAlmacenes ? async (busqueda) => (await buscarAlmacenes(busqueda)).map((almacen) => ({
+                  value: almacen.id,
+                  label: `${almacen.codigo} · ${almacen.nombre}`,
+                  secondaryText: almacen.direccion || 'Sin dirección registrada',
+                  keywords: [almacen.codigo, almacen.nombre, almacen.direccion],
+                  disabled: !almacen.activo,
+                })) : undefined}
                 placeholder="Buscar almacén…"
                 helperText="Código, nombre o dirección."
                 error={error && !almacenId ? error : undefined}

@@ -33,6 +33,9 @@ interface DialogoCompraProps {
   proveedores: readonly Proveedor[]
   productos: readonly Producto[]
   almacenes: readonly Almacen[]
+  buscarProveedores?: (busqueda: string) => Promise<readonly Proveedor[]>
+  buscarProductos?: (busqueda: string) => Promise<readonly Producto[]>
+  buscarAlmacenes?: (busqueda: string) => Promise<readonly Almacen[]>
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (datos: DatosCompra, compraId?: string) => Promise<string | undefined>
   alRestaurarFoco: () => void
@@ -44,6 +47,9 @@ export function DialogoCompra({
   proveedores,
   productos,
   almacenes,
+  buscarProveedores,
+  buscarProductos,
+  buscarAlmacenes,
   alCambiarApertura,
   alGuardar,
   alRestaurarFoco,
@@ -209,6 +215,13 @@ export function DialogoCompra({
                         options={opcionesProveedores}
                         onChange={field.onChange}
                         onBlur={field.onBlur}
+                        loadOptions={buscarProveedores ? async (busqueda) => (await buscarProveedores(busqueda)).map((proveedor) => ({
+                          value: proveedor.id,
+                          label: proveedor.razonSocial,
+                          secondaryText: [proveedor.numeroDocumento, proveedor.nombreComercial].filter(Boolean).join(' · '),
+                          keywords: [proveedor.codigo, proveedor.numeroDocumento, proveedor.nombreComercial, proveedor.contacto, proveedor.email],
+                          disabled: !proveedor.activo,
+                        })) : undefined}
                         placeholder="Buscar proveedor…"
                         helperText="Documento, código o razón social."
                         error={errors.proveedorId?.message}
@@ -324,6 +337,13 @@ export function DialogoCompra({
                           })
                         }}
                         onBlur={field.onBlur}
+                        loadOptions={buscarAlmacenes ? async (busqueda) => (await buscarAlmacenes(busqueda)).map((almacen) => ({
+                          value: almacen.id,
+                          label: `${almacen.codigo} · ${almacen.nombre}`,
+                          secondaryText: almacen.direccion || 'Sin dirección registrada',
+                          keywords: [almacen.codigo, almacen.nombre, almacen.direccion],
+                          disabled: !almacen.activo,
+                        })) : undefined}
                         placeholder="Buscar almacén…"
                         helperText="Código, nombre o dirección."
                         error={errors.almacenId?.message ?? errors.almacen?.message}
@@ -427,6 +447,15 @@ export function DialogoCompra({
                                   options={opcionesProductos}
                                   onChange={campo.onChange}
                                   onBlur={campo.onBlur}
+                                  loadOptions={buscarProductos ? async (busqueda) => (await buscarProductos(busqueda))
+                                    .filter((item) => (item.activo || item.id === productoActualId) && !lineas.some((linea, otroIndice) => otroIndice !== indice && linea.productoId === item.id))
+                                    .map((item) => ({
+                                      value: item.id,
+                                      label: `${item.codigo} · ${item.descripcion}`,
+                                      secondaryText: `${item.tipo === 'service' ? 'Servicio' : 'Producto físico'} · Unidad: ${item.unidadMedida || 'Sin unidad'}`,
+                                      keywords: [item.codigo, item.codigoBarras, item.descripcion, item.laboratorio, item.presentacion, item.unidadMedida],
+                                      disabled: !item.activo,
+                                    })) : undefined}
                                   placeholder="Buscar producto…"
                                   helperText="Código, nombre o barras."
                                   error={erroresLinea?.productoId?.message}
