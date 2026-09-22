@@ -3,12 +3,25 @@ import { useRef, useState } from 'react'
 import type { Cliente } from '@/modulos/clientes/modelo/cliente'
 import type { Producto } from '@/modulos/productos/modelo/producto'
 import {
+  crearClienteSnapshotCotizacion,
+  crearProductoSnapshotCotizacion,
   crearCotizacion,
   validarCotizacion,
   type Cotizacion,
   type DatosCotizacion,
+  type EntidadesSeleccionadasCotizacion,
 } from '@/modulos/ventas/modelo/cotizacion'
 import { crearRepositorioCotizacionesSesion } from '@/modulos/ventas/servicios/repositorioCotizacionesSesion'
+
+function combinarPorId<T extends { id: string }>(base: readonly T[], seleccionadas: readonly T[]) {
+  const entidades = new Map(base.map((entidad) => [entidad.id, entidad]))
+  seleccionadas.forEach((entidad) => entidades.set(entidad.id, entidad))
+  return [...entidades.values()]
+}
+
+function productosDesdeCotizacion(cotizacion: Cotizacion): Producto[] {
+  return cotizacion.lineas.map(crearProductoSnapshotCotizacion)
+}
 
 function siguienteNumero(cotizaciones: readonly Cotizacion[]) {
   let mayor = 0
@@ -38,16 +51,31 @@ export function useCotizacionesTemporales(
   const guardarCotizacion = (
     datos: DatosCotizacion,
     cotizacionId?: string,
+    entidadesSeleccionadas?: EntidadesSeleccionadasCotizacion,
   ) => {
-    const cliente = clientes.find(
+    const existente = cotizaciones.find((item) => item.id === cotizacionId)
+    const clientesDisponibles = combinarPorId(
+      clientes,
+      [
+        ...(existente ? [crearClienteSnapshotCotizacion(existente)] : []),
+        ...(entidadesSeleccionadas?.cliente ? [entidadesSeleccionadas.cliente] : []),
+      ],
+    )
+    const productosDisponibles = combinarPorId(
+      productos,
+      [
+        ...(existente ? productosDesdeCotizacion(existente) : []),
+        ...(entidadesSeleccionadas?.productos ?? []),
+      ],
+    )
+    const cliente = clientesDisponibles.find(
       (item) => item.id === datos.clienteId && item.activo,
     )
     if (!cliente) return 'El cliente seleccionado ya no está disponible'
 
-    const error = validarCotizacion(datos, productos)
+    const error = validarCotizacion(datos, productosDisponibles)
     if (error) return error
 
-    const existente = cotizaciones.find((item) => item.id === cotizacionId)
     if (existente && existente.estado !== 'borrador') {
       return 'Solo se pueden editar cotizaciones en borrador'
     }
@@ -55,7 +83,7 @@ export function useCotizacionesTemporales(
     const cotizacionCreada = crearCotizacion(
       datos,
       cliente,
-      productos,
+      productosDisponibles,
       existente?.numero ?? siguienteNumero(cotizaciones),
       existente ? new Date(existente.fechaRegistro) : new Date(),
       existente?.id,

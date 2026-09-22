@@ -42,6 +42,7 @@ import {
   calcularTotalesCotizacion,
   type Cotizacion,
   type DatosCotizacion,
+  type EntidadesSeleccionadasCotizacion,
   type EstadoCotizacion,
 } from '@/modulos/ventas/modelo/cotizacion'
 
@@ -233,9 +234,13 @@ export function VentasPage() {
     setDialogoAbierto(true)
   }
 
-  const guardar = async (datos: DatosCotizacion, cotizacionId?: string) => {
+  const guardar = async (
+    datos: DatosCotizacion,
+    cotizacionId?: string,
+    entidadesSeleccionadas?: EntidadesSeleccionadasCotizacion,
+  ) => {
     if (!puedeGestionarVentas) return 'No tienes permiso para administrar ventas'
-    const error = await guardarCotizacion(datos, cotizacionId)
+    const error = await guardarCotizacion(datos, cotizacionId, entidadesSeleccionadas)
     if (!error) {
       notificar(
         cotizacionId
