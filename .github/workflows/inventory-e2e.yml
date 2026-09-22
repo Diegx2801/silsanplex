@@ -44,12 +44,28 @@ jobs:
         run: npm run db:start
         working-directory: backend
 
+      - name: Reconstruir base de pruebas
+        run: npm run db:reset -- --yes
+        working-directory: backend
+
+      - name: Validar esquema y pruebas de base de datos
+        run: npm run db:lint && npm run test:db
+        working-directory: backend
+
+      - name: Validar Edge Functions y scripts
+        run: npm run test:functions && npm run typecheck:scripts
+        working-directory: backend
+
       - name: Configurar frontend local
         run: npm run env:frontend
         working-directory: backend
 
       - name: Instalar Chromium
         run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Validar frontend
+        run: npm run test -- --run && npm run lint -- --deny-warnings && npm run build
         working-directory: frontend
 
       - name: Ejecutar pruebas E2E

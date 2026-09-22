@@ -338,6 +338,26 @@ async function prepareRepairCatalogFixture(
   }
 }
 
+async function assertInventoryReadModelsReady(
+  client: SupabaseClient,
+  organizationId: string,
+) {
+  const { error } = await client.rpc('inventory_product_options', {
+    requested_organization_id: organizationId,
+    search_term: '',
+    requested_limit: 1,
+    requested_offset: 0,
+  })
+
+  if (!error) return
+
+  throw new Error(
+    'La base local no tiene aplicadas las migraciones de los read models de Inventario. '
+      + 'Ejecuta `npm run db:reset` en una base local desechable y vuelve a preparar E2E. '
+      + `Detalle: ${error.message}`,
+  )
+}
+
 async function prepareLocalE2e() {
   const { url, secretKey } = loadSupabaseEnvironment()
   assertStrictlyLocalSupabase(url)
@@ -401,8 +421,6 @@ async function prepareLocalE2e() {
     recoveryUser,
     recoveryIdentity.roleCodes,
   )
-  await prepareRepairCatalogFixture(supabase, organization.id, repairsUser.id)
-
   const publishableKey = requiredEnvironment('VITE_SUPABASE_PUBLISHABLE_KEY')
   const inventoryClient = createClient(url, publishableKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -412,6 +430,9 @@ async function prepareLocalE2e() {
     password: adminIdentity.password,
   })
   if (signInError) throw signInError
+  await assertInventoryReadModelsReady(inventoryClient, organization.id)
+  await prepareRepairCatalogFixture(supabase, organization.id, repairsUser.id)
+
   const inventoryFixtures: InventoryE2eFixture[] = []
   for (let attempt = 0; attempt < 3; attempt += 1) {
     inventoryFixtures.push(await createInventoryFixture(
