@@ -14,6 +14,7 @@ import {
   type Compra,
   type DatosCompra,
   type EntidadesSeleccionadasCompra,
+  type LineaCompra,
   type Proveedor,
 } from '@/modulos/compras/modelo/compras'
 import type { AfectacionTributaria, Producto } from '@/modulos/productos/modelo/producto'
@@ -27,6 +28,79 @@ const hoy = fechaActualPeru
 
 function afectacionProducto(valor: Producto['afectacionIgv'] | undefined): AfectacionTributaria {
   return valor || 'por-definir'
+}
+
+function productoDesdeLinea(linea: LineaCompra): Producto {
+  return {
+    id: linea.productoId,
+    codigo: linea.productoCodigo,
+    descripcion: linea.productoDescripcion,
+    descripcionAmpliada: '',
+    codigoBarras: '',
+    categoria: '',
+    sublinea: '',
+    laboratorio: '',
+    presentacion: '',
+    tipo: linea.tipoProducto ?? 'good',
+    unidadBaseId: '00000000-0000-0000-0000-000000000000',
+    unidadMedida: linea.unidadMedida,
+    afectacionIgv: linea.afectacionIgv && linea.afectacionIgv !== 'por-definir'
+      ? linea.afectacionIgv
+      : '',
+    costo: String(linea.costoUnitario),
+    precioVenta: '',
+    precioMinimo: '',
+    stockMaximo: '',
+    anchoCm: '',
+    altoCm: '',
+    largoCm: '',
+    pesoKg: '',
+    registroSanitario: '',
+    controlLote: linea.controlLote,
+    controlVencimiento: linea.controlVencimiento ?? false,
+    serialControl: false,
+    ventaReceta: false,
+    activo: linea.productoActivo ?? true,
+    unidadesAlternativas: [],
+  }
+}
+
+function proveedorDesdeCompra(compra: Compra): Proveedor {
+  return {
+    id: compra.proveedorId,
+    organizationId: '',
+    codigo: '',
+    tipoDocumento: 'otro',
+    numeroDocumento: compra.proveedorDocumento,
+    razonSocial: compra.proveedorNombre,
+    nombreComercial: '',
+    contacto: '',
+    cargoContacto: '',
+    email: '',
+    telefono: '',
+    direccion: '',
+    ubigeo: '',
+    estadoContribuyente: '',
+    condicionDomicilio: '',
+    fuenteDatosFiscales: '',
+    fechaConsultaSunat: null,
+    condicionCredito: 'contado',
+    diasCredito: 0,
+    observaciones: '',
+    activo: true,
+    fechaRegistro: compra.fechaRegistro,
+    fechaActualizacion: compra.fechaRegistro,
+  }
+}
+
+function almacenDesdeCompra(compra: Compra): Almacen {
+  return {
+    id: compra.almacenId,
+    codigo: compra.almacen,
+    nombre: compra.almacen,
+    direccion: '',
+    activo: true,
+  }
 }
 
 interface DialogoCompraProps {
@@ -63,21 +137,33 @@ export function DialogoCompra({
   const [proveedoresRemotos, setProveedoresRemotos] = useState<readonly Proveedor[]>([])
   const [productosRemotos, setProductosRemotos] = useState<readonly Producto[]>([])
   const [almacenesRemotos, setAlmacenesRemotos] = useState<readonly Almacen[]>([])
+  const productosSnapshot = useMemo(
+    () => (compra?.lineas ?? []).map(productoDesdeLinea),
+    [compra],
+  )
+  const proveedorSnapshot = useMemo(
+    () => (compra ? [proveedorDesdeCompra(compra)] : []),
+    [compra],
+  )
+  const almacenSnapshot = useMemo(
+    () => (compra ? [almacenDesdeCompra(compra)] : []),
+    [compra],
+  )
   const catalogoProveedores = useMemo(() => {
-    const porId = new Map(proveedores.map((proveedor) => [proveedor.id, proveedor]))
+    const porId = new Map([...proveedorSnapshot, ...proveedores].map((proveedor) => [proveedor.id, proveedor]))
     proveedoresRemotos.forEach((proveedor) => porId.set(proveedor.id, proveedor))
     return [...porId.values()]
-  }, [proveedores, proveedoresRemotos])
+  }, [proveedores, proveedoresRemotos, proveedorSnapshot])
   const catalogoProductos = useMemo(() => {
-    const porId = new Map(productos.map((producto) => [producto.id, producto]))
+    const porId = new Map([...productosSnapshot, ...productos].map((producto) => [producto.id, producto]))
     productosRemotos.forEach((producto) => porId.set(producto.id, producto))
     return [...porId.values()]
-  }, [productos, productosRemotos])
+  }, [productos, productosRemotos, productosSnapshot])
   const catalogoAlmacenes = useMemo(() => {
-    const porId = new Map(almacenes.map((almacen) => [almacen.id, almacen]))
+    const porId = new Map([...almacenSnapshot, ...almacenes].map((almacen) => [almacen.id, almacen]))
     almacenesRemotos.forEach((almacen) => porId.set(almacen.id, almacen))
     return [...porId.values()]
-  }, [almacenes, almacenesRemotos])
+  }, [almacenes, almacenesRemotos, almacenSnapshot])
   const proveedoresDisponibles = catalogoProveedores.filter(
     (proveedor) => proveedor.activo || proveedor.id === compra?.proveedorId,
   )

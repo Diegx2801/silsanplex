@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Producto } from '@/modulos/productos/modelo/producto'
 import type { Proveedor } from '@/modulos/proveedores/modelo/proveedor'
 import type { Almacen } from '@/modulos/inventario/modelo/almacen'
+import type { Compra } from '@/modulos/compras/modelo/compras'
 
 import { DialogoCompra } from './DialogoCompra'
 
@@ -75,6 +76,52 @@ const almacen = {
   id: 'almacen-1', codigo: 'CENTRAL', nombre: 'Almacén central', direccion: 'Av. Principal 100', activo: true,
 } satisfies Almacen
 
+const compraBorrador = {
+  id: 'compra-1',
+  proveedorId: proveedor.id,
+  proveedorDocumento: proveedor.numeroDocumento,
+  proveedorNombre: proveedor.razonSocial,
+  tipoDocumento: 'factura',
+  serie: 'F001',
+  numero: '000001',
+  fechaEmision: '2026-09-22',
+  fechaVencimientoPago: '',
+  fechaEntregaEsperada: '',
+  almacenId: almacen.id,
+  almacen: almacen.nombre,
+  preciosIncluyenIgv: true,
+  observacion: '',
+  lineas: [{
+    id: 'linea-1',
+    productoId: producto.id,
+    productoCodigo: producto.codigo,
+    productoDescripcion: producto.descripcion,
+    unidadMedida: producto.unidadMedida,
+    tipoProducto: producto.tipo,
+    controlLote: producto.controlLote,
+    controlVencimiento: producto.controlVencimiento,
+    productoActivo: true,
+    cantidad: 1,
+    cantidadRecibida: 0,
+    cantidadPendiente: 1,
+    costoUnitario: 10,
+    lote: 'L-1',
+    fechaVencimiento: '2026-12-31',
+    afectacionIgv: 'gravado',
+  }],
+  estado: 'borrador',
+  fechaRegistro: '2026-09-22T12:00:00.000Z',
+  fechaEmisionOrden: null,
+  fechaRecepcion: null,
+  baseGravada: 8.47,
+  montoExonerado: 0,
+  montoInafecto: 0,
+  subtotal: 8.47,
+  igv: 1.53,
+  total: 10,
+  estadoCalculoTributario: 'calculated',
+} satisfies Compra
+
 describe('DialogoCompra', () => {
   it('marca los campos de selección requeridos al guardar el borrador inicial', async () => {
     render(
@@ -134,6 +181,25 @@ describe('DialogoCompra', () => {
     expect(screen.getByText(/Producto físico \(recepción e inventario\)/)).toBeVisible()
     expect(screen.getByText('Cantidad (Unidad) *')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Quitar producto 1' })).toBeDisabled()
+  })
+
+  it('muestra el producto persistido al editar aunque el catálogo inicial aún no lo tenga', () => {
+    render(
+      <DialogoCompra
+        abierto
+        compra={compraBorrador}
+        proveedores={[]}
+        productos={[]}
+        almacenes={[]}
+        alCambiarApertura={vi.fn()}
+        alGuardar={vi.fn().mockResolvedValue(undefined)}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('combobox', { name: 'Producto 1' })).toHaveValue('PARA-500 · Paracetamol 500 mg')
+    expect(screen.getByRole('combobox', { name: 'Proveedor' })).toHaveValue('LIMA EXPRESA S.A.C.')
+    expect(screen.getByRole('combobox', { name: 'Almacén de recepción' })).toHaveValue('Almacén central · Almacén central')
   })
 
   it('usa la afectación tributaria devuelta por una búsqueda remota', async () => {
