@@ -12,8 +12,38 @@ import {
   type DatosProgramacionEntrega,
 } from './programacionEntrega'
 import { mapearEntrega, prepararPayloadEntrega } from '../servicios/distribucionService'
+import { fechaActualPeru } from '@/lib/fechas'
 
 describe('programación de entrega', () => {
+  it('usa el calendario de Lima cuando falta la fecha de emisión', () => {
+    const datos = {
+      pedidoId: 'pedido-1',
+      pedidoNumero: 'PED-001',
+      ventaId: '',
+      ventaNumero: '',
+      clienteNombre: 'Cliente demo',
+      direccionEntrega: 'Av. Central 123',
+      numeroDespacho: 'DES-001',
+      numeroGuiaRemision: 'G-001',
+      fechaEmision: '',
+      fechaProgramada: '2026-09-02',
+      fechaEntrega: '',
+      tipoTransporte: 'interno' as const,
+      modalidad: 'movilidad_propia' as const,
+      transportista: '',
+      conductor: '',
+      vehiculo: '',
+      placa: '',
+      observaciones: '',
+      evidencia: '',
+      estado: 'programado' as const,
+      incidencias: [],
+      lineas: [],
+    }
+
+    expect(crearProgramacionEntrega(datos).fechaEmision).toBe(fechaActualPeru())
+  })
+
   it('incluye los datos principales de distribución y la modalidad de transporte', () => {
     const programacion = crearProgramacionEntrega({
       pedidoId: 'pedido-1',
@@ -194,6 +224,8 @@ describe('programación de entrega', () => {
       incidencias: ['Se confirma horario', 'Parada no programada'],
       items: [{ id: 'linea-1', productoDescripcion: 'Producto', cantidad: 1, unidadMedida: 'UND' }],
     })
+
+    expect(prepararPayloadEntrega('org-1', { ...datos, fechaEmision: '' }, []).issue_date).toBe(fechaActualPeru())
 
     const restaurado = mapearEntrega({
       id: 'ent-1',

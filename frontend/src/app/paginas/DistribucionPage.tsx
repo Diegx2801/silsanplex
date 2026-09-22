@@ -5,6 +5,7 @@ import { useDeferredValue, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 import { PERMISSIONS } from '@/features/auth/permissions'
+import { fechaActualPeru, ZONA_HORARIA_NEGOCIO } from '@/lib/fechas'
 import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
 import {
   esquemaDatosProgramacionEntrega,
@@ -19,8 +20,13 @@ import { formatearFechaDistribucion } from '@/modulos/distribucion/servicios/for
 import { usePedidosPersistentes } from '@/modulos/ventas/estado/usePedidosPersistentes'
 import { useVentasPersistentes } from '@/modulos/ventas/estado/useVentasPersistentes'
 
-const hoy = new Date().toISOString().slice(0, 10)
-const formatoFecha = new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
+const hoy = fechaActualPeru()
+const formatoFecha = new Intl.DateTimeFormat('es-PE', {
+  timeZone: ZONA_HORARIA_NEGOCIO,
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+})
 const etiquetasEstado: Record<string, string> = {
   programado: 'Programado',
   preparando: 'Preparando',

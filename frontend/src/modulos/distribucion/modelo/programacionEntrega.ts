@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { fechaActualPeru } from '@/lib/fechas'
 import { esquemaLineaOperacionVenta } from '@/modulos/ventas/modelo/operacionVenta'
 
 export const MODALIDADES_DISTRIBUCION = ['movilidad_propia', 'movilidad_externa', 'recojo_cliente'] as const
@@ -106,7 +107,7 @@ export type DatosProgramacionEntrega = z.infer<typeof esquemaDatosProgramacionEn
 
 export function crearProgramacionEntrega(
   datos: DatosProgramacionEntrega,
-  fechaEmision = new Date().toISOString().slice(0, 10),
+  fechaEmision = fechaActualPeru(),
   lineas: ProgramacionEntrega['lineas'] = [],
 ): ProgramacionEntrega {
   return {

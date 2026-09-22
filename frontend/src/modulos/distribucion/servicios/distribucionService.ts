@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { fechaActualPeru } from '@/lib/fechas'
 import { supabase } from '@/lib/supabase'
 import {
   esquemaProgramacionEntrega,
@@ -55,7 +56,7 @@ export function prepararPayloadEntrega(
     sale_id: datos.ventaId || null,
     order_number: datos.pedidoNumero,
     customer_name: datos.clienteNombre,
-    issue_date: datos.fechaEmision || new Date().toISOString().slice(0, 10),
+    issue_date: datos.fechaEmision || fechaActualPeru(),
     delivery_date: datos.fechaEntrega || datos.fechaProgramada,
     guide_number: datos.numeroGuiaRemision,
     transport_type: datos.tipoTransporte,
