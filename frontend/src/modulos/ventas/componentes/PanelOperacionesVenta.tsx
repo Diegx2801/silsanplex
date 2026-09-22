@@ -3,6 +3,7 @@ import { AlertDialog as AlertDialogPrimitive } from 'radix-ui'
 import { useDeferredValue, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import { PaginacionListado, type TamanioPaginaListado } from '@/components/ui/PaginacionListado'
 import { fechaPeruDesdeTimestamp, formatearFechaCalendarioPeru } from '@/lib/fechas'
 import { DialogoDespachoPersistente } from '@/modulos/ventas/componentes/DialogoDespachoPersistente'
@@ -147,6 +148,14 @@ export function PanelOperacionesVenta({
     }),
     [pedidos],
   )
+  const opcionesAlmacenes = useMemo<ComboboxOption[]>(
+    () => almacenes.map((almacen) => ({
+      value: almacen.id,
+      label: almacen.nombre,
+      keywords: [almacen.nombre],
+    })),
+    [almacenes],
+  )
   const busquedaDiferida = useDeferredValue(busqueda)
   const operacionesFiltradas = useMemo(() => {
     if (rangoFechasInvalido) return []
@@ -233,18 +242,16 @@ export function PanelOperacionesVenta({
             ))}
           </select>
         </div>
-        <div>
-          <label htmlFor="almacen-operacion-venta" className="field-label">Almacén</label>
-          <select
-            id="almacen-operacion-venta"
-            value={filtroAlmacen}
-            onChange={(evento) => { setFiltroAlmacen(evento.target.value); setPagina(1) }}
-            className="field-control"
-          >
-            <option value="">Todos</option>
-            {almacenes.map((almacen) => <option key={almacen.id} value={almacen.id}>{almacen.nombre}</option>)}
-          </select>
-        </div>
+        <Combobox
+          id="almacen-operacion-venta"
+          label="Almacén"
+          value={filtroAlmacen}
+          options={opcionesAlmacenes}
+          onChange={(valor) => { setFiltroAlmacen(valor); setPagina(1) }}
+          placeholder="Todos los almacenes"
+          helperText="Filtra por nombre del almacén."
+          noOptionsMessage="No hay almacenes disponibles."
+        />
       </div>
       <div className="grid gap-4 border-b bg-muted/20 px-5 py-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-[14rem_14rem_1fr] lg:items-end">
         <div>
