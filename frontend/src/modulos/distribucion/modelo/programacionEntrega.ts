@@ -3,6 +3,15 @@ import { z } from 'zod'
 import { fechaActualPeru } from '@/lib/fechas'
 import { esquemaLineaOperacionVenta } from '@/modulos/ventas/modelo/operacionVenta'
 
+const ESTADOS_CON_ENTREGA_FISICA = ['entregado', 'entrega_parcial'] as const
+const ESTADOS_EN_RUTA = ['en_curso', 'en_destino', ...ESTADOS_CON_ENTREGA_FISICA] as const
+
+function esFechaCalendarioValida(valor: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false
+  const fecha = new Date(`${valor}T00:00:00.000Z`)
+  return !Number.isNaN(fecha.getTime()) && fecha.toISOString().slice(0, 10) === valor
+}
+
 export const MODALIDADES_DISTRIBUCION = ['movilidad_propia', 'movilidad_externa', 'recojo_cliente'] as const
 export const TIPOS_TRANSPORTE_DISTRIBUCION = ['interno', 'externo'] as const
 export const ESTADOS_DISTRIBUCION = [
@@ -101,6 +110,46 @@ export const esquemaDatosProgramacionEntrega = z.object({
   seguimiento: z.enum(['en_curso', 'en_destino']).optional(),
   incidencias: z.array(z.string().trim().max(200)).default([]),
   lineas: z.array(esquemaLineaProgramacionEntrega).optional().default([]),
+}).superRefine((datos, contexto) => {
+  if (datos.fechaEmision && !esFechaCalendarioValida(datos.fechaEmision)) {
+    contexto.addIssue({ code: 'custom', path: ['fechaEmision'], message: 'Ingresa una fecha de emisión válida' })
+  }
+  if (!esFechaCalendarioValida(datos.fechaProgramada)) {
+    contexto.addIssue({ code: 'custom', path: ['fechaProgramada'], message: 'Ingresa una fecha programada válida' })
+  }
+  if (datos.fechaEntrega && !esFechaCalendarioValida(datos.fechaEntrega)) {
+    contexto.addIssue({ code: 'custom', path: ['fechaEntrega'], message: 'Ingresa una fecha de entrega válida' })
+  }
+  if (datos.fechaEmision && datos.fechaProgramada && datos.fechaProgramada < datos.fechaEmision) {
+    contexto.addIssue({ code: 'custom', path: ['fechaProgramada'], message: 'La fecha programada no puede ser anterior a la emisión' })
+  }
+  if (datos.fechaEntrega && datos.fechaEmision && datos.fechaEntrega < datos.fechaEmision) {
+    contexto.addIssue({ code: 'custom', path: ['fechaEntrega'], message: 'La fecha real no puede ser anterior a la emisión' })
+  }
+
+  if (ESTADOS_CON_ENTREGA_FISICA.includes(datos.estado as typeof ESTADOS_CON_ENTREGA_FISICA[number]) && !datos.fechaEntrega) {
+    contexto.addIssue({ code: 'custom', path: ['fechaEntrega'], message: 'Registra la fecha real para confirmar la entrega' })
+  }
+  if (datos.estado === 'entregado' && !datos.evidencia.trim()) {
+    contexto.addIssue({ code: 'custom', path: ['evidencia'], message: 'Registra la evidencia de entrega antes de marcarla como entregada' })
+  }
+  if ((datos.estado === 'rechazado' || datos.estado === 'devuelto') && datos.incidencias.length === 0) {
+    contexto.addIssue({ code: 'custom', path: ['incidencias'], message: 'Registra al menos una incidencia para este estado' })
+  }
+
+  const requiereDatosTransporte = ESTADOS_EN_RUTA.includes(datos.estado as typeof ESTADOS_EN_RUTA[number]) && datos.modalidad !== 'recojo_cliente'
+  if (requiereDatosTransporte && !datos.conductor.trim()) {
+    contexto.addIssue({ code: 'custom', path: ['conductor'], message: 'Ingresa el conductor antes de iniciar la entrega' })
+  }
+  if (requiereDatosTransporte && !datos.vehiculo.trim()) {
+    contexto.addIssue({ code: 'custom', path: ['vehiculo'], message: 'Ingresa el vehículo antes de iniciar la entrega' })
+  }
+  if (requiereDatosTransporte && !datos.placa.trim()) {
+    contexto.addIssue({ code: 'custom', path: ['placa'], message: 'Ingresa la placa antes de iniciar la entrega' })
+  }
+  if (requiereDatosTransporte && datos.tipoTransporte === 'externo' && !datos.transportista.trim()) {
+    contexto.addIssue({ code: 'custom', path: ['transportista'], message: 'Ingresa el transportista para movilidad externa' })
+  }
 })
 
 export type DatosProgramacionEntrega = z.infer<typeof esquemaDatosProgramacionEntrega>

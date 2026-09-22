@@ -1,10 +1,12 @@
 begin;
 
-select plan(68);
+select plan(72);
 
 select has_table('public', 'distribution_deliveries', 'existe la tabla persistente de distribución');
 select has_table('public', 'distribution_command_operations', 'existe el registro de operaciones idempotentes');
 select has_column('public', 'distribution_deliveries', 'delivery_status', 'existe el estado operativo');
+select has_column('public', 'distribution_deliveries', 'scheduled_date', 'existe la fecha programada');
+select has_column('public', 'distribution_deliveries', 'actual_delivery_date', 'existe la fecha real de entrega');
 select has_column('public', 'distribution_deliveries', 'lock_version', 'existe la versión de concurrencia');
 select has_column('public', 'distribution_deliveries', 'direction', 'existe la dirección de entrega');
 select has_column('public', 'distribution_deliveries', 'numero_despacho', 'existe el número de despacho');
@@ -188,6 +190,8 @@ select lives_ok($$
 $$, 'el RPC guarda una entrega con todos los campos nuevos');
 
 select is((select count(*) from public.distribution_deliveries where guide_number = 'G-N-001'), 1::bigint, 'la guía nueva se normaliza a mayúsculas');
+select is((select scheduled_date from public.distribution_deliveries where guide_number = 'G-N-001'), '2026-09-02'::date, 'la fecha programada se separa de la fecha real');
+select ok((select actual_delivery_date is null from public.distribution_deliveries where guide_number = 'G-N-001'), 'una entrega programada no tiene fecha real');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'programado', 'una entrega nueva inicia programada');
 select is((select direction from public.distribution_deliveries where guide_number = 'G-N-001'), 'Av. Nueva 123', 'persiste la dirección');
 select is((select numero_despacho from public.distribution_deliveries where guide_number = 'G-N-001'), 'DES-N-001', 'persiste el número de despacho');

@@ -117,9 +117,9 @@ describe('programación de entrega', () => {
         vehiculo: 'Camión',
         placa: 'ABC-123',
         observaciones: '',
-        evidencia: '',
+        evidencia: estado === 'entregado' ? 'foto-entrega.jpg' : '',
         estado,
-        incidencias: [],
+        incidencias: estado === 'rechazado' || estado === 'devuelto' ? ['Motivo registrado'] : [],
         lineas: [],
       })
 
@@ -162,6 +162,47 @@ describe('programación de entrega', () => {
     })
 
     expect(resultado.success).toBe(true)
+  })
+
+  it('exige datos de cierre y transporte antes de confirmar una entrega', () => {
+    const base = {
+      pedidoId: 'pedido-1', pedidoNumero: 'PED-001', clienteNombre: 'Cliente demo',
+      direccionEntrega: 'Av. Central 123', numeroDespacho: 'DES-001', numeroGuiaRemision: 'G-001',
+      fechaEmision: '2026-09-01', fechaProgramada: '2026-09-02', tipoTransporte: 'interno' as const,
+      modalidad: 'movilidad_propia' as const, estado: 'entregado' as const,
+      transportista: '', conductor: '', vehiculo: '', placa: '', fechaEntrega: '', evidencia: '', incidencias: [],
+    }
+
+    const incompleto = esquemaDatosProgramacionEntrega.safeParse(base)
+    expect(incompleto.success).toBe(false)
+    expect(incompleto.error?.issues.map((issue) => issue.path[0])).toEqual(expect.arrayContaining(['fechaEntrega', 'evidencia', 'conductor', 'vehiculo', 'placa']))
+
+    const completo = esquemaDatosProgramacionEntrega.safeParse({
+      ...base,
+      fechaEntrega: '2026-09-03', evidencia: 'foto-entrega.jpg', conductor: 'Luis Pérez', vehiculo: 'Camioneta', placa: 'ABC-123',
+    })
+    expect(completo.success).toBe(true)
+  })
+
+  it('valida fechas calendario y permite el recojo sin datos de transporte', () => {
+    const resultado = esquemaDatosProgramacionEntrega.safeParse({
+      pedidoId: 'pedido-1', pedidoNumero: 'PED-001', clienteNombre: 'Cliente demo',
+      direccionEntrega: 'Av. Central 123', numeroDespacho: 'DES-001', numeroGuiaRemision: 'G-001',
+      fechaEmision: '2026-09-04', fechaProgramada: '2026-09-03', tipoTransporte: 'interno',
+      modalidad: 'recojo_cliente', estado: 'programado',
+    })
+
+    expect(resultado.success).toBe(false)
+    expect(resultado.error?.issues.some((issue) => issue.message.includes('anterior a la emisión'))).toBe(true)
+
+    const recojo = esquemaDatosProgramacionEntrega.safeParse({
+      pedidoId: 'pedido-1', pedidoNumero: 'PED-001', clienteNombre: 'Cliente demo',
+      direccionEntrega: 'Av. Central 123', numeroDespacho: 'DES-001', numeroGuiaRemision: 'G-001',
+      fechaEmision: '2026-09-01', fechaProgramada: '2026-09-02', tipoTransporte: 'interno',
+      modalidad: 'recojo_cliente', estado: 'en_destino', fechaEntrega: '2026-09-02',
+    })
+
+    expect(recojo.success).toBe(true)
   })
 
   it('serializa y restaura todos los campos del flujo de distribución para la base de datos', () => {
@@ -265,6 +306,17 @@ describe('programación de entrega', () => {
       estado: 'en_curso',
       incidencias: ['Se confirma horario', 'Parada no programada'],
     })
+
+    const entregaConFechasSeparadas = mapearEntrega({
+      id: 'ent-2', order_id: 'pedido-2', order_number: 'PED-002', customer_name: 'Cliente demo',
+      issue_date: '2026-09-01', delivery_date: '2026-09-04', scheduled_date: '2026-09-03', actual_delivery_date: '2026-09-04',
+      guide_number: 'G-002', transport_type: 'interno', tracking_status: 'en_destino', delivery_status: 'entregado', observations: '',
+      direction: 'Av. Central 123', numero_despacho: 'DES-002', modalidad: 'movilidad_propia',
+      transportista: '', conductor: 'Luis Pérez', vehiculo: 'Camioneta', placa: 'ABC-123', evidencia: 'foto.jpg', incidencias: [],
+      order_items: [{ id: 'linea-2', productoDescripcion: 'Producto', cantidad: 1, unidadMedida: 'UND' }], created_at: '2026-09-01T00:00:00Z',
+    })
+
+    expect(entregaConFechasSeparadas).toMatchObject({ fechaProgramada: '2026-09-03', fechaEntrega: '2026-09-04' })
   })
 
   it('lee una entrega histórica sin exigir los campos añadidos por la migración', () => {

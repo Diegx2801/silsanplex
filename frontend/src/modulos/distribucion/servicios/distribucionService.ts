@@ -20,6 +20,8 @@ interface EntregaFila {
   customer_name: string
   issue_date: string
   delivery_date: string
+  scheduled_date?: string | null
+  actual_delivery_date?: string | null
   guide_number: string
   transport_type: ProgramacionEntrega['tipoTransporte']
   tracking_status: ProgramacionEntrega['seguimiento']
@@ -38,7 +40,7 @@ interface EntregaFila {
   created_at: string
 }
 
-const columnas = 'id,lock_version,order_id,sale_id,sale_number,order_number,customer_name,issue_date,delivery_date,guide_number,transport_type,tracking_status,delivery_status,direction,numero_despacho,modalidad,transportista,conductor,vehiculo,placa,evidencia,incidencias,observations,order_items,created_at' as const
+const columnas = 'id,lock_version,order_id,sale_id,sale_number,order_number,customer_name,issue_date,delivery_date,scheduled_date,actual_delivery_date,guide_number,transport_type,tracking_status,delivery_status,direction,numero_despacho,modalidad,transportista,conductor,vehiculo,placa,evidencia,incidencias,observations,order_items,created_at' as const
 
 export function prepararPayloadEntrega(
   organizationId: string,
@@ -57,7 +59,12 @@ export function prepararPayloadEntrega(
     order_number: datos.pedidoNumero,
     customer_name: datos.clienteNombre,
     issue_date: datos.fechaEmision || fechaActualPeru(),
+    // `delivery_date` se conserva para compatibilidad con las funciones SQL
+    // existentes. La migración de endurecimiento separa su significado en
+    // `scheduled_date` y `actual_delivery_date` mediante un trigger.
     delivery_date: datos.fechaEntrega || datos.fechaProgramada,
+    scheduled_date: datos.fechaProgramada,
+    actual_delivery_date: datos.fechaEntrega || null,
     guide_number: datos.numeroGuiaRemision,
     transport_type: datos.tipoTransporte,
     tracking_status: datos.seguimiento ?? (datos.estado === 'en_curso' || datos.estado === 'en_destino' ? datos.estado : 'en_curso'),
@@ -96,8 +103,8 @@ export function mapearEntrega(fila: EntregaFila): ProgramacionEntrega {
     numeroDespacho: fila.numero_despacho ?? '',
     numeroGuiaRemision: fila.guide_number,
     fechaEmision: fila.issue_date,
-    fechaProgramada: fila.delivery_date || fila.issue_date,
-    fechaEntrega: fila.delivery_date ?? '',
+    fechaProgramada: fila.scheduled_date || fila.delivery_date || fila.issue_date,
+    fechaEntrega: fila.actual_delivery_date ?? '',
     tipoTransporte: fila.transport_type ?? 'interno',
     modalidad: fila.modalidad ?? 'movilidad_propia',
     transportista: fila.transportista ?? '',
@@ -159,6 +166,10 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (mensaje.includes('DISTRIBUTION_TRANSPORT_INVALID')) return 'Selecciona un tipo de transporte válido'
   if (mensaje.includes('DISTRIBUTION_MODALITY_INVALID')) return 'Selecciona una modalidad válida'
   if (mensaje.includes('DISTRIBUTION_INCIDENTS_INVALID')) return 'Las incidencias no tienen un formato válido'
+  if (mensaje.includes('distribution_deliveries_transport_data_required')) return 'Completa conductor, vehículo y placa antes de iniciar la entrega'
+  if (mensaje.includes('distribution_deliveries_external_carrier_required')) return 'Ingresa el transportista para movilidad externa'
+  if (mensaje.includes('distribution_deliveries_evidence_required')) return 'Registra la evidencia antes de marcar la entrega como entregada'
+  if (mensaje.includes('distribution_deliveries_incidents_required')) return 'Registra una incidencia para este estado'
   if (mensaje.includes('DISTRIBUTION_') && error.code === '22023') return 'Revisa los datos de la entrega'
   return 'No se pudo guardar la entrega'
 }
