@@ -1,6 +1,6 @@
 begin;
 
-select plan(72);
+select plan(75);
 
 select has_table('public', 'distribution_deliveries', 'existe la tabla persistente de distribución');
 select has_table('public', 'distribution_command_operations', 'existe el registro de operaciones idempotentes');
@@ -65,6 +65,15 @@ insert into public.warehouses (
   'a3111111-1111-4111-8111-111111111121',
   'd3111111-1111-4111-8111-111111111111',
   'DIST', 'Almacén distribución',
+  'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+);
+insert into public.warehouse_locations (
+  id, organization_id, warehouse_id, code, name, created_by, updated_by
+) values (
+  'a3111111-1111-4111-8111-111111111123',
+  'd3111111-1111-4111-8111-111111111111',
+  'a3111111-1111-4111-8111-111111111121',
+  'GENERAL', 'Ubicación general',
   'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
 );
 
@@ -135,6 +144,31 @@ insert into public.sale_items (
     'b3111111-1111-4111-8111-111111111111', 'DIST-001', 'Producto persistente distribución', 'UND', 3, 10
   );
 
+-- Representa una salida física completa del primer pedido y una salida parcial
+-- del segundo. La venta del segundo permanece registrada, como ocurre si aún
+-- tiene servicios pendientes, para verificar que Distribución evalúa bienes.
+insert into public.inventory_reservations (
+  id, organization_id, product_id, warehouse_id, location_id, stock_status,
+  quantity, quantity_consumed, status, source_type, source_id,
+  created_by, updated_by
+) values
+  (
+    'a3111111-1111-4111-8111-111111111181',
+    'd3111111-1111-4111-8111-111111111111', 'b3111111-1111-4111-8111-111111111111',
+    'a3111111-1111-4111-8111-111111111121',
+    (select id from public.warehouse_locations where organization_id = 'd3111111-1111-4111-8111-111111111111' and warehouse_id = 'a3111111-1111-4111-8111-111111111121' and code = 'GENERAL'),
+    'available', 2, 2, 'consumed', 'order-item', 'a3111111-1111-4111-8111-111111111141',
+    'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+  ),
+  (
+    'a3111111-1111-4111-8111-111111111182',
+    'd3111111-1111-4111-8111-111111111111', 'b3111111-1111-4111-8111-111111111111',
+    'a3111111-1111-4111-8111-111111111121',
+    (select id from public.warehouse_locations where organization_id = 'd3111111-1111-4111-8111-111111111111' and warehouse_id = 'a3111111-1111-4111-8111-111111111121' and code = 'GENERAL'),
+    'available', 3, 1, 'released', 'order-item', 'a3111111-1111-4111-8111-111111111142',
+    'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+  );
+
 -- Simula una fila creada antes de que existieran las columnas nuevas.
 insert into public.distribution_deliveries (
   id, organization_id, order_id, order_number, customer_name, issue_date,
@@ -160,6 +194,53 @@ select is((select direction from public.distribution_deliveries where id = 'f311
 select is((select numero_despacho from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), '', 'la fila histórica conserva despacho vacío');
 select is((select modalidad from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), 'movilidad_propia', 'la fila histórica recibe modalidad por defecto');
 select is((select incidencias from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), '[]'::jsonb, 'la fila histórica recibe incidencias vacías');
+
+reset role;
+update public.orders
+set fulfillment_mode = 'pickup'
+where id = 'a3111111-1111-4111-8111-111111111111';
+set local role authenticated;
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111111',
+    'order_number', 'PED-PICKUP', 'customer_name', 'Cliente recojo',
+    'issue_date', '2026-08-30', 'delivery_date', '2026-09-02',
+    'guide_number', 'G-PICKUP', 'transport_type', 'interno',
+    'direction', 'Av. Prueba', 'numero_despacho', 'DES-PICKUP',
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-pickup', 'cantidad', 1))
+  ));
+$$, 'P0001', 'DISTRIBUTION_PICKUP_NOT_SUPPORTED', 'rechaza pedidos de recojo en una programación de ruta');
+
+reset role;
+update public.orders
+set fulfillment_mode = 'delivery'
+where id = 'a3111111-1111-4111-8111-111111111111';
+set local role authenticated;
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'order_number', 'PED-N-001', 'customer_name', 'Cliente nuevo',
+    'issue_date', '2026-09-01', 'delivery_date', '2026-09-02',
+    'guide_number', 'G-N-PENDING', 'transport_type', 'interno',
+    'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-PENDING',
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+  ));
+$$, 'P0001', 'DISTRIBUTION_ORDER_NOT_DISPATCHED', 'rechaza una venta con despacho pendiente o parcial');
+
+reset role;
+update public.inventory_reservations
+set quantity_consumed = quantity,
+    status = 'consumed'
+where source_type = 'order-item'
+  and source_id = 'a3111111-1111-4111-8111-111111111142';
+set local role authenticated;
+
+select is((select sum(quantity_consumed) from public.inventory_reservations where source_type = 'order-item' and source_id = 'a3111111-1111-4111-8111-111111111142'), 3::numeric, 'la salida física queda completa sin forzar el estado global de la venta');
 
 select lives_ok($$
   select public.save_distribution_delivery(jsonb_build_object(

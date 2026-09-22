@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import type { Almacen } from '@/modulos/inventario/modelo/almacen'
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
+import type { ModoCumplimientoPedido } from '@/modulos/ventas/modelo/operacionVenta'
 
 interface DialogoSeleccionAlmacenPedidoProps {
   abierto: boolean
@@ -14,7 +15,7 @@ interface DialogoSeleccionAlmacenPedidoProps {
   buscarAlmacenes?: (busqueda: string) => Promise<readonly Almacen[]>
   guardando?: boolean
   alCambiarApertura: (abierto: boolean) => void
-  alConfirmar: (almacenId: string) => string | undefined | Promise<string | undefined>
+  alConfirmar: (almacenId: string, fulfillmentMode: ModoCumplimientoPedido) => string | undefined | Promise<string | undefined>
   alRestaurarFoco: () => void
 }
 
@@ -29,6 +30,7 @@ export function DialogoSeleccionAlmacenPedido({
   alRestaurarFoco,
 }: DialogoSeleccionAlmacenPedidoProps) {
   const [almacenId, setAlmacenId] = useState('')
+  const [fulfillmentMode, setFulfillmentMode] = useState<ModoCumplimientoPedido>('delivery')
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
@@ -39,6 +41,7 @@ export function DialogoSeleccionAlmacenPedido({
     // El operador debe elegir explícitamente el almacén de preparación.
     // Tomar la primera fila es inseguro cuando existen varios almacenes.
     setAlmacenId('')
+    setFulfillmentMode('delivery')
     setError('')
     setEnviando(false)
   }, [abierto, almacenes])
@@ -59,7 +62,7 @@ export function DialogoSeleccionAlmacenPedido({
     }
     setEnviando(true)
     try {
-      const mensaje = await alConfirmar(almacenId)
+      const mensaje = await alConfirmar(almacenId, fulfillmentMode)
       if (mensaje) setError(mensaje)
     } finally {
       setEnviando(false)
@@ -108,6 +111,24 @@ export function DialogoSeleccionAlmacenPedido({
 
           <form className="px-5 py-6 sm:px-7" onSubmit={(evento) => void guardar(evento)}>
             <div className="space-y-4">
+              <div>
+                <label htmlFor="modalidad-cumplimiento-pedido" className="field-label">Modalidad de cumplimiento</label>
+                <select
+                  id="modalidad-cumplimiento-pedido"
+                  value={fulfillmentMode}
+                  onChange={(evento) => setFulfillmentMode(evento.target.value as ModoCumplimientoPedido)}
+                  className="field-control"
+                  disabled={estaGuardando}
+                >
+                  <option value="delivery">Entrega al cliente</option>
+                  <option value="pickup">Recojo del cliente</option>
+                </select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {fulfillmentMode === 'pickup'
+                    ? 'No se generará una entrega en Distribución; el despacho confirmará el recojo.'
+                    : 'El pedido quedará disponible para programar y seguir su entrega.'}
+                </p>
+              </div>
               <Combobox
                 id="almacen-pedido"
                 label="Almacén de preparación"

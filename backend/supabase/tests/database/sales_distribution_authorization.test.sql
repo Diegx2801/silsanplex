@@ -92,6 +92,8 @@ insert into public.products (id, organization_id, code, description, unit_of_mea
 values ('d4d00000-0000-4000-8000-000000000001', 'd4a00000-0000-4000-8000-000000000001', 'AUTH-001', 'Producto autorización', 'UND', 'd4b00000-0000-4000-8000-000000000002', 'd4b00000-0000-4000-8000-000000000002');
 insert into public.warehouses (id, organization_id, code, name, created_by, updated_by)
 values ('d4e00000-0000-4000-8000-000000000001', 'd4a00000-0000-4000-8000-000000000001', 'AUTH', 'Almacén autorización', 'd4b00000-0000-4000-8000-000000000002', 'd4b00000-0000-4000-8000-000000000002');
+insert into public.warehouse_locations (id, organization_id, warehouse_id, code, name, created_by, updated_by)
+values ('d4180000-0000-4000-8000-000000000001', 'd4a00000-0000-4000-8000-000000000001', 'd4e00000-0000-4000-8000-000000000001', 'GENERAL', 'Ubicación general', 'd4b00000-0000-4000-8000-000000000002', 'd4b00000-0000-4000-8000-000000000002');
 insert into public.orders (id, organization_id, order_number, customer_id, warehouse_id, order_date, status, operation_key, created_by, updated_by)
 values ('d4f00000-0000-4000-8000-000000000001', 'd4a00000-0000-4000-8000-000000000001', 'PED-000001', 'd4c00000-0000-4000-8000-000000000001', 'd4e00000-0000-4000-8000-000000000001', current_date, 'confirmado', 'd4100000-0000-4000-8000-000000000001', 'd4b00000-0000-4000-8000-000000000002', 'd4b00000-0000-4000-8000-000000000002');
 insert into public.order_items (id, organization_id, order_id, product_id, product_code, product_description, unit_of_measure, quantity, unit_price)
@@ -100,6 +102,16 @@ insert into public.sales (id, organization_id, order_id, customer_id, internal_n
 values ('d4120000-0000-4000-8000-000000000001', 'd4a00000-0000-4000-8000-000000000001', 'd4f00000-0000-4000-8000-000000000001', 'd4c00000-0000-4000-8000-000000000001', 'VEN-000001', 'boleta', 'B001', '1', current_date, 'Almacén autorización', 'd4130000-0000-4000-8000-000000000001', 'd4b00000-0000-4000-8000-000000000002', 'd4b00000-0000-4000-8000-000000000002');
 insert into public.sale_items (id, organization_id, sale_id, order_id, order_item_id, product_id, product_code, product_description, unit_of_measure, quantity, unit_price)
 values ('d4140000-0000-4000-8000-000000000001', 'd4a00000-0000-4000-8000-000000000001', 'd4120000-0000-4000-8000-000000000001', 'd4f00000-0000-4000-8000-000000000001', 'd4110000-0000-4000-8000-000000000001', 'd4d00000-0000-4000-8000-000000000001', 'AUTH-001', 'Producto autorización', 'UND', 2, 10);
+insert into public.inventory_reservations (
+  id, organization_id, product_id, warehouse_id, location_id, stock_status,
+  quantity, quantity_consumed, status, source_type, source_id, created_by, updated_by
+) values (
+  'd4190000-0000-4000-8000-000000000001',
+  'd4a00000-0000-4000-8000-000000000001', 'd4d00000-0000-4000-8000-000000000001',
+  'd4e00000-0000-4000-8000-000000000001', 'd4180000-0000-4000-8000-000000000001',
+  'available', 2, 2, 'consumed', 'order-item', 'd4110000-0000-4000-8000-000000000001',
+  'd4b00000-0000-4000-8000-000000000002', 'd4b00000-0000-4000-8000-000000000002'
+);
 insert into public.distribution_deliveries (id, organization_id, order_id, order_number, customer_name, issue_date, delivery_date, guide_number, transport_type, tracking_status, observations, order_items)
 values ('d4150000-0000-4000-8000-000000000001', 'd4a00000-0000-4000-8000-000000000001', 'd4f00000-0000-4000-8000-000000000001', 'PED-000001', 'Cliente autorización', current_date, current_date, 'G-AUTH-001', 'interno', 'en_curso', '', '[{"productoId":"d4d00000-0000-4000-8000-000000000001"}]'::jsonb);
 

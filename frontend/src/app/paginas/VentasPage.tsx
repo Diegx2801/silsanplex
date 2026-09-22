@@ -45,6 +45,7 @@ import {
   type EntidadesSeleccionadasCotizacion,
   type EstadoCotizacion,
 } from '@/modulos/ventas/modelo/cotizacion'
+import type { ModoCumplimientoPedido } from '@/modulos/ventas/modelo/operacionVenta'
 
 type FiltroEstado = 'todos' | EstadoCotizacion | 'vencida'
 type VistaVentas = 'cotizaciones' | 'ejecucion'
@@ -290,11 +291,11 @@ export function VentasPage() {
     setCotizacionPorConsultar(cotizacion)
   }
 
-  const confirmarPedido = async (almacenId: string) => {
+  const confirmarPedido = async (almacenId: string, fulfillmentMode: ModoCumplimientoPedido) => {
     if (!puedeGestionarVentas) return 'No tienes permiso para administrar ventas'
     if (!cotizacionPorCrearPedido) return 'Selecciona una cotización válida'
     const cotizacion = cotizacionPorCrearPedido
-    const error = await crearPedido(cotizacion.id, almacenId)
+    const error = await crearPedido(cotizacion.id, almacenId, fulfillmentMode)
     if (error) {
       notificar(error, true)
       return error

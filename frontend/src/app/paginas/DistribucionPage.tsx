@@ -12,6 +12,7 @@ import { fechaActualPeru, ZONA_HORARIA_NEGOCIO } from '@/lib/fechas'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
 import { DialogoDetalleEntrega } from '@/modulos/distribucion/componentes/DialogoDetalleEntrega'
 import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
+import { pedidoListoParaProgramarDistribucion } from '@/modulos/distribucion/modelo/pedidosProgramables'
 import {
   esquemaDatosProgramacionEntrega,
   filtrarProgramacionesEntrega,
@@ -61,6 +62,12 @@ type VistaDistribucion = 'pendientes' | 'seguimiento'
 
 function normalizarBusqueda(valor: string) {
   return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-PE')
+}
+
+function etiquetaCumplimientoPedido(pedido: PedidoVenta) {
+  return pedido.estadoCumplimiento === 'dispatched'
+    ? 'Despachado · pendiente de entrega'
+    : 'Bienes despachados · venta en curso'
 }
 
 export function DistribucionPage() {
@@ -116,11 +123,16 @@ export function DistribucionPage() {
   })
   const busquedaDiferida = useDeferredValue(busqueda)
   const ventaPorPedido = useMemo(() => new Map(ventas.map((venta) => [venta.pedidoId, venta])), [ventas])
-  const pedidosDisponibles = useMemo(() => pedidos.filter((pedido) =>
-    pedido.estado === 'confirmado' && pedido.lineas.some((linea) => linea.tipoProducto === 'good') && ventaPorPedido.has(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id && item.id !== edicion?.id),
-  ), [edicion?.id, pedidos, programaciones, ventaPorPedido])
+  const pedidosDisponibles = useMemo(() => pedidos.filter((pedido) => {
+    const esEntregaActual = edicion?.pedidoId === pedido.id
+      && (pedido.modalidadCumplimiento ?? 'delivery') === 'delivery'
+      && pedido.lineas.some((linea) => linea.tipoProducto === 'good')
+    const puedeCrearEntrega = pedidoListoParaProgramarDistribucion(pedido, ventaPorPedido.get(pedido.id))
+    return (puedeCrearEntrega || esEntregaActual)
+      && !programaciones.some((item) => item.pedidoId === pedido.id && item.id !== edicion?.id)
+  }), [edicion?.id, edicion?.pedidoId, pedidos, programaciones, ventaPorPedido])
   const pedidosPorProgramar = useMemo(() => pedidos.filter(
-    (pedido) => pedido.estado === 'confirmado' && pedido.lineas.some((linea) => linea.tipoProducto === 'good') && ventaPorPedido.has(pedido.id) && !programaciones.some((item) => item.pedidoId === pedido.id),
+    (pedido) => pedidoListoParaProgramarDistribucion(pedido, ventaPorPedido.get(pedido.id)) && !programaciones.some((item) => item.pedidoId === pedido.id),
   ), [pedidos, programaciones, ventaPorPedido])
   const almacenesPendientes = useMemo(() => Array.from(new Set(pedidosPorProgramar.map((pedido) => pedido.almacenNombre).filter((almacen): almacen is string => Boolean(almacen)))).sort((a, b) => a.localeCompare(b, 'es-PE')), [pedidosPorProgramar])
   const pedidosPorProgramarFiltrados = useMemo(() => {
@@ -256,6 +268,10 @@ export function DistribucionPage() {
       setMensaje('El pedido debe tener una venta persistente para programar su entrega')
       return
     }
+    if (!pedidoListoParaProgramarDistribucion(pedido, venta)) {
+      setMensaje('Completa el despacho de todos los bienes en Ventas antes de programar la entrega')
+      return
+    }
     setEdicion(null)
     const cliente = clientes.find((item) => item.id === pedido.clienteId)
     const direccionPrincipal = cliente?.direccionesEntrega.find((direccion) => direccion.principal) ?? cliente?.direccionesEntrega[0]
@@ -317,6 +333,10 @@ export function DistribucionPage() {
     const venta = ventaPorPedidoId(resultado.data.pedidoId)
     if ((!pedido || !venta) && !edicion) {
       setMensaje('El pedido o la venta persistente ya no están disponibles; recarga la página')
+      return
+    }
+    if (!edicion && pedido && !pedidoListoParaProgramarDistribucion(pedido, venta)) {
+      setMensaje('Completa el despacho de todos los bienes en Ventas antes de programar la entrega')
       return
     }
     const datosPersistentes = {
@@ -525,7 +545,7 @@ export function DistribucionPage() {
           <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(14rem,1fr)_minmax(15rem,18rem)_minmax(13rem,16rem)] lg:items-end">
             <div>
               <h2 id="pendientes-programacion-title" className="text-lg font-semibold">Pedidos por programar</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{pedidosPorProgramarFiltrados.length} de {pedidosPorProgramar.length} pedidos sin entrega asignada.</p>
+              <p className="mt-1 text-sm text-muted-foreground">{pedidosPorProgramarFiltrados.length} de {pedidosPorProgramar.length} pedidos con bienes despachados y sin entrega asignada.</p>
             </div>
             <div>
               <label htmlFor="buscar-pedido-pendiente" className="field-label">Buscar</label>
@@ -542,9 +562,9 @@ export function DistribucionPage() {
           {cargandoPedidos || cargandoVentas ? (
             <p className="px-5 py-6 text-sm text-muted-foreground sm:px-6">Cargando pedidos persistentes…</p>
           ) : !pedidosPorProgramarFiltrados.length ? (
-            <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{pedidosPorProgramar.length ? 'No hay coincidencias' : 'No hay pedidos pendientes de programación'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{pedidosPorProgramar.length ? 'Prueba con otra búsqueda o limpia el filtro de almacén.' : 'Cuando exista un pedido confirmado con venta persistente aparecerá aquí.'}</p></div>
+            <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{pedidosPorProgramar.length ? 'No hay coincidencias' : 'No hay pedidos listos para programar'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{pedidosPorProgramar.length ? 'Prueba con otra búsqueda o limpia el filtro de almacén.' : 'Aquí aparecen pedidos de envío cuando todos sus bienes están despachados. Los despachos parciales continúan en Ventas y los recojos del cliente se gestionan allí.'}</p></div>
           ) : (
-            <div className="overflow-x-auto"><table className="w-full min-w-[58rem] border-collapse text-left text-sm"><thead className="border-b bg-muted/45"><tr><th className="px-5 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Pedido</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Cliente</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Almacén</th><th className="px-4 py-3 text-end font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Productos</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Estado</th><th className="px-5 py-3 text-end font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Acciones</th></tr></thead><tbody className="divide-y">{pedidosPorProgramarVisibles.map((pedido) => { const cantidadProductos = pedido.lineas.filter((linea) => linea.tipoProducto === 'good').length; return <tr key={pedido.id} className="hover:bg-muted/35"><td className="px-5 py-4 font-mono text-xs font-medium text-primary">{pedido.numero}</td><td className="max-w-[18rem] px-4 py-4"><p className="truncate font-medium">{pedido.clienteNombre}</p><p className="mt-1 text-xs text-muted-foreground">{pedido.clienteDocumento}</p></td><td className="px-4 py-4 text-sm text-muted-foreground">{pedido.almacenNombre ?? 'No especificado'}</td><td className="px-4 py-4 text-end font-mono tabular-nums">{cantidadProductos}</td><td className="px-4 py-4"><span className="status-label" data-tone="pendiente">Confirmado</span></td><td className="px-5 py-4 text-end"><div className="flex justify-end gap-1"> <Button type="button" variant="ghost" size="icon" title="Ver detalle del pedido" aria-label={`Ver detalle de ${pedido.numero}`} onClick={(evento) => { disparadorPedidoDetalle.current = evento.currentTarget; setPedidoDetalle(pedido) }}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion ? <Button type="button" onClick={() => prepararPedido(pedido.id)}><Plus aria-hidden="true" /> Programar</Button> : null}</div></td></tr> })}</tbody></table></div>
+            <div className="overflow-x-auto"><table className="w-full min-w-[58rem] border-collapse text-left text-sm"><thead className="border-b bg-muted/45"><tr><th className="px-5 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Pedido</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Cliente</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Almacén</th><th className="px-4 py-3 text-end font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Productos</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Estado</th><th className="px-5 py-3 text-end font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Acciones</th></tr></thead><tbody className="divide-y">{pedidosPorProgramarVisibles.map((pedido) => { const cantidadProductos = pedido.lineas.filter((linea) => linea.tipoProducto === 'good').length; return <tr key={pedido.id} className="hover:bg-muted/35"><td className="px-5 py-4 font-mono text-xs font-medium text-primary">{pedido.numero}</td><td className="max-w-[18rem] px-4 py-4"><p className="truncate font-medium">{pedido.clienteNombre}</p><p className="mt-1 text-xs text-muted-foreground">{pedido.clienteDocumento}</p></td><td className="px-4 py-4 text-sm text-muted-foreground">{pedido.almacenNombre ?? 'No especificado'}</td><td className="px-4 py-4 text-end font-mono tabular-nums">{cantidadProductos}</td><td className="px-4 py-4"><span className="status-label" data-tone={pedido.estadoCumplimiento === 'dispatched' ? 'listo' : 'pendiente'}>{etiquetaCumplimientoPedido(pedido)}</span></td><td className="px-5 py-4 text-end"><div className="flex justify-end gap-1"> <Button type="button" variant="ghost" size="icon" title="Ver detalle del pedido" aria-label={`Ver detalle de ${pedido.numero}`} onClick={(evento) => { disparadorPedidoDetalle.current = evento.currentTarget; setPedidoDetalle(pedido) }}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion ? <Button type="button" onClick={() => prepararPedido(pedido.id)}><Plus aria-hidden="true" /> Programar</Button> : null}</div></td></tr> })}</tbody></table></div>
           )}
           {pedidosPorProgramarFiltrados.length ? <PaginacionListado etiqueta="pedidos por programar" pagina={paginaPendientesVisible} tamanioPagina={tamanioPaginaPendientes} total={pedidosPorProgramarFiltrados.length} totalPaginas={totalPaginasPendientes} cantidadVisible={pedidosPorProgramarVisibles.length} alCambiarPagina={setPaginaPendientes} alCambiarTamanio={(siguiente) => { setTamanioPaginaPendientes(siguiente); setPaginaPendientes(1) }} /> : null}
         </section>

@@ -325,6 +325,7 @@ export function PanelOperacionesVenta({
                   <h3 className="mt-2 font-semibold">{pedido.clienteNombre}</h3>
                   <p className="mt-1 text-xs text-muted-foreground">Origen: {pedido.cotizacionNumero} · {formatearFechaCalendarioPeru(fechaPedidoOperacion(pedido))}</p>
                   <p className="mt-1 text-xs text-muted-foreground">Almacén: {pedido.almacenNombre ?? 'No definido (histórico)'}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Cumplimiento: {pedido.modalidadCumplimiento === 'pickup' ? 'Recojo del cliente' : 'Entrega al cliente'}</p>
                 </div>
                 <div className="grid grid-cols-3 gap-3 border-y py-3 text-sm lg:border-y-0 lg:border-s lg:ps-5">
                   <div><p className="text-xs text-muted-foreground">Productos</p><p className="mt-1 font-mono">{pedido.lineas.length}</p></div>

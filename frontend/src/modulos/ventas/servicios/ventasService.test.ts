@@ -76,14 +76,24 @@ describe('ventasService', () => {
     supabaseMock.rpc.mockResolvedValue({ data: 'pedido-1', error: null })
 
     await expect(crearPedidoPersistente('org-1', cotizacion, 'warehouse-1')).resolves.toBe('pedido-1')
-    expect(supabaseMock.rpc).toHaveBeenCalledWith('create_order', {
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('create_order_with_fulfillment', {
       payload: expect.objectContaining({
         organization_id: 'org-1',
         operation_key: 'cotizacion-1',
         source_quote_id: 'cotizacion-1',
         warehouse_id: 'warehouse-1',
+        fulfillment_mode: 'delivery',
         items: [{ product_id: 'producto-1', quantity: 2, unit_price: 10 }],
       }),
+    })
+  })
+
+  it('envía el recojo del cliente como modalidad explícita', async () => {
+    supabaseMock.rpc.mockResolvedValue({ data: 'pedido-1', error: null })
+
+    await expect(crearPedidoPersistente('org-1', cotizacion, 'warehouse-1', 'pickup')).resolves.toBe('pedido-1')
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('create_order_with_fulfillment', {
+      payload: expect.objectContaining({ fulfillment_mode: 'pickup' }),
     })
   })
 

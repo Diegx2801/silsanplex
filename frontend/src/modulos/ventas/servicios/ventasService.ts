@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
-import type { DatosVenta, PedidoVenta, Venta } from '@/modulos/ventas/modelo/operacionVenta'
+import type { DatosVenta, ModoCumplimientoPedido, PedidoVenta, Venta } from '@/modulos/ventas/modelo/operacionVenta'
 
 interface ClienteFila {
   document_type: string
@@ -293,6 +293,9 @@ function mensajeError(error: { code?: string; message?: string; details?: string
   if (message.includes('ORDER_SERVICE_NOT_PENDING')) return 'El pedido ya no tiene servicios pendientes'
   if (message.includes('ORDER_OPERATION_KEY_REUSED')) return 'La clave de operación ya fue usada con datos diferentes'
   if (message.includes('ORDER_DISPATCH_SERVICE_FORBIDDEN')) return 'Los servicios deben completarse desde Ventas, no mediante despacho físico'
+  if (message.includes('ORDER_FULFILLMENT_MODE_INVALID')) return 'Selecciona una modalidad de cumplimiento válida'
+  if (message.includes('ORDER_FULFILLMENT_MODE_CONFLICT')) return 'La modalidad de este pedido ya fue definida y no puede cambiarse en un reintento'
+  if (message.includes('ORDER_FULFILLMENT_MODE_NOT_SET')) return 'No se pudo guardar la modalidad de cumplimiento del pedido'
   if (message.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no generan reservas ni pueden despacharse como inventario.'
   if (error.code === '42501' || /_FORBIDDEN|AUTHENTICATION_REQUIRED/.test(message)) return 'No tienes permiso para gestionar operaciones comerciales'
   if (message.includes('ORDER_CUSTOMER_UNAVAILABLE')) return 'El cliente seleccionado ya no está disponible'
@@ -392,8 +395,9 @@ export async function crearPedidoPersistente(
   organizationId: string,
   cotizacion: Cotizacion,
   warehouseId: string,
+  fulfillmentMode: ModoCumplimientoPedido = 'delivery',
 ) {
-  const { data, error } = await supabase.rpc('create_order', {
+  const { data, error } = await supabase.rpc('create_order_with_fulfillment', {
     payload: {
       organization_id: organizationId,
       operation_key: cotizacion.id,
@@ -404,6 +408,7 @@ export async function crearPedidoPersistente(
       order_date: cotizacion.fechaEmision,
       prices_include_tax: cotizacion.preciosIncluyenIgv,
       notes: cotizacion.observacion,
+      fulfillment_mode: fulfillmentMode,
       items: cotizacion.lineas.map((linea) => ({
         product_id: linea.productoId,
         quantity: linea.cantidad,

@@ -44,7 +44,19 @@ describe('DialogoSeleccionAlmacenPedido', () => {
     fireEvent.click(screen.getByRole('option', { name: /NORTE · Almacén norte/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
 
-    await waitFor(() => expect(alConfirmar).toHaveBeenCalledWith('warehouse-2'))
+    await waitFor(() => expect(alConfirmar).toHaveBeenCalledWith('warehouse-2', 'delivery'))
+  })
+
+  it('permite indicar recojo sin enviarlo como una entrega', async () => {
+    const alConfirmar = vi.fn().mockResolvedValue(undefined)
+    renderDialog(alConfirmar)
+    fireEvent.change(screen.getByLabelText('Modalidad de cumplimiento'), { target: { value: 'pickup' } })
+    const almacen = screen.getByRole('combobox', { name: 'Almacén de preparación' })
+    fireEvent.focus(almacen)
+    fireEvent.click(screen.getByRole('option', { name: /CENTRAL · Almacén central/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
+
+    await waitFor(() => expect(alConfirmar).toHaveBeenCalledWith('warehouse-1', 'pickup'))
   })
 
   it('filtra los almacenes por dirección', () => {
