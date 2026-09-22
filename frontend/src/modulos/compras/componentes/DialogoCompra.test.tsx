@@ -136,6 +136,29 @@ describe('DialogoCompra', () => {
     expect(screen.getByRole('button', { name: 'Quitar producto 1' })).toBeDisabled()
   })
 
+  it('usa la afectación tributaria devuelta por una búsqueda remota', async () => {
+    render(
+      <DialogoCompra
+        abierto
+        compra={null}
+        proveedores={[proveedor]}
+        productos={[productoSinAfectacion]}
+        almacenes={[almacen]}
+        buscarProductos={vi.fn().mockResolvedValue([producto])}
+        alCambiarApertura={vi.fn()}
+        alGuardar={vi.fn().mockResolvedValue(undefined)}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    const selector = screen.getByRole('combobox', { name: 'Producto 1' })
+    fireEvent.focus(selector)
+    fireEvent.change(selector, { target: { value: 'paracetamol' } })
+    fireEvent.click(await screen.findByRole('option', { name: /PARA-500/ }))
+
+    expect(screen.queryByText('Falta definir la afectación de IGV.')).not.toBeInTheDocument()
+  })
+
   it('exige seleccionar explícitamente el almacén y permite buscarlo por dirección', () => {
     render(
       <DialogoCompra
@@ -157,6 +180,30 @@ describe('DialogoCompra', () => {
     fireEvent.click(screen.getByRole('option', { name: /CENTRAL · Almacén central/ }))
 
     expect(control).toHaveValue('CENTRAL · Almacén central')
+  })
+
+  it('conserva el nombre de un almacén remoto en el formulario de guardado', async () => {
+    const almacenRemoto = { ...almacen, id: 'almacen-remoto', codigo: 'REMOTO', nombre: 'Almacén remoto' }
+    render(
+      <DialogoCompra
+        abierto
+        compra={null}
+        proveedores={[proveedor]}
+        productos={[producto]}
+        almacenes={[]}
+        buscarAlmacenes={vi.fn().mockResolvedValue([almacenRemoto])}
+        alCambiarApertura={vi.fn()}
+        alGuardar={vi.fn().mockResolvedValue(undefined)}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    const control = screen.getByRole('combobox', { name: 'Almacén de recepción' })
+    fireEvent.focus(control)
+    fireEvent.change(control, { target: { value: 'remoto' } })
+    fireEvent.click(await screen.findByRole('option', { name: /REMOTO · Almacén remoto/ }))
+
+    expect(document.querySelector<HTMLInputElement>('input[name="almacen"]')?.value).toBe('Almacén remoto')
   })
 
   it('identifica el producto cuya afectación de IGV debe completarse', async () => {

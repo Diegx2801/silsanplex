@@ -86,6 +86,7 @@ export function Combobox({
   const inputRef = useRef<HTMLInputElement>(null)
   const interactuandoListaRef = useRef(false)
   const solicitudRef = useRef(0)
+  const loadOptionsRef = useRef(loadOptions)
   const [abierto, setAbierto] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [indiceActivo, setIndiceActivo] = useState(-1)
@@ -110,7 +111,11 @@ export function Combobox({
   }, [busqueda, loadOptions, maxVisibleOptions, opcionesRemotas, options])
 
   useEffect(() => {
-    if (!loadOptions || !abierto) return
+    loadOptionsRef.current = loadOptions
+  }, [loadOptions])
+
+  useEffect(() => {
+    if (!loadOptionsRef.current || !abierto) return
     const solicitud = ++solicitudRef.current
     const termino = busqueda.trim()
     if (termino.length > 0 && termino.length < minSearchLength) {
@@ -123,7 +128,7 @@ export function Combobox({
     setCargando(true)
     setErrorCarga(false)
     const temporizador = window.setTimeout(() => {
-      void loadOptions(termino)
+      void loadOptionsRef.current?.(termino)
         .then((resultados) => {
           if (solicitud !== solicitudRef.current) return
           setOpcionesRemotas(resultados)
@@ -139,7 +144,7 @@ export function Combobox({
     }, debounceMs)
 
     return () => window.clearTimeout(temporizador)
-  }, [abierto, busqueda, debounceMs, loadOptions, minSearchLength])
+  }, [abierto, busqueda, debounceMs, minSearchLength])
 
   useEffect(() => {
     if (!abierto) {

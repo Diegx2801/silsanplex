@@ -32,6 +32,7 @@ import {
   type Compra,
   type DatosCompra,
   type DatosRecepcionCompra,
+  type EntidadesSeleccionadasCompra,
   type EstadoCompra,
 } from '@/modulos/compras/modelo/compras'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
@@ -234,8 +235,12 @@ export function ComprasPage() {
     return error
   }
 
-  const guardarNuevaCompra = async (datos: DatosCompra, compraId?: string) => {
-    const error = await guardarCompra(datos, compraId)
+  const guardarNuevaCompra = async (
+    datos: DatosCompra,
+    compraId?: string,
+    entidadesSeleccionadas?: EntidadesSeleccionadasCompra,
+  ) => {
+    const error = await guardarCompra(datos, compraId, entidadesSeleccionadas)
     if (!error) {
       notificar(compraId ? 'Compra actualizada.' : 'Compra guardada como borrador.')
     }
@@ -712,7 +717,7 @@ export function ComprasPage() {
           key={compraSeleccionada?.id ?? 'nueva'}
           abierto={dialogoCompraAbierto}
           compra={compraSeleccionada}
-          proveedores={proveedoresActivos}
+          proveedores={proveedores}
           productos={productos}
           almacenes={almacenes}
           buscarProveedores={buscarProveedoresRemotos}

@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Plus, Trash2, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
+import { useMemo, useState } from 'react'
 import { Controller, useFieldArray, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
@@ -12,6 +13,7 @@ import {
   esquemaDatosCompra,
   type Compra,
   type DatosCompra,
+  type EntidadesSeleccionadasCompra,
   type Proveedor,
 } from '@/modulos/compras/modelo/compras'
 import type { AfectacionTributaria, Producto } from '@/modulos/productos/modelo/producto'
@@ -37,7 +39,11 @@ interface DialogoCompraProps {
   buscarProductos?: (busqueda: string) => Promise<readonly Producto[]>
   buscarAlmacenes?: (busqueda: string) => Promise<readonly Almacen[]>
   alCambiarApertura: (abierto: boolean) => void
-  alGuardar: (datos: DatosCompra, compraId?: string) => Promise<string | undefined>
+  alGuardar: (
+    datos: DatosCompra,
+    compraId?: string,
+    entidadesSeleccionadas?: EntidadesSeleccionadasCompra,
+  ) => Promise<string | undefined>
   alRestaurarFoco: () => void
 }
 
@@ -54,10 +60,28 @@ export function DialogoCompra({
   alGuardar,
   alRestaurarFoco,
 }: DialogoCompraProps) {
-  const proveedoresDisponibles = proveedores.filter(
+  const [proveedoresRemotos, setProveedoresRemotos] = useState<readonly Proveedor[]>([])
+  const [productosRemotos, setProductosRemotos] = useState<readonly Producto[]>([])
+  const [almacenesRemotos, setAlmacenesRemotos] = useState<readonly Almacen[]>([])
+  const catalogoProveedores = useMemo(() => {
+    const porId = new Map(proveedores.map((proveedor) => [proveedor.id, proveedor]))
+    proveedoresRemotos.forEach((proveedor) => porId.set(proveedor.id, proveedor))
+    return [...porId.values()]
+  }, [proveedores, proveedoresRemotos])
+  const catalogoProductos = useMemo(() => {
+    const porId = new Map(productos.map((producto) => [producto.id, producto]))
+    productosRemotos.forEach((producto) => porId.set(producto.id, producto))
+    return [...porId.values()]
+  }, [productos, productosRemotos])
+  const catalogoAlmacenes = useMemo(() => {
+    const porId = new Map(almacenes.map((almacen) => [almacen.id, almacen]))
+    almacenesRemotos.forEach((almacen) => porId.set(almacen.id, almacen))
+    return [...porId.values()]
+  }, [almacenes, almacenesRemotos])
+  const proveedoresDisponibles = catalogoProveedores.filter(
     (proveedor) => proveedor.activo || proveedor.id === compra?.proveedorId,
   )
-  const almacenesDisponibles = almacenes.filter(
+  const almacenesDisponibles = catalogoAlmacenes.filter(
     (almacen) => almacen.activo || almacen.id === compra?.almacenId,
   )
   const valoresIniciales: DatosCompra = compra
@@ -108,14 +132,14 @@ export function DialogoCompra({
     const afectacion =
       snapshotsPorProducto.get(linea.productoId) ??
       afectacionProducto(
-        productos.find((producto) => producto.id === linea.productoId)?.afectacionIgv,
+        catalogoProductos.find((producto) => producto.id === linea.productoId)?.afectacionIgv,
       )
     if (afectacion !== 'por-definir') return []
 
     return [{
       indice,
       descripcion:
-        productos.find((producto) => producto.id === linea.productoId)?.descripcion ??
+        catalogoProductos.find((producto) => producto.id === linea.productoId)?.descripcion ??
         'Producto seleccionado',
     }]
   })
@@ -126,7 +150,7 @@ export function DialogoCompra({
       afectacionIgv:
         snapshotsPorProducto.get(linea.productoId) ??
         afectacionProducto(
-          productos.find((producto) => producto.id === linea.productoId)?.afectacionIgv,
+          catalogoProductos.find((producto) => producto.id === linea.productoId)?.afectacionIgv,
         ),
     })),
     preciosIncluyenIgv,
@@ -148,7 +172,14 @@ export function DialogoCompra({
   }))
 
   const guardar = async (datos: DatosCompra) => {
-    const error = await alGuardar(datos, compra?.id)
+    const entidadesSeleccionadas: EntidadesSeleccionadasCompra = {
+      proveedor: catalogoProveedores.find((proveedor) => proveedor.id === datos.proveedorId),
+      productos: datos.lineas
+        .map((linea) => catalogoProductos.find((producto) => producto.id === linea.productoId))
+        .filter((producto): producto is Producto => Boolean(producto)),
+      almacen: catalogoAlmacenes.find((almacen) => almacen.id === datos.almacenId),
+    }
+    const error = await alGuardar(datos, compra?.id, entidadesSeleccionadas)
     if (error) {
       setError('root', { message: error })
       return
@@ -215,13 +246,21 @@ export function DialogoCompra({
                         options={opcionesProveedores}
                         onChange={field.onChange}
                         onBlur={field.onBlur}
-                        loadOptions={buscarProveedores ? async (busqueda) => (await buscarProveedores(busqueda)).map((proveedor) => ({
-                          value: proveedor.id,
-                          label: proveedor.razonSocial,
-                          secondaryText: [proveedor.numeroDocumento, proveedor.nombreComercial].filter(Boolean).join(' · '),
-                          keywords: [proveedor.codigo, proveedor.numeroDocumento, proveedor.nombreComercial, proveedor.contacto, proveedor.email],
-                          disabled: !proveedor.activo,
-                        })) : undefined}
+                        loadOptions={buscarProveedores ? async (busqueda) => {
+                          const resultados = await buscarProveedores(busqueda)
+                          setProveedoresRemotos((actuales) => {
+                            const porId = new Map(actuales.map((item) => [item.id, item]))
+                            resultados.forEach((item) => porId.set(item.id, item))
+                            return [...porId.values()]
+                          })
+                          return resultados.map((proveedor) => ({
+                            value: proveedor.id,
+                            label: proveedor.razonSocial,
+                            secondaryText: [proveedor.numeroDocumento, proveedor.nombreComercial].filter(Boolean).join(' · '),
+                            keywords: [proveedor.codigo, proveedor.numeroDocumento, proveedor.nombreComercial, proveedor.contacto, proveedor.email],
+                            disabled: !proveedor.activo,
+                          }))
+                        } : undefined}
                         placeholder="Buscar proveedor…"
                         helperText="Documento, código o razón social."
                         error={errors.proveedorId?.message}
@@ -331,19 +370,27 @@ export function DialogoCompra({
                         options={opcionesAlmacenes}
                         onChange={(valor) => {
                           field.onChange(valor)
-                          const almacen = almacenesDisponibles.find((item) => item.id === valor)
+                          const almacen = catalogoAlmacenes.find((item) => item.id === valor)
                           setValue('almacen', almacen?.nombre ?? '', {
                             shouldValidate: true,
                           })
                         }}
                         onBlur={field.onBlur}
-                        loadOptions={buscarAlmacenes ? async (busqueda) => (await buscarAlmacenes(busqueda)).map((almacen) => ({
-                          value: almacen.id,
-                          label: `${almacen.codigo} · ${almacen.nombre}`,
-                          secondaryText: almacen.direccion || 'Sin dirección registrada',
-                          keywords: [almacen.codigo, almacen.nombre, almacen.direccion],
-                          disabled: !almacen.activo,
-                        })) : undefined}
+                        loadOptions={buscarAlmacenes ? async (busqueda) => {
+                          const resultados = await buscarAlmacenes(busqueda)
+                          setAlmacenesRemotos((actuales) => {
+                            const porId = new Map(actuales.map((item) => [item.id, item]))
+                            resultados.forEach((item) => porId.set(item.id, item))
+                            return [...porId.values()]
+                          })
+                          return resultados.map((almacen) => ({
+                            value: almacen.id,
+                            label: `${almacen.codigo} · ${almacen.nombre}`,
+                            secondaryText: almacen.direccion || 'Sin dirección registrada',
+                            keywords: [almacen.codigo, almacen.nombre, almacen.direccion],
+                            disabled: !almacen.activo,
+                          }))
+                        } : undefined}
                         placeholder="Buscar almacén…"
                         helperText="Código, nombre o dirección."
                         error={errors.almacenId?.message ?? errors.almacen?.message}
@@ -370,7 +417,7 @@ export function DialogoCompra({
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={!productos.some((producto) => producto.activo)}
+                  disabled={!catalogoProductos.some((producto) => producto.activo)}
                   onClick={() => append({
                     productoId: '',
                     cantidad: '1',
@@ -397,7 +444,7 @@ export function DialogoCompra({
               ) : null}
               <div className="space-y-4">
                 {fields.map((field, indice) => {
-                  const producto = productos.find(
+                  const producto = catalogoProductos.find(
                     (item) => item.id === lineas[indice]?.productoId,
                   )
                   const erroresLinea = errors.lineas?.[indice]
@@ -426,7 +473,7 @@ export function DialogoCompra({
                             name={`lineas.${indice}.productoId`}
                             render={({ field: campo }) => {
                               const productoActualId = lineas[indice]?.productoId
-                              const opcionesProductos: ComboboxOption[] = productos
+                              const opcionesProductos: ComboboxOption[] = catalogoProductos
                                 .filter((item) =>
                                   (item.activo || item.id === productoActualId) &&
                                   !lineas.some((linea, otroIndice) => otroIndice !== indice && linea.productoId === item.id),
@@ -447,15 +494,23 @@ export function DialogoCompra({
                                   options={opcionesProductos}
                                   onChange={campo.onChange}
                                   onBlur={campo.onBlur}
-                                  loadOptions={buscarProductos ? async (busqueda) => (await buscarProductos(busqueda))
-                                    .filter((item) => (item.activo || item.id === productoActualId) && !lineas.some((linea, otroIndice) => otroIndice !== indice && linea.productoId === item.id))
-                                    .map((item) => ({
+                                  loadOptions={buscarProductos ? async (busqueda) => {
+                                    const resultados = await buscarProductos(busqueda)
+                                    setProductosRemotos((actuales) => {
+                                      const porId = new Map(actuales.map((item) => [item.id, item]))
+                                      resultados.forEach((item) => porId.set(item.id, item))
+                                      return [...porId.values()]
+                                    })
+                                    return resultados
+                                      .filter((item) => (item.activo || item.id === productoActualId) && !lineas.some((linea, otroIndice) => otroIndice !== indice && linea.productoId === item.id))
+                                      .map((item) => ({
                                       value: item.id,
                                       label: `${item.codigo} · ${item.descripcion}`,
                                       secondaryText: `${item.tipo === 'service' ? 'Servicio' : 'Producto físico'} · Unidad: ${item.unidadMedida || 'Sin unidad'}`,
                                       keywords: [item.codigo, item.codigoBarras, item.descripcion, item.laboratorio, item.presentacion, item.unidadMedida],
                                       disabled: !item.activo,
-                                    })) : undefined}
+                                      }))
+                                  } : undefined}
                                   placeholder="Buscar producto…"
                                   helperText="Código, nombre o barras."
                                   error={erroresLinea?.productoId?.message}

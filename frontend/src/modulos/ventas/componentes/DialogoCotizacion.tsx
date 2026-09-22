@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Plus, Trash2, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
+import { useMemo, useState } from 'react'
 import { Controller, useFieldArray, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
@@ -52,6 +53,12 @@ export function DialogoCotizacion({
   alGuardar,
   alRestaurarFoco,
 }: DialogoCotizacionProps) {
+  const [productosRemotos, setProductosRemotos] = useState<readonly Producto[]>([])
+  const catalogoProductos = useMemo(() => {
+    const porId = new Map(productos.map((producto) => [producto.id, producto]))
+    productosRemotos.forEach((producto) => porId.set(producto.id, producto))
+    return [...porId.values()]
+  }, [productos, productosRemotos])
   const valoresIniciales: DatosCotizacion = cotizacion
     ? cotizacionAFormulario(cotizacion)
     : {
@@ -90,11 +97,11 @@ export function DialogoCotizacion({
   const afectacionPorProducto = (productoId: string) => {
     const snapshot = snapshotsPorProducto.get(productoId)
     if (snapshot) return snapshot
-    return productos.find((producto) => producto.id === productoId)?.afectacionIgv || 'por-definir'
+    return catalogoProductos.find((producto) => producto.id === productoId)?.afectacionIgv || 'por-definir'
   }
   const lineasConAfectacionPendiente = lineas.flatMap((linea, indice) => {
     if (!linea.productoId) return []
-    const producto = productos.find((item) => item.id === linea.productoId)
+    const producto = catalogoProductos.find((item) => item.id === linea.productoId)
     const afectacion = afectacionPorProducto(linea.productoId)
     if (afectacion !== 'por-definir') return []
     return [{
@@ -289,7 +296,7 @@ export function DialogoCotizacion({
               <div className="space-y-4">
                 {fields.map((field, indice) => {
                   const erroresLinea = errors.lineas?.[indice]
-                  const productoSeleccionado = productos.find(
+                  const productoSeleccionado = catalogoProductos.find(
                     (producto) => producto.id === lineas[indice]?.productoId,
                   )
 
@@ -317,7 +324,7 @@ export function DialogoCotizacion({
                             name={`lineas.${indice}.productoId`}
                             render={({ field: campo }) => {
                               const productoActualId = lineas[indice]?.productoId
-                              const opcionesProductos: ComboboxOption[] = productos
+                              const opcionesProductos: ComboboxOption[] = catalogoProductos
                                 .filter(
                                   (producto) =>
                                     (producto.activo || producto.id === productoActualId) &&
@@ -350,7 +357,7 @@ export function DialogoCotizacion({
                                   options={opcionesProductos}
                                   onChange={(value) => {
                                     campo.onChange(value)
-                                    const producto = productos.find((item) => item.id === value)
+                                    const producto = catalogoProductos.find((item) => item.id === value)
                                     setValue(
                                       `lineas.${indice}.precioUnitario`,
                                       producto?.precioVenta ?? '',
@@ -358,15 +365,23 @@ export function DialogoCotizacion({
                                     )
                                   }}
                                   onBlur={campo.onBlur}
-                                  loadOptions={buscarProductos ? async (busqueda) => (await buscarProductos(busqueda))
-                                    .filter((producto) => (producto.activo || producto.id === productoActualId) && !lineas.some((linea, otroIndice) => otroIndice !== indice && linea.productoId === producto.id))
-                                    .map((producto) => ({
+                                  loadOptions={buscarProductos ? async (busqueda) => {
+                                    const resultados = await buscarProductos(busqueda)
+                                    setProductosRemotos((actuales) => {
+                                      const porId = new Map(actuales.map((item) => [item.id, item]))
+                                      resultados.forEach((item) => porId.set(item.id, item))
+                                      return [...porId.values()]
+                                    })
+                                    return resultados
+                                      .filter((producto) => (producto.activo || producto.id === productoActualId) && !lineas.some((linea, otroIndice) => otroIndice !== indice && linea.productoId === producto.id))
+                                      .map((producto) => ({
                                       value: producto.id,
                                       label: `${producto.codigo} · ${producto.descripcion}`,
                                       secondaryText: `${producto.tipo === 'service' ? 'Servicio' : 'Producto físico'} · Unidad: ${producto.unidadMedida || 'Sin unidad'}`,
                                       keywords: [producto.codigo, producto.codigoBarras, producto.descripcion, producto.laboratorio, producto.presentacion, producto.unidadMedida],
                                       disabled: !producto.activo,
-                                    })) : undefined}
+                                      }))
+                                  } : undefined}
                                   placeholder="Buscar producto…"
                                   helperText="Código, nombre o barras."
                                   error={erroresLinea?.productoId?.message}

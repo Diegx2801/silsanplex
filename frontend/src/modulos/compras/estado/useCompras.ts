@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
-import { validarCompra, type Compra, type DatosCompra, type DatosRecepcionCompra } from '@/modulos/compras/modelo/compras'
+import {
+  validarCompra,
+  type Compra,
+  type DatosCompra,
+  type DatosRecepcionCompra,
+  type EntidadesSeleccionadasCompra,
+} from '@/modulos/compras/modelo/compras'
 import {
   anularCompraPersistente,
   emitirCompraPersistente,
@@ -13,6 +19,12 @@ import type { Producto } from '@/modulos/productos/modelo/producto'
 import type { Proveedor } from '@/modulos/proveedores/modelo/proveedor'
 
 const comprasVacias: Compra[] = []
+
+function combinarPorId<T extends { id: string }>(base: readonly T[], seleccionadas: readonly T[]) {
+  const entidades = new Map(base.map((entidad) => [entidad.id, entidad]))
+  seleccionadas.forEach((entidad) => entidades.set(entidad.id, entidad))
+  return [...entidades.values()]
+}
 
 export function useCompras(productos: readonly Producto[], proveedores: readonly Proveedor[]) {
   const { access } = useAuth()
@@ -56,13 +68,25 @@ export function useCompras(productos: readonly Producto[], proveedores: readonly
       emitirMutation.isPending ||
       recibirMutation.isPending ||
       anularMutation.isPending,
-    guardarCompra: async (datos: DatosCompra, compraId?: string) => {
+    guardarCompra: async (
+      datos: DatosCompra,
+      compraId?: string,
+      entidadesSeleccionadas?: EntidadesSeleccionadasCompra,
+    ) => {
       const compraActual = compraId ? (query.data ?? []).find((item) => item.id === compraId) : undefined
-      const proveedor = proveedores.find(
+      const proveedoresDisponibles = combinarPorId(
+        proveedores,
+        entidadesSeleccionadas?.proveedor ? [entidadesSeleccionadas.proveedor] : [],
+      )
+      const productosDisponibles = combinarPorId(
+        productos,
+        entidadesSeleccionadas?.productos ?? [],
+      )
+      const proveedor = proveedoresDisponibles.find(
         (item) => item.id === datos.proveedorId && (item.activo || compraActual?.proveedorId === item.id),
       )
       if (!proveedor) return 'El proveedor seleccionado ya no está disponible'
-      const errorValidacion = validarCompra(datos, productos)
+      const errorValidacion = validarCompra(datos, productosDisponibles)
       if (errorValidacion) return errorValidacion
       return ejecutar(() => guardarMutation.mutateAsync({ datos, compraId }))
     },
