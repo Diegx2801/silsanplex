@@ -36,8 +36,16 @@ jobs:
         run: npm ci
         working-directory: backend
 
+      - name: Auditar dependencias backend de runtime
+        run: npm audit --audit-level=high --omit=dev
+        working-directory: backend
+
       - name: Instalar dependencias del frontend
         run: npm ci
+        working-directory: frontend
+
+      - name: Auditar dependencias de runtime
+        run: npm audit --audit-level=high --omit=dev
         working-directory: frontend
 
       - name: Iniciar Supabase local
