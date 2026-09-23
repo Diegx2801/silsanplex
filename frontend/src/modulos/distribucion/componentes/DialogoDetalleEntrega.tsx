@@ -1,8 +1,12 @@
 import { Eye, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
+import { useQuery } from '@tanstack/react-query'
 
 import { Button } from '@/components/ui/button'
+import { ZONA_HORARIA_NEGOCIO } from '@/lib/fechas'
+import { useAuth } from '@/features/auth/useAuth'
 import { formatearFechaDistribucion } from '@/modulos/distribucion/servicios/formatoDistribucion'
+import { listarHistorialEstadosEntrega } from '@/modulos/distribucion/servicios/distribucionService'
 import type { ProgramacionEntrega } from '@/modulos/distribucion/modelo/programacionEntrega'
 
 const etiquetasEstado: Record<ProgramacionEntrega['estado'], string> = {
@@ -13,7 +17,7 @@ const etiquetasEstado: Record<ProgramacionEntrega['estado'], string> = {
   entregado: 'Entregado',
   entrega_parcial: 'Entrega parcial',
   reprogramado: 'Reprogramado',
-  rechazado: 'Rechazado',
+  rechazado: 'No entregada',
   devuelto: 'Devuelto',
   cancelado: 'Cancelado',
 }
@@ -31,6 +35,19 @@ interface DialogoDetalleEntregaProps {
 }
 
 export function DialogoDetalleEntrega({ abierto, entrega, alCambiarApertura }: DialogoDetalleEntregaProps) {
+  const { access } = useAuth()
+  const organizationId = access?.organizationId ?? ''
+  const historialQuery = useQuery({
+    queryKey: ['distribution-delivery-status-history', organizationId, entrega.id],
+    queryFn: () => listarHistorialEstadosEntrega(organizationId, entrega.id),
+    enabled: abierto && Boolean(organizationId),
+  })
+  const formatoFechaHora = new Intl.DateTimeFormat('es-PE', {
+    timeZone: ZONA_HORARIA_NEGOCIO,
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
+
   return (
     <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
       <DialogPrimitive.Portal>
@@ -59,6 +76,24 @@ export function DialogoDetalleEntrega({ abierto, entrega, alCambiarApertura }: D
                 <div><dt className="text-xs text-muted-foreground">Modalidad</dt><dd className="mt-1">{entrega.modalidad === 'recojo_cliente' ? 'Recojo del cliente' : entrega.modalidad === 'movilidad_externa' ? 'Movilidad externa' : 'Movilidad propia'}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Transporte</dt><dd className="mt-1">{entrega.tipoTransporte === 'externo' ? 'Externo' : 'Interno'}</dd></div>
               </dl>
+            </section>
+
+            <section className="border-t px-5 py-6 sm:px-7" aria-labelledby="detalle-entrega-etapas">
+              <div className="mb-4 border-b pb-3"><h2 id="detalle-entrega-etapas" className="font-semibold">Historial de etapas</h2><p className="mt-1 text-sm text-muted-foreground">Consulta cuándo cambió la entrega y quién registró cada avance.</p></div>
+              {historialQuery.isLoading ? <p role="status" className="border bg-muted/20 px-4 py-4 text-sm text-muted-foreground">Cargando historial…</p> : null}
+              {historialQuery.isError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 border-s-4 border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive"><p>No se pudo cargar el historial de etapas.</p><Button type="button" size="sm" variant="outline" onClick={() => void historialQuery.refetch()}>Reintentar</Button></div> : null}
+              {!historialQuery.isLoading && !historialQuery.isError && !historialQuery.data?.length ? <p className="border bg-muted/20 px-4 py-4 text-sm text-muted-foreground">No hay cambios de etapa registrados.</p> : null}
+              {historialQuery.data?.length ? (
+                <ol className="relative ms-2 space-y-0 border-s ps-5">
+                  {historialQuery.data.map((evento, indice) => (
+                    <li key={evento.id} className={`relative pb-5 last:pb-0 ${indice === 0 ? 'before:hidden' : ''}`}>
+                      <span aria-hidden="true" className="absolute -start-[1.56rem] top-1 size-2.5 rounded-full border-2 border-primary bg-background" />
+                      <p className="text-sm font-medium">{evento.estadoAnterior ? `${etiquetasEstado[evento.estadoAnterior]} → ${etiquetasEstado[evento.estadoNuevo]}` : `Entrega creada · ${etiquetasEstado[evento.estadoNuevo]}`}</p>
+                      <p className="mt-1 text-xs text-muted-foreground"><time dateTime={evento.fechaHora}>{formatoFechaHora.format(new Date(evento.fechaHora))}</time> · {evento.actorNombre}</p>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
             </section>
 
             <section className="border-t px-5 py-6 sm:px-7" aria-labelledby="detalle-entrega-destino">

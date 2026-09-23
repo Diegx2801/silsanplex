@@ -1,8 +1,8 @@
-import { Eye, FileDown, PackageCheck, Pencil, Plus, Search, Truck } from 'lucide-react'
+import { ArrowRight, Ban, CalendarClock, Eye, FileDown, PackageCheck, Pencil, Plus, Search, Truck } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { Dialog as DialogPrimitive } from 'radix-ui'
+import { AlertDialog as AlertDialogPrimitive, Dialog as DialogPrimitive } from 'radix-ui'
 
 import { PaginacionListado, type TamanioPaginaListado } from '@/components/ui/PaginacionListado'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ import {
   esquemaDatosProgramacionEntrega,
   filtrarProgramacionesEntrega,
   listarEntregasAtrasadas,
+  obtenerAccionPrincipalDistribucion,
   obtenerEstadosSiguientes,
   resumirEntregas,
   tipoTransporteParaModalidad,
@@ -47,7 +48,7 @@ const etiquetasEstado: Record<string, string> = {
   entregado: 'Entregado',
   entrega_parcial: 'Entrega parcial',
   reprogramado: 'Reprogramado',
-  rechazado: 'Rechazado',
+  rechazado: 'No entregada',
   devuelto: 'Devuelto',
   cancelado: 'Cancelado',
 }
@@ -82,7 +83,7 @@ export function DistribucionPage() {
   const { clientes } = useClientes()
   const { pedidos, cargando: cargandoPedidos, error: errorPedidos, reintentar: reintentarPedidos } = usePedidosPersistentes()
   const { ventas, cargando: cargandoVentas, error: errorVentas, reintentar: reintentarVentas } = useVentasPersistentes()
-  const { programaciones, guardar, actualizarEstado, registrarResultado, guardandoResultado, error: errorProgramaciones, reintentar: reintentarProgramaciones } = useProgramacionesEntrega()
+  const { programaciones, guardar, actualizarEstado, registrarResultado, guardandoEstado, guardandoResultado, error: errorProgramaciones, reintentar: reintentarProgramaciones } = useProgramacionesEntrega()
   const [busquedaPendientes, setBusquedaPendientes] = useState('')
   const [filtroAlmacenPendientes, setFiltroAlmacenPendientes] = useState('')
   const [paginaPendientes, setPaginaPendientes] = useState(1)
@@ -95,6 +96,9 @@ export function DistribucionPage() {
   const [tamanioPaginaSeguimiento, setTamanioPaginaSeguimiento] = useState<TamanioPaginaListado>(10)
   const [formularioAbierto, setFormularioAbierto] = useState(false)
   const [edicion, setEdicion] = useState<ProgramacionEntrega | null>(null)
+  const [reprogramacionEnCurso, setReprogramacionEnCurso] = useState(false)
+  const [entregaPorCancelar, setEntregaPorCancelar] = useState<ProgramacionEntrega | null>(null)
+  const [errorCancelacion, setErrorCancelacion] = useState('')
   const [pedidoDetalle, setPedidoDetalle] = useState<PedidoVenta | null>(null)
   const [entregaDetalle, setEntregaDetalle] = useState<ProgramacionEntrega | null>(null)
   const [entregaResultado, setEntregaResultado] = useState<ProgramacionEntrega | null>(null)
@@ -190,7 +194,7 @@ export function DistribucionPage() {
   const estadoRequiereTransporte = ['en_curso', 'en_destino', 'entregado', 'entrega_parcial'].includes(datos.estado)
   const requiereDatosTransporte = estadoRequiereTransporte && !esRecojoCliente
   const requiereTransportista = requiereDatosTransporte && datos.tipoTransporte === 'externo'
-  const destinoBloqueado = Boolean(edicion && !['programado', 'preparando', 'reprogramado'].includes(datos.estado))
+  const destinoBloqueado = Boolean(edicion && !['programado', 'preparando', 'reprogramado'].includes(edicion.estado))
 
   const cambiarVista = (siguiente: VistaDistribucion) => {
     setParametros(siguiente === 'pendientes' ? {} : { vista: siguiente })
@@ -204,8 +208,9 @@ export function DistribucionPage() {
     setDatos((actuales) => ({ ...actuales, direccionEntrega: principal.direccion }))
   }, [datos.direccionEntrega, datos.pedidoId, direccionSeleccionadaId, direccionesCliente, formularioAbierto])
 
-  const editarProgramacion = (programacion: ProgramacionEntrega) => {
+  const editarProgramacion = (programacion: ProgramacionEntrega, reprogramar = false) => {
     setEdicion(programacion)
+    setReprogramacionEnCurso(reprogramar)
     const pedidoOrigen = pedidoPorId(programacion.pedidoId)
     const clienteOrigen = clientes.find((cliente) => cliente.id === pedidoOrigen?.clienteId)
     const direccionOrigen = clienteOrigen?.direccionesEntrega.find((direccion) => direccion.direccion === programacion.direccionEntrega)
@@ -231,7 +236,7 @@ export function DistribucionPage() {
       placa: programacion.placa ?? '',
       observaciones: programacion.observaciones ?? '',
       evidencia: programacion.evidencia ?? '',
-      estado: programacion.estado ?? 'programado',
+      estado: reprogramar ? 'reprogramado' : programacion.estado ?? 'programado',
       seguimiento: programacion.seguimiento ?? (programacion.estado === 'en_curso' || programacion.estado === 'en_destino' ? programacion.estado : 'en_curso'),
       incidencias: programacion.incidencias ?? [],
       lineas: programacion.lineas ?? [],
@@ -251,6 +256,7 @@ export function DistribucionPage() {
       return
     }
     setEdicion(null)
+    setReprogramacionEnCurso(false)
     const cliente = clientes.find((item) => item.id === pedido.clienteId)
     const direccionPrincipal = cliente?.direccionesEntrega.find((direccion) => direccion.principal) ?? cliente?.direccionesEntrega[0]
     const destinoPedido = pedido.direccionEntrega
@@ -296,6 +302,16 @@ export function DistribucionPage() {
       setMensaje('El pedido o la venta persistente ya no están disponibles; recarga la página')
       return
     }
+    if (reprogramacionEnCurso && edicion) {
+      if (resultado.data.fechaProgramada === edicion.fechaProgramada) {
+        setMensaje('Selecciona una nueva fecha para reprogramar la entrega')
+        return
+      }
+      if (resultado.data.fechaProgramada < hoy) {
+        setMensaje('La nueva fecha programada no puede estar en el pasado')
+        return
+      }
+    }
     if (!edicion && pedido && !pedidoListoParaProgramarDistribucion(pedido, venta)) {
       setMensaje('Completa el despacho de todos los bienes en Ventas antes de programar la entrega')
       return
@@ -309,8 +325,28 @@ export function DistribucionPage() {
       ventaNumero: venta?.numeroInterno ?? edicion?.ventaNumero ?? '',
     }
     const error = await guardar(datosPersistentes, edicion?.id, pedido?.lineas ?? edicion?.lineas ?? [])
-    setMensaje(error ?? (edicion ? 'Distribución actualizada.' : 'Distribución programada.'))
-    if (!error) setFormularioAbierto(false)
+    setMensaje(error ?? (reprogramacionEnCurso ? 'Entrega reprogramada.' : edicion ? 'Distribución actualizada.' : 'Distribución programada.'))
+    if (!error) {
+      setFormularioAbierto(false)
+      setReprogramacionEnCurso(false)
+    }
+  }
+
+  const ejecutarTransicionEtapa = async (entrega: ProgramacionEntrega, estado: ProgramacionEntrega['estado']) => {
+    const error = await actualizarEstado(entrega, estado)
+    setMensaje(error ?? `Etapa actualizada: ${etiquetasEstado[estado]}.`)
+  }
+
+  const confirmarCancelacionEntrega = async () => {
+    if (!entregaPorCancelar) return
+    const entrega = entregaPorCancelar
+    const error = await actualizarEstado(entrega, 'cancelado')
+    setMensaje(error ?? `Entrega de ${entrega.pedidoNumero} cancelada. La venta y el inventario no se modificaron.`)
+    if (error) setErrorCancelacion(error)
+    else {
+      setErrorCancelacion('')
+      setEntregaPorCancelar(null)
+    }
   }
 
   const confirmarResultadoEntrega = async (resultado: ResultadoEntrega, operationKey: string) => {
@@ -335,7 +371,7 @@ export function DistribucionPage() {
       return
     }
 
-    const nombreSeguro = `${entrega.pedidoNumero}_Guia_${entrega.numeroGuiaRemision}`
+    const nombreSeguro = `${entrega.pedidoNumero}_Despacho_${entrega.numeroDespacho}`
       .replace(/[^a-zA-Z0-9_-]+/g, '-')
       .replace(/^-|-$/g, '')
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' })
@@ -347,7 +383,7 @@ export function DistribucionPage() {
     let y = 18
 
     pdf.setFillColor(...verde)
-    pdf.rect(0, 0, 210, 34, 'F')
+    pdf.rect(0, 0, 210, 42, 'F')
     pdf.setTextColor(255, 255, 255)
     pdf.setFont('helvetica', 'bold')
     pdf.setFontSize(17)
@@ -358,7 +394,8 @@ export function DistribucionPage() {
     pdf.setFontSize(8)
     pdf.text('Documento operativo de distribución', 192, y + 5, { align: 'right' })
     pdf.text(`Generado: ${formatoFecha.format(new Date())}`, 192, y + 11, { align: 'right' })
-    y = 47
+    pdf.text('Reporte interno; no sustituye la guía de remisión ni el comprobante de venta.', margen, y + 20)
+    y = 54
 
     pdf.setTextColor(...tinta)
     pdf.setFont('helvetica', 'bold')
@@ -388,7 +425,7 @@ export function DistribucionPage() {
     dibujarDato('Cliente', entrega.clienteNombre, margen, 82)
     dibujarDato('Guía de remisión', entrega.numeroGuiaRemision, 106, 86)
     y += 25
-    dibujarDato('Fecha de emisión', formatearFechaDistribucion(entrega.fechaEmision), margen, 55)
+    dibujarDato('Emisión de guía', formatearFechaDistribucion(entrega.fechaEmision), margen, 55)
     dibujarDato('Fecha de entrega', formatearFechaDistribucion(entrega.fechaEntrega), 78, 55)
     dibujarDato('Transporte', entrega.tipoTransporte === 'interno' ? 'Movilidad SILSAN' : 'Movilidad externa', 137, 55)
     y += 28
@@ -449,7 +486,7 @@ export function DistribucionPage() {
     pdf.setFontSize(8)
     pdf.text('Responsable de despacho', margen, y + 5)
     pdf.text('Conformidad de entrega', 128, y + 5)
-    pdf.save(`Entrega_${nombreSeguro}.pdf`)
+    pdf.save(`Reporte_Distribucion_${nombreSeguro}.pdf`)
   }
 
   return (
@@ -570,15 +607,38 @@ export function DistribucionPage() {
             {!filtradas.length ? (
               <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{programaciones.length ? 'No hay coincidencias' : 'Aún no hay entregas programadas'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{programaciones.length ? 'Prueba con otra búsqueda o limpia los filtros.' : 'Programa una entrega desde un pedido confirmado para iniciar el seguimiento.'}</p></div>
             ) : (
-              <div className="divide-y">{entregasVisibles.map((item) => (
-                <article key={item.id} className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[1.1fr_1fr_1fr_auto] lg:items-center">
-                  <div className="print-delivery-header"><p className="font-mono text-xs text-primary">SILSANPLEX · REPORTE DE DISTRIBUCIÓN</p><p className="font-mono text-xs text-muted-foreground">Emisión: {formatearFechaDistribucion(item.fechaEmision)}</p></div>
-                  <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · {item.ventaNumero ? `Venta ${item.ventaNumero} · ` : ''}Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{item.lineas.length ? item.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · <span className="font-mono font-semibold">{linea.cantidadDespachada ?? linea.cantidad} {linea.unidadMedida}</span> despachadas en Ventas · {item.requiereConciliacionCantidades ? 'recepción histórica sin conciliar' : <><span className="font-mono">{linea.cantidadEntregadaCliente ?? 0}</span> recibidas · <span className="font-mono">{linea.cantidadPendienteCliente ?? linea.cantidad}</span> pendientes</>}</p>) : <p>Detalle del pedido no disponible</p>}</div></div>
-                  <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted-foreground">Programada</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaProgramada)}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega real</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEntrega)}</dd></div></dl>
-                  <div><div className="flex flex-wrap items-center gap-2"><span className="status-label" data-tone={tonoEstadoDistribucion(item.estado)}>{etiquetasEstado[item.estado]}</span><span className="text-sm text-muted-foreground">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</span></div>{puedeGestionarDistribucion && item.estado !== 'entregado' && item.estado !== 'cancelado' && item.estado !== 'devuelto' ? <select aria-label={`Actualizar etapa de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => { void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado']).then((error) => setMensaje(error ?? `Etapa actualizada para ${item.pedidoNumero}.`)) }} className="field-control mt-2">{[item.estado, ...obtenerEstadosSiguientes(item.estado).filter((estado) => !['entregado', 'entrega_parcial', 'rechazado', 'devuelto'].includes(estado))].map((valor) => <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>)}</select> : <p className="mt-2 text-sm text-muted-foreground">{puedeGestionarDistribucion ? 'Etapa final' : 'Solo consulta'}</p>}{item.requiereConciliacionCantidades ? <p role="status" className="mt-2 text-xs text-amber-800">Registro histórico por conciliar antes de continuar.</p> : null}{item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}</div>
-                  <div className="flex flex-wrap gap-1 print:hidden"><Button type="button" variant="ghost" size="icon" title="Ver detalle de la entrega" aria-label={`Ver detalle de la entrega ${item.pedidoNumero}`} onClick={() => setEntregaDetalle(item)}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion && ['en_curso', 'en_destino', 'entrega_parcial'].includes(item.estado) && !item.requiereConciliacionCantidades ? <Button type="button" onClick={() => setEntregaResultado(item)}><PackageCheck aria-hidden="true" /> Registrar resultado</Button> : null}{puedeGestionarDistribucion && ['programado', 'preparando', 'reprogramado'].includes(item.estado) && !item.requiereConciliacionCantidades ? <Button type="button" variant="outline" onClick={() => editarProgramacion(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}<Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
-                </article>
-              ))}</div>
+              <div className="divide-y">{entregasVisibles.map((item) => {
+                const accionPrincipal = obtenerAccionPrincipalDistribucion(item.estado)
+                const puedeReprogramar = obtenerEstadosSiguientes(item.estado).includes('reprogramado')
+                const puedeCancelar = obtenerEstadosSiguientes(item.estado).includes('cancelado')
+                const puedeRegistrarResultado = ['en_curso', 'en_destino', 'entrega_parcial'].includes(item.estado)
+                const puedeEditar = ['programado', 'preparando', 'reprogramado'].includes(item.estado)
+
+                return (
+                  <article key={item.id} className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(10rem,1fr)_minmax(13rem,1.35fr)_minmax(9rem,0.85fr)_minmax(14rem,1.2fr)] lg:items-center">
+                    <div className="print-delivery-header"><p className="font-mono text-xs text-primary">REPORTE INTERNO DE DISTRIBUCIÓN</p><p className="mt-1 font-mono text-xs text-muted-foreground">Guía emitida: {formatearFechaDistribucion(item.fechaEmision)}</p></div>
+                    <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · {item.ventaNumero ? `Venta ${item.ventaNumero} · ` : ''}Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{item.lineas.length ? item.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · <span className="font-mono font-semibold">{linea.cantidadDespachada ?? linea.cantidad} {linea.unidadMedida}</span> despachadas en Ventas · {item.requiereConciliacionCantidades ? 'recepción histórica sin conciliar' : <><span className="font-mono">{linea.cantidadEntregadaCliente ?? 0}</span> recibidas · <span className="font-mono">{linea.cantidadPendienteCliente ?? linea.cantidad}</span> pendientes</>}</p>) : <p>Detalle del pedido no disponible</p>}</div></div>
+                    <dl className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-1"><div><dt className="text-xs text-muted-foreground">Programada</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaProgramada)}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega real</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEntrega)}</dd></div></dl>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2"><span className="status-label" data-tone={tonoEstadoDistribucion(item.estado)}>{etiquetasEstado[item.estado]}</span><span className="text-xs text-muted-foreground">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</span></div>
+                      {item.requiereConciliacionCantidades ? <p role="status" className="mt-2 text-xs text-amber-800">Registro histórico por conciliar antes de continuar.</p> : null}
+                      {item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}
+                      {puedeGestionarDistribucion && !item.requiereConciliacionCantidades ? (
+                        <div className="mt-3 flex flex-wrap gap-2 print:hidden">
+                          {accionPrincipal ? <Button type="button" size="sm" disabled={guardandoEstado || guardandoResultado} onClick={() => void ejecutarTransicionEtapa(item, accionPrincipal.estado)}><ArrowRight aria-hidden="true" />{accionPrincipal.etiqueta}</Button> : null}
+                          {puedeRegistrarResultado ? <Button type="button" size="sm" variant={accionPrincipal ? 'outline' : 'default'} disabled={guardandoEstado || guardandoResultado} onClick={() => setEntregaResultado(item)}><PackageCheck aria-hidden="true" /> Registrar resultado</Button> : null}
+                          {puedeReprogramar ? <Button type="button" size="sm" variant="outline" disabled={guardandoEstado} onClick={() => editarProgramacion(item, true)}><CalendarClock aria-hidden="true" /> Reprogramar</Button> : null}
+                          {puedeEditar ? <Button type="button" size="sm" variant="outline" disabled={guardandoEstado} onClick={() => editarProgramacion(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}
+                          {puedeCancelar ? <Button type="button" size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={guardandoEstado} onClick={() => { setErrorCancelacion(''); setEntregaPorCancelar(item) }}><Ban aria-hidden="true" /> Cancelar</Button> : null}
+                        </div>
+                      ) : null}
+                      {puedeGestionarDistribucion && item.requiereConciliacionCantidades ? <p className="mt-2 text-xs text-muted-foreground">Resuelve la conciliación para habilitar acciones.</p> : null}
+                      {!puedeGestionarDistribucion ? <p className="mt-2 text-xs text-muted-foreground">Solo consulta</p> : null}
+                      <div className="mt-3 flex flex-wrap gap-1 print:hidden"><Button type="button" variant="ghost" size="icon" title="Ver detalle de la entrega" aria-label={`Ver detalle de la entrega ${item.pedidoNumero}`} onClick={() => setEntregaDetalle(item)}><Eye aria-hidden="true" /></Button><Button type="button" variant="outline" size="sm" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> Reporte PDF</Button></div>
+                    </div>
+                  </article>
+                )
+              })}</div>
             )}
             {filtradas.length ? <PaginacionListado etiqueta="seguimiento de entregas" pagina={paginaSeguimientoVisible} tamanioPagina={tamanioPaginaSeguimiento} total={filtradas.length} totalPaginas={totalPaginasSeguimiento} cantidadVisible={entregasVisibles.length} alCambiarPagina={setPaginaSeguimiento} alCambiarTamanio={(siguiente) => { setTamanioPaginaSeguimiento(siguiente); setPaginaSeguimiento(1) }} /> : null}
           </section>
@@ -586,17 +646,34 @@ export function DistribucionPage() {
       ) : null}
 
       {pedidoDetalle ? <DialogoDetalleOperacionVenta abierto={Boolean(pedidoDetalle)} pedido={pedidoDetalle} venta={ventaPorPedidoId(pedidoDetalle.id)} alCambiarApertura={(abierto) => { if (!abierto) setPedidoDetalle(null) }} alRestaurarFoco={() => disparadorPedidoDetalle.current?.focus()} /> : null}
+      {entregaPorCancelar ? (
+        <AlertDialogPrimitive.Root open onOpenChange={(abierto) => { if (!abierto && !guardandoEstado) { setEntregaPorCancelar(null); setErrorCancelacion('') } }}>
+          <AlertDialogPrimitive.Portal>
+            <AlertDialogPrimitive.Overlay className="fixed inset-0 z-60 bg-foreground/30" />
+            <AlertDialogPrimitive.Content className="fixed start-1/2 top-1/2 z-70 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 border bg-background p-5 shadow-xl outline-none sm:p-6">
+              <div className="grid size-10 place-items-center rounded-full bg-destructive/10 text-destructive"><Ban aria-hidden="true" className="size-5" /></div>
+              <AlertDialogPrimitive.Title className="mt-5 text-xl font-semibold">Cancelar entrega de {entregaPorCancelar.pedidoNumero}</AlertDialogPrimitive.Title>
+              <AlertDialogPrimitive.Description className="mt-2 text-sm leading-6 text-muted-foreground">La entrega dejará de avanzar en Distribución y quedará registrada como cancelada. Esta acción no anula la venta ni revierte el inventario.</AlertDialogPrimitive.Description>
+              {errorCancelacion ? <p role="alert" className="mt-4 border-s-4 border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive">{errorCancelacion}</p> : null}
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <AlertDialogPrimitive.Cancel asChild><Button type="button" variant="outline" disabled={guardandoEstado}>Conservar entrega</Button></AlertDialogPrimitive.Cancel>
+                <Button type="button" variant="destructive" disabled={guardandoEstado} onClick={() => void confirmarCancelacionEntrega()}>{guardandoEstado ? 'Cancelando…' : 'Confirmar cancelación'}</Button>
+              </div>
+            </AlertDialogPrimitive.Content>
+          </AlertDialogPrimitive.Portal>
+        </AlertDialogPrimitive.Root>
+      ) : null}
       {entregaDetalle ? <DialogoDetalleEntrega abierto={Boolean(entregaDetalle)} entrega={entregaDetalle} alCambiarApertura={(abierto) => { if (!abierto) setEntregaDetalle(null) }} /> : null}
       {entregaResultado ? <DialogoResultadoEntrega abierto={Boolean(entregaResultado)} entrega={entregaResultado} guardando={guardandoResultado} alConfirmar={confirmarResultadoEntrega} alCambiarApertura={(abierto) => { if (!abierto) setEntregaResultado(null) }} /> : null}
 
       {puedeGestionarDistribucion && formularioAbierto ? (
-        <DialogPrimitive.Root open onOpenChange={(abierto) => { if (!abierto) setFormularioAbierto(false) }}>
+        <DialogPrimitive.Root open onOpenChange={(abierto) => { if (!abierto) { setFormularioAbierto(false); setReprogramacionEnCurso(false) } }}>
           <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-foreground/30" />
           <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-60 flex max-h-[90svh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden border bg-background shadow-xl outline-none">
           <form onSubmit={enviar} className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <header className="flex shrink-0 items-start justify-between gap-4 border-b bg-background px-6 py-5">
-              <div><DialogPrimitive.Title id="programar-title" className="text-xl font-semibold">{edicion ? 'Editar entrega' : 'Programar entrega'}</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">Planifica la entrega y registra su destino y guía. El despacho de inventario ya se confirmó en Ventas.</DialogPrimitive.Description></div>
+              <div><DialogPrimitive.Title id="programar-title" className="text-xl font-semibold">{reprogramacionEnCurso ? 'Reprogramar entrega' : edicion ? 'Editar entrega' : 'Programar entrega'}</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">{reprogramacionEnCurso ? 'Actualiza la fecha del servicio; el historial conservará el cambio.' : 'Planifica la entrega y registra su destino y guía. El despacho de inventario ya se confirmó en Ventas.'}</DialogPrimitive.Description></div>
               <DialogPrimitive.Close asChild><Button type="button" variant="ghost">Cerrar</Button></DialogPrimitive.Close>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -660,7 +737,7 @@ export function DistribucionPage() {
               <section aria-labelledby="programacion-entrega-title" className="space-y-4 border-t pt-5">
                 <div><h3 id="programacion-entrega-title" className="text-sm font-semibold uppercase tracking-[.06em] text-primary">Programación y documentos</h3><p className="mt-1 text-sm text-muted-foreground">Registra la fecha y la guía que acompañará el traslado. Los datos del vehículo se completan cuando se prepara la salida.</p></div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div><label htmlFor="fecha-programada" className="field-label">Fecha programada<span aria-hidden="true"> *</span></label><input id="fecha-programada" required type="date" value={datos.fechaProgramada} onChange={(evento) => setDatos({ ...datos, fechaProgramada: evento.target.value })} className="field-control" /></div>
+                  <div><label htmlFor="fecha-programada" className="field-label">{reprogramacionEnCurso ? 'Nueva fecha programada' : 'Fecha programada'}<span aria-hidden="true"> *</span></label><input id="fecha-programada" required type="date" min={reprogramacionEnCurso ? hoy : undefined} value={datos.fechaProgramada} onChange={(evento) => setDatos({ ...datos, fechaProgramada: evento.target.value })} className="field-control" />{reprogramacionEnCurso ? <p className="mt-1 text-xs text-muted-foreground">Debe ser distinta de la fecha anterior y no estar en el pasado.</p> : null}</div>
                   <div><label htmlFor="fecha-emision" className="field-label">Fecha de emisión de la guía<span aria-hidden="true"> *</span></label><input id="fecha-emision" required type="date" value={datos.fechaEmision} onChange={(evento) => setDatos({ ...datos, fechaEmision: evento.target.value })} className="field-control" /></div>
                   <div><label htmlFor="numero-despacho" className="field-label">Referencia interna de despacho<span aria-hidden="true"> *</span></label><input id="numero-despacho" required maxLength={40} value={datos.numeroDespacho} onChange={(evento) => setDatos({ ...datos, numeroDespacho: evento.target.value })} className="field-control" /><p className="mt-1 text-xs text-muted-foreground">Identificador interno; no reemplaza la guía de remisión.</p></div>
                   <div><label htmlFor="guia-remision" className="field-label">Número de guía de remisión<span aria-hidden="true"> *</span></label><input id="guia-remision" required maxLength={40} value={datos.numeroGuiaRemision} onChange={(evento) => setDatos({ ...datos, numeroGuiaRemision: evento.target.value })} className="field-control" /></div>

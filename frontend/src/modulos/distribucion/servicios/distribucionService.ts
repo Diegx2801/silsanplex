@@ -6,6 +6,7 @@ import {
   esquemaProgramacionEntrega,
   esquemaLineaProgramacionEntrega,
   esquemaResultadoEntrega,
+  ESTADOS_DISTRIBUCION,
   type DatosProgramacionEntrega,
   type EventoResultadoEntrega,
   type ProgramacionEntrega,
@@ -167,6 +168,7 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (error.code === '42501' || mensaje.includes('DISTRIBUTION_FORBIDDEN')) return 'No tienes permiso para administrar distribución'
   if (mensaje.includes('DISTRIBUTION_NOT_FOUND')) return 'La entrega ya no existe'
   if (mensaje.includes('DISTRIBUTION_VERSION_REQUIRED') || mensaje.includes('DISTRIBUTION_VERSION_CONFLICT')) return 'La entrega cambió mientras la editabas. Actualiza la lista e inténtalo nuevamente.'
+  if (mensaje.includes('DISTRIBUTION_RESCHEDULE_DATE_IN_PAST')) return 'La nueva fecha de programación debe ser hoy o una fecha futura.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_RECONCILIATION_REQUIRED')) return 'Esta entrega histórica no tiene cantidades recibidas por producto. Debe conciliarse antes de registrar otro resultado.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_STATE_INVALID')) return 'La entrega debe estar en ruta o tener un resultado parcial para registrar su recepción.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_TOTAL_INCOMPLETE')) return 'Las cantidades no completan el saldo. Registra una entrega parcial o ajusta las cantidades recibidas.'
@@ -322,4 +324,39 @@ export async function registrarResultadoEntrega(
     },
   })
   if (error) throw new Error(mensajeError(error))
+}
+
+const esquemaEventoEstadoEntrega = z.object({
+  event_id: z.string(),
+  from_status: z.enum(ESTADOS_DISTRIBUCION).nullable(),
+  to_status: z.enum(ESTADOS_DISTRIBUCION),
+  actor_name: z.string(),
+  occurred_at: z.string(),
+})
+
+export type EventoEstadoEntrega = {
+  id: string
+  estadoAnterior?: ProgramacionEntrega['estado']
+  estadoNuevo: ProgramacionEntrega['estado']
+  actorNombre: string
+  fechaHora: string
+}
+
+export async function listarHistorialEstadosEntrega(organizationId: string, deliveryId: string): Promise<EventoEstadoEntrega[]> {
+  const { data, error } = await supabase.rpc('list_distribution_delivery_status_history', {
+    requested_organization_id: organizationId,
+    requested_delivery_id: deliveryId,
+  })
+  if (error) {
+    const mensaje = error.code === '42501' ? 'No tienes permiso para consultar el historial de distribución' : mensajeError(error)
+    throw new Error(mensaje)
+  }
+
+  return z.array(esquemaEventoEstadoEntrega).parse(data ?? []).map((evento) => ({
+    id: evento.event_id,
+    estadoAnterior: evento.from_status ?? undefined,
+    estadoNuevo: evento.to_status,
+    actorNombre: evento.actor_name,
+    fechaHora: evento.occurred_at,
+  }))
 }

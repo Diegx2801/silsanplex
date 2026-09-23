@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   crearProgramacionEntrega,
+  obtenerAccionPrincipalDistribucion,
   esquemaDatosProgramacionEntrega,
   esquemaProgramacionEntrega,
   filtrarProgramacionesEntrega,
@@ -179,6 +180,15 @@ describe('programación de entrega', () => {
     })
 
     expect(resultado.success).toBe(true)
+  })
+
+  it('ofrece acciones principales que avanzan por la ruta operativa válida', () => {
+    expect(obtenerAccionPrincipalDistribucion('programado')).toEqual({ estado: 'preparando', etiqueta: 'Iniciar preparación' })
+    expect(obtenerAccionPrincipalDistribucion('preparando')).toEqual({ estado: 'en_curso', etiqueta: 'Iniciar traslado' })
+    expect(obtenerAccionPrincipalDistribucion('en_curso')).toEqual({ estado: 'en_destino', etiqueta: 'Marcar en destino' })
+    expect(obtenerAccionPrincipalDistribucion('entrega_parcial')).toEqual({ estado: 'en_curso', etiqueta: 'Reanudar traslado' })
+    expect(obtenerAccionPrincipalDistribucion('entregado')).toBeUndefined()
+    expect(obtenerAccionPrincipalDistribucion('rechazado')).toBeUndefined()
   })
 
   it('exige datos de cierre y transporte antes de confirmar una entrega', () => {

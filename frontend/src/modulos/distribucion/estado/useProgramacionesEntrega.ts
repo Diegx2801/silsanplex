@@ -58,5 +58,5 @@ export function useProgramacionesEntrega() {
     return ejecutar(() => resultadoMutation.mutateAsync({ resultado, operationKey }))
   }
 
-  return { programaciones, guardar, actualizarEstado, actualizarSeguimiento, registrarResultado, guardandoResultado: resultadoMutation.isPending, cargando: query.isLoading, error: query.error, reintentar: query.refetch }
+  return { programaciones, guardar, actualizarEstado, actualizarSeguimiento, registrarResultado, guardandoEstado: guardarMutation.isPending, guardandoResultado: resultadoMutation.isPending, cargando: query.isLoading, error: query.error, reintentar: query.refetch }
 }

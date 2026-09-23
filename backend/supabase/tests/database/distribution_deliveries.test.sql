@@ -1,6 +1,6 @@
 begin;
 
-select plan(92);
+select plan(100);
 
 select has_table('public', 'distribution_deliveries', 'existe la tabla persistente de distribución');
 select has_table('public', 'distribution_command_operations', 'existe el registro de operaciones idempotentes');
@@ -21,6 +21,9 @@ select has_column('public', 'distribution_deliveries', 'sale_id', 'existe el ví
 select has_column('public', 'distribution_deliveries', 'sale_number', 'existe el número de venta persistente');
 select has_function('public', 'save_distribution_delivery', array['jsonb'], 'existe el RPC de persistencia');
 select has_function('public', 'record_distribution_status_transition', '{}', 'existe la auditoría de transiciones');
+select has_function('public', 'list_distribution_delivery_status_history', array['uuid', 'uuid'], 'existe la lectura acotada del historial');
+select has_function('public', 'validate_distribution_rescheduled_date', '{}', 'existe la validación de fecha al reprogramar');
+select is(has_function_privilege('anon', 'public.list_distribution_delivery_status_history(uuid, uuid)', 'EXECUTE'), false, 'anon no puede leer el historial de distribución');
 select is((select count(*) from pg_constraint where conname = 'distribution_deliveries_order_same_organization'), 1::bigint, 'la FK pedido-distribución conserva la organización');
 select ok((select relrowsecurity from pg_class where oid = 'public.distribution_deliveries'::regclass), 'la tabla mantiene RLS');
 select is(has_table_privilege('authenticated', 'public.distribution_deliveries', 'SELECT'), true, 'authenticated consulta distribución');
@@ -453,6 +456,18 @@ select is((select new_values ->> 'delivery_status' from public.audit_events wher
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'e3111111-1111-4111-8111-111111111111', true);
 
+select is((select count(*) from public.list_distribution_delivery_status_history('d3111111-1111-4111-8111-111111111111', (select id from public.distribution_deliveries where guide_number = 'G-N-001'))), 5::bigint, 'presenta cronológicamente la creación y todas las etapas de la entrega');
+select is((select actor_name from public.list_distribution_delivery_status_history('d3111111-1111-4111-8111-111111111111', (select id from public.distribution_deliveries where guide_number = 'G-N-001')) order by occurred_at desc limit 1), 'Operador distribución', 'muestra quién realizó la última transición');
+select throws_ok($$
+  select * from public.list_distribution_delivery_status_history(
+    'd3111111-1111-4111-8111-111111111111',
+    'f3111111-1111-4111-8111-111111111199'
+  )
+$$, 'P0001', 'DISTRIBUTION_NOT_FOUND', 'no expone el historial de una entrega inexistente');
+select throws_ok($$
+  select * from public.list_distribution_delivery_status_history('d3111111-1111-4111-8111-111111111112', (select id from public.distribution_deliveries where guide_number = 'G-N-001'))
+$$, '42501', 'DISTRIBUTION_FORBIDDEN', 'no expone historial de entregas de otra organización');
+
 select throws_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
     'id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
@@ -509,6 +524,12 @@ $$, 'una actualización de seguimiento no rompe filas históricas');
 select is((select delivery_status from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), 'preparando', 'actualiza el estado histórico mediante una transición válida');
 
 reset role;
+select throws_ok($$
+  update public.distribution_deliveries
+  set delivery_status = 'reprogramado',
+      scheduled_date = pg_catalog.timezone('America/Lima', pg_catalog.now())::date - 1
+  where id = 'f3111111-1111-4111-8111-111111111111'
+$$, 'P0001', 'DISTRIBUTION_RESCHEDULE_DATE_IN_PAST', 'la base de datos rechaza reprogramar una entrega a una fecha pasada');
 update public.distribution_deliveries
 set quantity_reconciliation_required = true
 where id = 'f3111111-1111-4111-8111-111111111111';

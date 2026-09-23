@@ -127,7 +127,7 @@ export function DialogoResultadoEntrega({
               ) : null}
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div><label htmlFor="resultado-modo" className="field-label">Resultado</label><select id="resultado-modo" value={modo} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('modo', evento.target.value as ModoResultado)} className="field-control"><option value="recibido">El cliente recibió bienes</option><option value="no_entregado">No se pudo completar la entrega</option></select><p className="mt-1 text-xs text-muted-foreground">La entrega completa o parcial se determina según las cantidades registradas.</p></div>
+              <div><label htmlFor="resultado-modo" className="field-label">Resultado</label><select id="resultado-modo" value={modo} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('modo', evento.target.value as ModoResultado)} className="field-control"><option value="recibido">El cliente recibió bienes</option><option value="no_entregado">No se completó la entrega</option></select><p className="mt-1 text-xs text-muted-foreground">La entrega completa o parcial se determina según las cantidades registradas.</p></div>
                 <div><label htmlFor="resultado-fecha" className="field-label">Fecha del resultado</label><input id="resultado-fecha" type="date" required max={fechaActualPeru()} value={fecha} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('fecha', evento.target.value)} className="field-control" /></div>
               </div>
 
@@ -149,7 +149,7 @@ export function DialogoResultadoEntrega({
                   <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/20 px-4 py-3 text-sm"><span className="status-label" data-tone={resultadoInferido === 'entregado' ? 'listo' : 'pendiente'}>{resultadoInferido === 'entregado' ? 'Todos los saldos quedarán cubiertos' : resultadoInferido === 'entrega_parcial' ? 'Quedará saldo para una entrega posterior' : cantidadInvalida ? 'Revisa las cantidades ingresadas' : 'Ingresa las cantidades recibidas'}</span><span className="text-xs text-muted-foreground">El resultado se calcula por producto.</span></div>
                 </section>
               ) : (
-                <div><label htmlFor="resultado-incidencia" className="field-label">Motivo de no entrega <span aria-hidden="true">*</span></label><textarea id="resultado-incidencia" required maxLength={200} rows={3} value={incidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('incidencia', evento.target.value)} className="field-control" placeholder="Ej. cliente ausente, dirección no ubicada…" /></div>
+                <div><label htmlFor="resultado-incidencia" className="field-label">Motivo <span aria-hidden="true">*</span></label><textarea id="resultado-incidencia" required maxLength={200} rows={3} value={incidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('incidencia', evento.target.value)} className="field-control" placeholder="Ej. cliente ausente, dirección no ubicada, cliente rechazó la recepción…" /></div>
               )}
 
               {modo === 'recibido' ? <div><label htmlFor="resultado-evidencia" className="field-label">Evidencia o constancia <span aria-hidden="true">*</span></label><input id="resultado-evidencia" required maxLength={255} value={evidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('evidencia', evento.target.value)} className="field-control" placeholder="Nombre de archivo, referencia o URL" /><p className="mt-1 text-xs text-muted-foreground">Se conserva como referencia de la conformidad; este campo no adjunta archivos.</p></div> : null}
@@ -160,7 +160,7 @@ export function DialogoResultadoEntrega({
 
             <footer className="flex shrink-0 justify-end gap-2 border-t bg-background px-5 py-4 sm:px-7">
               <Button type="button" variant="outline" disabled={guardando} onClick={() => alCambiarApertura(false)}>Cancelar</Button>
-              <Button type="submit" disabled={guardando || conciliacionPendiente || (modo === 'recibido' && (cantidadNueva <= 0 || cantidadInvalida))}>{guardando ? 'Registrando…' : modo === 'no_entregado' ? 'Registrar intento fallido' : resultadoInferido === 'entregado' ? 'Confirmar entrega completa' : 'Confirmar entrega parcial'}</Button>
+              <Button type="submit" disabled={guardando || conciliacionPendiente || (modo === 'recibido' && (cantidadNueva <= 0 || cantidadInvalida))}>{guardando ? 'Registrando…' : modo === 'no_entregado' ? 'Registrar entrega no completada' : resultadoInferido === 'entregado' ? 'Confirmar entrega completa' : 'Confirmar entrega parcial'}</Button>
             </footer>
           </form>
         </DialogPrimitive.Content>

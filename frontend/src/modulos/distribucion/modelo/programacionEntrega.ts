@@ -82,6 +82,23 @@ export function obtenerEstadosSiguientes(estado: ProgramacionEntrega['estado']) 
   return TRANSICIONES_DISTRIBUCION[estado]
 }
 
+/** Acción principal de avance; las transiciones excepcionales se presentan aparte en la UI. */
+export const ACCIONES_PRINCIPALES_DISTRIBUCION: Partial<Record<ProgramacionEntrega['estado'], {
+  estado: ProgramacionEntrega['estado']
+  etiqueta: string
+}>> = {
+  programado: { estado: 'preparando', etiqueta: 'Iniciar preparación' },
+  preparando: { estado: 'en_curso', etiqueta: 'Iniciar traslado' },
+  en_curso: { estado: 'en_destino', etiqueta: 'Marcar en destino' },
+  entrega_parcial: { estado: 'en_curso', etiqueta: 'Reanudar traslado' },
+  reprogramado: { estado: 'preparando', etiqueta: 'Iniciar preparación' },
+}
+
+export function obtenerAccionPrincipalDistribucion(estado: ProgramacionEntrega['estado']) {
+  const accion = ACCIONES_PRINCIPALES_DISTRIBUCION[estado]
+  return accion && puedeTransicionarEntrega(estado, accion.estado) ? accion : undefined
+}
+
 export function puedeTransicionarEntrega(
   estadoActual: ProgramacionEntrega['estado'],
   estadoSiguiente: ProgramacionEntrega['estado'],
