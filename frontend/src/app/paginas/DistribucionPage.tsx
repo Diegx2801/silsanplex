@@ -21,6 +21,7 @@ import {
   listarEntregasAtrasadas,
   obtenerAccionPrincipalDistribucion,
   obtenerEstadosSiguientes,
+  obtenerResumenFechaEntrega,
   resumirEntregas,
   tipoTransporteParaModalidad,
   type DatosProgramacionEntrega,
@@ -426,7 +427,8 @@ export function DistribucionPage() {
     dibujarDato('Guía de remisión', entrega.numeroGuiaRemision, 106, 86)
     y += 25
     dibujarDato('Emisión de guía', formatearFechaDistribucion(entrega.fechaEmision), margen, 55)
-    dibujarDato('Fecha de entrega', formatearFechaDistribucion(entrega.fechaEntrega), 78, 55)
+    const resumenFechaEntrega = obtenerResumenFechaEntrega(entrega)
+    dibujarDato(resumenFechaEntrega.etiqueta, formatearFechaDistribucion(resumenFechaEntrega.fecha), 78, 55)
     dibujarDato('Transporte', entrega.tipoTransporte === 'interno' ? 'Movilidad SILSAN' : 'Movilidad externa', 137, 55)
     y += 28
 
@@ -609,16 +611,17 @@ export function DistribucionPage() {
             ) : (
               <div className="divide-y">{entregasVisibles.map((item) => {
                 const accionPrincipal = obtenerAccionPrincipalDistribucion(item.estado)
-                const puedeReprogramar = obtenerEstadosSiguientes(item.estado).includes('reprogramado')
+                const puedeReprogramar = ['entrega_parcial', 'rechazado', 'reprogramado'].includes(item.estado)
                 const puedeCancelar = obtenerEstadosSiguientes(item.estado).includes('cancelado')
                 const puedeRegistrarResultado = ['en_curso', 'en_destino', 'entrega_parcial'].includes(item.estado)
-                const puedeEditar = ['programado', 'preparando', 'reprogramado'].includes(item.estado)
+                const puedeEditar = ['programado', 'preparando'].includes(item.estado)
+                const resumenFechaEntrega = obtenerResumenFechaEntrega(item)
 
                 return (
                   <article key={item.id} className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(10rem,1fr)_minmax(13rem,1.35fr)_minmax(9rem,0.85fr)_minmax(14rem,1.2fr)] lg:items-center">
                     <div className="print-delivery-header"><p className="font-mono text-xs text-primary">REPORTE INTERNO DE DISTRIBUCIÓN</p><p className="mt-1 font-mono text-xs text-muted-foreground">Guía emitida: {formatearFechaDistribucion(item.fechaEmision)}</p></div>
                     <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · {item.ventaNumero ? `Venta ${item.ventaNumero} · ` : ''}Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{item.lineas.length ? item.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · <span className="font-mono font-semibold">{linea.cantidadDespachada ?? linea.cantidad} {linea.unidadMedida}</span> despachadas en Ventas · {item.requiereConciliacionCantidades ? 'recepción histórica sin conciliar' : <><span className="font-mono">{linea.cantidadEntregadaCliente ?? 0}</span> recibidas · <span className="font-mono">{linea.cantidadPendienteCliente ?? linea.cantidad}</span> pendientes</>}</p>) : <p>Detalle del pedido no disponible</p>}</div></div>
-                    <dl className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-1"><div><dt className="text-xs text-muted-foreground">Programada</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaProgramada)}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega real</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEntrega)}</dd></div></dl>
+                    <dl className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-1"><div><dt className="text-xs text-muted-foreground">Programada</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaProgramada)}</dd></div><div><dt className="text-xs text-muted-foreground">{resumenFechaEntrega.etiqueta}</dt><dd className="mt-1">{formatearFechaDistribucion(resumenFechaEntrega.fecha)}</dd></div></dl>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2"><span className="status-label" data-tone={tonoEstadoDistribucion(item.estado)}>{etiquetasEstado[item.estado]}</span><span className="text-xs text-muted-foreground">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</span></div>
                       {item.requiereConciliacionCantidades ? <p role="status" className="mt-2 text-xs text-amber-800">Registro histórico por conciliar antes de continuar.</p> : null}
@@ -627,8 +630,8 @@ export function DistribucionPage() {
                         <div className="mt-3 flex flex-wrap gap-2 print:hidden">
                           {accionPrincipal ? <Button type="button" size="sm" disabled={guardandoEstado || guardandoResultado} onClick={() => void ejecutarTransicionEtapa(item, accionPrincipal.estado)}><ArrowRight aria-hidden="true" />{accionPrincipal.etiqueta}</Button> : null}
                           {puedeRegistrarResultado ? <Button type="button" size="sm" variant={accionPrincipal ? 'outline' : 'default'} disabled={guardandoEstado || guardandoResultado} onClick={() => setEntregaResultado(item)}><PackageCheck aria-hidden="true" /> Registrar resultado</Button> : null}
-                          {puedeReprogramar ? <Button type="button" size="sm" variant="outline" disabled={guardandoEstado} onClick={() => editarProgramacion(item, true)}><CalendarClock aria-hidden="true" /> Reprogramar</Button> : null}
-                          {puedeEditar ? <Button type="button" size="sm" variant="outline" disabled={guardandoEstado} onClick={() => editarProgramacion(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}
+                          {puedeReprogramar ? <Button type="button" size="sm" variant="outline" disabled={guardandoEstado} onClick={() => editarProgramacion(item, true)}><CalendarClock aria-hidden="true" /> Reprogramar fecha</Button> : null}
+                          {puedeEditar ? <Button type="button" size="sm" variant="outline" disabled={guardandoEstado} onClick={() => editarProgramacion(item)}><Pencil aria-hidden="true" /> Editar planificación</Button> : null}
                           {puedeCancelar ? <Button type="button" size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={guardandoEstado} onClick={() => { setErrorCancelacion(''); setEntregaPorCancelar(item) }}><Ban aria-hidden="true" /> Cancelar</Button> : null}
                         </div>
                       ) : null}
@@ -673,11 +676,29 @@ export function DistribucionPage() {
           <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-60 flex max-h-[90svh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden border bg-background shadow-xl outline-none">
           <form onSubmit={enviar} className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <header className="flex shrink-0 items-start justify-between gap-4 border-b bg-background px-6 py-5">
-              <div><DialogPrimitive.Title id="programar-title" className="text-xl font-semibold">{reprogramacionEnCurso ? 'Reprogramar entrega' : edicion ? 'Editar entrega' : 'Programar entrega'}</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">{reprogramacionEnCurso ? 'Actualiza la fecha del servicio; el historial conservará el cambio.' : 'Planifica la entrega y registra su destino y guía. El despacho de inventario ya se confirmó en Ventas.'}</DialogPrimitive.Description></div>
+              <div><DialogPrimitive.Title id="programar-title" className="text-xl font-semibold">{reprogramacionEnCurso ? 'Reprogramar entrega' : edicion ? 'Editar planificación' : 'Programar entrega'}</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">{reprogramacionEnCurso ? 'Actualiza solo la fecha de la próxima salida; el historial conservará las fechas y quién realizó el cambio.' : 'Planifica la entrega y registra su destino y guía. El despacho de inventario ya se confirmó en Ventas.'}</DialogPrimitive.Description></div>
               <DialogPrimitive.Close asChild><Button type="button" variant="ghost">Cerrar</Button></DialogPrimitive.Close>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
               <div className="space-y-6">
+              {reprogramacionEnCurso ? (
+                <section aria-labelledby="reprogramar-entrega-title" className="space-y-4">
+                  <div>
+                    <h3 id="reprogramar-entrega-title" className="text-sm font-semibold uppercase tracking-[.06em] text-primary">Fecha de la próxima salida</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">La guía, el destino y los datos del transporte se mantienen. Si la entrega está en ruta, primero registra el resultado del intento.</p>
+                  </div>
+                  <dl className="grid gap-4 border bg-muted/20 px-4 py-3 text-sm sm:grid-cols-2">
+                    <div><dt className="text-xs text-muted-foreground">Pedido</dt><dd className="mt-1 font-medium">{datos.pedidoNumero} · {datos.clienteNombre}</dd></div>
+                    <div><dt className="text-xs text-muted-foreground">Fecha actual</dt><dd className="mt-1">{formatearFechaDistribucion(edicion?.fechaProgramada)}</dd></div>
+                  </dl>
+                  <div className="max-w-sm">
+                    <label htmlFor="fecha-programada" className="field-label">Nueva fecha programada<span aria-hidden="true"> *</span></label>
+                    <input id="fecha-programada" required type="date" min={hoy} value={datos.fechaProgramada} onChange={(evento) => setDatos({ ...datos, fechaProgramada: evento.target.value })} className="field-control" />
+                    <p className="mt-1 text-xs text-muted-foreground">Debe ser distinta de la fecha actual y no puede estar en el pasado.</p>
+                  </div>
+                </section>
+              ) : (
+                <>
               <section aria-labelledby="referencia-entrega-title" className="space-y-4">
                 <div><h3 id="referencia-entrega-title" className="text-sm font-semibold uppercase tracking-[.06em] text-primary">Pedido y salida de almacén</h3><p className="mt-1 text-sm text-muted-foreground">Referencia de solo lectura: pedido, cliente y almacén se conservan tal como se confirmaron en Ventas.</p></div>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -737,7 +758,7 @@ export function DistribucionPage() {
               <section aria-labelledby="programacion-entrega-title" className="space-y-4 border-t pt-5">
                 <div><h3 id="programacion-entrega-title" className="text-sm font-semibold uppercase tracking-[.06em] text-primary">Programación y documentos</h3><p className="mt-1 text-sm text-muted-foreground">Registra la fecha y la guía que acompañará el traslado. Los datos del vehículo se completan cuando se prepara la salida.</p></div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div><label htmlFor="fecha-programada" className="field-label">{reprogramacionEnCurso ? 'Nueva fecha programada' : 'Fecha programada'}<span aria-hidden="true"> *</span></label><input id="fecha-programada" required type="date" min={reprogramacionEnCurso ? hoy : undefined} value={datos.fechaProgramada} onChange={(evento) => setDatos({ ...datos, fechaProgramada: evento.target.value })} className="field-control" />{reprogramacionEnCurso ? <p className="mt-1 text-xs text-muted-foreground">Debe ser distinta de la fecha anterior y no estar en el pasado.</p> : null}</div>
+                  <div><label htmlFor="fecha-programada" className="field-label">Fecha programada<span aria-hidden="true"> *</span></label><input id="fecha-programada" required type="date" value={datos.fechaProgramada} onChange={(evento) => setDatos({ ...datos, fechaProgramada: evento.target.value })} className="field-control" /></div>
                   <div><label htmlFor="fecha-emision" className="field-label">Fecha de emisión de la guía<span aria-hidden="true"> *</span></label><input id="fecha-emision" required type="date" value={datos.fechaEmision} onChange={(evento) => setDatos({ ...datos, fechaEmision: evento.target.value })} className="field-control" /></div>
                   <div><label htmlFor="numero-despacho" className="field-label">Referencia interna de despacho<span aria-hidden="true"> *</span></label><input id="numero-despacho" required maxLength={40} value={datos.numeroDespacho} onChange={(evento) => setDatos({ ...datos, numeroDespacho: evento.target.value })} className="field-control" /><p className="mt-1 text-xs text-muted-foreground">Identificador interno; no reemplaza la guía de remisión.</p></div>
                   <div><label htmlFor="guia-remision" className="field-label">Número de guía de remisión<span aria-hidden="true"> *</span></label><input id="guia-remision" required maxLength={40} value={datos.numeroGuiaRemision} onChange={(evento) => setDatos({ ...datos, numeroGuiaRemision: evento.target.value })} className="field-control" /></div>
@@ -755,9 +776,11 @@ export function DistribucionPage() {
               </section>
 
               <div><label htmlFor="observaciones-entrega" className="field-label">Observaciones de planificación</label><textarea id="observaciones-entrega" rows={3} value={datos.observaciones} onChange={(evento) => setDatos({ ...datos, observaciones: evento.target.value })} className="field-control" placeholder="Indicaciones para preparar o coordinar esta entrega" /><p className="mt-1 text-xs text-muted-foreground">La evidencia y las incidencias se registran en cada resultado, no en la planificación.</p></div>
+                </>
+              )}
               </div>
             </div>
-            <footer className="flex shrink-0 justify-end gap-2 border-t bg-background px-6 py-4"><Button type="button" variant="outline" onClick={() => setFormularioAbierto(false)}>Cancelar</Button><Button type="submit">{edicion ? 'Guardar cambios' : 'Programar entrega'}</Button></footer>
+            <footer className="flex shrink-0 justify-end gap-2 border-t bg-background px-6 py-4"><Button type="button" variant="outline" onClick={() => { setFormularioAbierto(false); setReprogramacionEnCurso(false) }}>Cancelar</Button><Button type="submit">{reprogramacionEnCurso ? 'Confirmar nueva fecha' : edicion ? 'Guardar cambios' : 'Programar entrega'}</Button></footer>
           </form>
           </DialogPrimitive.Content>
           </DialogPrimitive.Portal>

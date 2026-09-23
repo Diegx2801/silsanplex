@@ -11,6 +11,12 @@ import { DialogoCumplimientoServicios } from '@/modulos/ventas/componentes/Dialo
 import { DialogoDetalleOperacionVenta } from '@/modulos/ventas/componentes/DialogoDetalleOperacionVenta'
 import { DialogoModificacionPedido } from '@/modulos/ventas/componentes/DialogoModificacionPedido'
 import { DialogoRegistroVenta } from '@/modulos/ventas/componentes/DialogoRegistroVenta'
+import {
+  estadoOperacionVenta,
+  etiquetasEstadoOperacionVenta,
+  etiquetaEstadoLogisticoPedido,
+  type EstadoOperacionVenta,
+} from '@/modulos/ventas/modelo/estadoCumplimientoPedido'
 import type {
   DatosVenta,
   PedidoVenta,
@@ -20,14 +26,6 @@ import type { CantidadLineaPedido } from '@/modulos/ventas/servicios/ventasServi
 import type { CantidadDespacho } from '@/modulos/ventas/servicios/ventasService'
 import type { CantidadCumplimientoServicio } from '@/modulos/ventas/servicios/ventasService'
 
-type FiltroOperacion =
-  | 'todos'
-  | 'pedido-confirmado'
-  | 'por-despachar'
-  | 'parcial'
-  | 'completado'
-  | 'cancelado'
-
 interface AlmacenOperacion {
   id: string
   nombre: string
@@ -35,26 +33,6 @@ interface AlmacenOperacion {
 
 function normalizar(valor: string) {
   return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-PE')
-}
-
-function estadoOperacion(pedido: PedidoVenta, venta?: Venta): FiltroOperacion {
-  if (pedido.estado === 'cancelado') return 'cancelado'
-  if (!venta) return 'pedido-confirmado'
-  if (venta.estado === 'despachada') return 'completado'
-  const tieneCumplimiento = venta.lineas.some((linea) => {
-    const pendiente = linea.cantidadPendiente ?? linea.cantidad
-    return pendiente < linea.cantidad
-  })
-  return tieneCumplimiento ? 'parcial' : 'por-despachar'
-}
-
-const etiquetasFiltroOperacion: Record<FiltroOperacion, string> = {
-  todos: 'Todos',
-  'pedido-confirmado': 'Pedidos confirmados',
-  'por-despachar': 'Por despachar',
-  parcial: 'Despacho parcial',
-  completado: 'Completados',
-  cancelado: 'Cancelados',
 }
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' })
@@ -130,7 +108,7 @@ export function PanelOperacionesVenta({
   const [ventaPorCompletarServicios, setVentaPorCompletarServicios] = useState<Venta | null>(null)
   const [pedidoPorConsultar, setPedidoPorConsultar] = useState<PedidoVenta | null>(null)
   const [busqueda, setBusqueda] = useState('')
-  const [filtroEstado, setFiltroEstado] = useState<FiltroOperacion>('todos')
+  const [filtroEstado, setFiltroEstado] = useState<EstadoOperacionVenta>('todos')
   const [filtroAlmacen, setFiltroAlmacen] = useState('')
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
@@ -143,6 +121,18 @@ export function PanelOperacionesVenta({
     () => new Map(ventas.map((venta) => [venta.pedidoId, venta])),
     [ventas],
   )
+  const resumenEstados = useMemo(() => {
+    const resumen = { porDespachar: 0, porEntregar: 0, serviciosPendientes: 0, completados: 0 }
+    for (const pedido of pedidos) {
+      const venta = ventasPorPedido.get(pedido.id)
+      const estado = estadoOperacionVenta(pedido, venta)
+      if (estado === 'por-despachar' || estado === 'despacho-parcial') resumen.porDespachar += 1
+      if (estado === 'por-entregar' || estado === 'entrega-parcial') resumen.porEntregar += 1
+      if (estado === 'servicios-pendientes') resumen.serviciosPendientes += 1
+      if (estado === 'completado') resumen.completados += 1
+    }
+    return resumen
+  }, [pedidos, ventasPorPedido])
   const pedidosOrdenados = useMemo(
     () => pedidos.toSorted((a, b) => {
       const diferenciaFecha = fechaPedidoOperacion(b).localeCompare(fechaPedidoOperacion(a))
@@ -164,7 +154,7 @@ export function PanelOperacionesVenta({
     const termino = normalizar(busquedaDiferida.trim())
     return pedidosOrdenados.filter((pedido) => {
       const venta = ventasPorPedido.get(pedido.id)
-      const estado = estadoOperacion(pedido, venta)
+      const estado = estadoOperacionVenta(pedido, venta)
       const texto = normalizar([
         pedido.numero,
         pedido.cotizacionNumero,
@@ -211,8 +201,10 @@ export function PanelOperacionesVenta({
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
           <span className="border px-2.5 py-1.5">{pedidos.length} pedidos</span>
-          <span className="border px-2.5 py-1.5">{ventas.filter((item) => item.estado === 'registrada').length} por despachar</span>
-          <span className="border px-2.5 py-1.5">{ventas.filter((item) => item.estado === 'despachada').length} completadas</span>
+          <span className="border px-2.5 py-1.5">{resumenEstados.porDespachar} {resumenEstados.porDespachar === 1 ? 'despacho pendiente' : 'despachos pendientes'}</span>
+          <span className="border px-2.5 py-1.5">{resumenEstados.porEntregar} {resumenEstados.porEntregar === 1 ? 'entrega pendiente' : 'entregas pendientes'}</span>
+          <span className="border px-2.5 py-1.5">{resumenEstados.serviciosPendientes} {resumenEstados.serviciosPendientes === 1 ? 'servicio pendiente' : 'servicios pendientes'}</span>
+          <span className="border px-2.5 py-1.5">{resumenEstados.completados} completados</span>
         </div>
       </div>
 
@@ -236,10 +228,10 @@ export function PanelOperacionesVenta({
           <select
             id="estado-operacion-venta"
             value={filtroEstado}
-            onChange={(evento) => { setFiltroEstado(evento.target.value as FiltroOperacion); setPagina(1) }}
+            onChange={(evento) => { setFiltroEstado(evento.target.value as EstadoOperacionVenta); setPagina(1) }}
             className="field-control"
           >
-            {(Object.entries(etiquetasFiltroOperacion) as Array<[FiltroOperacion, string]>).map(([valor, etiqueta]) => (
+            {(Object.entries(etiquetasEstadoOperacionVenta) as Array<[EstadoOperacionVenta, string]>).map(([valor, etiqueta]) => (
               <option key={valor} value={valor}>{etiqueta}</option>
             ))}
           </select>
@@ -314,6 +306,7 @@ export function PanelOperacionesVenta({
             const totalCumplido = (lineas: Venta['lineas']) => lineas.reduce((totalLinea, linea) => totalLinea + (linea.tipoProducto === 'service' ? (linea.cantidadCompletadaServicio ?? 0) : (linea.cantidadDespachada ?? 0)), 0)
             const totalPendiente = (lineas: Venta['lineas']) => lineas.reduce((totalLinea, linea) => totalLinea + (linea.cantidadPendiente ?? linea.cantidad), 0)
             const cumplimiento = venta ? etiquetaCumplimiento(bienes, servicios) : ''
+            const estadoLogistico = etiquetaEstadoLogisticoPedido(pedido, venta)
             const soloServicios = servicios.length > 0 && bienes.length === 0
             return (
               <article key={pedido.id} className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(15rem,1fr)_minmax(20rem,1.35fr)_auto] lg:items-center">
@@ -326,6 +319,7 @@ export function PanelOperacionesVenta({
                   <p className="mt-1 text-xs text-muted-foreground">Origen: {pedido.cotizacionNumero} · {formatearFechaCalendarioPeru(fechaPedidoOperacion(pedido))}</p>
                   <p className="mt-1 text-xs text-muted-foreground">Almacén: {pedido.almacenNombre ?? 'No definido (histórico)'}</p>
                   <p className="mt-1 text-xs text-muted-foreground">Cumplimiento: {pedido.modalidadCumplimiento === 'pickup' ? 'Recojo del cliente' : 'Entrega al cliente'}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Estado logístico: {estadoLogistico}</p>
                 </div>
                 <div className="grid grid-cols-3 gap-3 border-y py-3 text-sm lg:border-y-0 lg:border-s lg:ps-5">
                   <div><p className="text-xs text-muted-foreground">Productos</p><p className="mt-1 font-mono">{pedido.lineas.length}</p></div>

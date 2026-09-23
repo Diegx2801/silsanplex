@@ -4,6 +4,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { Button } from '@/components/ui/button'
 import { fechaPeruDesdeTimestamp, formatearFechaCalendarioPeru } from '@/lib/fechas'
 import type { PedidoVenta, Venta } from '@/modulos/ventas/modelo/operacionVenta'
+import { etiquetaEstadoLogisticoPedido } from '@/modulos/ventas/modelo/estadoCumplimientoPedido'
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', {
   style: 'currency',
@@ -25,8 +26,7 @@ function fechaPedido(pedido: PedidoVenta) {
 function etiquetaEstado(pedido: PedidoVenta, venta?: Venta) {
   if (pedido.estado === 'cancelado') return 'Pedido cancelado'
   if (!venta) return 'Pedido confirmado'
-  if (venta.estado === 'despachada') return 'Completado'
-  return 'Venta pendiente de despacho'
+  return etiquetaEstadoLogisticoPedido(pedido, venta)
 }
 
 export function DialogoDetalleOperacionVenta({
@@ -80,7 +80,7 @@ export function DialogoDetalleOperacionVenta({
                   <h2 id="detalle-operacion-resumen" className="mt-2 text-lg font-semibold">{pedido.clienteNombre}</h2>
                   <p className="mt-1 text-sm text-muted-foreground">{pedido.clienteDocumento}</p>
                 </div>
-                <span className="status-label" data-tone={estado === 'Completado' ? 'listo' : estado === 'Pedido cancelado' ? 'revision' : 'pendiente'}>
+                <span className="status-label" data-tone={estado === 'Entrega completada' || estado === 'Recojo completado' || estado === 'Servicios completados' ? 'listo' : estado === 'Pedido cancelado' ? 'revision' : 'pendiente'}>
                   {estado}
                 </span>
               </div>
@@ -115,9 +115,12 @@ export function DialogoDetalleOperacionVenta({
                     {pedido.lineas.map((linea) => {
                       const lineaVenta = venta?.lineas.find((item) => item.pedidoLineaId === linea.id)
                       const pendiente = lineaVenta?.cantidadPendiente ?? linea.cantidad
-                      const cumplida = lineaVenta
-                        ? Math.max(lineaVenta.cantidad - pendiente, 0)
-                        : 0
+                      const cumplida = lineaVenta ? Math.max(lineaVenta.cantidad - pendiente, 0) : 0
+                      const avance = !lineaVenta
+                        ? 'Pendiente de venta'
+                        : lineaVenta.tipoProducto === 'service'
+                          ? `Completadas: ${formatoCantidad.format(cumplida)} · pendientes: ${formatoCantidad.format(pendiente)}`
+                          : `Despachadas en Ventas: ${formatoCantidad.format(cumplida)} · por despachar: ${formatoCantidad.format(pendiente)}`
                       return (
                         <tr key={linea.id}>
                           <td className="px-4 py-4">
@@ -128,7 +131,7 @@ export function DialogoDetalleOperacionVenta({
                           <td className="px-4 py-4 text-end font-mono tabular-nums">{formatoMoneda.format(linea.precioUnitario)}</td>
                           <td className="px-4 py-4 text-end font-mono font-semibold tabular-nums">{formatoMoneda.format(linea.cantidad * linea.precioUnitario)}</td>
                           <td className="px-4 py-4 text-muted-foreground">
-                            {venta ? `${formatoCantidad.format(cumplida)} entregadas · ${formatoCantidad.format(pendiente)} pendientes` : 'Pendiente de venta'}
+                            {avance}
                           </td>
                         </tr>
                       )

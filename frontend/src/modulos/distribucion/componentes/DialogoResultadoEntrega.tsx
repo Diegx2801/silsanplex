@@ -5,6 +5,8 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { Button } from '@/components/ui/button'
 import { fechaActualPeru } from '@/lib/fechas'
 import {
+  CATEGORIAS_NO_ENTREGA,
+  ETIQUETAS_CATEGORIA_NO_ENTREGA,
   esquemaResultadoEntrega,
   inferirResultadoEntrega,
   type ProgramacionEntrega,
@@ -31,6 +33,7 @@ export function DialogoResultadoEntrega({
   const [modo, setModo] = useState<ModoResultado>('recibido')
   const [fecha, setFecha] = useState(fechaActualPeru())
   const [evidencia, setEvidencia] = useState('')
+  const [categoriaIncidencia, setCategoriaIncidencia] = useState<typeof CATEGORIAS_NO_ENTREGA[number]>('cliente_ausente')
   const [incidencia, setIncidencia] = useState('')
   const [cantidades, setCantidades] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
@@ -41,6 +44,7 @@ export function DialogoResultadoEntrega({
     setModo('recibido')
     setFecha(fechaActualPeru())
     setEvidencia('')
+    setCategoriaIncidencia('cliente_ausente')
     setIncidencia('')
     setCantidades(Object.fromEntries(entrega.lineas.map((linea) => [linea.id, '0'])))
     setError('')
@@ -86,6 +90,7 @@ export function DialogoResultadoEntrega({
       entregaId: entrega.id,
       lockVersion: entrega.lockVersion,
       resultado: resultadoInferido,
+      categoriaIncidencia: modo === 'no_entregado' ? categoriaIncidencia : undefined,
       fecha,
       evidencia: modo === 'recibido' ? evidencia : '',
       incidencias: modo === 'no_entregado' ? incidencia.split(/[;\n]/).map((item) => item.trim()).filter(Boolean) : [],
@@ -149,12 +154,20 @@ export function DialogoResultadoEntrega({
                   <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/20 px-4 py-3 text-sm"><span className="status-label" data-tone={resultadoInferido === 'entregado' ? 'listo' : 'pendiente'}>{resultadoInferido === 'entregado' ? 'Todos los saldos quedarán cubiertos' : resultadoInferido === 'entrega_parcial' ? 'Quedará saldo para una entrega posterior' : cantidadInvalida ? 'Revisa las cantidades ingresadas' : 'Ingresa las cantidades recibidas'}</span><span className="text-xs text-muted-foreground">El resultado se calcula por producto.</span></div>
                 </section>
               ) : (
-                <div><label htmlFor="resultado-incidencia" className="field-label">Motivo <span aria-hidden="true">*</span></label><textarea id="resultado-incidencia" required maxLength={200} rows={3} value={incidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('incidencia', evento.target.value)} className="field-control" placeholder="Ej. cliente ausente, dirección no ubicada, cliente rechazó la recepción…" /></div>
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="resultado-categoria" className="field-label">Motivo principal <span aria-hidden="true">*</span></label>
+                    <select id="resultado-categoria" required value={categoriaIncidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => { operationKey.current = crypto.randomUUID(); setError(''); setCategoriaIncidencia(evento.target.value as typeof CATEGORIAS_NO_ENTREGA[number]) }} className="field-control">
+                      {CATEGORIAS_NO_ENTREGA.map((categoria) => <option key={categoria} value={categoria}>{ETIQUETAS_CATEGORIA_NO_ENTREGA[categoria]}</option>)}
+                    </select>
+                  </div>
+                  <div><label htmlFor="resultado-incidencia" className="field-label">Detalle del intento <span aria-hidden="true">*</span></label><textarea id="resultado-incidencia" required maxLength={200} rows={3} value={incidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('incidencia', evento.target.value)} className="field-control" placeholder="Describe brevemente lo ocurrido en esta visita…" /></div>
+                </div>
               )}
 
               {modo === 'recibido' ? <div><label htmlFor="resultado-evidencia" className="field-label">Evidencia o constancia <span aria-hidden="true">*</span></label><input id="resultado-evidencia" required maxLength={255} value={evidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('evidencia', evento.target.value)} className="field-control" placeholder="Nombre de archivo, referencia o URL" /><p className="mt-1 text-xs text-muted-foreground">Se conserva como referencia de la conformidad; este campo no adjunta archivos.</p></div> : null}
 
-              <p className="border-s-2 border-primary/40 ps-3 text-xs leading-5 text-muted-foreground">Registrar una entrega parcial o un intento fallido no descuenta stock. El saldo se calcula contra las cantidades recibidas y cualquier devolución física requiere el proceso de recepción de Inventario.</p>
+              <p className="border-s-2 border-primary/40 ps-3 text-xs leading-5 text-muted-foreground">Un intento sin entrega queda separado del rechazo expreso del cliente mediante su motivo. Registrar un intento fallido no descuenta stock; el saldo se calcula solo con lo recibido y cualquier devolución física requiere el proceso de recepción de Inventario.</p>
               {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
             </div>
 
