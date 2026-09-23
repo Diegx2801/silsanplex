@@ -1,10 +1,12 @@
 begin;
 
-select plan(68);
+select plan(100);
 
 select has_table('public', 'distribution_deliveries', 'existe la tabla persistente de distribución');
 select has_table('public', 'distribution_command_operations', 'existe el registro de operaciones idempotentes');
 select has_column('public', 'distribution_deliveries', 'delivery_status', 'existe el estado operativo');
+select has_column('public', 'distribution_deliveries', 'scheduled_date', 'existe la fecha programada');
+select has_column('public', 'distribution_deliveries', 'actual_delivery_date', 'existe la fecha real de entrega');
 select has_column('public', 'distribution_deliveries', 'lock_version', 'existe la versión de concurrencia');
 select has_column('public', 'distribution_deliveries', 'direction', 'existe la dirección de entrega');
 select has_column('public', 'distribution_deliveries', 'numero_despacho', 'existe el número de despacho');
@@ -19,6 +21,9 @@ select has_column('public', 'distribution_deliveries', 'sale_id', 'existe el ví
 select has_column('public', 'distribution_deliveries', 'sale_number', 'existe el número de venta persistente');
 select has_function('public', 'save_distribution_delivery', array['jsonb'], 'existe el RPC de persistencia');
 select has_function('public', 'record_distribution_status_transition', '{}', 'existe la auditoría de transiciones');
+select has_function('public', 'list_distribution_delivery_status_history', array['uuid', 'uuid'], 'existe la lectura acotada del historial');
+select has_function('public', 'validate_distribution_rescheduled_date', '{}', 'existe la validación de fecha al reprogramar');
+select is(has_function_privilege('anon', 'public.list_distribution_delivery_status_history(uuid, uuid)', 'EXECUTE'), false, 'anon no puede leer el historial de distribución');
 select is((select count(*) from pg_constraint where conname = 'distribution_deliveries_order_same_organization'), 1::bigint, 'la FK pedido-distribución conserva la organización');
 select ok((select relrowsecurity from pg_class where oid = 'public.distribution_deliveries'::regclass), 'la tabla mantiene RLS');
 select is(has_table_privilege('authenticated', 'public.distribution_deliveries', 'SELECT'), true, 'authenticated consulta distribución');
@@ -63,6 +68,15 @@ insert into public.warehouses (
   'a3111111-1111-4111-8111-111111111121',
   'd3111111-1111-4111-8111-111111111111',
   'DIST', 'Almacén distribución',
+  'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+);
+insert into public.warehouse_locations (
+  id, organization_id, warehouse_id, code, name, created_by, updated_by
+) values (
+  'a3111111-1111-4111-8111-111111111123',
+  'd3111111-1111-4111-8111-111111111111',
+  'a3111111-1111-4111-8111-111111111121',
+  'GENERAL', 'Ubicación general',
   'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
 );
 
@@ -133,6 +147,31 @@ insert into public.sale_items (
     'b3111111-1111-4111-8111-111111111111', 'DIST-001', 'Producto persistente distribución', 'UND', 3, 10
   );
 
+-- Representa una salida física completa del primer pedido y una salida parcial
+-- del segundo. La venta del segundo permanece registrada, como ocurre si aún
+-- tiene servicios pendientes, para verificar que Distribución evalúa bienes.
+insert into public.inventory_reservations (
+  id, organization_id, product_id, warehouse_id, location_id, stock_status,
+  quantity, quantity_consumed, status, source_type, source_id,
+  created_by, updated_by
+) values
+  (
+    'a3111111-1111-4111-8111-111111111181',
+    'd3111111-1111-4111-8111-111111111111', 'b3111111-1111-4111-8111-111111111111',
+    'a3111111-1111-4111-8111-111111111121',
+    (select id from public.warehouse_locations where organization_id = 'd3111111-1111-4111-8111-111111111111' and warehouse_id = 'a3111111-1111-4111-8111-111111111121' and code = 'GENERAL'),
+    'available', 2, 2, 'consumed', 'order-item', 'a3111111-1111-4111-8111-111111111141',
+    'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+  ),
+  (
+    'a3111111-1111-4111-8111-111111111182',
+    'd3111111-1111-4111-8111-111111111111', 'b3111111-1111-4111-8111-111111111111',
+    'a3111111-1111-4111-8111-111111111121',
+    (select id from public.warehouse_locations where organization_id = 'd3111111-1111-4111-8111-111111111111' and warehouse_id = 'a3111111-1111-4111-8111-111111111121' and code = 'GENERAL'),
+    'available', 3, 1, 'released', 'order-item', 'a3111111-1111-4111-8111-111111111142',
+    'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
+  );
+
 -- Simula una fila creada antes de que existieran las columnas nuevas.
 insert into public.distribution_deliveries (
   id, organization_id, order_id, order_number, customer_name, issue_date,
@@ -158,6 +197,53 @@ select is((select direction from public.distribution_deliveries where id = 'f311
 select is((select numero_despacho from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), '', 'la fila histórica conserva despacho vacío');
 select is((select modalidad from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), 'movilidad_propia', 'la fila histórica recibe modalidad por defecto');
 select is((select incidencias from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), '[]'::jsonb, 'la fila histórica recibe incidencias vacías');
+
+reset role;
+update public.orders
+set fulfillment_mode = 'pickup'
+where id = 'a3111111-1111-4111-8111-111111111111';
+set local role authenticated;
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111111',
+    'order_number', 'PED-PICKUP', 'customer_name', 'Cliente recojo',
+    'issue_date', '2026-08-30', 'delivery_date', '2026-09-02',
+    'guide_number', 'G-PICKUP', 'transport_type', 'interno',
+    'direction', 'Av. Prueba', 'numero_despacho', 'DES-PICKUP',
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-pickup', 'cantidad', 1))
+  ));
+$$, 'P0001', 'DISTRIBUTION_PICKUP_NOT_SUPPORTED', 'rechaza pedidos de recojo en una programación de ruta');
+
+reset role;
+update public.orders
+set fulfillment_mode = 'delivery'
+where id = 'a3111111-1111-4111-8111-111111111111';
+set local role authenticated;
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'order_number', 'PED-N-001', 'customer_name', 'Cliente nuevo',
+    'issue_date', '2026-09-01', 'delivery_date', '2026-09-02',
+    'guide_number', 'G-N-PENDING', 'transport_type', 'interno',
+    'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-PENDING',
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+  ));
+$$, 'P0001', 'DISTRIBUTION_ORDER_NOT_DISPATCHED', 'rechaza una venta con despacho pendiente o parcial');
+
+reset role;
+update public.inventory_reservations
+set quantity_consumed = quantity,
+    status = 'consumed'
+where source_type = 'order-item'
+  and source_id = 'a3111111-1111-4111-8111-111111111142';
+set local role authenticated;
+
+select is((select sum(quantity_consumed) from public.inventory_reservations where source_type = 'order-item' and source_id = 'a3111111-1111-4111-8111-111111111142'), 3::numeric, 'la salida física queda completa sin forzar el estado global de la venta');
 
 select lives_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
@@ -188,6 +274,8 @@ select lives_ok($$
 $$, 'el RPC guarda una entrega con todos los campos nuevos');
 
 select is((select count(*) from public.distribution_deliveries where guide_number = 'G-N-001'), 1::bigint, 'la guía nueva se normaliza a mayúsculas');
+select is((select scheduled_date from public.distribution_deliveries where guide_number = 'G-N-001'), '2026-09-02'::date, 'la fecha programada se separa de la fecha real');
+select ok((select actual_delivery_date is null from public.distribution_deliveries where guide_number = 'G-N-001'), 'una entrega programada no tiene fecha real');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'programado', 'una entrega nueva inicia programada');
 select is((select direction from public.distribution_deliveries where guide_number = 'G-N-001'), 'Av. Nueva 123', 'persiste la dirección');
 select is((select numero_despacho from public.distribution_deliveries where guide_number = 'G-N-001'), 'DES-N-001', 'persiste el número de despacho');
@@ -276,13 +364,109 @@ select lives_ok($$
 $$, 'permite una transición válida de preparando a en curso');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'en_curso', 'persiste la transición a en curso');
 
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expected_lock_version', 3,
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
+    'issue_date', '2026-09-01', 'delivery_date', '2026-09-02', 'guide_number', 'G-N-001',
+    'transport_type', 'externo', 'tracking_status', 'en_curso', 'delivery_status', 'entrega_parcial',
+    'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001', 'modalidad', 'movilidad_externa',
+    'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
+    'placa', 'ABC-123', 'evidencia', 'firma.jpg', 'incidencias', '[]'::jsonb,
+    'observations', '', 'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
+  ));
+$$, 'P0001', 'DISTRIBUTION_OUTCOME_REQUIRED', 'impide cerrar la entrega cambiando solo el estado');
+
+select lives_ok($$
+  select public.record_distribution_delivery_outcome(jsonb_build_object(
+    'organizationId', 'd3111111-1111-4111-8111-111111111111',
+    'entregaId', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expectedLockVersion', 3,
+    'operationKey', '41111111-1111-4111-8111-111111111111',
+    'resultado', 'entrega_parcial', 'fecha', '2026-09-02', 'evidencia', 'firma parcial',
+    'incidencias', '[]'::jsonb,
+    'lineas', jsonb_build_array(jsonb_build_object('orderLineId', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 1))
+  ));
+$$, 'registra atómicamente una recepción parcial por producto');
+select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'entrega_parcial', 'la recepción parcial deja la entrega abierta');
+select is((select lock_version from public.distribution_deliveries where guide_number = 'G-N-001'), 4::bigint, 'el resultado parcial avanza la versión de concurrencia');
+select is((select quantity_delivered from public.distribution_delivery_outcome_lines where order_line_id = 'a3111111-1111-4111-8111-111111111142'), 1::numeric, 'conserva la cantidad recibida por línea');
+select is((select fulfillment_status from public.orders where id = 'a3111111-1111-4111-8111-111111111112'), 'partially_fulfilled', 'proyecta la recepción parcial al cumplimiento del pedido');
+
+select is(public.record_distribution_delivery_outcome(jsonb_build_object(
+    'organizationId', 'd3111111-1111-4111-8111-111111111111',
+    'entregaId', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expectedLockVersion', 3,
+    'operationKey', '41111111-1111-4111-8111-111111111111',
+    'resultado', 'entrega_parcial', 'fecha', '2026-09-02', 'evidencia', 'firma parcial',
+    'incidencias', '[]'::jsonb,
+    'lineas', jsonb_build_array(jsonb_build_object('orderLineId', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 1))
+  )), (select id from public.distribution_delivery_outcomes where operation_key = '41111111-1111-4111-8111-111111111111'), 'un reintento idempotente devuelve el mismo resultado');
+select is((select count(*) from public.distribution_delivery_outcomes where delivery_id = (select id from public.distribution_deliveries where guide_number = 'G-N-001')), 1::bigint, 'el reintento no duplica la recepción');
+
+select throws_ok($$
+  select public.record_distribution_delivery_outcome(jsonb_build_object(
+    'organizationId', 'd3111111-1111-4111-8111-111111111111',
+    'entregaId', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expectedLockVersion', 4,
+    'operationKey', '41111111-1111-4111-8111-111111111112',
+    'resultado', 'entrega_parcial', 'fecha', '2026-09-03', 'evidencia', 'segunda visita',
+    'incidencias', '[]'::jsonb,
+    'lineas', jsonb_build_array(jsonb_build_object('orderLineId', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
+  ));
+$$, '22023', 'DISTRIBUTION_OUTCOME_QUANTITY_EXCEEDED', 'rechaza recibir más que el saldo de la línea');
+
+select throws_ok($$
+  select public.record_distribution_delivery_outcome(jsonb_build_object(
+    'organizationId', 'd3111111-1111-4111-8111-111111111111',
+    'entregaId', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expectedLockVersion', 4,
+    'operationKey', '41111111-1111-4111-8111-111111111113',
+    'resultado', 'entregado', 'fecha', '2026-09-03', 'evidencia', 'firma final',
+    'incidencias', '[]'::jsonb,
+    'lineas', jsonb_build_array(jsonb_build_object('orderLineId', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 1))
+  ));
+$$, '22023', 'DISTRIBUTION_OUTCOME_TOTAL_INCOMPLETE', 'no permite marcar completa una recepción con saldo pendiente');
+
+select lives_ok($$
+  select public.record_distribution_delivery_outcome(jsonb_build_object(
+    'organizationId', 'd3111111-1111-4111-8111-111111111111',
+    'entregaId', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expectedLockVersion', 4,
+    'operationKey', '41111111-1111-4111-8111-111111111114',
+    'resultado', 'entregado', 'fecha', '2026-09-03', 'evidencia', 'firma final',
+    'incidencias', '[]'::jsonb,
+    'lineas', jsonb_build_array(jsonb_build_object('orderLineId', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 2))
+  ));
+$$, 'permite cerrar el saldo con una segunda recepción completa');
+select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'entregado', 'la segunda recepción cierra la entrega');
+select is((select sum(quantity_delivered) from public.distribution_delivery_outcome_lines where order_line_id = 'a3111111-1111-4111-8111-111111111142'), 3::numeric, 'el historial acumula exactamente la cantidad pedida');
+select is((select fulfillment_status from public.orders where id = 'a3111111-1111-4111-8111-111111111112'), 'delivered', 'proyecta el cierre al cumplimiento del pedido');
+select is((select count(*) from public.distribution_delivery_outcomes where delivery_id = (select id from public.distribution_deliveries where guide_number = 'G-N-001')), 2::bigint, 'conserva eventos parciales y finales separados');
+
 reset role;
-select is((select count(*) from public.audit_events where action = 'DISTRIBUTION_STATUS_CHANGED' and entity_id = (select id::text from public.distribution_deliveries where guide_number = 'G-N-001')), 2::bigint, 'registra cada transición válida una sola vez');
-select is((select old_values ->> 'delivery_status' from public.audit_events where action = 'DISTRIBUTION_STATUS_CHANGED' and entity_id = (select id::text from public.distribution_deliveries where guide_number = 'G-N-001') order by id desc limit 1), 'preparando', 'audita el estado anterior');
-select is((select new_values ->> 'delivery_status' from public.audit_events where action = 'DISTRIBUTION_STATUS_CHANGED' and entity_id = (select id::text from public.distribution_deliveries where guide_number = 'G-N-001') order by id desc limit 1), 'en_curso', 'audita el estado nuevo');
+select is((select count(*) from public.audit_events where action = 'DISTRIBUTION_STATUS_CHANGED' and entity_id = (select id::text from public.distribution_deliveries where guide_number = 'G-N-001')), 4::bigint, 'registra cada transición válida una sola vez');
+select is((select old_values ->> 'delivery_status' from public.audit_events where action = 'DISTRIBUTION_STATUS_CHANGED' and entity_id = (select id::text from public.distribution_deliveries where guide_number = 'G-N-001') order by id desc limit 1), 'entrega_parcial', 'audita el estado anterior');
+select is((select new_values ->> 'delivery_status' from public.audit_events where action = 'DISTRIBUTION_STATUS_CHANGED' and entity_id = (select id::text from public.distribution_deliveries where guide_number = 'G-N-001') order by id desc limit 1), 'entregado', 'audita el estado nuevo');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'e3111111-1111-4111-8111-111111111111', true);
+
+select is((select count(*) from public.list_distribution_delivery_status_history('d3111111-1111-4111-8111-111111111111', (select id from public.distribution_deliveries where guide_number = 'G-N-001'))), 5::bigint, 'presenta cronológicamente la creación y todas las etapas de la entrega');
+select is((select actor_name from public.list_distribution_delivery_status_history('d3111111-1111-4111-8111-111111111111', (select id from public.distribution_deliveries where guide_number = 'G-N-001')) order by occurred_at desc limit 1), 'Operador distribución', 'muestra quién realizó la última transición');
+select throws_ok($$
+  select * from public.list_distribution_delivery_status_history(
+    'd3111111-1111-4111-8111-111111111111',
+    'f3111111-1111-4111-8111-111111111199'
+  )
+$$, 'P0001', 'DISTRIBUTION_NOT_FOUND', 'no expone el historial de una entrega inexistente');
+select throws_ok($$
+  select * from public.list_distribution_delivery_status_history('d3111111-1111-4111-8111-111111111112', (select id from public.distribution_deliveries where guide_number = 'G-N-001'))
+$$, '42501', 'DISTRIBUTION_FORBIDDEN', 'no expone historial de entregas de otra organización');
 
 select throws_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
@@ -308,7 +492,7 @@ select throws_ok($$
     'organization_id', 'd3111111-1111-4111-8111-111111111111',
     'order_id', 'a3111111-1111-4111-8111-111111111112',
     'sale_id', 'a3111111-1111-4111-8111-111111111152',
-    'expected_lock_version', 3,
+    'expected_lock_version', 5,
     'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
     'issue_date', '2026-09-01', 'delivery_date', '2026-09-02', 'guide_number', 'G-N-001',
     'transport_type', 'externo', 'tracking_status', 'en_curso', 'delivery_status', 'devuelto',
@@ -319,7 +503,7 @@ select throws_ok($$
     'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
   ));
 $$, 'P0001', 'DISTRIBUTION_INVALID_TRANSITION', 'rechaza saltar de en curso a devuelto');
-select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'en_curso', 'una transición inválida no modifica la entrega');
+select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'entregado', 'una transición inválida no modifica la entrega');
 
 select lives_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
@@ -338,6 +522,35 @@ select lives_ok($$
   ));
 $$, 'una actualización de seguimiento no rompe filas históricas');
 select is((select delivery_status from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), 'preparando', 'actualiza el estado histórico mediante una transición válida');
+
+reset role;
+select throws_ok($$
+  update public.distribution_deliveries
+  set delivery_status = 'reprogramado',
+      scheduled_date = pg_catalog.timezone('America/Lima', pg_catalog.now())::date - 1
+  where id = 'f3111111-1111-4111-8111-111111111111'
+$$, 'P0001', 'DISTRIBUTION_RESCHEDULE_DATE_IN_PAST', 'la base de datos rechaza reprogramar una entrega a una fecha pasada');
+update public.distribution_deliveries
+set quantity_reconciliation_required = true
+where id = 'f3111111-1111-4111-8111-111111111111';
+set local role authenticated;
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'id', 'f3111111-1111-4111-8111-111111111111',
+    'expected_lock_version', 2,
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111111',
+    'order_number', 'PED-H-001', 'customer_name', 'Cliente histórico',
+    'issue_date', '2026-08-30', 'delivery_date', '2026-09-02', 'guide_number', 'G-H-001',
+    'transport_type', 'interno', 'tracking_status', 'en_curso', 'delivery_status', 'en_curso',
+    'direction', 'Av. Histórica 1', 'numero_despacho', 'DES-H-001', 'modalidad', 'movilidad_propia',
+    'transportista', '', 'conductor', 'Conductor', 'vehiculo', 'Camión', 'placa', 'HIS-001',
+    'evidencia', '', 'incidencias', '[]'::jsonb, 'observations', '',
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111141', 'cantidad', 2))
+  ));
+$$, 'P0001', 'DISTRIBUTION_OUTCOME_RECONCILIATION_REQUIRED', 'bloquea avanzar un estado histórico con cantidades no conciliadas');
+select is((select delivery_status from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), 'preparando', 'conserva intacto el estado histórico que requiere conciliación');
 
 select throws_ok($$
   select public.save_distribution_delivery(jsonb_build_object(

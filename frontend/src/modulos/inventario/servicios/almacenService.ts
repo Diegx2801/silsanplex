@@ -80,6 +80,31 @@ export async function cargarMaestrosAlmacen(organizationId: string) {
   }
 }
 
+export async function buscarAlmacenesDisponibles(
+  organizationId: string,
+  busqueda: string,
+  limite = 50,
+): Promise<Almacen[]> {
+  const termino = busqueda.trim().replace(/[\\%_(),*]/g, ' ').replace(/\s+/g, ' ').slice(0, 100)
+  let query = supabase
+    .from('warehouses')
+    .select('id,code,name,address,is_active,warehouse_locations!inner(id)')
+    .eq('organization_id', organizationId)
+    .eq('is_active', true)
+    .eq('warehouse_locations.is_active', true)
+  if (termino) query = query.or(`code.ilike.%${termino}%,name.ilike.%${termino}%,address.ilike.%${termino}%`)
+  query = query.order('name').limit(Math.min(Math.max(limite, 1), 50))
+  const { data, error } = await query
+  if (error) throw new Error(errorAlmacen(error))
+  return (data ?? []).map((fila) => ({
+    id: fila.id,
+    codigo: fila.code,
+    nombre: fila.name,
+    direccion: fila.address ?? '',
+    activo: fila.is_active,
+  }))
+}
+
 const columnasSaldo =
   'product_id,product_code,product_description,unit_of_measure,warehouse_id,warehouse_code,warehouse_name,location_id,location_code,location_name,stock_status,lot,expiration_date,quantity,inventory_value,average_cost' as const
 const columnasVencimiento =

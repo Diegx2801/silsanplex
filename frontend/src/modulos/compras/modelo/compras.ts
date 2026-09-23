@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import type { AfectacionTributaria, Producto } from '@/modulos/productos/modelo/producto'
 import type { Proveedor } from '@/modulos/proveedores/modelo/proveedor'
+import type { Almacen } from '@/modulos/inventario/modelo/almacen'
 
 export {
   esquemaDatosProveedor,
@@ -104,6 +105,18 @@ export const esquemaLineaCompra = z.object({
 
 export type LineaCompra = z.infer<typeof esquemaLineaCompra>
 export type EstadoCompra = 'borrador' | 'emitida' | 'parcialmente-recibida' | 'recibida' | 'cerrada-parcial' | 'anulada'
+
+/**
+ * Entidades que el usuario seleccionó durante la edición de una compra.
+ * Los selectores remotos pueden resolver entidades que aún no están en el
+ * snapshot inicial de la página; este contexto mantiene alineada la
+ * validación local con lo que el usuario seleccionó.
+ */
+export interface EntidadesSeleccionadasCompra {
+  proveedor?: Proveedor
+  productos: readonly Producto[]
+  almacen?: Almacen
+}
 
 export interface LineaRecepcionCompra {
   purchaseOrderItemId: string

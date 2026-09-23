@@ -30,9 +30,10 @@ describe('lectura persistente de distribución', () => {
           id: 'entrega-1', order_id: 'pedido-1', sale_id: null, sale_number: null,
           order_number: 'PED-000001', customer_name: 'Snapshot ignorado',
           issue_date: '2026-09-01', delivery_date: '2026-09-02', guide_number: 'G-001',
-          transport_type: 'interno', tracking_status: 'en_curso', delivery_status: 'en_curso',
+          transport_type: 'interno', tracking_status: 'en_curso', delivery_status: 'entrega_parcial',
           direction: 'Av. Persistente 123', numero_despacho: 'DES-001', modalidad: 'movilidad_propia',
           transportista: '', conductor: '', vehiculo: '', placa: '', evidencia: '', incidencias: [],
+          quantity_reconciliation_required: false,
           observations: '', order_items: [{ id: 'snapshot-falso', productoDescripcion: 'No usar', cantidad: 999 }],
           created_at: '2026-09-01T00:00:00.000Z',
         }],
@@ -68,10 +69,18 @@ describe('lectura persistente de distribución', () => {
         error: null,
       }))
       .mockReturnValueOnce(cadena({
+        data: [{ id: 'resultado-1', delivery_id: 'entrega-1', result_status: 'entrega_parcial', occurred_on: '2026-09-02', evidence: 'firma parcial', incidents: [], created_at: '2026-09-02T12:00:00.000Z' }],
+        error: null,
+      }))
+      .mockReturnValueOnce(cadena({
         data: [
           { source_id: 'order-item-1', quantity: 2, quantity_consumed: 1, status: 'active' },
           { source_id: 'order-item-2', quantity: 3, quantity_consumed: 3, status: 'consumed' },
         ],
+        error: null,
+      }))
+      .mockReturnValueOnce(cadena({
+        data: [{ outcome_id: 'resultado-1', order_line_id: 'order-item-1', quantity_delivered: '1' }],
         error: null,
       }))
 
@@ -83,9 +92,10 @@ describe('lectura persistente de distribución', () => {
       ventaId: 'sale-1',
       ventaNumero: 'VEN-000001',
       lineas: [
-        expect.objectContaining({ id: 'order-item-1', productoDescripcion: 'Producto parcial', cantidad: 2, cantidadDespachada: 1, cantidadPendiente: 1 }),
-        expect.objectContaining({ id: 'order-item-2', productoDescripcion: 'Producto completo', cantidad: 3, cantidadDespachada: 3, cantidadPendiente: 0 }),
-      ],
+          expect.objectContaining({ id: 'order-item-1', productoDescripcion: 'Producto parcial', cantidad: 2, cantidadDespachada: 1, cantidadPendiente: 1, cantidadEntregadaCliente: 1, cantidadPendienteCliente: 1 }),
+          expect.objectContaining({ id: 'order-item-2', productoDescripcion: 'Producto completo', cantidad: 3, cantidadDespachada: 3, cantidadPendiente: 0, cantidadEntregadaCliente: 0, cantidadPendienteCliente: 3 }),
+        ],
+      resultadosEntrega: [expect.objectContaining({ id: 'resultado-1', resultado: 'entrega_parcial', fecha: '2026-09-02', lineas: [{ orderLineId: 'order-item-1', cantidad: 1 }] })],
     })
     expect(entrega.lineas).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'snapshot-falso' })]))
   })

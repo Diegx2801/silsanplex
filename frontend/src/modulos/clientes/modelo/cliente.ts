@@ -52,6 +52,7 @@ export const esquemaDireccionEntrega = z.object({
   referencia: textoOpcional(200),
   principal: z.boolean(),
 })
+export type DireccionEntregaCliente = z.infer<typeof esquemaDireccionEntrega>
 
 export const esquemaDatosCliente = z
   .object({

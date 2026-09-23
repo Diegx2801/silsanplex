@@ -51,6 +51,16 @@ export const esquemaDatosCotizacion = z
 
 export type DatosCotizacion = z.infer<typeof esquemaDatosCotizacion>
 
+/**
+ * Entidades que fueron resueltas desde una búsqueda remota dentro del
+ * formulario. El catálogo paginado o cacheado de la página no debe ser la
+ * única fuente para validar una selección que el usuario acaba de realizar.
+ */
+export interface EntidadesSeleccionadasCotizacion {
+  cliente?: Cliente
+  productos: readonly Producto[]
+}
+
 export const esquemaLineaCotizacion = z.object({
   id: z.string().min(1),
   productoId: z.string().min(1),
@@ -87,6 +97,68 @@ export const esquemaCotizacion = z.object({
 })
 
 export type Cotizacion = z.infer<typeof esquemaCotizacion>
+
+const UUID_VACIO = '00000000-0000-0000-0000-000000000000'
+
+/** Crea una referencia histórica suficiente para conservar una selección al editar. */
+export function crearClienteSnapshotCotizacion(cotizacion: Cotizacion): Cliente {
+  return {
+    id: cotizacion.clienteId,
+    organizacionId: UUID_VACIO,
+    tipoDocumento: 'otro',
+    numeroDocumento: cotizacion.clienteDocumento,
+    nombreRazonSocial: cotizacion.clienteNombre,
+    nombreComercial: '',
+    contacto: '',
+    email: '',
+    telefono: '',
+    direccion: '',
+    ubigeo: '',
+    estadoSunat: '',
+    condicionDomicilio: '',
+    direccionesEntrega: [],
+    activo: true,
+    fechaRegistro: cotizacion.fechaRegistro,
+    fechaActualizacion: cotizacion.fechaRegistro,
+    fechaConsultaSunat: null,
+  }
+}
+
+/** Crea una referencia histórica desde la línea persistida de la cotización. */
+export function crearProductoSnapshotCotizacion(linea: LineaCotizacion): Producto {
+  return {
+    id: linea.productoId,
+    codigo: linea.productoCodigo,
+    descripcion: linea.productoDescripcion,
+    descripcionAmpliada: '',
+    codigoBarras: '',
+    categoria: '',
+    sublinea: '',
+    laboratorio: '',
+    presentacion: '',
+    tipo: 'good',
+    unidadBaseId: UUID_VACIO,
+    unidadMedida: linea.unidadMedida,
+    afectacionIgv: linea.afectacionIgv && linea.afectacionIgv !== 'por-definir'
+      ? linea.afectacionIgv
+      : '',
+    costo: '',
+    precioVenta: '',
+    precioMinimo: '',
+    stockMaximo: '',
+    anchoCm: '',
+    altoCm: '',
+    largoCm: '',
+    pesoKg: '',
+    registroSanitario: '',
+    controlLote: false,
+    controlVencimiento: false,
+    serialControl: false,
+    ventaReceta: false,
+    activo: true,
+    unidadesAlternativas: [],
+  }
+}
 
 export interface TotalesCotizacion {
   subtotal: number

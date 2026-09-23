@@ -269,6 +269,34 @@ describe('PanelOperacionesVenta', () => {
     expect(screen.getByText('Almacén: Almacén central')).toBeVisible()
   })
 
+  it('busca y filtra operaciones por almacén', () => {
+    const pedidoCentral = { ...pedido, almacenId: 'warehouse-1', almacenNombre: 'Almacén central' }
+    const pedidoNorte = {
+      ...pedido,
+      id: 'pedido-2',
+      numero: 'PED-000002',
+      almacenId: 'warehouse-2',
+      almacenNombre: 'Almacén norte',
+    }
+    renderPanel({
+      pedidos: [pedidoCentral, pedidoNorte],
+      almacenes: [
+        { id: 'warehouse-1', nombre: 'Almacén central' },
+        { id: 'warehouse-2', nombre: 'Almacén norte' },
+      ],
+    })
+
+    const almacen = screen.getByRole('combobox', { name: 'Almacén' })
+    expect(screen.queryByText('Filtra por nombre del almacén.')).not.toBeInTheDocument()
+    fireEvent.focus(almacen)
+    fireEvent.change(almacen, { target: { value: 'norte' } })
+    fireEvent.click(screen.getByRole('option', { name: 'Almacén norte' }))
+
+    expect(screen.getByText('1 de 2 operaciones visibles')).toBeVisible()
+    expect(screen.getByText('PED-000002')).toBeVisible()
+    expect(screen.queryByText('PED-000001')).not.toBeInTheDocument()
+  })
+
   it('filtra operaciones y abre un detalle de solo lectura', () => {
     const otroPedido = {
       ...pedido,

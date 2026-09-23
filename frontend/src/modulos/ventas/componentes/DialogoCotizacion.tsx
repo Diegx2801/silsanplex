@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Plus, Trash2, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
+import { useMemo, useState } from 'react'
 import { Controller, useFieldArray, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
@@ -10,11 +11,14 @@ import type { Cliente } from '@/modulos/clientes/modelo/cliente'
 import type { Producto } from '@/modulos/productos/modelo/producto'
 import {
   calcularTotalesCotizacion,
+  crearClienteSnapshotCotizacion,
+  crearProductoSnapshotCotizacion,
   obtenerPrecioMinimoCotizacion,
   cotizacionAFormulario,
   esquemaDatosCotizacion,
   type Cotizacion,
   type DatosCotizacion,
+  type EntidadesSeleccionadasCotizacion,
 } from '@/modulos/ventas/modelo/cotizacion'
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', {
@@ -31,10 +35,13 @@ interface DialogoCotizacionProps {
   cotizacion: Cotizacion | null
   clientes: readonly Cliente[]
   productos: readonly Producto[]
+  buscarClientes?: (busqueda: string) => Promise<readonly Cliente[]>
+  buscarProductos?: (busqueda: string) => Promise<readonly Producto[]>
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (
     datos: DatosCotizacion,
     cotizacionId?: string,
+    entidadesSeleccionadas?: EntidadesSeleccionadasCotizacion,
   ) => string | undefined | Promise<string | undefined>
   alRestaurarFoco: () => void
 }
@@ -44,10 +51,32 @@ export function DialogoCotizacion({
   cotizacion,
   clientes,
   productos,
+  buscarClientes,
+  buscarProductos,
   alCambiarApertura,
   alGuardar,
   alRestaurarFoco,
 }: DialogoCotizacionProps) {
+  const [clientesRemotos, setClientesRemotos] = useState<readonly Cliente[]>([])
+  const [productosRemotos, setProductosRemotos] = useState<readonly Producto[]>([])
+  const clientesSnapshot = useMemo(
+    () => (cotizacion ? [crearClienteSnapshotCotizacion(cotizacion)] : []),
+    [cotizacion],
+  )
+  const productosSnapshot = useMemo(
+    () => (cotizacion ? cotizacion.lineas.map(crearProductoSnapshotCotizacion) : []),
+    [cotizacion],
+  )
+  const catalogoClientes = useMemo(() => {
+    const porId = new Map([...clientesSnapshot, ...clientes].map((cliente) => [cliente.id, cliente]))
+    clientesRemotos.forEach((cliente) => porId.set(cliente.id, cliente))
+    return [...porId.values()]
+  }, [clientes, clientesRemotos, clientesSnapshot])
+  const catalogoProductos = useMemo(() => {
+    const porId = new Map([...productosSnapshot, ...productos].map((producto) => [producto.id, producto]))
+    productosRemotos.forEach((producto) => porId.set(producto.id, producto))
+    return [...porId.values()]
+  }, [productos, productosRemotos, productosSnapshot])
   const valoresIniciales: DatosCotizacion = cotizacion
     ? cotizacionAFormulario(cotizacion)
     : {
@@ -86,11 +115,11 @@ export function DialogoCotizacion({
   const afectacionPorProducto = (productoId: string) => {
     const snapshot = snapshotsPorProducto.get(productoId)
     if (snapshot) return snapshot
-    return productos.find((producto) => producto.id === productoId)?.afectacionIgv || 'por-definir'
+    return catalogoProductos.find((producto) => producto.id === productoId)?.afectacionIgv || 'por-definir'
   }
   const lineasConAfectacionPendiente = lineas.flatMap((linea, indice) => {
     if (!linea.productoId) return []
-    const producto = productos.find((item) => item.id === linea.productoId)
+    const producto = catalogoProductos.find((item) => item.id === linea.productoId)
     const afectacion = afectacionPorProducto(linea.productoId)
     if (afectacion !== 'por-definir') return []
     return [{
@@ -107,7 +136,7 @@ export function DialogoCotizacion({
     preciosIncluyenIgv,
   )
   const errorLineas = errors.lineas?.message ?? errors.lineas?.root?.message
-  const clientesDisponibles = clientes.filter(
+  const clientesDisponibles = catalogoClientes.filter(
     (cliente) => cliente.activo || cliente.id === clienteId,
   )
   const opcionesClientes: ComboboxOption[] = clientesDisponibles.map((cliente) => ({
@@ -128,7 +157,13 @@ export function DialogoCotizacion({
   }))
 
   const guardar = async (datos: DatosCotizacion) => {
-    const error = await alGuardar(datos, cotizacion?.id)
+    const entidadesSeleccionadas: EntidadesSeleccionadasCotizacion = {
+      cliente: catalogoClientes.find((cliente) => cliente.id === datos.clienteId),
+      productos: datos.lineas
+        .map((linea) => catalogoProductos.find((producto) => producto.id === linea.productoId))
+        .filter((producto): producto is Producto => Boolean(producto)),
+    }
+    const error = await alGuardar(datos, cotizacion?.id, entidadesSeleccionadas)
     if (error) {
       setError('root', { message: error })
       return
@@ -194,6 +229,21 @@ export function DialogoCotizacion({
                         options={opcionesClientes}
                         onChange={field.onChange}
                         onBlur={field.onBlur}
+                        loadOptions={buscarClientes ? async (busqueda) => {
+                          const resultados = await buscarClientes(busqueda)
+                          setClientesRemotos((actuales) => {
+                            const porId = new Map(actuales.map((item) => [item.id, item]))
+                            resultados.forEach((item) => porId.set(item.id, item))
+                            return [...porId.values()]
+                          })
+                          return resultados.map((cliente) => ({
+                            value: cliente.id,
+                            label: cliente.nombreRazonSocial,
+                            secondaryText: [cliente.numeroDocumento, cliente.nombreComercial].filter(Boolean).join(' · '),
+                            keywords: [cliente.numeroDocumento, cliente.nombreRazonSocial, cliente.nombreComercial, cliente.contacto, cliente.email, cliente.telefono],
+                            disabled: !cliente.activo,
+                          }))
+                        } : undefined}
                         placeholder="Buscar cliente…"
                         helperText="Documento, nombre o razón social."
                         error={errors.clienteId?.message}
@@ -278,7 +328,7 @@ export function DialogoCotizacion({
               <div className="space-y-4">
                 {fields.map((field, indice) => {
                   const erroresLinea = errors.lineas?.[indice]
-                  const productoSeleccionado = productos.find(
+                  const productoSeleccionado = catalogoProductos.find(
                     (producto) => producto.id === lineas[indice]?.productoId,
                   )
 
@@ -306,7 +356,7 @@ export function DialogoCotizacion({
                             name={`lineas.${indice}.productoId`}
                             render={({ field: campo }) => {
                               const productoActualId = lineas[indice]?.productoId
-                              const opcionesProductos: ComboboxOption[] = productos
+                              const opcionesProductos: ComboboxOption[] = catalogoProductos
                                 .filter(
                                   (producto) =>
                                     (producto.activo || producto.id === productoActualId) &&
@@ -339,7 +389,7 @@ export function DialogoCotizacion({
                                   options={opcionesProductos}
                                   onChange={(value) => {
                                     campo.onChange(value)
-                                    const producto = productos.find((item) => item.id === value)
+                                    const producto = catalogoProductos.find((item) => item.id === value)
                                     setValue(
                                       `lineas.${indice}.precioUnitario`,
                                       producto?.precioVenta ?? '',
@@ -347,6 +397,23 @@ export function DialogoCotizacion({
                                     )
                                   }}
                                   onBlur={campo.onBlur}
+                                  loadOptions={buscarProductos ? async (busqueda) => {
+                                    const resultados = await buscarProductos(busqueda)
+                                    setProductosRemotos((actuales) => {
+                                      const porId = new Map(actuales.map((item) => [item.id, item]))
+                                      resultados.forEach((item) => porId.set(item.id, item))
+                                      return [...porId.values()]
+                                    })
+                                    return resultados
+                                      .filter((producto) => (producto.activo || producto.id === productoActualId) && !lineas.some((linea, otroIndice) => otroIndice !== indice && linea.productoId === producto.id))
+                                      .map((producto) => ({
+                                      value: producto.id,
+                                      label: `${producto.codigo} · ${producto.descripcion}`,
+                                      secondaryText: `${producto.tipo === 'service' ? 'Servicio' : 'Producto físico'} · Unidad: ${producto.unidadMedida || 'Sin unidad'}`,
+                                      keywords: [producto.codigo, producto.codigoBarras, producto.descripcion, producto.laboratorio, producto.presentacion, producto.unidadMedida],
+                                      disabled: !producto.activo,
+                                      }))
+                                  } : undefined}
                                   placeholder="Buscar producto…"
                                   helperText="Código, nombre o barras."
                                   error={erroresLinea?.productoId?.message}

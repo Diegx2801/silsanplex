@@ -134,4 +134,40 @@ describe('Combobox', () => {
     expect(listbox).toHaveClass('pe-2')
     expect(listbox).toHaveStyle({ scrollbarGutter: 'stable' })
   })
+
+  it('consulta opciones remotas después del mínimo de caracteres y conserva el valor seleccionado', async () => {
+    const buscar = vi.fn(async (query: string) => [
+      { value: 'producto-remoto', label: `Resultado ${query}` },
+    ])
+    const onChange = vi.fn()
+    function ComboboxControlado() {
+      const [value, setValue] = useState('')
+      return (
+        <Combobox
+          id="producto-remoto"
+          label="Producto"
+          value={value}
+          options={[]}
+          onChange={(nextValue) => {
+            setValue(nextValue)
+            onChange(nextValue)
+          }}
+          loadOptions={buscar}
+          debounceMs={0}
+        />
+      )
+    }
+
+    render(<ComboboxControlado />)
+    const input = screen.getByRole('combobox', { name: 'Producto' })
+    fireEvent.focus(input)
+    await waitFor(() => expect(buscar).toHaveBeenCalledWith(''))
+    fireEvent.change(input, { target: { value: 'para' } })
+
+    expect(await screen.findByRole('option', { name: 'Resultado para' })).toBeVisible()
+    expect(buscar).toHaveBeenCalledWith('para')
+    fireEvent.click(screen.getByRole('option', { name: 'Resultado para' }))
+    expect(onChange).toHaveBeenCalledWith('producto-remoto')
+    await waitFor(() => expect(input).toHaveValue('Resultado para'))
+  })
 })

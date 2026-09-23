@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { Cliente } from '@/modulos/clientes/modelo/cliente'
@@ -120,6 +120,42 @@ describe('DialogoCotizacion', () => {
     expect(screen.getByLabelText('Precio unitario del producto 2')).toHaveValue('18.50')
   })
 
+  it('entrega al guardado las entidades obtenidas por búsqueda remota', async () => {
+    const clienteRemoto = { ...cliente, id: 'cliente-remoto', nombreRazonSocial: 'Cliente remoto' }
+    const productoRemoto = crearProducto('producto-remoto', 'MED-REMOTE', 'Producto remoto', '19.90')
+    const alGuardar = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <DialogoCotizacion
+        abierto
+        cotizacion={null}
+        clientes={[]}
+        productos={[]}
+        buscarClientes={vi.fn().mockResolvedValue([clienteRemoto])}
+        buscarProductos={vi.fn().mockResolvedValue([productoRemoto])}
+        alCambiarApertura={vi.fn()}
+        alGuardar={alGuardar}
+        alRestaurarFoco={vi.fn()}
+      />,
+    )
+
+    const clienteSelector = screen.getByRole('combobox', { name: 'Cliente' })
+    fireEvent.focus(clienteSelector)
+    fireEvent.change(clienteSelector, { target: { value: 'remoto' } })
+    fireEvent.click(await screen.findByRole('option', { name: /Cliente remoto/ }))
+
+    const productoSelector = screen.getByRole('combobox', { name: 'Producto 1' })
+    fireEvent.focus(productoSelector)
+    fireEvent.change(productoSelector, { target: { value: 'remote' } })
+    fireEvent.click(await screen.findByRole('option', { name: /MED-REMOTE/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }))
+
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledOnce())
+    const entidades = alGuardar.mock.calls[0]?.[2]
+    expect(entidades.cliente).toMatchObject({ id: clienteRemoto.id })
+    expect(entidades.productos).toEqual([expect.objectContaining({ id: productoRemoto.id })])
+  })
+
   it('muestra los errores de selección cuando faltan cliente y producto', async () => {
     render(
       <DialogoCotizacion
@@ -204,8 +240,8 @@ describe('DialogoCotizacion', () => {
       <DialogoCotizacion
         abierto
         cotizacion={cotizacion}
-        clientes={[cliente]}
-        productos={productos}
+        clientes={[]}
+        productos={[]}
         alCambiarApertura={vi.fn()}
         alGuardar={vi.fn().mockResolvedValue(undefined)}
         alRestaurarFoco={vi.fn()}

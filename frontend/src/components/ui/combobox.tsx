@@ -17,7 +17,7 @@ export interface ComboboxOption {
   disabled?: boolean
 }
 
-interface ComboboxProps {
+export interface ComboboxProps {
   id: string
   label: string
   value: string
@@ -32,6 +32,15 @@ interface ComboboxProps {
   noResultsMessage?: string
   noOptionsMessage?: string
   maxVisibleOptions?: number
+  /**
+   * Busca opciones en el servidor cuando el catálogo puede crecer más que el
+   * primer lote renderizado. Las opciones estáticas siguen sirviendo para
+   * mostrar el valor seleccionado y como fallback de compatibilidad.
+   */
+  loadOptions?: (query: string) => Promise<readonly ComboboxOption[]>
+  minSearchLength?: number
+  debounceMs?: number
+  loadingMessage?: string
 }
 
 function normalizar(texto: string) {
@@ -64,6 +73,10 @@ export function Combobox({
   noResultsMessage = 'No se encontraron coincidencias.',
   noOptionsMessage = 'No hay opciones disponibles.',
   maxVisibleOptions = 50,
+  loadOptions,
+  minSearchLength = 2,
+  debounceMs = 220,
+  loadingMessage = 'Buscando opciones…',
 }: ComboboxProps) {
   const listboxId = `${id}-listbox`
   const helperId = `${id}-helper`
@@ -72,12 +85,19 @@ export function Combobox({
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const interactuandoListaRef = useRef(false)
+  const solicitudRef = useRef(0)
+  const loadOptionsRef = useRef(loadOptions)
   const [abierto, setAbierto] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [indiceActivo, setIndiceActivo] = useState(-1)
+  const [opcionesRemotas, setOpcionesRemotas] = useState<readonly ComboboxOption[]>([])
+  const [cargando, setCargando] = useState(false)
+  const [errorCarga, setErrorCarga] = useState(false)
   const seleccion = options.find((option) => option.value === value)
+    ?? opcionesRemotas.find((option) => option.value === value)
 
   const opcionesFiltradas = useMemo(() => {
+    if (loadOptions) return opcionesRemotas.slice(0, maxVisibleOptions)
     const termino = normalizar(busqueda)
     const coincidencias = termino
       ? options.filter((option) =>
@@ -88,7 +108,43 @@ export function Combobox({
       : [...options]
 
     return coincidencias.slice(0, maxVisibleOptions)
-  }, [busqueda, maxVisibleOptions, options])
+  }, [busqueda, loadOptions, maxVisibleOptions, opcionesRemotas, options])
+
+  useEffect(() => {
+    loadOptionsRef.current = loadOptions
+  }, [loadOptions])
+
+  useEffect(() => {
+    if (!loadOptionsRef.current || !abierto) return
+    const solicitud = ++solicitudRef.current
+    const termino = busqueda.trim()
+    if (termino.length > 0 && termino.length < minSearchLength) {
+      setOpcionesRemotas([])
+      setCargando(false)
+      setErrorCarga(false)
+      return
+    }
+
+    setCargando(true)
+    setErrorCarga(false)
+    const temporizador = window.setTimeout(() => {
+      void loadOptionsRef.current?.(termino)
+        .then((resultados) => {
+          if (solicitud !== solicitudRef.current) return
+          setOpcionesRemotas(resultados)
+        })
+        .catch(() => {
+          if (solicitud !== solicitudRef.current) return
+          setOpcionesRemotas([])
+          setErrorCarga(true)
+        })
+        .finally(() => {
+          if (solicitud === solicitudRef.current) setCargando(false)
+        })
+    }, debounceMs)
+
+    return () => window.clearTimeout(temporizador)
+  }, [abierto, busqueda, debounceMs, minSearchLength])
 
   useEffect(() => {
     if (!abierto) {
@@ -254,9 +310,21 @@ export function Combobox({
             interactuandoListaRef.current = false
           }}
         >
-          {!opcionesFiltradas.length ? (
+          {cargando ? (
+            <p className="px-3 py-2 text-sm text-muted-foreground" role="status" aria-live="polite">
+              {loadingMessage}
+            </p>
+          ) : errorCarga ? (
+            <p className="px-3 py-2 text-sm text-destructive" role="alert">
+              No se pudieron cargar las opciones. Inténtalo nuevamente.
+            </p>
+          ) : loadOptions && busqueda.trim().length > 0 && busqueda.trim().length < minSearchLength ? (
             <p className="px-3 py-2 text-sm text-muted-foreground" role="status">
-              {options.length ? noResultsMessage : noOptionsMessage}
+              Escribe al menos {minSearchLength} caracteres para buscar.
+            </p>
+          ) : !opcionesFiltradas.length ? (
+            <p className="px-3 py-2 text-sm text-muted-foreground" role="status">
+              {loadOptions || options.length ? noResultsMessage : noOptionsMessage}
             </p>
           ) : (
             opcionesFiltradas.map((option, indice) => (

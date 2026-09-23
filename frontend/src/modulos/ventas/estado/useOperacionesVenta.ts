@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/useAuth'
 import { fechaActualPeru } from '@/lib/fechas'
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
-import type { DatosVenta } from '@/modulos/ventas/modelo/operacionVenta'
+import type { DatosVenta, DireccionEntregaPedido, ModoCumplimientoPedido } from '@/modulos/ventas/modelo/operacionVenta'
 import { inventoryQueryKeys } from '@/modulos/inventario/estado/inventoryQueryKeys'
 import {
   actualizarCantidadesPedidoPersistente,
@@ -49,7 +49,7 @@ export function useOperacionesVenta({
   })
 
   const crearPedidoMutation = useMutation({
-    mutationFn: async ({ cotizacionId, warehouseId }: { cotizacionId: string; warehouseId: string }) => {
+    mutationFn: async ({ cotizacionId, warehouseId, fulfillmentMode, deliveryAddress }: { cotizacionId: string; warehouseId: string; fulfillmentMode: ModoCumplimientoPedido; deliveryAddress?: DireccionEntregaPedido }) => {
       const cotizacion = cotizaciones.find((item) => item.id === cotizacionId)
       if (!cotizacion || cotizacion.estado !== 'emitida') {
         throw new Error('La cotización debe estar emitida para crear el pedido')
@@ -57,7 +57,7 @@ export function useOperacionesVenta({
       if (cotizacion.fechaValidez < fechaActualPeru()) {
         throw new Error('La cotización está vencida; emite una nueva propuesta antes de crear el pedido')
       }
-      const pedidoId = await crearPedidoPersistente(organizationId, cotizacion, warehouseId)
+      const pedidoId = await crearPedidoPersistente(organizationId, cotizacion, warehouseId, fulfillmentMode, deliveryAddress)
       // New persistent quotes are accepted atomically by create_order. The
       // optional callback only preserves compatibility with legacy consumers.
       aceptarCotizacion?.(cotizacionId)
@@ -149,9 +149,9 @@ export function useOperacionesVenta({
     },
   })
 
-  const crearPedido = async (cotizacionId: string, warehouseId: string) => {
+  const crearPedido = async (cotizacionId: string, warehouseId: string, fulfillmentMode: ModoCumplimientoPedido = 'delivery', deliveryAddress?: DireccionEntregaPedido) => {
     try {
-      await crearPedidoMutation.mutateAsync({ cotizacionId, warehouseId })
+      await crearPedidoMutation.mutateAsync({ cotizacionId, warehouseId, fulfillmentMode, deliveryAddress })
       return undefined
     } catch (error) {
       return error instanceof Error ? error.message : 'No se pudo crear el pedido'

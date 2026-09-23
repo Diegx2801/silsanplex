@@ -2,18 +2,66 @@ import { describe, expect, it } from 'vitest'
 
 import {
   crearProgramacionEntrega,
+  obtenerAccionPrincipalDistribucion,
   esquemaDatosProgramacionEntrega,
   esquemaProgramacionEntrega,
   filtrarProgramacionesEntrega,
+  inferirResultadoEntrega,
   listarEntregasAtrasadas,
   obtenerEstadosSiguientes,
   puedeTransicionarEntrega,
   resumirEntregas,
+  tipoTransporteParaModalidad,
   type DatosProgramacionEntrega,
 } from './programacionEntrega'
 import { mapearEntrega, prepararPayloadEntrega } from '../servicios/distribucionService'
+import { fechaActualPeru } from '@/lib/fechas'
 
 describe('programación de entrega', () => {
+  it('deriva el cierre completo o parcial a partir del saldo por producto', () => {
+    const lineas = [{ id: 'linea-1', cantidad: 5, cantidadEntregadaCliente: 2 }]
+
+    expect(inferirResultadoEntrega(lineas, { 'linea-1': 3 })).toBe('entregado')
+    expect(inferirResultadoEntrega(lineas, { 'linea-1': 1 })).toBe('entrega_parcial')
+    expect(inferirResultadoEntrega(lineas, { 'linea-1': 4 })).toBeUndefined()
+    expect(inferirResultadoEntrega(lineas, { 'linea-1': 0 })).toBeUndefined()
+  })
+
+  it('deriva el tipo de transporte de la modalidad para evitar opciones duplicadas', () => {
+    expect(tipoTransporteParaModalidad('movilidad_propia')).toBe('interno')
+    expect(tipoTransporteParaModalidad('movilidad_externa')).toBe('externo')
+    expect(tipoTransporteParaModalidad('recojo_cliente', 'externo')).toBe('externo')
+  })
+
+  it('usa el calendario de Lima cuando falta la fecha de emisión', () => {
+    const datos = {
+      pedidoId: 'pedido-1',
+      pedidoNumero: 'PED-001',
+      ventaId: '',
+      ventaNumero: '',
+      clienteNombre: 'Cliente demo',
+      direccionEntrega: 'Av. Central 123',
+      numeroDespacho: 'DES-001',
+      numeroGuiaRemision: 'G-001',
+      fechaEmision: '',
+      fechaProgramada: '2026-09-02',
+      fechaEntrega: '',
+      tipoTransporte: 'interno' as const,
+      modalidad: 'movilidad_propia' as const,
+      transportista: '',
+      conductor: '',
+      vehiculo: '',
+      placa: '',
+      observaciones: '',
+      evidencia: '',
+      estado: 'programado' as const,
+      incidencias: [],
+      lineas: [],
+    }
+
+    expect(crearProgramacionEntrega(datos).fechaEmision).toBe(fechaActualPeru())
+  })
+
   it('incluye los datos principales de distribución y la modalidad de transporte', () => {
     const programacion = crearProgramacionEntrega({
       pedidoId: 'pedido-1',
@@ -87,9 +135,9 @@ describe('programación de entrega', () => {
         vehiculo: 'Camión',
         placa: 'ABC-123',
         observaciones: '',
-        evidencia: '',
+        evidencia: estado === 'entregado' ? 'foto-entrega.jpg' : '',
         estado,
-        incidencias: [],
+        incidencias: estado === 'rechazado' || estado === 'devuelto' ? ['Motivo registrado'] : [],
         lineas: [],
       })
 
@@ -132,6 +180,56 @@ describe('programación de entrega', () => {
     })
 
     expect(resultado.success).toBe(true)
+  })
+
+  it('ofrece acciones principales que avanzan por la ruta operativa válida', () => {
+    expect(obtenerAccionPrincipalDistribucion('programado')).toEqual({ estado: 'preparando', etiqueta: 'Iniciar preparación' })
+    expect(obtenerAccionPrincipalDistribucion('preparando')).toEqual({ estado: 'en_curso', etiqueta: 'Iniciar traslado' })
+    expect(obtenerAccionPrincipalDistribucion('en_curso')).toEqual({ estado: 'en_destino', etiqueta: 'Marcar en destino' })
+    expect(obtenerAccionPrincipalDistribucion('entrega_parcial')).toEqual({ estado: 'en_curso', etiqueta: 'Reanudar traslado' })
+    expect(obtenerAccionPrincipalDistribucion('entregado')).toBeUndefined()
+    expect(obtenerAccionPrincipalDistribucion('rechazado')).toBeUndefined()
+  })
+
+  it('exige datos de cierre y transporte antes de confirmar una entrega', () => {
+    const base = {
+      pedidoId: 'pedido-1', pedidoNumero: 'PED-001', clienteNombre: 'Cliente demo',
+      direccionEntrega: 'Av. Central 123', numeroDespacho: 'DES-001', numeroGuiaRemision: 'G-001',
+      fechaEmision: '2026-09-01', fechaProgramada: '2026-09-02', tipoTransporte: 'interno' as const,
+      modalidad: 'movilidad_propia' as const, estado: 'entregado' as const,
+      transportista: '', conductor: '', vehiculo: '', placa: '', fechaEntrega: '', evidencia: '', incidencias: [],
+    }
+
+    const incompleto = esquemaDatosProgramacionEntrega.safeParse(base)
+    expect(incompleto.success).toBe(false)
+    expect(incompleto.error?.issues.map((issue) => issue.path[0])).toEqual(expect.arrayContaining(['fechaEntrega', 'evidencia', 'conductor', 'vehiculo', 'placa']))
+
+    const completo = esquemaDatosProgramacionEntrega.safeParse({
+      ...base,
+      fechaEntrega: '2026-09-03', evidencia: 'foto-entrega.jpg', conductor: 'Luis Pérez', vehiculo: 'Camioneta', placa: 'ABC-123',
+    })
+    expect(completo.success).toBe(true)
+  })
+
+  it('valida fechas calendario y permite el recojo sin datos de transporte', () => {
+    const resultado = esquemaDatosProgramacionEntrega.safeParse({
+      pedidoId: 'pedido-1', pedidoNumero: 'PED-001', clienteNombre: 'Cliente demo',
+      direccionEntrega: 'Av. Central 123', numeroDespacho: 'DES-001', numeroGuiaRemision: 'G-001',
+      fechaEmision: '2026-09-04', fechaProgramada: '2026-09-03', tipoTransporte: 'interno',
+      modalidad: 'recojo_cliente', estado: 'programado',
+    })
+
+    expect(resultado.success).toBe(false)
+    expect(resultado.error?.issues.some((issue) => issue.message.includes('anterior a la emisión'))).toBe(true)
+
+    const recojo = esquemaDatosProgramacionEntrega.safeParse({
+      pedidoId: 'pedido-1', pedidoNumero: 'PED-001', clienteNombre: 'Cliente demo',
+      direccionEntrega: 'Av. Central 123', numeroDespacho: 'DES-001', numeroGuiaRemision: 'G-001',
+      fechaEmision: '2026-09-01', fechaProgramada: '2026-09-02', tipoTransporte: 'interno',
+      modalidad: 'recojo_cliente', estado: 'en_destino', fechaEntrega: '2026-09-02',
+    })
+
+    expect(recojo.success).toBe(true)
   })
 
   it('serializa y restaura todos los campos del flujo de distribución para la base de datos', () => {
@@ -195,6 +293,8 @@ describe('programación de entrega', () => {
       items: [{ id: 'linea-1', productoDescripcion: 'Producto', cantidad: 1, unidadMedida: 'UND' }],
     })
 
+    expect(prepararPayloadEntrega('org-1', { ...datos, fechaEmision: '' }, []).issue_date).toBe(fechaActualPeru())
+
     const restaurado = mapearEntrega({
       id: 'ent-1',
       order_id: 'pedido-1',
@@ -233,6 +333,17 @@ describe('programación de entrega', () => {
       estado: 'en_curso',
       incidencias: ['Se confirma horario', 'Parada no programada'],
     })
+
+    const entregaConFechasSeparadas = mapearEntrega({
+      id: 'ent-2', order_id: 'pedido-2', order_number: 'PED-002', customer_name: 'Cliente demo',
+      issue_date: '2026-09-01', delivery_date: '2026-09-04', scheduled_date: '2026-09-03', actual_delivery_date: '2026-09-04',
+      guide_number: 'G-002', transport_type: 'interno', tracking_status: 'en_destino', delivery_status: 'entregado', observations: '',
+      direction: 'Av. Central 123', numero_despacho: 'DES-002', modalidad: 'movilidad_propia',
+      transportista: '', conductor: 'Luis Pérez', vehiculo: 'Camioneta', placa: 'ABC-123', evidencia: 'foto.jpg', incidencias: [],
+      order_items: [{ id: 'linea-2', productoDescripcion: 'Producto', cantidad: 1, unidadMedida: 'UND' }], created_at: '2026-09-01T00:00:00Z',
+    })
+
+    expect(entregaConFechasSeparadas).toMatchObject({ fechaProgramada: '2026-09-03', fechaEntrega: '2026-09-04' })
   })
 
   it('lee una entrega histórica sin exigir los campos añadidos por la migración', () => {
@@ -351,10 +462,12 @@ describe('programación de entrega', () => {
 
     const porEstado = filtrarProgramacionesEntrega(entregas, { estado: 'en_curso' })
     const porFecha = filtrarProgramacionesEntrega(entregas, { fecha: '2026-09-03' })
+    const porRango = filtrarProgramacionesEntrega(entregas, { fechaDesde: '2026-09-02', fechaHasta: '2026-09-03' })
     const combinado = filtrarProgramacionesEntrega(entregas, { estado: 'en_curso', fecha: '2026-09-02', busqueda: 'cliente a' })
 
     expect(porEstado).toHaveLength(1)
     expect(porFecha).toHaveLength(1)
+    expect(porRango).toHaveLength(2)
     expect(combinado).toHaveLength(1)
   })
 

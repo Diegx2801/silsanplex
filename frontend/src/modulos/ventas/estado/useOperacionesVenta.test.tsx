@@ -59,7 +59,7 @@ describe('useOperacionesVenta', () => {
     render(<QueryClientProvider client={crearCliente()}><Probe aceptarCotizacion={aceptar} /></QueryClientProvider>)
 
     fireEvent.click(document.querySelector('button')!)
-    await waitFor(() => expect(mocks.crearPedidoPersistente).toHaveBeenCalledWith('org-1', cotizacion, 'warehouse-1'))
+    await waitFor(() => expect(mocks.crearPedidoPersistente).toHaveBeenCalledWith('org-1', cotizacion, 'warehouse-1', 'delivery', undefined))
     expect(aceptar).toHaveBeenCalledWith('cotizacion-1')
   })
 

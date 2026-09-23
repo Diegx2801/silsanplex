@@ -3,6 +3,7 @@ import { AlertDialog as AlertDialogPrimitive } from 'radix-ui'
 import { useDeferredValue, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import { PaginacionListado, type TamanioPaginaListado } from '@/components/ui/PaginacionListado'
 import { fechaPeruDesdeTimestamp, formatearFechaCalendarioPeru } from '@/lib/fechas'
 import { DialogoDespachoPersistente } from '@/modulos/ventas/componentes/DialogoDespachoPersistente'
@@ -86,6 +87,7 @@ interface PanelOperacionesVentaProps {
   pedidos: readonly PedidoVenta[]
   ventas: readonly Venta[]
   almacenes?: readonly AlmacenOperacion[]
+  buscarAlmacenes?: (busqueda: string) => Promise<readonly AlmacenOperacion[]>
   alRegistrarVenta?: (pedidoId: string, datos: DatosVenta) => string | undefined | Promise<string | undefined>
   alActualizarPedido?: (pedidoId: string, lineas: readonly CantidadLineaPedido[], operationKey: string) => string | undefined | Promise<string | undefined>
   alCancelarPedido?: (pedidoId: string, operationKey: string) => string | undefined | Promise<string | undefined>
@@ -105,6 +107,7 @@ export function PanelOperacionesVenta({
   pedidos,
   ventas,
   almacenes = [],
+  buscarAlmacenes,
   alRegistrarVenta,
   alActualizarPedido,
   alCancelarPedido,
@@ -146,6 +149,14 @@ export function PanelOperacionesVenta({
       return diferenciaFecha || b.fechaRegistro.localeCompare(a.fechaRegistro)
     }),
     [pedidos],
+  )
+  const opcionesAlmacenes = useMemo<ComboboxOption[]>(
+    () => almacenes.map((almacen) => ({
+      value: almacen.id,
+      label: almacen.nombre,
+      keywords: [almacen.nombre],
+    })),
+    [almacenes],
   )
   const busquedaDiferida = useDeferredValue(busqueda)
   const operacionesFiltradas = useMemo(() => {
@@ -233,18 +244,20 @@ export function PanelOperacionesVenta({
             ))}
           </select>
         </div>
-        <div>
-          <label htmlFor="almacen-operacion-venta" className="field-label">Almacén</label>
-          <select
-            id="almacen-operacion-venta"
-            value={filtroAlmacen}
-            onChange={(evento) => { setFiltroAlmacen(evento.target.value); setPagina(1) }}
-            className="field-control"
-          >
-            <option value="">Todos</option>
-            {almacenes.map((almacen) => <option key={almacen.id} value={almacen.id}>{almacen.nombre}</option>)}
-          </select>
-        </div>
+        <Combobox
+          id="almacen-operacion-venta"
+          label="Almacén"
+          value={filtroAlmacen}
+          options={opcionesAlmacenes}
+          loadOptions={buscarAlmacenes ? async (busqueda) => (await buscarAlmacenes(busqueda)).map((almacen) => ({
+            value: almacen.id,
+            label: almacen.nombre,
+            keywords: [almacen.nombre],
+          })) : undefined}
+          onChange={(valor) => { setFiltroAlmacen(valor); setPagina(1) }}
+          placeholder="Todos los almacenes"
+          noOptionsMessage="No hay almacenes disponibles."
+        />
       </div>
       <div className="grid gap-4 border-b bg-muted/20 px-5 py-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-[14rem_14rem_1fr] lg:items-end">
         <div>
@@ -312,6 +325,7 @@ export function PanelOperacionesVenta({
                   <h3 className="mt-2 font-semibold">{pedido.clienteNombre}</h3>
                   <p className="mt-1 text-xs text-muted-foreground">Origen: {pedido.cotizacionNumero} · {formatearFechaCalendarioPeru(fechaPedidoOperacion(pedido))}</p>
                   <p className="mt-1 text-xs text-muted-foreground">Almacén: {pedido.almacenNombre ?? 'No definido (histórico)'}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Cumplimiento: {pedido.modalidadCumplimiento === 'pickup' ? 'Recojo del cliente' : 'Entrega al cliente'}</p>
                 </div>
                 <div className="grid grid-cols-3 gap-3 border-y py-3 text-sm lg:border-y-0 lg:border-s lg:ps-5">
                   <div><p className="text-xs text-muted-foreground">Productos</p><p className="mt-1 font-mono">{pedido.lineas.length}</p></div>

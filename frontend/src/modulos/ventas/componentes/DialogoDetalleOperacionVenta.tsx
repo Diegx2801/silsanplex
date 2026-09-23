@@ -85,11 +85,13 @@ export function DialogoDetalleOperacionVenta({
                 </span>
               </div>
 
-              <dl className="mt-6 grid gap-4 border-t pt-5 sm:grid-cols-4">
+              <dl className="mt-6 grid gap-4 border-t pt-5 sm:grid-cols-2 lg:grid-cols-6">
                 <div><dt className="text-xs text-muted-foreground">Origen</dt><dd className="mt-1 font-mono">{pedido.cotizacionNumero}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Fecha del pedido</dt><dd className="mt-1">{formatearFechaCalendarioPeru(fechaPedido(pedido))}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Almacén</dt><dd className="mt-1">{pedido.almacenNombre ?? 'No definido'}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Precios</dt><dd className="mt-1">{pedido.preciosIncluyenIgv ? 'Incluyen IGV' : 'No incluyen IGV'}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Modalidad</dt><dd className="mt-1">{pedido.modalidadCumplimiento === 'pickup' ? 'Recojo del cliente' : 'Entrega al cliente'}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Estado logístico</dt><dd className="mt-1">{pedido.estadoCumplimiento === 'delivered' ? 'Entregado' : pedido.estadoCumplimiento === 'dispatched' ? 'Despachado' : pedido.estadoCumplimiento === 'partially_fulfilled' ? 'Cumplimiento parcial' : pedido.estadoCumplimiento === 'cancelled' ? 'Cancelado' : 'Pendiente'}</dd></div>
               </dl>
             </section>
 

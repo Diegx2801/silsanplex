@@ -83,6 +83,28 @@ export async function listarClientes(filtros: FiltrosClientes): Promise<PaginaCl
   return { clientes: ((data ?? []) as unknown as FilaCliente[]).map(mapear), total: count ?? 0 }
 }
 
+/** Devuelve un lote acotado para los selectores de operaciones comerciales. */
+export async function buscarClientes(
+  organizationId: string,
+  busqueda: string,
+  limite = 50,
+): Promise<Cliente[]> {
+  const termino = busqueda.trim().replace(/[^\p{L}\p{N}\s-]/gu, ' ').replace(/\s+/g, ' ').slice(0, 100)
+  let query = supabase
+    .from('customers')
+    .select(seleccion)
+    .eq('organization_id', organizationId)
+    .eq('is_active', true)
+  if (termino) query = query.or(`document_number.ilike.%${termino}%,legal_name.ilike.%${termino}%,trade_name.ilike.%${termino}%`)
+  query = query.order('legal_name').limit(Math.min(Math.max(limite, 1), 50))
+  const { data, error } = await query
+  if (error) {
+    reportarErrorDeLectura(error)
+    throw error
+  }
+  return ((data ?? []) as unknown as FilaCliente[]).map(mapear)
+}
+
 export async function guardarCliente(datos: DatosCliente, id?: string) {
   const addresses = [
     ...(datos.direccion ? [{ id: datos.direccionFiscalId, addressType: 'FISCAL', addressLine: datos.direccion, ubigeoCode: datos.ubigeo, isDefault: true }] : []),

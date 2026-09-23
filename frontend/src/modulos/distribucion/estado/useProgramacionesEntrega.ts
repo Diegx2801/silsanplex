@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
-import { puedeTransicionarEntrega, type DatosProgramacionEntrega, type ProgramacionEntrega } from '@/modulos/distribucion/modelo/programacionEntrega'
-import { guardarEntrega, listarEntregas } from '@/modulos/distribucion/servicios/distribucionService'
+import { puedeTransicionarEntrega, type DatosProgramacionEntrega, type ProgramacionEntrega, type ResultadoEntrega } from '@/modulos/distribucion/modelo/programacionEntrega'
+import { guardarEntrega, listarEntregas, registrarResultadoEntrega } from '@/modulos/distribucion/servicios/distribucionService'
 
 export function useProgramacionesEntrega() {
   const { access, hasPermission } = useAuth()
@@ -12,6 +12,7 @@ export function useProgramacionesEntrega() {
   const queryKey = ['distribution-deliveries', organizationId] as const
   const query = useQuery({ queryKey, queryFn: () => listarEntregas(organizationId), enabled: Boolean(organizationId) })
   const guardarMutation = useMutation({ mutationFn: ({ datos, lineas, id, operationKey }: { datos: DatosProgramacionEntrega; lineas: ProgramacionEntrega['lineas']; id?: string; operationKey: string }) => guardarEntrega(organizationId, datos, lineas, id, operationKey), onSuccess: () => queryClient.invalidateQueries({ queryKey }) })
+  const resultadoMutation = useMutation({ mutationFn: ({ resultado, operationKey }: { resultado: ResultadoEntrega; operationKey: string }) => registrarResultadoEntrega(organizationId, resultado, operationKey), onSuccess: () => queryClient.invalidateQueries({ queryKey }) })
 
   const ejecutar = async (operacion: () => Promise<unknown>) => {
     try {
@@ -31,6 +32,15 @@ export function useProgramacionesEntrega() {
   }
 
   const actualizarEstado = (entrega: ProgramacionEntrega, estado: ProgramacionEntrega['estado']) => {
+    if (['entregado', 'entrega_parcial', 'rechazado'].includes(estado)) {
+      return Promise.resolve('Registra las cantidades recibidas o el motivo del intento fallido desde “Registrar resultado”.')
+    }
+    if (estado === 'devuelto') {
+      return Promise.resolve('Una devolución física debe registrarse mediante una recepción de Inventario; no cambies el estado manualmente.')
+    }
+    if (entrega.requiereConciliacionCantidades && ['programado', 'preparando', 'en_curso', 'en_destino'].includes(estado)) {
+      return Promise.resolve('Esta entrega histórica debe conciliarse antes de continuar.')
+    }
     if (!puedeTransicionarEntrega(entrega.estado, estado)) {
       return Promise.resolve(`No se puede pasar de ${entrega.estado} a ${estado}`)
     }
@@ -43,5 +53,10 @@ export function useProgramacionesEntrega() {
     return guardar({ ...entrega, estado, seguimiento }, entrega.id, entrega.lineas)
   }
 
-  return { programaciones, guardar, actualizarEstado, actualizarSeguimiento, cargando: query.isLoading, error: query.error, reintentar: query.refetch }
+  const registrarResultado = (resultado: ResultadoEntrega, operationKey: string) => {
+    if (!puedeGestionarDistribucion) return Promise.resolve('No tienes permiso para administrar distribución')
+    return ejecutar(() => resultadoMutation.mutateAsync({ resultado, operationKey }))
+  }
+
+  return { programaciones, guardar, actualizarEstado, actualizarSeguimiento, registrarResultado, guardandoEstado: guardarMutation.isPending, guardandoResultado: resultadoMutation.isPending, cargando: query.isLoading, error: query.error, reintentar: query.refetch }
 }
