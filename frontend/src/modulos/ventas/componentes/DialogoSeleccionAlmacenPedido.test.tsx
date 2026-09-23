@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { Almacen } from '@/modulos/inventario/modelo/almacen'
+import type { DireccionEntregaCliente } from '@/modulos/clientes/modelo/cliente'
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
 
 import { DialogoSeleccionAlmacenPedido } from './DialogoSeleccionAlmacenPedido'
@@ -17,6 +18,10 @@ const almacenes: Almacen[] = [
   { id: 'warehouse-1', codigo: 'CENTRAL', nombre: 'Almacén central', direccion: 'Av. Principal 100', activo: true },
   { id: 'warehouse-2', codigo: 'NORTE', nombre: 'Almacén norte', direccion: 'Jr. Los Pinos 200', activo: true },
 ]
+const direccionesEntrega: DireccionEntregaCliente[] = [
+  { id: '92af79d1-8223-4d07-8bc4-36060695a434', etiqueta: 'Sucursal principal', direccion: 'Av. Principal 123', ubigeo: '150101', referencia: 'Frente al parque', principal: true },
+  { id: '0d328a2a-09ec-47d1-9d47-13a05a02be66', etiqueta: 'Sucursal norte', direccion: 'Jr. Los Pinos 200', ubigeo: '150102', referencia: '', principal: false },
+]
 
 function renderDialog(alConfirmar: React.ComponentProps<typeof DialogoSeleccionAlmacenPedido>['alConfirmar']) {
   const alCambiarApertura = vi.fn()
@@ -25,6 +30,7 @@ function renderDialog(alConfirmar: React.ComponentProps<typeof DialogoSeleccionA
       abierto
       cotizacion={cotizacion}
       almacenes={almacenes}
+      direccionesEntrega={direccionesEntrega}
       alCambiarApertura={alCambiarApertura}
       alConfirmar={alConfirmar}
       alRestaurarFoco={vi.fn()}
@@ -44,7 +50,10 @@ describe('DialogoSeleccionAlmacenPedido', () => {
     fireEvent.click(screen.getByRole('option', { name: /NORTE · Almacén norte/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
 
-    await waitFor(() => expect(alConfirmar).toHaveBeenCalledWith('warehouse-2', 'delivery'))
+    await waitFor(() => expect(alConfirmar).toHaveBeenCalledWith('warehouse-2', 'delivery', expect.objectContaining({
+      id: direccionesEntrega[0].id,
+      direccion: 'Av. Principal 123',
+    })))
   })
 
   it('permite indicar recojo sin enviarlo como una entrega', async () => {
@@ -56,7 +65,25 @@ describe('DialogoSeleccionAlmacenPedido', () => {
     fireEvent.click(screen.getByRole('option', { name: /CENTRAL · Almacén central/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
 
-    await waitFor(() => expect(alConfirmar).toHaveBeenCalledWith('warehouse-1', 'pickup'))
+    await waitFor(() => expect(alConfirmar).toHaveBeenCalledWith('warehouse-1', 'pickup', undefined))
+  })
+
+  it('permite guardar el destino manual en el pedido cuando es entrega', async () => {
+    const alConfirmar = vi.fn().mockResolvedValue(undefined)
+    renderDialog(alConfirmar)
+    const almacen = screen.getByRole('combobox', { name: 'Almacén de preparación' })
+    fireEvent.focus(almacen)
+    fireEvent.click(screen.getByRole('option', { name: /CENTRAL · Almacén central/ }))
+    const direccion = screen.getByRole('combobox', { name: 'Dirección de entrega' })
+    fireEvent.focus(direccion)
+    fireEvent.click(screen.getByRole('option', { name: /Ingresar otra dirección/ }))
+    fireEvent.change(screen.getByRole('textbox', { name: /Dirección/ }), { target: { value: 'Av. Nueva 456' } })
+    fireEvent.change(screen.getByLabelText('Nombre del destino'), { target: { value: 'Sucursal nueva' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }))
+
+    await waitFor(() => expect(alConfirmar).toHaveBeenCalledWith('warehouse-1', 'delivery', {
+      etiqueta: 'Sucursal nueva', direccion: 'Av. Nueva 456', ubigeo: '', referencia: '',
+    }))
   })
 
   it('filtra los almacenes por dirección', () => {

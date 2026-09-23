@@ -9,6 +9,7 @@ import {
   type ProgramacionEntrega,
 } from '@/modulos/distribucion/modelo/programacionEntrega'
 import { listarPedidosPersistentes, listarVentasPersistentes } from '@/modulos/ventas/servicios/ventasService'
+import { enriquecerLineasPedidoConSaldos } from '@/modulos/distribucion/modelo/pedidosProgramables'
 
 interface EntregaFila {
   id: string
@@ -127,14 +128,7 @@ function enriquecerEntrega(
 ) {
   if (!pedido) return entrega
 
-  const lineas = pedido.lineas.filter((linea) => linea.tipoProducto === 'good').map((linea) => {
-    const lineaVenta = venta?.lineas.find((item) => item.pedidoLineaId === linea.id)
-    return {
-      ...linea,
-      cantidadDespachada: lineaVenta?.cantidadDespachada ?? 0,
-      cantidadPendiente: lineaVenta?.cantidadPendiente ?? linea.cantidad,
-    }
-  })
+  const lineas = enriquecerLineasPedidoConSaldos(pedido.lineas, venta)
 
   return esquemaProgramacionEntrega.parse({
     ...entrega,

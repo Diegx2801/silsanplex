@@ -9,12 +9,19 @@ import {
   obtenerEstadosSiguientes,
   puedeTransicionarEntrega,
   resumirEntregas,
+  tipoTransporteParaModalidad,
   type DatosProgramacionEntrega,
 } from './programacionEntrega'
 import { mapearEntrega, prepararPayloadEntrega } from '../servicios/distribucionService'
 import { fechaActualPeru } from '@/lib/fechas'
 
 describe('programación de entrega', () => {
+  it('deriva el tipo de transporte de la modalidad para evitar opciones duplicadas', () => {
+    expect(tipoTransporteParaModalidad('movilidad_propia')).toBe('interno')
+    expect(tipoTransporteParaModalidad('movilidad_externa')).toBe('externo')
+    expect(tipoTransporteParaModalidad('recojo_cliente', 'externo')).toBe('externo')
+  })
+
   it('usa el calendario de Lima cuando falta la fecha de emisión', () => {
     const datos = {
       pedidoId: 'pedido-1',

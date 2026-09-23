@@ -72,11 +72,11 @@ export function DialogoDetalleEntrega({ abierto, entrega, alCambiarApertura }: D
             </section>
 
             <section className="border-t px-5 py-6 sm:px-7" aria-labelledby="detalle-entrega-productos">
-              <div className="mb-4 border-b pb-3"><h2 id="detalle-entrega-productos" className="font-semibold">Productos del pedido</h2><p className="mt-1 text-sm text-muted-foreground">Cantidades comprometidas y avance del despacho.</p></div>
+              <div className="mb-4 border-b pb-3"><h2 id="detalle-entrega-productos" className="font-semibold">Bienes a entregar</h2><p className="mt-1 text-sm text-muted-foreground">La salida de inventario se registró previamente en Ventas; aquí se consulta la cantidad vinculada al envío.</p></div>
               <div className="overflow-x-auto border">
                 <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
-                  <thead><tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase"><th className="px-4 py-3 font-medium">Producto</th><th className="px-4 py-3 text-end font-medium">Pedidas</th><th className="px-4 py-3 text-end font-medium">Despachadas</th><th className="px-4 py-3 text-end font-medium">Pendientes</th></tr></thead>
-                  <tbody className="divide-y">{entrega.lineas.map((linea) => <tr key={linea.id}><td className="px-4 py-4"><p className="font-medium">{linea.productoDescripcion}</p><p className="mt-1 text-xs text-muted-foreground">{linea.productoCodigo} · {linea.unidadMedida || 'Sin unidad'}</p></td><td className="px-4 py-4 text-end font-mono tabular-nums">{linea.cantidad}</td><td className="px-4 py-4 text-end font-mono tabular-nums">{linea.cantidadDespachada ?? 0}</td><td className="px-4 py-4 text-end font-mono tabular-nums">{linea.cantidadPendiente ?? linea.cantidad}</td></tr>)}</tbody>
+                  <thead><tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase"><th className="px-4 py-3 font-medium">Producto</th><th className="px-4 py-3 text-end font-medium">Pedido</th><th className="px-4 py-3 text-end font-medium">Despachadas en Ventas</th></tr></thead>
+                  <tbody className="divide-y">{entrega.lineas.map((linea) => <tr key={linea.id}><td className="px-4 py-4"><p className="font-medium">{linea.productoDescripcion}</p><p className="mt-1 text-xs text-muted-foreground">{linea.productoCodigo} · {linea.unidadMedida || 'Sin unidad'}</p></td><td className="px-4 py-4 text-end font-mono tabular-nums">{linea.cantidad} {linea.unidadMedida}</td><td className="px-4 py-4 text-end font-mono tabular-nums">{linea.cantidadDespachada ?? linea.cantidad} {linea.unidadMedida}</td></tr>)}</tbody>
                 </table>
               </div>
             </section>

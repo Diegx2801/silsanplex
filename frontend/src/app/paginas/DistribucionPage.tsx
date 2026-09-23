@@ -2,6 +2,7 @@ import { Eye, FileDown, Pencil, Plus, Search, Truck } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import { Dialog as DialogPrimitive } from 'radix-ui'
 
 import { PaginacionListado, type TamanioPaginaListado } from '@/components/ui/PaginacionListado'
 import { Button } from '@/components/ui/button'
@@ -12,13 +13,14 @@ import { fechaActualPeru, ZONA_HORARIA_NEGOCIO } from '@/lib/fechas'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
 import { DialogoDetalleEntrega } from '@/modulos/distribucion/componentes/DialogoDetalleEntrega'
 import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
-import { pedidoListoParaProgramarDistribucion } from '@/modulos/distribucion/modelo/pedidosProgramables'
+import { enriquecerLineasPedidoConSaldos, pedidoListoParaProgramarDistribucion } from '@/modulos/distribucion/modelo/pedidosProgramables'
 import {
   esquemaDatosProgramacionEntrega,
   filtrarProgramacionesEntrega,
   listarEntregasAtrasadas,
   obtenerEstadosSiguientes,
   resumirEntregas,
+  tipoTransporteParaModalidad,
   type DatosProgramacionEntrega,
   type ProgramacionEntrega,
 } from '@/modulos/distribucion/modelo/programacionEntrega'
@@ -123,14 +125,6 @@ export function DistribucionPage() {
   })
   const busquedaDiferida = useDeferredValue(busqueda)
   const ventaPorPedido = useMemo(() => new Map(ventas.map((venta) => [venta.pedidoId, venta])), [ventas])
-  const pedidosDisponibles = useMemo(() => pedidos.filter((pedido) => {
-    const esEntregaActual = edicion?.pedidoId === pedido.id
-      && (pedido.modalidadCumplimiento ?? 'delivery') === 'delivery'
-      && pedido.lineas.some((linea) => linea.tipoProducto === 'good')
-    const puedeCrearEntrega = pedidoListoParaProgramarDistribucion(pedido, ventaPorPedido.get(pedido.id))
-    return (puedeCrearEntrega || esEntregaActual)
-      && !programaciones.some((item) => item.pedidoId === pedido.id && item.id !== edicion?.id)
-  }), [edicion?.id, edicion?.pedidoId, pedidos, programaciones, ventaPorPedido])
   const pedidosPorProgramar = useMemo(() => pedidos.filter(
     (pedido) => pedidoListoParaProgramarDistribucion(pedido, ventaPorPedido.get(pedido.id)) && !programaciones.some((item) => item.pedidoId === pedido.id),
   ), [pedidos, programaciones, ventaPorPedido])
@@ -172,6 +166,12 @@ export function DistribucionPage() {
   const clienteSeleccionado = clientes.find((cliente) => cliente.id === pedidoSeleccionado?.clienteId)
   const direccionesCliente = useMemo(() => clienteSeleccionado?.direccionesEntrega ?? [], [clienteSeleccionado])
   const opcionesDirecciones = useMemo<ComboboxOption[]>(() => [
+    ...(pedidoSeleccionado?.direccionEntrega ? [{
+      value: '__pedido__',
+      label: 'Destino confirmado en el pedido',
+      secondaryText: [pedidoSeleccionado.direccionEntrega.direccion, pedidoSeleccionado.direccionEntrega.ubigeo, pedidoSeleccionado.direccionEntrega.referencia].filter(Boolean).join(' · '),
+      keywords: [pedidoSeleccionado.direccionEntrega.direccion, pedidoSeleccionado.direccionEntrega.ubigeo, pedidoSeleccionado.direccionEntrega.referencia],
+    }] : []),
     ...direccionesCliente.map((direccion) => ({
       value: direccion.id ?? direccion.direccion,
       label: direccion.etiqueta || direccion.direccion,
@@ -179,24 +179,27 @@ export function DistribucionPage() {
       keywords: [direccion.direccion, direccion.ubigeo, direccion.referencia],
     })),
     { value: '__manual__', label: 'Ingresar otra dirección', secondaryText: 'Usa esta opción solo si no está en el maestro del cliente' },
-  ], [direccionesCliente])
-  const lineasPedido = (pedidoSeleccionado?.lineas ?? datos.lineas).filter((linea) => linea.tipoProducto === 'good')
+  ], [direccionesCliente, pedidoSeleccionado?.direccionEntrega])
+  const lineasPedido = pedidoSeleccionado
+    ? enriquecerLineasPedidoConSaldos(pedidoSeleccionado.lineas, ventaPorPedido.get(pedidoSeleccionado.id))
+    : datos.lineas.filter((linea) => linea.tipoProducto === 'good')
   const esRecojoCliente = datos.modalidad === 'recojo_cliente'
   const estadoRequiereTransporte = ['en_curso', 'en_destino', 'entregado', 'entrega_parcial'].includes(datos.estado)
   const requiereDatosTransporte = estadoRequiereTransporte && !esRecojoCliente
   const requiereTransportista = requiereDatosTransporte && datos.tipoTransporte === 'externo'
+  const destinoBloqueado = Boolean(edicion && !['programado', 'preparando', 'reprogramado'].includes(datos.estado))
 
   const cambiarVista = (siguiente: VistaDistribucion) => {
     setParametros(siguiente === 'pendientes' ? {} : { vista: siguiente })
   }
 
   useEffect(() => {
-    if (!formularioAbierto || !datos.pedidoId || datos.direccionEntrega || !direccionesCliente.length) return
+    if (!formularioAbierto || !datos.pedidoId || datos.direccionEntrega || direccionSeleccionadaId || !direccionesCliente.length) return
     const principal = direccionesCliente.find((direccion) => direccion.principal) ?? direccionesCliente[0]
     if (!principal) return
     setDireccionSeleccionadaId(principal.id ?? principal.direccion)
     setDatos((actuales) => ({ ...actuales, direccionEntrega: principal.direccion }))
-  }, [datos.direccionEntrega, datos.pedidoId, direccionesCliente, formularioAbierto])
+  }, [datos.direccionEntrega, datos.pedidoId, direccionSeleccionadaId, direccionesCliente, formularioAbierto])
 
   const editarProgramacion = (programacion: ProgramacionEntrega) => {
     setEdicion(programacion)
@@ -217,7 +220,7 @@ export function DistribucionPage() {
       fechaEmision: programacion.fechaEmision ?? hoy,
       fechaProgramada: programacion.fechaProgramada ?? hoy,
       fechaEntrega: programacion.fechaEntrega ?? '',
-      tipoTransporte: programacion.tipoTransporte ?? 'interno',
+      tipoTransporte: tipoTransporteParaModalidad(programacion.modalidad, programacion.tipoTransporte),
       modalidad: programacion.modalidad ?? 'movilidad_propia',
       transportista: programacion.transportista ?? '',
       conductor: programacion.conductor ?? '',
@@ -247,14 +250,15 @@ export function DistribucionPage() {
     setEdicion(null)
     const cliente = clientes.find((item) => item.id === pedido.clienteId)
     const direccionPrincipal = cliente?.direccionesEntrega.find((direccion) => direccion.principal) ?? cliente?.direccionesEntrega[0]
-    setDireccionSeleccionadaId(direccionPrincipal?.id ?? direccionPrincipal?.direccion ?? '')
+    const destinoPedido = pedido.direccionEntrega
+    setDireccionSeleccionadaId(destinoPedido ? '__pedido__' : direccionPrincipal?.id ?? direccionPrincipal?.direccion ?? '__manual__')
     setDatos({
       pedidoId: pedido.id,
       pedidoNumero: pedido.numero,
       ventaId: venta.id,
       ventaNumero: venta.numeroInterno,
       clienteNombre: pedido.clienteNombre,
-      direccionEntrega: direccionPrincipal?.direccion ?? '',
+      direccionEntrega: destinoPedido?.direccion ?? direccionPrincipal?.direccion ?? '',
       numeroDespacho: '',
       numeroGuiaRemision: '',
       fechaEmision: hoy,
@@ -276,24 +280,6 @@ export function DistribucionPage() {
     setFormularioAbierto(true)
   }
 
-  const seleccionarPedido = (pedidoId: string) => {
-    const pedido = pedidos.find((item) => item.id === pedidoId)
-    const venta = ventaPorPedidoId(pedidoId)
-    const cliente = clientes.find((item) => item.id === pedido?.clienteId)
-    const direccionPrincipal = cliente?.direccionesEntrega.find((direccion) => direccion.principal) ?? cliente?.direccionesEntrega[0]
-    setDireccionSeleccionadaId(direccionPrincipal?.id ?? direccionPrincipal?.direccion ?? '')
-    setDatos((actuales) => ({
-      ...actuales,
-      pedidoId,
-      pedidoNumero: pedido?.numero ?? '',
-      ventaId: venta?.id ?? '',
-      ventaNumero: venta?.numeroInterno ?? '',
-      clienteNombre: pedido?.clienteNombre ?? '',
-      direccionEntrega: direccionPrincipal?.direccion ?? '',
-      lineas: pedido?.lineas ?? [],
-    }))
-  }
-
   const enviar = async (evento: React.FormEvent<HTMLFormElement>) => {
     evento.preventDefault()
     const resultado = esquemaDatosProgramacionEntrega.safeParse(datos)
@@ -313,6 +299,7 @@ export function DistribucionPage() {
     }
     const datosPersistentes = {
       ...resultado.data,
+      tipoTransporte: tipoTransporteParaModalidad(resultado.data.modalidad, resultado.data.tipoTransporte),
       pedidoNumero: pedido?.numero ?? edicion?.pedidoNumero ?? resultado.data.pedidoNumero,
       clienteNombre: pedido?.clienteNombre ?? edicion?.clienteNombre ?? resultado.data.clienteNombre,
       ventaId: venta?.id ?? edicion?.ventaId ?? '',
@@ -401,17 +388,13 @@ export function DistribucionPage() {
     pdf.setTextColor(255, 255, 255)
     pdf.setFontSize(8)
     pdf.text('PRODUCTO', margen + 4, y + 6)
-    pdf.text('UNIDAD', 150, y + 6)
-    pdf.text('PEDIDAS', 132, y + 6, { align: 'right' })
-    pdf.text('DESPACHADAS', 162, y + 6, { align: 'right' })
-    pdf.text('PENDIENTES', 190, y + 6, { align: 'right' })
+    pdf.text('A ENTREGAR', 132, y + 6, { align: 'right' })
+    pdf.text('UNIDAD', 190, y + 6, { align: 'right' })
     y += 9
 
     pdf.setFont('helvetica', 'normal')
     lineas.forEach((linea, indice) => {
       const descripcion = pdf.splitTextToSize(linea.productoDescripcion, 100)
-      const despachada = linea.cantidadDespachada ?? 0
-      const pendiente = linea.cantidadPendiente ?? Math.max(linea.cantidad - despachada, 0)
       const alto = Math.max(10, descripcion.length * 4 + 6)
       if (indice % 2 === 0) {
         pdf.setFillColor(248, 250, 249)
@@ -420,12 +403,10 @@ export function DistribucionPage() {
       pdf.setTextColor(...tinta)
       pdf.setFontSize(9)
       pdf.text(descripcion, margen + 4, y + 6)
-      pdf.text(linea.unidadMedida || '-', 118, y + 6)
       pdf.setFont('helvetica', 'bold')
-      pdf.text(String(linea.cantidad), 132, y + 6, { align: 'right' })
-      pdf.text(String(despachada), 162, y + 6, { align: 'right' })
-      pdf.text(String(pendiente), 190, y + 6, { align: 'right' })
+      pdf.text(String(linea.cantidadDespachada ?? linea.cantidad), 132, y + 6, { align: 'right' })
       pdf.setFont('helvetica', 'normal')
+      pdf.text(linea.unidadMedida || '-', 190, y + 6, { align: 'right' })
       y += alto
     })
 
@@ -575,7 +556,7 @@ export function DistribucionPage() {
               <div className="divide-y">{entregasVisibles.map((item) => (
                 <article key={item.id} className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[1.1fr_1fr_1fr_auto] lg:items-center">
                   <div className="print-delivery-header"><p className="font-mono text-xs text-primary">SILSANPLEX · CONSTANCIA DE ENTREGA</p><p className="font-mono text-xs text-muted-foreground">Emisión: {formatearFechaDistribucion(item.fechaEmision)}</p></div>
-                  <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · {item.ventaNumero ? `Venta ${item.ventaNumero} · ` : ''}Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{item.lineas.length ? item.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · pedidas <span className="font-mono font-semibold">{linea.cantidad}</span> · despachadas <span className="font-mono font-semibold">{linea.cantidadDespachada ?? 0}</span> · pendientes <span className="font-mono font-semibold">{linea.cantidadPendiente ?? linea.cantidad}</span> {linea.unidadMedida}</p>) : <p>Detalle del pedido no disponible</p>}</div></div>
+                  <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · {item.ventaNumero ? `Venta ${item.ventaNumero} · ` : ''}Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{item.lineas.length ? item.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · <span className="font-mono font-semibold">{linea.cantidadDespachada ?? linea.cantidad} {linea.unidadMedida}</span> despachadas en Ventas, listas para entrega</p>) : <p>Detalle del pedido no disponible</p>}</div></div>
                   <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted-foreground">Programada</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaProgramada)}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega real</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEntrega)}</dd></div></dl>
                   <div><div className="flex flex-wrap items-center gap-2"><span className="status-label" data-tone={tonoEstadoDistribucion(item.estado)}>{etiquetasEstado[item.estado]}</span><span className="text-sm text-muted-foreground">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</span></div>{puedeGestionarDistribucion ? <select aria-label={`Cambiar estado de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => { void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado']).then((error) => setMensaje(error ?? `Estado actualizado para ${item.pedidoNumero}.`)) }} className="field-control mt-2">{[item.estado, ...obtenerEstadosSiguientes(item.estado)].map((valor) => <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>)}</select> : <p className="mt-2 text-sm text-muted-foreground">Solo consulta</p>}{item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}</div>
                   <div className="flex gap-1 print:hidden"><Button type="button" variant="ghost" size="icon" title="Ver detalle de la entrega" aria-label={`Ver detalle de la entrega ${item.pedidoNumero}`} onClick={() => setEntregaDetalle(item)}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion ? <Button type="button" variant="outline" onClick={() => editarProgramacion(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}<Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
@@ -591,60 +572,110 @@ export function DistribucionPage() {
       {entregaDetalle ? <DialogoDetalleEntrega abierto={Boolean(entregaDetalle)} entrega={entregaDetalle} alCambiarApertura={(abierto) => { if (!abierto) setEntregaDetalle(null) }} /> : null}
 
       {puedeGestionarDistribucion && formularioAbierto ? (
-        <div role="dialog" aria-modal="true" aria-labelledby="programar-title" className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
-          <form onSubmit={enviar} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto bg-background p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-4"><div><h2 id="programar-title" className="text-xl font-semibold">{edicion ? 'Editar entrega' : 'Programar entrega'}</h2><p className="mt-1 text-sm text-muted-foreground">Vincula el pedido con su guía y fecha de entrega.</p></div><Button type="button" variant="ghost" onClick={() => setFormularioAbierto(false)}>Cerrar</Button></div>
-            <div className="mt-6 space-y-6">
+        <DialogPrimitive.Root open onOpenChange={(abierto) => { if (!abierto) setFormularioAbierto(false) }}>
+          <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-foreground/30" />
+          <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-60 flex max-h-[90svh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden border bg-background shadow-xl outline-none">
+          <form onSubmit={enviar} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <header className="flex shrink-0 items-start justify-between gap-4 border-b bg-background px-6 py-5">
+              <div><DialogPrimitive.Title id="programar-title" className="text-xl font-semibold">{edicion ? 'Editar entrega' : 'Programar entrega'}</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">Planifica la entrega y registra su destino y guía. El despacho de inventario ya se confirmó en Ventas.</DialogPrimitive.Description></div>
+              <DialogPrimitive.Close asChild><Button type="button" variant="ghost">Cerrar</Button></DialogPrimitive.Close>
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              <div className="space-y-6">
               <section aria-labelledby="referencia-entrega-title" className="space-y-4">
-                <div><h3 id="referencia-entrega-title" className="text-sm font-semibold uppercase tracking-[.06em] text-primary">Referencia comercial</h3><p className="mt-1 text-sm text-muted-foreground">Estos datos provienen del pedido y no se pueden alterar desde Distribución.</p></div>
+                <div><h3 id="referencia-entrega-title" className="text-sm font-semibold uppercase tracking-[.06em] text-primary">Pedido y salida de almacén</h3><p className="mt-1 text-sm text-muted-foreground">Referencia de solo lectura: pedido, cliente y almacén se conservan tal como se confirmaron en Ventas.</p></div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="sm:col-span-2"><label htmlFor="pedido-entrega" className="field-label">Pedido</label><select id="pedido-entrega" required disabled={Boolean(edicion)} value={datos.pedidoId} onChange={(evento) => seleccionarPedido(evento.target.value)} className="field-control"><option value="">Selecciona un pedido</option>{pedidosDisponibles.map((pedido) => <option key={pedido.id} value={pedido.id}>{pedido.numero} · {pedido.clienteNombre}</option>)}</select></div>
+                  <div className="sm:col-span-2"><label htmlFor="pedido-entrega" className="field-label">Pedido</label><input id="pedido-entrega" value={`${pedidoSeleccionado?.numero ?? datos.pedidoNumero}${pedidoSeleccionado?.clienteNombre ? ` · ${pedidoSeleccionado.clienteNombre}` : ''}`} readOnly className="field-control bg-muted/30" aria-readonly="true" /></div>
                   <div><label htmlFor="cliente-entrega" className="field-label">Cliente</label><input id="cliente-entrega" value={pedidoSeleccionado?.clienteNombre ?? datos.clienteNombre} readOnly className="field-control bg-muted/30" aria-readonly="true" /></div>
-                  <div><label htmlFor="almacen-entrega" className="field-label">Almacén de origen</label><input id="almacen-entrega" value={pedidoSeleccionado?.almacenNombre ?? 'No especificado en el pedido'} readOnly className="field-control bg-muted/30" aria-readonly="true" /></div>
+                  <div><label htmlFor="almacen-entrega" className="field-label">Almacén de salida (Ventas)</label><input id="almacen-entrega" value={pedidoSeleccionado?.almacenNombre ?? 'No especificado en el pedido'} readOnly className="field-control bg-muted/30" aria-readonly="true" /></div>
                 </div>
-                {lineasPedido.length ? <div className="border bg-muted/20 px-4 py-3"><p className="text-sm font-medium">Contenido del pedido</p><div className="mt-3 space-y-2 text-xs text-muted-foreground">{lineasPedido.map((linea) => <div key={linea.id} className="flex flex-wrap justify-between gap-2"><span>{linea.productoDescripcion} · {linea.unidadMedida}</span><span><strong className="font-mono text-foreground">{linea.cantidad}</strong> pedidas · <strong className="font-mono text-foreground">{linea.cantidadDespachada ?? 0}</strong> despachadas · <strong className="font-mono text-foreground">{linea.cantidadPendiente ?? linea.cantidad}</strong> pendientes</span></div>)}</div><p className="mt-3 text-xs text-muted-foreground">Las cantidades se controlan desde el despacho; aquí solo se consulta el detalle.</p></div> : null}
+                {lineasPedido.length ? <div className="border bg-muted/20 px-4 py-3"><p className="text-sm font-medium">Bienes listos para entrega</p><ul className="mt-3 space-y-2 text-sm">{lineasPedido.map((linea) => <li key={linea.id} className="flex flex-wrap justify-between gap-2"><span>{linea.productoDescripcion} <span className="text-muted-foreground">· {linea.unidadMedida}</span></span><span className="font-mono text-xs font-semibold tabular-nums">{linea.cantidadDespachada ?? linea.cantidad} {linea.unidadMedida} despachadas en Ventas</span></li>)}</ul><p className="mt-3 border-t pt-3 text-xs leading-5 text-muted-foreground">El despacho de estos bienes ya quedó registrado en Ventas. Aquí solo se programa y controla la entrega al cliente; no se vuelve a descontar inventario.</p></div> : null}
               </section>
 
               <section aria-labelledby="destino-entrega-title" className="space-y-4 border-t pt-5">
-                <div><h3 id="destino-entrega-title" className="text-sm font-semibold uppercase tracking-[.06em] text-primary">Destino y documentos</h3><p className="mt-1 text-sm text-muted-foreground">Selecciona una dirección registrada para conservar la trazabilidad del destinatario.</p></div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div><label htmlFor="numero-despacho" className="field-label">Número de despacho<span aria-hidden="true"> *</span></label><input id="numero-despacho" required maxLength={40} value={datos.numeroDespacho} onChange={(evento) => setDatos({ ...datos, numeroDespacho: evento.target.value })} className="field-control" /></div>
-                  <div><label htmlFor="guia-remision" className="field-label">Número de guía de remisión<span aria-hidden="true"> *</span></label><input id="guia-remision" required maxLength={40} value={datos.numeroGuiaRemision} onChange={(evento) => setDatos({ ...datos, numeroGuiaRemision: evento.target.value })} className="field-control" /></div>
-                  <div><label htmlFor="fecha-emision" className="field-label">Fecha de emisión<span aria-hidden="true"> *</span></label><input id="fecha-emision" required type="date" value={datos.fechaEmision} onChange={(evento) => setDatos({ ...datos, fechaEmision: evento.target.value })} className="field-control" /></div>
-                  <div className="sm:col-span-2">
-                    {direccionesCliente.length ? <Combobox id="direccion-entrega" label="Dirección de entrega" value={direccionSeleccionadaId} options={opcionesDirecciones} onChange={(valor) => { setDireccionSeleccionadaId(valor); const direccion = direccionesCliente.find((item) => (item.id ?? item.direccion) === valor); if (direccion) setDatos({ ...datos, direccionEntrega: direccion.direccion }) }} placeholder="Selecciona una dirección" helperText="La dirección se guarda como snapshot de esta entrega." required noOptionsMessage="El cliente no tiene direcciones de entrega activas." /> : <div><label htmlFor="direccion-entrega" className="field-label">Dirección de entrega<span aria-hidden="true"> *</span></label><input id="direccion-entrega" required maxLength={500} value={datos.direccionEntrega} onChange={(evento) => { setDireccionSeleccionadaId('__manual__'); setDatos({ ...datos, direccionEntrega: evento.target.value }) }} className="field-control" placeholder="Ingresa la dirección de entrega" /><p className="mt-1 text-xs text-muted-foreground">El cliente no tiene una dirección de entrega activa registrada.</p></div>}
-                    {direccionesCliente.length && direccionSeleccionadaId === '__manual__' ? <div className="mt-3"><label htmlFor="direccion-entrega-manual" className="field-label">Dirección alternativa<span aria-hidden="true"> *</span></label><input id="direccion-entrega-manual" required maxLength={500} value={datos.direccionEntrega} onChange={(evento) => setDatos({ ...datos, direccionEntrega: evento.target.value })} className="field-control" placeholder="Ingresa la dirección excepcional" /><p className="mt-1 text-xs text-muted-foreground">Usa esta opción solo cuando la dirección no está en el maestro del cliente.</p></div> : null}
-                  </div>
+                <div><h3 id="destino-entrega-title" className="text-sm font-semibold uppercase tracking-[.06em] text-primary">Destino del cliente</h3><p className="mt-1 text-sm text-muted-foreground">El almacén anterior es el punto de salida; este es el destino final. El cambio aquí afecta solo a esta entrega, no al pedido ni a la venta.</p></div>
+                <div>
+                    {direccionesCliente.length || pedidoSeleccionado?.direccionEntrega ? (
+                      <Combobox
+                        id="direccion-entrega"
+                        label="Dirección de destino"
+                        value={direccionSeleccionadaId}
+                        options={opcionesDirecciones}
+                        onChange={(valor) => {
+                          setDireccionSeleccionadaId(valor)
+                          if (valor === '__pedido__') {
+                            setDatos({ ...datos, direccionEntrega: pedidoSeleccionado?.direccionEntrega?.direccion ?? '' })
+                          } else if (valor === '__manual__') {
+                            setDatos({ ...datos, direccionEntrega: '' })
+                          } else {
+                            const direccion = direccionesCliente.find((item) => (item.id ?? item.direccion) === valor)
+                            if (direccion) setDatos({ ...datos, direccionEntrega: direccion.direccion })
+                          }
+                        }}
+                        placeholder="Selecciona una dirección"
+                        helperText={destinoBloqueado
+                          ? 'La entrega ya inició; el destino queda bloqueado para conservar la trazabilidad.'
+                          : direccionSeleccionadaId === '__pedido__'
+                            ? 'Destino confirmado en Ventas; se conservará como referencia de esta entrega.'
+                            : direccionSeleccionadaId === '__manual__'
+                              ? 'Destino excepcional; se guardará solo en esta entrega.'
+                              : pedidoSeleccionado?.direccionEntrega
+                                ? 'Dirección alternativa del cliente; el pedido y la venta no se modifican.'
+                                : 'Dirección del maestro del cliente; se conservará en esta entrega.'}
+                        disabled={destinoBloqueado}
+                        required
+                        noOptionsMessage="El cliente no tiene direcciones de entrega activas."
+                      />
+                    ) : null}
+                    {(!direccionesCliente.length || direccionSeleccionadaId === '__manual__') ? (
+                      <div className={direccionesCliente.length ? 'mt-3' : ''}>
+                        <label htmlFor="direccion-entrega-manual" className="field-label">Dirección de entrega<span aria-hidden="true"> *</span></label>
+                        <input id="direccion-entrega-manual" required minLength={3} maxLength={240} disabled={destinoBloqueado} value={datos.direccionEntrega} onChange={(evento) => { setDireccionSeleccionadaId('__manual__'); setDatos({ ...datos, direccionEntrega: evento.target.value }) }} className="field-control" placeholder="Ingresa la dirección de destino del cliente" />
+                        <p className="mt-1 text-xs text-muted-foreground">{direccionesCliente.length ? 'Se registrará como excepción de esta entrega, sin cambiar el pedido.' : 'El cliente no tiene dirección registrada; ingresa el destino para este envío.'}</p>
+                      </div>
+                    ) : null}
+                    {datos.direccionEntrega ? <p className="mt-2 break-words border-s-2 border-primary/40 ps-3 text-sm text-muted-foreground">Destino aplicado a esta entrega: <span className="font-medium text-foreground">{datos.direccionEntrega}</span></p> : null}
                 </div>
               </section>
 
               <section aria-labelledby="programacion-entrega-title" className="space-y-4 border-t pt-5">
-                <div><h3 id="programacion-entrega-title" className="text-sm font-semibold uppercase tracking-[.06em] text-primary">Programación y transporte</h3><p className="mt-1 text-sm text-muted-foreground">Los datos del transporte se completan antes de iniciar la ruta.</p></div>
+                <div><h3 id="programacion-entrega-title" className="text-sm font-semibold uppercase tracking-[.06em] text-primary">Programación y documentos</h3><p className="mt-1 text-sm text-muted-foreground">Registra la fecha y la guía que acompañará el traslado. Los datos del vehículo se completan cuando se prepara la salida.</p></div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div><label htmlFor="fecha-programada" className="field-label">Fecha programada<span aria-hidden="true"> *</span></label><input id="fecha-programada" required type="date" value={datos.fechaProgramada} onChange={(evento) => setDatos({ ...datos, fechaProgramada: evento.target.value })} className="field-control" /></div>
-                  <div><label htmlFor="fecha-entrega" className="field-label">Fecha de entrega real{['entregado', 'entrega_parcial'].includes(datos.estado) ? <span aria-hidden="true"> *</span> : null}</label><input id="fecha-entrega" type="date" value={datos.fechaEntrega} onChange={(evento) => setDatos({ ...datos, fechaEntrega: evento.target.value })} className="field-control" /><p className="mt-1 text-xs text-muted-foreground">Se completa al confirmar la entrega o una entrega parcial.</p></div>
-                  <div><label htmlFor="tipo-transporte" className="field-label">Tipo de transporte<span aria-hidden="true"> *</span></label><select id="tipo-transporte" required disabled={esRecojoCliente} value={datos.tipoTransporte} onChange={(evento) => setDatos({ ...datos, tipoTransporte: evento.target.value as DatosProgramacionEntrega['tipoTransporte'] })} className="field-control"><option value="interno">Interno</option><option value="externo">Externo</option></select></div>
-                  <div><label htmlFor="modalidad" className="field-label">Modalidad<span aria-hidden="true"> *</span></label><select id="modalidad" value={datos.modalidad} onChange={(evento) => setDatos({ ...datos, modalidad: evento.target.value as DatosProgramacionEntrega['modalidad'] })} className="field-control"><option value="movilidad_propia">Movilidad propia</option><option value="movilidad_externa">Movilidad externa</option><option value="recojo_cliente">Recojo del cliente</option></select></div>
-                  <div><label htmlFor="transportista" className="field-label">Transportista{requiereTransportista ? <span aria-hidden="true"> *</span> : null}</label><input id="transportista" required={requiereTransportista} disabled={esRecojoCliente} value={datos.transportista} onChange={(evento) => setDatos({ ...datos, transportista: evento.target.value })} className="field-control" /></div>
-                  <div><label htmlFor="conductor" className="field-label">Conductor{requiereDatosTransporte ? <span aria-hidden="true"> *</span> : null}</label><input id="conductor" required={requiereDatosTransporte} disabled={esRecojoCliente} value={datos.conductor} onChange={(evento) => setDatos({ ...datos, conductor: evento.target.value })} className="field-control" /></div>
-                  <div><label htmlFor="vehiculo" className="field-label">Vehículo{requiereDatosTransporte ? <span aria-hidden="true"> *</span> : null}</label><input id="vehiculo" required={requiereDatosTransporte} disabled={esRecojoCliente} value={datos.vehiculo} onChange={(evento) => setDatos({ ...datos, vehiculo: evento.target.value })} className="field-control" /></div>
-                  <div><label htmlFor="placa" className="field-label">Placa{requiereDatosTransporte ? <span aria-hidden="true"> *</span> : null}</label><input id="placa" required={requiereDatosTransporte} disabled={esRecojoCliente} value={datos.placa} onChange={(evento) => setDatos({ ...datos, placa: evento.target.value })} className="field-control" /></div>
-                  <div><label htmlFor="estado-distribucion" className="field-label">Estado<span aria-hidden="true"> *</span></label><select id="estado-distribucion" value={datos.estado} onChange={(evento) => setDatos({ ...datos, estado: evento.target.value as DatosProgramacionEntrega['estado'] })} className="field-control">{(edicion ? [edicion.estado, ...obtenerEstadosSiguientes(edicion.estado)] : ['programado']).map((valor) => <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>)}</select></div>
+                  <div><label htmlFor="fecha-emision" className="field-label">Fecha de emisión de la guía<span aria-hidden="true"> *</span></label><input id="fecha-emision" required type="date" value={datos.fechaEmision} onChange={(evento) => setDatos({ ...datos, fechaEmision: evento.target.value })} className="field-control" /></div>
+                  <div><label htmlFor="numero-despacho" className="field-label">Referencia interna de despacho<span aria-hidden="true"> *</span></label><input id="numero-despacho" required maxLength={40} value={datos.numeroDespacho} onChange={(evento) => setDatos({ ...datos, numeroDespacho: evento.target.value })} className="field-control" /><p className="mt-1 text-xs text-muted-foreground">Identificador interno; no reemplaza la guía de remisión.</p></div>
+                  <div><label htmlFor="guia-remision" className="field-label">Número de guía de remisión<span aria-hidden="true"> *</span></label><input id="guia-remision" required maxLength={40} value={datos.numeroGuiaRemision} onChange={(evento) => setDatos({ ...datos, numeroGuiaRemision: evento.target.value })} className="field-control" /></div>
+                  <div><label htmlFor="modalidad" className="field-label">Modalidad de transporte<span aria-hidden="true"> *</span></label><select id="modalidad" value={datos.modalidad} onChange={(evento) => { const modalidad = evento.target.value as DatosProgramacionEntrega['modalidad']; setDatos({ ...datos, modalidad, tipoTransporte: tipoTransporteParaModalidad(modalidad, datos.tipoTransporte) }) }} className="field-control"><option value="movilidad_propia">Movilidad propia</option><option value="movilidad_externa">Movilidad externa</option>{edicion && esRecojoCliente ? <option value="recojo_cliente">Recojo del cliente (registro existente)</option> : null}</select></div>
+                  {edicion ? <div><label htmlFor="estado-distribucion" className="field-label">Estado de la entrega<span aria-hidden="true"> *</span></label><select id="estado-distribucion" value={datos.estado} onChange={(evento) => setDatos({ ...datos, estado: evento.target.value as DatosProgramacionEntrega['estado'] })} className="field-control">{[edicion.estado, ...obtenerEstadosSiguientes(edicion.estado)].map((valor) => <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>)}</select></div> : null}
+                  {['entregado', 'entrega_parcial'].includes(datos.estado) || datos.fechaEntrega ? <div><label htmlFor="fecha-entrega" className="field-label">Fecha real de entrega{['entregado', 'entrega_parcial'].includes(datos.estado) ? <span aria-hidden="true"> *</span> : null}</label><input id="fecha-entrega" type="date" value={datos.fechaEntrega} onChange={(evento) => setDatos({ ...datos, fechaEntrega: evento.target.value })} className="field-control" /><p className="mt-1 text-xs text-muted-foreground">Se registra al confirmar la entrega, total o parcial.</p></div> : null}
                 </div>
+                <details className="border" open={requiereDatosTransporte || Boolean(datos.transportista || datos.conductor || datos.vehiculo || datos.placa)}>
+                  <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Datos de ruta <span className="font-normal text-muted-foreground">· completar antes de iniciar el traslado</span></summary>
+                  <div className="grid gap-4 border-t p-4 sm:grid-cols-2">
+                    <div><label htmlFor="transportista" className="field-label">Transportista{requiereTransportista ? <span aria-hidden="true"> *</span> : null}</label><input id="transportista" required={requiereTransportista} disabled={esRecojoCliente} value={datos.transportista} onChange={(evento) => setDatos({ ...datos, transportista: evento.target.value })} className="field-control" /></div>
+                    <div><label htmlFor="conductor" className="field-label">Conductor{requiereDatosTransporte ? <span aria-hidden="true"> *</span> : null}</label><input id="conductor" required={requiereDatosTransporte} disabled={esRecojoCliente} value={datos.conductor} onChange={(evento) => setDatos({ ...datos, conductor: evento.target.value })} className="field-control" /></div>
+                    <div><label htmlFor="vehiculo" className="field-label">Vehículo{requiereDatosTransporte ? <span aria-hidden="true"> *</span> : null}</label><input id="vehiculo" required={requiereDatosTransporte} disabled={esRecojoCliente} value={datos.vehiculo} onChange={(evento) => setDatos({ ...datos, vehiculo: evento.target.value })} className="field-control" /></div>
+                    <div><label htmlFor="placa" className="field-label">Placa{requiereDatosTransporte ? <span aria-hidden="true"> *</span> : null}</label><input id="placa" required={requiereDatosTransporte} disabled={esRecojoCliente} value={datos.placa} onChange={(evento) => setDatos({ ...datos, placa: evento.target.value })} className="field-control" /></div>
+                  </div>
+                </details>
               </section>
 
-              <section aria-labelledby="seguimiento-entrega-title" className="space-y-4 border-t pt-5">
-                <div><h3 id="seguimiento-entrega-title" className="text-sm font-semibold uppercase tracking-[.06em] text-primary">Seguimiento y evidencia</h3><p className="mt-1 text-sm text-muted-foreground">Registra información operativa únicamente cuando corresponda al estado de la entrega.</p></div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div><label htmlFor="evidencia" className="field-label">Evidencia{datos.estado === 'entregado' ? <span aria-hidden="true"> *</span> : null}</label><input id="evidencia" required={datos.estado === 'entregado'} value={datos.evidencia} onChange={(evento) => setDatos({ ...datos, evidencia: evento.target.value })} className="field-control" placeholder="Ej. foto de entrega, nombre de archivo o URL" /></div>
-                  <div><label htmlFor="incidencias" className="field-label">Incidencias{['rechazado', 'devuelto'].includes(datos.estado) ? <span aria-hidden="true"> *</span> : null}</label><textarea id="incidencias" rows={2} required={['rechazado', 'devuelto'].includes(datos.estado)} value={datos.incidencias.join('; ')} onChange={(evento) => setDatos({ ...datos, incidencias: evento.target.value ? evento.target.value.split(';').map((valor) => valor.trim()).filter(Boolean) : [] })} className="field-control" placeholder="Separadas por punto y coma" /></div>
+              <details className="border" open={['entregado', 'entrega_parcial', 'rechazado', 'devuelto'].includes(datos.estado) || Boolean(datos.evidencia || datos.incidencias.length || datos.observaciones)}>
+                <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Notas e incidencias <span className="font-normal text-muted-foreground">· evidencia al cerrar la entrega</span></summary>
+                <div className="grid gap-4 border-t p-4 sm:grid-cols-2">
+                  <div><label htmlFor="evidencia" className="field-label">Evidencia{datos.estado === 'entregado' ? <span aria-hidden="true"> *</span> : null}</label><input id="evidencia" required={datos.estado === 'entregado'} value={datos.evidencia} onChange={(evento) => setDatos({ ...datos, evidencia: evento.target.value })} className="field-control" placeholder="Ej. constancia, nombre de archivo o URL" /></div>
+                  <div><label htmlFor="incidencias" className="field-label">Incidencias{['rechazado', 'devuelto'].includes(datos.estado) ? <span aria-hidden="true"> *</span> : null}</label><textarea id="incidencias" rows={2} required={['rechazado', 'devuelto'].includes(datos.estado)} value={datos.incidencias.join('; ')} onChange={(evento) => setDatos({ ...datos, incidencias: evento.target.value ? evento.target.value.split(';').map((valor) => valor.trim()).filter(Boolean) : [] })} className="field-control" placeholder="Describe el problema ocurrido" /></div>
                   <div className="sm:col-span-2"><label htmlFor="observaciones-entrega" className="field-label">Observaciones</label><textarea id="observaciones-entrega" rows={3} value={datos.observaciones} onChange={(evento) => setDatos({ ...datos, observaciones: evento.target.value })} className="field-control" /></div>
                 </div>
-              </section>
+              </details>
+              </div>
             </div>
-            <div className="mt-6 flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setFormularioAbierto(false)}>Cancelar</Button><Button type="submit">{edicion ? 'Guardar cambios' : 'Programar entrega'}</Button></div>
+            <footer className="flex shrink-0 justify-end gap-2 border-t bg-background px-6 py-4"><Button type="button" variant="outline" onClick={() => setFormularioAbierto(false)}>Cancelar</Button><Button type="submit">{edicion ? 'Guardar cambios' : 'Programar entrega'}</Button></footer>
           </form>
-        </div>
+          </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
       ) : null}
     </div>
   )

@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
-import type { DatosVenta, ModoCumplimientoPedido, PedidoVenta, Venta } from '@/modulos/ventas/modelo/operacionVenta'
+import type { DatosVenta, DireccionEntregaPedido, ModoCumplimientoPedido, PedidoVenta, Venta } from '@/modulos/ventas/modelo/operacionVenta'
 
 interface ClienteFila {
   document_type: string
@@ -26,6 +26,13 @@ interface AlmacenPedidoFila {
   name: string
 }
 
+interface DireccionPedidoFila {
+  label?: string | null
+  address_line?: string | null
+  ubigeo_code?: string | null
+  reference?: string | null
+}
+
 interface PedidoFila {
   id: string
   organization_id: string
@@ -38,6 +45,8 @@ interface PedidoFila {
   status: PedidoVenta['estado']
   fulfillment_mode?: PedidoVenta['modalidadCumplimiento'] | null
   fulfillment_status?: PedidoVenta['estadoCumplimiento'] | null
+  delivery_address_id?: string | null
+  delivery_address_snapshot?: DireccionPedidoFila | null
   prices_include_tax: boolean
   taxable_base: number | string | null
   exempt_amount: number | string | null
@@ -96,6 +105,8 @@ const columnasPedido = [
   'status',
   'fulfillment_mode',
   'fulfillment_status',
+  'delivery_address_id',
+  'delivery_address_snapshot',
   'prices_include_tax',
   'taxable_base',
   'exempt_amount',
@@ -203,6 +214,13 @@ function mapearPedido(fila: PedidoFila): PedidoVenta {
     estado: fila.status,
     modalidadCumplimiento: fila.fulfillment_mode ?? 'delivery',
     estadoCumplimiento: fila.fulfillment_status ?? 'pending',
+    direccionEntrega: fila.delivery_address_snapshot?.address_line ? {
+      id: fila.delivery_address_id ?? undefined,
+      etiqueta: fila.delivery_address_snapshot.label ?? '',
+      direccion: fila.delivery_address_snapshot.address_line,
+      ubigeo: fila.delivery_address_snapshot.ubigeo_code ?? '',
+      referencia: fila.delivery_address_snapshot.reference ?? '',
+    } : undefined,
     fechaRegistro: fila.created_at,
     fechaAtencion: null,
     almacenId: fila.warehouse_id ?? undefined,
@@ -296,6 +314,11 @@ function mensajeError(error: { code?: string; message?: string; details?: string
   if (message.includes('ORDER_FULFILLMENT_MODE_INVALID')) return 'Selecciona una modalidad de cumplimiento válida'
   if (message.includes('ORDER_FULFILLMENT_MODE_CONFLICT')) return 'La modalidad de este pedido ya fue definida y no puede cambiarse en un reintento'
   if (message.includes('ORDER_FULFILLMENT_MODE_NOT_SET')) return 'No se pudo guardar la modalidad de cumplimiento del pedido'
+  if (message.includes('ORDER_DELIVERY_ADDRESS_REQUIRED')) return 'Selecciona o ingresa una dirección de entrega para el pedido'
+  if (message.includes('ORDER_DELIVERY_ADDRESS_INVALID')) return 'Revisa la dirección, el ubigeo y las referencias ingresadas'
+  if (message.includes('ORDER_DELIVERY_ADDRESS_UNAVAILABLE')) return 'La dirección de entrega ya no está activa para este cliente'
+  if (message.includes('ORDER_DELIVERY_ADDRESS_NOT_ALLOWED')) return 'El recojo del cliente no debe incluir una dirección de entrega'
+  if (message.includes('ORDER_DELIVERY_ADDRESS_CONFLICT')) return 'La dirección del pedido ya fue confirmada con otros datos; recarga y revisa el documento'
   if (message.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no generan reservas ni pueden despacharse como inventario.'
   if (error.code === '42501' || /_FORBIDDEN|AUTHENTICATION_REQUIRED/.test(message)) return 'No tienes permiso para gestionar operaciones comerciales'
   if (message.includes('ORDER_CUSTOMER_UNAVAILABLE')) return 'El cliente seleccionado ya no está disponible'
@@ -396,6 +419,7 @@ export async function crearPedidoPersistente(
   cotizacion: Cotizacion,
   warehouseId: string,
   fulfillmentMode: ModoCumplimientoPedido = 'delivery',
+  deliveryAddress?: DireccionEntregaPedido,
 ) {
   const { data, error } = await supabase.rpc('create_order_with_fulfillment', {
     payload: {
@@ -409,6 +433,13 @@ export async function crearPedidoPersistente(
       prices_include_tax: cotizacion.preciosIncluyenIgv,
       notes: cotizacion.observacion,
       fulfillment_mode: fulfillmentMode,
+      delivery_address_id: fulfillmentMode === 'delivery' ? deliveryAddress?.id ?? null : null,
+      delivery_address_snapshot: fulfillmentMode === 'delivery' && deliveryAddress && !deliveryAddress.id ? {
+        label: deliveryAddress.etiqueta.trim() || null,
+        address_line: deliveryAddress.direccion.trim(),
+        ubigeo_code: deliveryAddress.ubigeo.trim() || null,
+        reference: deliveryAddress.referencia.trim() || null,
+      } : null,
       items: cotizacion.lineas.map((linea) => ({
         product_id: linea.productoId,
         quantity: linea.cantidad,

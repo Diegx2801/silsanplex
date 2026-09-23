@@ -154,6 +154,16 @@ export const esquemaDatosProgramacionEntrega = z.object({
 
 export type DatosProgramacionEntrega = z.infer<typeof esquemaDatosProgramacionEntrega>
 
+/** Mantiene alineado el tipo persistido con la modalidad que elige logística. */
+export function tipoTransporteParaModalidad(
+  modalidad: ProgramacionEntrega['modalidad'],
+  alternativaRecojo: ProgramacionEntrega['tipoTransporte'] = 'interno',
+): ProgramacionEntrega['tipoTransporte'] {
+  if (modalidad === 'movilidad_externa') return 'externo'
+  if (modalidad === 'movilidad_propia') return 'interno'
+  return alternativaRecojo
+}
+
 export function crearProgramacionEntrega(
   datos: DatosProgramacionEntrega,
   fechaEmision = fechaActualPeru(),

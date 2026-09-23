@@ -26,6 +26,7 @@ import { useAuth } from '@/features/auth/useAuth'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { fechaActualPeru, formatearFechaCalendarioPeru } from '@/lib/fechas'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
+import type { DireccionEntregaCliente } from '@/modulos/clientes/modelo/cliente'
 import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import { useProductos } from '@/modulos/productos/estado/useProductos'
 import { buscarClientes as buscarClientesServicio } from '@/modulos/clientes/servicios/customerService'
@@ -45,9 +46,10 @@ import {
   type EntidadesSeleccionadasCotizacion,
   type EstadoCotizacion,
 } from '@/modulos/ventas/modelo/cotizacion'
-import type { ModoCumplimientoPedido } from '@/modulos/ventas/modelo/operacionVenta'
+import type { DireccionEntregaPedido, ModoCumplimientoPedido } from '@/modulos/ventas/modelo/operacionVenta'
 
 type FiltroEstado = 'todos' | EstadoCotizacion | 'vencida'
+const DIRECCIONES_ENTREGA_VACIAS: readonly DireccionEntregaCliente[] = []
 type VistaVentas = 'cotizaciones' | 'ejecucion'
 
 const formatoMoneda = new Intl.NumberFormat('es-PE', {
@@ -291,11 +293,15 @@ export function VentasPage() {
     setCotizacionPorConsultar(cotizacion)
   }
 
-  const confirmarPedido = async (almacenId: string, fulfillmentMode: ModoCumplimientoPedido) => {
+  const confirmarPedido = async (
+    almacenId: string,
+    fulfillmentMode: ModoCumplimientoPedido,
+    direccionEntrega?: DireccionEntregaPedido,
+  ) => {
     if (!puedeGestionarVentas) return 'No tienes permiso para administrar ventas'
     if (!cotizacionPorCrearPedido) return 'Selecciona una cotización válida'
     const cotizacion = cotizacionPorCrearPedido
-    const error = await crearPedido(cotizacion.id, almacenId, fulfillmentMode)
+    const error = await crearPedido(cotizacion.id, almacenId, fulfillmentMode, direccionEntrega)
     if (error) {
       notificar(error, true)
       return error
@@ -692,6 +698,7 @@ export function VentasPage() {
           abierto={Boolean(cotizacionPorCrearPedido)}
           cotizacion={cotizacionPorCrearPedido}
           almacenes={almacenesActivos}
+          direccionesEntrega={clientes.find((cliente) => cliente.id === cotizacionPorCrearPedido.clienteId)?.direccionesEntrega ?? DIRECCIONES_ENTREGA_VACIAS}
           buscarAlmacenes={buscarAlmacenesRemotos}
           guardando={creandoPedido}
           alCambiarApertura={(abierto) => {

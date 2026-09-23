@@ -97,6 +97,23 @@ describe('ventasService', () => {
     })
   })
 
+  it('persiste una dirección manual como snapshot del pedido, sin modificar el maestro del cliente', async () => {
+    supabaseMock.rpc.mockResolvedValue({ data: 'pedido-1', error: null })
+
+    await crearPedidoPersistente('org-1', cotizacion, 'warehouse-1', 'delivery', {
+      etiqueta: 'Sucursal temporal', direccion: 'Av. Nueva 456', ubigeo: '150101', referencia: 'Puerta azul',
+    })
+
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('create_order_with_fulfillment', {
+      payload: expect.objectContaining({
+        delivery_address_id: null,
+        delivery_address_snapshot: {
+          label: 'Sucursal temporal', address_line: 'Av. Nueva 456', ubigeo_code: '150101', reference: 'Puerta azul',
+        },
+      }),
+    })
+  })
+
   it('traduce conflictos de idempotencia de pedidos y ventas', async () => {
     supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'ORDER_IDEMPOTENCY_CONFLICT' } })
     await expect(crearPedidoPersistente('org-1', cotizacion, 'warehouse-1')).rejects.toThrow('La clave de operación del pedido ya fue usada con datos diferentes')
@@ -136,7 +153,7 @@ describe('ventasService', () => {
       .mockReturnValueOnce(cadena({
       data: [{
         id: 'pedido-1', organization_id: 'org-1', order_number: 'PED-000001', source_quote_id: 'cotizacion-1', source_quote_number: 'COT-000001',
-        customer_id: 'cliente-1', warehouse_id: 'warehouse-1', order_date: '2026-09-01', status: 'confirmado', fulfillment_mode: 'pickup', fulfillment_status: 'pending', prices_include_tax: true,
+        customer_id: 'cliente-1', warehouse_id: 'warehouse-1', order_date: '2026-09-01', status: 'confirmado', fulfillment_mode: 'pickup', fulfillment_status: 'pending', delivery_address_id: null, delivery_address_snapshot: {}, prices_include_tax: true,
         taxable_base: 16.95, exempt_amount: 0, unaffected_amount: 0, subtotal: 16.95, tax: 3.05, total: 20, tax_calculation_status: 'calculated', notes: '', created_at: '2026-09-01T12:00:00.000Z',
         customers: { document_type: 'RUC', document_number: '20548796321', legal_name: 'Cliente Uno' },
         warehouses: { code: 'MAIN', name: 'Almacén principal' },
@@ -147,6 +164,27 @@ describe('ventasService', () => {
 
     await expect(listarPedidosPersistentes('org-1')).resolves.toEqual([
       expect.objectContaining({ id: 'pedido-1', numero: 'PED-000001', clienteNombre: 'Cliente Uno', fechaPedido: '2026-09-01', almacenId: 'warehouse-1', almacenNombre: 'Almacén principal', modalidadCumplimiento: 'pickup', estadoCumplimiento: 'pending', lineas: [expect.objectContaining({ cantidad: 2, afectacionIgv: 'gravado' })] }),
+    ])
+  })
+
+  it('lee del pedido el snapshot persistido del destino sin consultar el dato mutable del cliente', async () => {
+    supabaseMock.from.mockReturnValueOnce(cadena({
+      data: [{
+        id: 'pedido-1', organization_id: 'org-1', order_number: 'PED-000001', source_quote_id: 'cotizacion-1', source_quote_number: 'COT-000001',
+        customer_id: 'cliente-1', warehouse_id: 'warehouse-1', order_date: '2026-09-01', status: 'confirmado', fulfillment_mode: 'delivery', fulfillment_status: 'pending',
+        delivery_address_id: '92af79d1-8223-4d07-8bc4-36060695a434', delivery_address_snapshot: { label: 'Sucursal', address_line: 'Av. Principal 123', ubigeo_code: '150101', reference: 'Frente al parque' },
+        prices_include_tax: true, taxable_base: 16.95, exempt_amount: 0, unaffected_amount: 0, subtotal: 16.95, tax: 3.05, total: 20,
+        tax_calculation_status: 'calculated', notes: '', created_at: '2026-09-01T12:00:00.000Z',
+        customers: { document_type: 'RUC', document_number: '20548796321', legal_name: 'Cliente Uno' },
+        warehouses: { code: 'MAIN', name: 'Almacén principal' },
+        order_items: [{ id: 'linea-1', product_id: 'producto-1', product_type: 'good', service_completed_quantity: 0, product_code: 'P-1', product_description: 'Producto', unit_of_measure: 'UND', tax_affectation: 'gravado', quantity: 2, unit_price: 10 }],
+      }], error: null,
+    }))
+
+    await expect(listarPedidosPersistentes('org-1')).resolves.toEqual([
+      expect.objectContaining({ direccionEntrega: {
+        id: '92af79d1-8223-4d07-8bc4-36060695a434', etiqueta: 'Sucursal', direccion: 'Av. Principal 123', ubigeo: '150101', referencia: 'Frente al parque',
+      } }),
     ])
   })
 

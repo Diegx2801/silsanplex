@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { pedidoListoParaProgramarDistribucion } from './pedidosProgramables'
+import { enriquecerLineasPedidoConSaldos, pedidoListoParaProgramarDistribucion } from './pedidosProgramables'
 
 const pedido = {
   estado: 'confirmado',
@@ -11,6 +11,11 @@ const pedido = {
 const ventaCompleta = {
   estado: 'registrada',
   lineas: [{ pedidoLineaId: 'linea-pedido-1', tipoProducto: 'good', cantidadDespachada: 3, cantidadPendiente: 0 }],
+} as const
+const lineaOperativa = {
+  id: 'linea-pedido-1', productoId: 'producto-1', tipoProducto: 'good', productoCodigo: 'P-1',
+  productoDescripcion: 'Producto', unidadMedida: 'UND', cantidad: 3, precioUnitario: 10,
+  lote: '', fechaVencimiento: '',
 } as const
 
 describe('pedidoListoParaProgramarDistribucion', () => {
@@ -38,5 +43,19 @@ describe('pedidoListoParaProgramarDistribucion', () => {
     ['sin bienes físicos', { ...pedido, lineas: [{ id: 'servicio-1', tipoProducto: 'service', cantidad: 1 }] }],
   ] as const)('rechaza pedido %s', (_caso, pedidoNoProgramable) => {
     expect(pedidoListoParaProgramarDistribucion(pedidoNoProgramable, ventaCompleta)).toBe(false)
+  })
+})
+
+describe('enriquecerLineasPedidoConSaldos', () => {
+  it('usa cantidades de Ventas por identidad de línea y conserva el pendiente real', () => {
+    const resultado = enriquecerLineasPedidoConSaldos([lineaOperativa], ventaCompleta)
+    expect(resultado).toEqual([expect.objectContaining({
+      id: 'linea-pedido-1', cantidad: 3, cantidadDespachada: 3, cantidadPendiente: 0,
+    })])
+  })
+
+  it('no inventa despachos si el saldo de Ventas aún no está disponible', () => {
+    const resultado = enriquecerLineasPedidoConSaldos([lineaOperativa], undefined)
+    expect(resultado[0]).toMatchObject({ cantidadDespachada: 0, cantidadPendiente: 3 })
   })
 })
