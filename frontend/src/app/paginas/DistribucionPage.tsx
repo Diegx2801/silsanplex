@@ -198,66 +198,38 @@ export function DistribucionPage() {
     setDatos((actuales) => ({ ...actuales, direccionEntrega: principal.direccion }))
   }, [datos.direccionEntrega, datos.pedidoId, direccionesCliente, formularioAbierto])
 
-  const abrirFormulario = (programacion?: ProgramacionEntrega) => {
-    setEdicion(programacion ?? null)
-    const pedidoOrigen = programacion ? pedidoPorId(programacion.pedidoId) : undefined
+  const editarProgramacion = (programacion: ProgramacionEntrega) => {
+    setEdicion(programacion)
+    const pedidoOrigen = pedidoPorId(programacion.pedidoId)
     const clienteOrigen = clientes.find((cliente) => cliente.id === pedidoOrigen?.clienteId)
-    const direccionOrigen = clienteOrigen?.direccionesEntrega.find((direccion) => direccion.direccion === programacion?.direccionEntrega)
-    setDireccionSeleccionadaId(programacion
-      ? direccionOrigen?.id ?? (programacion.direccionEntrega ? '__manual__' : '')
-      : '')
-    setDatos(programacion
-      ? {
-          pedidoId: programacion.pedidoId,
-          lockVersion: programacion.lockVersion,
-          pedidoNumero: programacion.pedidoNumero,
-          ventaId: programacion.ventaId ?? '',
-          ventaNumero: programacion.ventaNumero ?? '',
-          clienteNombre: programacion.clienteNombre,
-          direccionEntrega: programacion.direccionEntrega ?? '',
-          numeroDespacho: programacion.numeroDespacho ?? '',
-          numeroGuiaRemision: programacion.numeroGuiaRemision ?? '',
-          fechaEmision: programacion.fechaEmision ?? hoy,
-          fechaProgramada: programacion.fechaProgramada ?? hoy,
-          fechaEntrega: programacion.fechaEntrega ?? '',
-          tipoTransporte: programacion.tipoTransporte ?? 'interno',
-          modalidad: programacion.modalidad ?? 'movilidad_propia',
-          transportista: programacion.transportista ?? '',
-          conductor: programacion.conductor ?? '',
-          vehiculo: programacion.vehiculo ?? '',
-          placa: programacion.placa ?? '',
-          observaciones: programacion.observaciones ?? '',
-          evidencia: programacion.evidencia ?? '',
-          estado: programacion.estado ?? 'programado',
-          seguimiento: programacion.seguimiento ?? (programacion.estado === 'en_curso' || programacion.estado === 'en_destino' ? programacion.estado : 'en_curso'),
-          incidencias: programacion.incidencias ?? [],
-          lineas: programacion.lineas ?? [],
-        }
-      : {
-          pedidoId: '',
-          pedidoNumero: '',
-          ventaId: '',
-          ventaNumero: '',
-          clienteNombre: '',
-          direccionEntrega: '',
-          numeroDespacho: '',
-          numeroGuiaRemision: '',
-          fechaEmision: hoy,
-          fechaProgramada: hoy,
-          fechaEntrega: '',
-          tipoTransporte: 'interno',
-          modalidad: 'movilidad_propia',
-          transportista: '',
-          conductor: '',
-          vehiculo: '',
-          placa: '',
-          observaciones: '',
-          evidencia: '',
-          estado: 'programado',
-          seguimiento: 'en_curso',
-          incidencias: [],
-        lineas: [],
-      })
+    const direccionOrigen = clienteOrigen?.direccionesEntrega.find((direccion) => direccion.direccion === programacion.direccionEntrega)
+    setDireccionSeleccionadaId(direccionOrigen?.id ?? (programacion.direccionEntrega ? '__manual__' : ''))
+    setDatos({
+      pedidoId: programacion.pedidoId,
+      lockVersion: programacion.lockVersion,
+      pedidoNumero: programacion.pedidoNumero,
+      ventaId: programacion.ventaId ?? '',
+      ventaNumero: programacion.ventaNumero ?? '',
+      clienteNombre: programacion.clienteNombre,
+      direccionEntrega: programacion.direccionEntrega ?? '',
+      numeroDespacho: programacion.numeroDespacho ?? '',
+      numeroGuiaRemision: programacion.numeroGuiaRemision ?? '',
+      fechaEmision: programacion.fechaEmision ?? hoy,
+      fechaProgramada: programacion.fechaProgramada ?? hoy,
+      fechaEntrega: programacion.fechaEntrega ?? '',
+      tipoTransporte: programacion.tipoTransporte ?? 'interno',
+      modalidad: programacion.modalidad ?? 'movilidad_propia',
+      transportista: programacion.transportista ?? '',
+      conductor: programacion.conductor ?? '',
+      vehiculo: programacion.vehiculo ?? '',
+      placa: programacion.placa ?? '',
+      observaciones: programacion.observaciones ?? '',
+      evidencia: programacion.evidencia ?? '',
+      estado: programacion.estado ?? 'programado',
+      seguimiento: programacion.seguimiento ?? (programacion.estado === 'en_curso' || programacion.estado === 'en_destino' ? programacion.estado : 'en_curso'),
+      incidencias: programacion.incidencias ?? [],
+      lineas: programacion.lineas ?? [],
+    })
     setFormularioAbierto(true)
   }
 
@@ -484,13 +456,12 @@ export function DistribucionPage() {
 
   return (
     <div className="space-y-8">
-      <header className="flex flex-col gap-5 border-b pb-7 lg:flex-row lg:items-end lg:justify-between print:hidden">
+      <header className="border-b pb-7 print:hidden">
         <div>
           <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">Despacho y seguimiento</span>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Distribución</h1>
           <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">Programa entregas de pedidos, registra su guía de remisión y acompaña cada envío hasta destino.</p>
         </div>
-        {puedeGestionarDistribucion ? <Button type="button" size="lg" onClick={() => abrirFormulario()}><Plus aria-hidden="true" /> Programar entrega</Button> : null}
       </header>
 
       <nav aria-label="Secciones de distribución" role="tablist" className="flex flex-wrap gap-2 border-b pb-2 print:hidden">
@@ -515,7 +486,7 @@ export function DistribucionPage() {
       </nav>
 
       <section aria-label="Resumen de distribución" className="ledger-sheet">
-        <div className="grid sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4 xl:grid-cols-7">
           {[
             ['Por programar', pedidosPorProgramar.length],
             ['Programadas', resumen.programados],
@@ -525,9 +496,9 @@ export function DistribucionPage() {
             ['Atrasadas', resumen.atrasadas],
             ['Con incidencias', resumen.conIncidencias],
           ].map(([etiqueta, valor]) => (
-            <article key={etiqueta} className="border-b px-5 py-5 last:border-b-0 sm:border-e sm:last:border-e-0 sm:border-b-0">
-              <div className="flex justify-between"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">{etiqueta}</p><Truck aria-hidden="true" className="size-4 text-primary" /></div>
-              <p className="mt-3 font-mono text-2xl font-semibold">{valor}</p>
+            <article key={etiqueta} className="flex min-h-16 flex-col justify-between gap-2 bg-card px-3 py-3">
+              <div className="flex items-start justify-between gap-2"><p className="font-mono text-[0.62rem] leading-4 tracking-[0.06em] text-muted-foreground uppercase">{etiqueta}</p><Truck aria-hidden="true" className="size-4 shrink-0 text-primary" /></div>
+              <p className="font-mono text-xl font-semibold tabular-nums">{valor}</p>
             </article>
           ))}
         </div>
@@ -607,7 +578,7 @@ export function DistribucionPage() {
                   <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · {item.ventaNumero ? `Venta ${item.ventaNumero} · ` : ''}Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{item.lineas.length ? item.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · pedidas <span className="font-mono font-semibold">{linea.cantidad}</span> · despachadas <span className="font-mono font-semibold">{linea.cantidadDespachada ?? 0}</span> · pendientes <span className="font-mono font-semibold">{linea.cantidadPendiente ?? linea.cantidad}</span> {linea.unidadMedida}</p>) : <p>Detalle del pedido no disponible</p>}</div></div>
                   <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted-foreground">Programada</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaProgramada)}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega real</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEntrega)}</dd></div></dl>
                   <div><div className="flex flex-wrap items-center gap-2"><span className="status-label" data-tone={tonoEstadoDistribucion(item.estado)}>{etiquetasEstado[item.estado]}</span><span className="text-sm text-muted-foreground">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</span></div>{puedeGestionarDistribucion ? <select aria-label={`Cambiar estado de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => { void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado']).then((error) => setMensaje(error ?? `Estado actualizado para ${item.pedidoNumero}.`)) }} className="field-control mt-2">{[item.estado, ...obtenerEstadosSiguientes(item.estado)].map((valor) => <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>)}</select> : <p className="mt-2 text-sm text-muted-foreground">Solo consulta</p>}{item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}</div>
-                  <div className="flex gap-1 print:hidden"><Button type="button" variant="ghost" size="icon" title="Ver detalle de la entrega" aria-label={`Ver detalle de la entrega ${item.pedidoNumero}`} onClick={() => setEntregaDetalle(item)}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion ? <Button type="button" variant="outline" onClick={() => abrirFormulario(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}<Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
+                  <div className="flex gap-1 print:hidden"><Button type="button" variant="ghost" size="icon" title="Ver detalle de la entrega" aria-label={`Ver detalle de la entrega ${item.pedidoNumero}`} onClick={() => setEntregaDetalle(item)}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion ? <Button type="button" variant="outline" onClick={() => editarProgramacion(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}<Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
                 </article>
               ))}</div>
             )}
