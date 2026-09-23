@@ -5,6 +5,7 @@ import {
   esquemaDatosProgramacionEntrega,
   esquemaProgramacionEntrega,
   filtrarProgramacionesEntrega,
+  inferirResultadoEntrega,
   listarEntregasAtrasadas,
   obtenerEstadosSiguientes,
   puedeTransicionarEntrega,
@@ -16,6 +17,15 @@ import { mapearEntrega, prepararPayloadEntrega } from '../servicios/distribucion
 import { fechaActualPeru } from '@/lib/fechas'
 
 describe('programación de entrega', () => {
+  it('deriva el cierre completo o parcial a partir del saldo por producto', () => {
+    const lineas = [{ id: 'linea-1', cantidad: 5, cantidadEntregadaCliente: 2 }]
+
+    expect(inferirResultadoEntrega(lineas, { 'linea-1': 3 })).toBe('entregado')
+    expect(inferirResultadoEntrega(lineas, { 'linea-1': 1 })).toBe('entrega_parcial')
+    expect(inferirResultadoEntrega(lineas, { 'linea-1': 4 })).toBeUndefined()
+    expect(inferirResultadoEntrega(lineas, { 'linea-1': 0 })).toBeUndefined()
+  })
+
   it('deriva el tipo de transporte de la modalidad para evitar opciones duplicadas', () => {
     expect(tipoTransporteParaModalidad('movilidad_propia')).toBe('interno')
     expect(tipoTransporteParaModalidad('movilidad_externa')).toBe('externo')

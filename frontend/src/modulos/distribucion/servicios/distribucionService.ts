@@ -5,8 +5,11 @@ import { supabase } from '@/lib/supabase'
 import {
   esquemaProgramacionEntrega,
   esquemaLineaProgramacionEntrega,
+  esquemaResultadoEntrega,
   type DatosProgramacionEntrega,
+  type EventoResultadoEntrega,
   type ProgramacionEntrega,
+  type ResultadoEntrega,
 } from '@/modulos/distribucion/modelo/programacionEntrega'
 import { listarPedidosPersistentes, listarVentasPersistentes } from '@/modulos/ventas/servicios/ventasService'
 import { enriquecerLineasPedidoConSaldos } from '@/modulos/distribucion/modelo/pedidosProgramables'
@@ -37,11 +40,28 @@ interface EntregaFila {
   placa?: string
   evidencia?: string
   incidencias?: unknown
+  quantity_reconciliation_required?: boolean | null
   order_items: unknown
   created_at: string
 }
 
-const columnas = 'id,lock_version,order_id,sale_id,sale_number,order_number,customer_name,issue_date,delivery_date,scheduled_date,actual_delivery_date,guide_number,transport_type,tracking_status,delivery_status,direction,numero_despacho,modalidad,transportista,conductor,vehiculo,placa,evidencia,incidencias,observations,order_items,created_at' as const
+interface ResultadoFila {
+  id: string
+  delivery_id: string
+  result_status: EventoResultadoEntrega['resultado']
+  occurred_on: string
+  evidence: string
+  incidents: unknown
+  created_at: string
+}
+
+interface LineaResultadoFila {
+  outcome_id: string
+  order_line_id: string
+  quantity_delivered: number | string
+}
+
+const columnas = 'id,lock_version,order_id,sale_id,sale_number,order_number,customer_name,issue_date,delivery_date,scheduled_date,actual_delivery_date,guide_number,transport_type,tracking_status,delivery_status,direction,numero_despacho,modalidad,transportista,conductor,vehiculo,placa,evidencia,incidencias,observations,quantity_reconciliation_required,order_items,created_at' as const
 
 export function prepararPayloadEntrega(
   organizationId: string,
@@ -115,6 +135,7 @@ export function mapearEntrega(fila: EntregaFila): ProgramacionEntrega {
     observaciones: fila.observations ?? '',
     evidencia: fila.evidencia ?? '',
     estado: fila.delivery_status ?? 'programado',
+    requiereConciliacionCantidades: fila.quantity_reconciliation_required ?? false,
     seguimiento: fila.tracking_status ?? 'en_curso',
     incidencias,
     lineas: lineas.success ? lineas.data : [],
@@ -146,6 +167,15 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (error.code === '42501' || mensaje.includes('DISTRIBUTION_FORBIDDEN')) return 'No tienes permiso para administrar distribución'
   if (mensaje.includes('DISTRIBUTION_NOT_FOUND')) return 'La entrega ya no existe'
   if (mensaje.includes('DISTRIBUTION_VERSION_REQUIRED') || mensaje.includes('DISTRIBUTION_VERSION_CONFLICT')) return 'La entrega cambió mientras la editabas. Actualiza la lista e inténtalo nuevamente.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME_RECONCILIATION_REQUIRED')) return 'Esta entrega histórica no tiene cantidades recibidas por producto. Debe conciliarse antes de registrar otro resultado.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME_STATE_INVALID')) return 'La entrega debe estar en ruta o tener un resultado parcial para registrar su recepción.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME_TOTAL_INCOMPLETE')) return 'Las cantidades no completan el saldo. Registra una entrega parcial o ajusta las cantidades recibidas.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME_PARTIAL_INVALID')) return 'Una entrega parcial debe registrar cantidades recibidas y dejar un saldo pendiente.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME_QUANTITY_EXCEEDED')) return 'La cantidad recibida supera el saldo pendiente de al menos un producto.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME_EVIDENCE_REQUIRED')) return 'Registra evidencia para confirmar los bienes recibidos.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME_REJECTION_INVALID')) return 'Describe una incidencia y no registres cantidades para informar un rechazo.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME_DUPLICATE_LINE')) return 'Cada producto debe aparecer una sola vez en el resultado.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME')) return 'No se pudo registrar el resultado. Actualiza la entrega y revisa las cantidades ingresadas.'
   if (mensaje.includes('DISTRIBUTION_DIRECTION_REQUIRED')) return 'Ingresa la dirección de entrega'
   if (mensaje.includes('DISTRIBUTION_ORDER_NOT_FOUND')) return 'El pedido persistente no existe en esta organización'
   if (mensaje.includes('DISTRIBUTION_ORDER_NOT_AVAILABLE')) return 'El pedido cancelado no puede programarse'
@@ -185,18 +215,78 @@ export async function listarEntregas(organizationId: string) {
 
   // order_items se conserva solo como snapshot histórico. La lectura vigente
   // reconstruye las líneas desde SQL y los saldos desde reservas persistentes.
-  const [pedidos, ventas] = await Promise.all([
+  // Los eventos se leen por organización en consultas de conjunto, evitando
+  // construir una URL PostgREST con listas de IDs potencialmente extensas.
+  const [pedidos, ventas, outcomesResponse] = await Promise.all([
     listarPedidosPersistentes(organizationId),
     listarVentasPersistentes(organizationId),
+    supabase
+      .from('distribution_delivery_outcomes')
+      .select('id,delivery_id,result_status,occurred_on,evidence,incidents,created_at')
+      .eq('organization_id', organizationId)
+      .order('occurred_on', { ascending: true })
+      .order('created_at', { ascending: true }),
   ])
+  if (outcomesResponse.error) throw new Error(mensajeError(outcomesResponse.error))
+  const outcomes = (outcomesResponse.data ?? []) as ResultadoFila[]
+  const outcomeLinesResponse = outcomes.length
+    ? await supabase
+      .from('distribution_delivery_outcome_lines')
+      .select('outcome_id,order_line_id,quantity_delivered')
+      .eq('organization_id', organizationId)
+    : { data: [], error: null }
+  if (outcomeLinesResponse.error) throw new Error(mensajeError(outcomeLinesResponse.error))
+
+  const linesByOutcomeId = new Map<string, EventoResultadoEntrega['lineas']>()
+  for (const line of (outcomeLinesResponse.data ?? []) as LineaResultadoFila[]) {
+    const lines = linesByOutcomeId.get(line.outcome_id) ?? []
+    lines.push({ orderLineId: line.order_line_id, cantidad: Number(line.quantity_delivered) })
+    linesByOutcomeId.set(line.outcome_id, lines)
+  }
+  const outcomesByDeliveryId = new Map<string, EventoResultadoEntrega[]>()
+  for (const outcome of outcomes) {
+    const lines = linesByOutcomeId.get(outcome.id) ?? []
+    const event = {
+      id: outcome.id,
+      resultado: outcome.result_status,
+      fecha: outcome.occurred_on,
+      evidencia: outcome.evidence,
+      incidencias: Array.isArray(outcome.incidents) ? outcome.incidents.filter((value): value is string => typeof value === 'string') : [],
+      lineas: lines,
+    } satisfies EventoResultadoEntrega
+    const events = outcomesByDeliveryId.get(outcome.delivery_id) ?? []
+    events.push(event)
+    outcomesByDeliveryId.set(outcome.delivery_id, events)
+  }
   const pedidosPorId = new Map(pedidos.map((pedido) => [pedido.id, pedido]))
   const ventasPorPedidoId = new Map(ventas.map((venta) => [venta.pedidoId, venta]))
 
-  return entregas.map((entrega) => enriquecerEntrega(
-    entrega,
-    pedidosPorId.get(entrega.pedidoId),
-    ventasPorPedidoId.get(entrega.pedidoId),
-  ))
+  return entregas.map((entrega) => {
+    const eventos = outcomesByDeliveryId.get(entrega.id) ?? []
+    const cantidadesRecibidas = new Map<string, number>()
+    for (const evento of eventos) {
+      for (const linea of evento.lineas) {
+        cantidadesRecibidas.set(linea.orderLineId, (cantidadesRecibidas.get(linea.orderLineId) ?? 0) + linea.cantidad)
+      }
+    }
+    const enriquecida = enriquecerEntrega(
+      entrega,
+      pedidosPorId.get(entrega.pedidoId),
+      ventasPorPedidoId.get(entrega.pedidoId),
+    )
+    return esquemaProgramacionEntrega.parse({
+      ...enriquecida,
+      resultadosEntrega: eventos,
+      lineas: enriquecida.lineas.map((linea) => {
+        const cantidadEntregadaCliente = cantidadesRecibidas.get(linea.id) ?? 0
+        return {
+          ...linea,
+          cantidadEntregadaCliente,
+          cantidadPendienteCliente: Math.max(0, linea.cantidad - cantidadEntregadaCliente),
+        }
+      }),
+    })
+  })
 }
 
 export async function guardarEntrega(
@@ -208,6 +298,28 @@ export async function guardarEntrega(
 ) {
   const { error } = await supabase.rpc('save_distribution_delivery', {
     payload: prepararPayloadEntrega(organizationId, datos, lineas, id, operationKey),
+  })
+  if (error) throw new Error(mensajeError(error))
+}
+
+export async function registrarResultadoEntrega(
+  organizationId: string,
+  resultado: ResultadoEntrega,
+  operationKey: string = crypto.randomUUID(),
+) {
+  const datos = esquemaResultadoEntrega.parse(resultado)
+  const { error } = await supabase.rpc('record_distribution_delivery_outcome', {
+    payload: {
+      organizationId,
+      entregaId: datos.entregaId,
+      expectedLockVersion: datos.lockVersion,
+      operationKey,
+      resultado: datos.resultado,
+      fecha: datos.fecha,
+      evidencia: datos.evidencia,
+      incidencias: datos.incidencias,
+      lineas: datos.lineas,
+    },
   })
   if (error) throw new Error(mensajeError(error))
 }

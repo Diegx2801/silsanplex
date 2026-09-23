@@ -1,4 +1,4 @@
-import { Eye, FileDown, Pencil, Plus, Search, Truck } from 'lucide-react'
+import { Eye, FileDown, PackageCheck, Pencil, Plus, Search, Truck } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
@@ -12,6 +12,7 @@ import { PERMISSIONS } from '@/features/auth/permissions'
 import { fechaActualPeru, ZONA_HORARIA_NEGOCIO } from '@/lib/fechas'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
 import { DialogoDetalleEntrega } from '@/modulos/distribucion/componentes/DialogoDetalleEntrega'
+import { DialogoResultadoEntrega } from '@/modulos/distribucion/componentes/DialogoResultadoEntrega'
 import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
 import { enriquecerLineasPedidoConSaldos, pedidoListoParaProgramarDistribucion } from '@/modulos/distribucion/modelo/pedidosProgramables'
 import {
@@ -23,6 +24,7 @@ import {
   tipoTransporteParaModalidad,
   type DatosProgramacionEntrega,
   type ProgramacionEntrega,
+  type ResultadoEntrega,
 } from '@/modulos/distribucion/modelo/programacionEntrega'
 import { formatearFechaDistribucion } from '@/modulos/distribucion/servicios/formatoDistribucion'
 import { DialogoDetalleOperacionVenta } from '@/modulos/ventas/componentes/DialogoDetalleOperacionVenta'
@@ -80,7 +82,7 @@ export function DistribucionPage() {
   const { clientes } = useClientes()
   const { pedidos, cargando: cargandoPedidos, error: errorPedidos, reintentar: reintentarPedidos } = usePedidosPersistentes()
   const { ventas, cargando: cargandoVentas, error: errorVentas, reintentar: reintentarVentas } = useVentasPersistentes()
-  const { programaciones, guardar, actualizarEstado, error: errorProgramaciones, reintentar: reintentarProgramaciones } = useProgramacionesEntrega()
+  const { programaciones, guardar, actualizarEstado, registrarResultado, guardandoResultado, error: errorProgramaciones, reintentar: reintentarProgramaciones } = useProgramacionesEntrega()
   const [busquedaPendientes, setBusquedaPendientes] = useState('')
   const [filtroAlmacenPendientes, setFiltroAlmacenPendientes] = useState('')
   const [paginaPendientes, setPaginaPendientes] = useState(1)
@@ -95,6 +97,7 @@ export function DistribucionPage() {
   const [edicion, setEdicion] = useState<ProgramacionEntrega | null>(null)
   const [pedidoDetalle, setPedidoDetalle] = useState<PedidoVenta | null>(null)
   const [entregaDetalle, setEntregaDetalle] = useState<ProgramacionEntrega | null>(null)
+  const [entregaResultado, setEntregaResultado] = useState<ProgramacionEntrega | null>(null)
   const disparadorPedidoDetalle = useRef<HTMLButtonElement | null>(null)
   const [direccionSeleccionadaId, setDireccionSeleccionadaId] = useState('')
   const [mensaje, setMensaje] = useState('')
@@ -310,11 +313,23 @@ export function DistribucionPage() {
     if (!error) setFormularioAbierto(false)
   }
 
+  const confirmarResultadoEntrega = async (resultado: ResultadoEntrega, operationKey: string) => {
+    const error = await registrarResultado(resultado, operationKey)
+    if (!error) setMensaje(`Resultado registrado para ${entregaResultado?.pedidoNumero ?? 'la entrega'}.`)
+    return error
+  }
+
   const exportarEntrega = (id: string) => {
     const entrega = programaciones.find((item) => item.id === id)
     if (!entrega) return
     const pedido = pedidoPorId(entrega.pedidoId)
-    const lineas = entrega.lineas.length ? entrega.lineas : pedido?.lineas ?? []
+    const lineas = entrega.lineas.length
+      ? entrega.lineas
+      : (pedido?.lineas ?? []).map((linea) => ({
+          ...linea,
+          cantidadEntregadaCliente: undefined,
+          cantidadPendienteCliente: linea.cantidad,
+        }))
     if (!lineas.length) {
       setMensaje('No se encontró el detalle del pedido seleccionado')
       return
@@ -339,7 +354,7 @@ export function DistribucionPage() {
     pdf.text('SILSANPLEX', margen, y + 1)
     pdf.setFont('helvetica', 'normal')
     pdf.setFontSize(9)
-    pdf.text('CONSTANCIA DE ENTREGA', margen, y + 8)
+    pdf.text('REPORTE DE DISTRIBUCIÓN', margen, y + 8)
     pdf.setFontSize(8)
     pdf.text('Documento operativo de distribución', 192, y + 5, { align: 'right' })
     pdf.text(`Generado: ${formatoFecha.format(new Date())}`, 192, y + 11, { align: 'right' })
@@ -348,7 +363,7 @@ export function DistribucionPage() {
     pdf.setTextColor(...tinta)
     pdf.setFont('helvetica', 'bold')
     pdf.setFontSize(14)
-    pdf.text('Detalle de entrega', margen, y)
+    pdf.text('Resumen de distribución', margen, y)
     pdf.setFontSize(10)
     pdf.setTextColor(...verde)
     pdf.text(entrega.pedidoNumero, 192, y, { align: 'right' })
@@ -387,14 +402,15 @@ export function DistribucionPage() {
     pdf.rect(margen, y, ancho, 9, 'F')
     pdf.setTextColor(255, 255, 255)
     pdf.setFontSize(8)
-    pdf.text('PRODUCTO', margen + 4, y + 6)
-    pdf.text('A ENTREGAR', 132, y + 6, { align: 'right' })
-    pdf.text('UNIDAD', 190, y + 6, { align: 'right' })
+    pdf.text('PRODUCTO · UNIDAD', margen + 4, y + 6)
+    pdf.text('DESPACHADO', 124, y + 6, { align: 'right' })
+    pdf.text('RECIBIDO', 158, y + 6, { align: 'right' })
+    pdf.text('PENDIENTE', 190, y + 6, { align: 'right' })
     y += 9
 
     pdf.setFont('helvetica', 'normal')
     lineas.forEach((linea, indice) => {
-      const descripcion = pdf.splitTextToSize(linea.productoDescripcion, 100)
+      const descripcion = pdf.splitTextToSize(`${linea.productoDescripcion} · ${linea.unidadMedida || 'Sin unidad'}`, 82)
       const alto = Math.max(10, descripcion.length * 4 + 6)
       if (indice % 2 === 0) {
         pdf.setFillColor(248, 250, 249)
@@ -404,9 +420,10 @@ export function DistribucionPage() {
       pdf.setFontSize(9)
       pdf.text(descripcion, margen + 4, y + 6)
       pdf.setFont('helvetica', 'bold')
-      pdf.text(String(linea.cantidadDespachada ?? linea.cantidad), 132, y + 6, { align: 'right' })
+      pdf.text(String(linea.cantidadDespachada ?? linea.cantidad), 124, y + 6, { align: 'right' })
       pdf.setFont('helvetica', 'normal')
-      pdf.text(linea.unidadMedida || '-', 190, y + 6, { align: 'right' })
+      pdf.text(entrega.requiereConciliacionCantidades ? '—' : String(linea.cantidadEntregadaCliente ?? 0), 158, y + 6, { align: 'right' })
+      pdf.text(entrega.requiereConciliacionCantidades ? '—' : String(linea.cantidadPendienteCliente ?? linea.cantidad), 190, y + 6, { align: 'right' })
       y += alto
     })
 
@@ -417,7 +434,7 @@ export function DistribucionPage() {
     pdf.text('Seguimiento', margen, y)
     pdf.setFont('helvetica', 'normal')
     pdf.setFontSize(10)
-    pdf.text(entrega.seguimiento === 'en_curso' ? 'En curso' : 'En destino', margen + 30, y)
+    pdf.text(etiquetasEstado[entrega.estado], margen + 30, y)
     y += 9
     pdf.setFont('helvetica', 'bold')
     pdf.text('Observaciones', margen, y)
@@ -485,7 +502,7 @@ export function DistribucionPage() {
         </div>
       </section>
 
-      <p role="status" aria-live="polite" className="sr-only">{mensaje}</p>
+      {mensaje ? <p role="status" aria-live="polite" className="border-s-4 border-primary bg-accent/40 px-4 py-3 text-sm">{mensaje}</p> : null}
       {errorPedidos || errorVentas || errorProgramaciones ? (
         <aside role="alert" className="flex flex-wrap items-center justify-between gap-3 border-s-4 border-destructive bg-destructive/10 px-5 py-4 text-sm">
           <span>No se pudieron cargar los pedidos, ventas o entregas persistentes.</span>
@@ -555,11 +572,11 @@ export function DistribucionPage() {
             ) : (
               <div className="divide-y">{entregasVisibles.map((item) => (
                 <article key={item.id} className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[1.1fr_1fr_1fr_auto] lg:items-center">
-                  <div className="print-delivery-header"><p className="font-mono text-xs text-primary">SILSANPLEX · CONSTANCIA DE ENTREGA</p><p className="font-mono text-xs text-muted-foreground">Emisión: {formatearFechaDistribucion(item.fechaEmision)}</p></div>
-                  <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · {item.ventaNumero ? `Venta ${item.ventaNumero} · ` : ''}Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{item.lineas.length ? item.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · <span className="font-mono font-semibold">{linea.cantidadDespachada ?? linea.cantidad} {linea.unidadMedida}</span> despachadas en Ventas, listas para entrega</p>) : <p>Detalle del pedido no disponible</p>}</div></div>
+                  <div className="print-delivery-header"><p className="font-mono text-xs text-primary">SILSANPLEX · REPORTE DE DISTRIBUCIÓN</p><p className="font-mono text-xs text-muted-foreground">Emisión: {formatearFechaDistribucion(item.fechaEmision)}</p></div>
+                  <div><p className="font-mono text-xs text-primary">{item.pedidoNumero} · {item.ventaNumero ? `Venta ${item.ventaNumero} · ` : ''}Guía {item.numeroGuiaRemision}</p><h3 className="mt-1 font-semibold">{item.clienteNombre}</h3><div className="mt-3 space-y-1 text-xs text-muted-foreground">{item.lineas.length ? item.lineas.map((linea) => <p key={linea.id}>{linea.productoDescripcion} · <span className="font-mono font-semibold">{linea.cantidadDespachada ?? linea.cantidad} {linea.unidadMedida}</span> despachadas en Ventas · {item.requiereConciliacionCantidades ? 'recepción histórica sin conciliar' : <><span className="font-mono">{linea.cantidadEntregadaCliente ?? 0}</span> recibidas · <span className="font-mono">{linea.cantidadPendienteCliente ?? linea.cantidad}</span> pendientes</>}</p>) : <p>Detalle del pedido no disponible</p>}</div></div>
                   <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-muted-foreground">Programada</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaProgramada)}</dd></div><div><dt className="text-xs text-muted-foreground">Entrega real</dt><dd className="mt-1">{formatearFechaDistribucion(item.fechaEntrega)}</dd></div></dl>
-                  <div><div className="flex flex-wrap items-center gap-2"><span className="status-label" data-tone={tonoEstadoDistribucion(item.estado)}>{etiquetasEstado[item.estado]}</span><span className="text-sm text-muted-foreground">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</span></div>{puedeGestionarDistribucion ? <select aria-label={`Cambiar estado de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => { void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado']).then((error) => setMensaje(error ?? `Estado actualizado para ${item.pedidoNumero}.`)) }} className="field-control mt-2">{[item.estado, ...obtenerEstadosSiguientes(item.estado)].map((valor) => <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>)}</select> : <p className="mt-2 text-sm text-muted-foreground">Solo consulta</p>}{item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}</div>
-                  <div className="flex gap-1 print:hidden"><Button type="button" variant="ghost" size="icon" title="Ver detalle de la entrega" aria-label={`Ver detalle de la entrega ${item.pedidoNumero}`} onClick={() => setEntregaDetalle(item)}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion ? <Button type="button" variant="outline" onClick={() => editarProgramacion(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}<Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
+                  <div><div className="flex flex-wrap items-center gap-2"><span className="status-label" data-tone={tonoEstadoDistribucion(item.estado)}>{etiquetasEstado[item.estado]}</span><span className="text-sm text-muted-foreground">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</span></div>{puedeGestionarDistribucion && item.estado !== 'entregado' && item.estado !== 'cancelado' && item.estado !== 'devuelto' ? <select aria-label={`Actualizar etapa de ${item.pedidoNumero}`} value={item.estado} onChange={(evento) => { void actualizarEstado(item, evento.target.value as ProgramacionEntrega['estado']).then((error) => setMensaje(error ?? `Etapa actualizada para ${item.pedidoNumero}.`)) }} className="field-control mt-2">{[item.estado, ...obtenerEstadosSiguientes(item.estado).filter((estado) => !['entregado', 'entrega_parcial', 'rechazado', 'devuelto'].includes(estado))].map((valor) => <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>)}</select> : <p className="mt-2 text-sm text-muted-foreground">{puedeGestionarDistribucion ? 'Etapa final' : 'Solo consulta'}</p>}{item.requiereConciliacionCantidades ? <p role="status" className="mt-2 text-xs text-amber-800">Registro histórico por conciliar antes de continuar.</p> : null}{item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}</div>
+                  <div className="flex flex-wrap gap-1 print:hidden"><Button type="button" variant="ghost" size="icon" title="Ver detalle de la entrega" aria-label={`Ver detalle de la entrega ${item.pedidoNumero}`} onClick={() => setEntregaDetalle(item)}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion && ['en_curso', 'en_destino', 'entrega_parcial'].includes(item.estado) && !item.requiereConciliacionCantidades ? <Button type="button" onClick={() => setEntregaResultado(item)}><PackageCheck aria-hidden="true" /> Registrar resultado</Button> : null}{puedeGestionarDistribucion && ['programado', 'preparando', 'reprogramado'].includes(item.estado) && !item.requiereConciliacionCantidades ? <Button type="button" variant="outline" onClick={() => editarProgramacion(item)}><Pencil aria-hidden="true" /> Editar</Button> : null}<Button type="button" variant="outline" onClick={() => exportarEntrega(item.id)}><FileDown aria-hidden="true" /> PDF</Button></div>
                 </article>
               ))}</div>
             )}
@@ -570,6 +587,7 @@ export function DistribucionPage() {
 
       {pedidoDetalle ? <DialogoDetalleOperacionVenta abierto={Boolean(pedidoDetalle)} pedido={pedidoDetalle} venta={ventaPorPedidoId(pedidoDetalle.id)} alCambiarApertura={(abierto) => { if (!abierto) setPedidoDetalle(null) }} alRestaurarFoco={() => disparadorPedidoDetalle.current?.focus()} /> : null}
       {entregaDetalle ? <DialogoDetalleEntrega abierto={Boolean(entregaDetalle)} entrega={entregaDetalle} alCambiarApertura={(abierto) => { if (!abierto) setEntregaDetalle(null) }} /> : null}
+      {entregaResultado ? <DialogoResultadoEntrega abierto={Boolean(entregaResultado)} entrega={entregaResultado} guardando={guardandoResultado} alConfirmar={confirmarResultadoEntrega} alCambiarApertura={(abierto) => { if (!abierto) setEntregaResultado(null) }} /> : null}
 
       {puedeGestionarDistribucion && formularioAbierto ? (
         <DialogPrimitive.Root open onOpenChange={(abierto) => { if (!abierto) setFormularioAbierto(false) }}>
@@ -647,8 +665,6 @@ export function DistribucionPage() {
                   <div><label htmlFor="numero-despacho" className="field-label">Referencia interna de despacho<span aria-hidden="true"> *</span></label><input id="numero-despacho" required maxLength={40} value={datos.numeroDespacho} onChange={(evento) => setDatos({ ...datos, numeroDespacho: evento.target.value })} className="field-control" /><p className="mt-1 text-xs text-muted-foreground">Identificador interno; no reemplaza la guía de remisión.</p></div>
                   <div><label htmlFor="guia-remision" className="field-label">Número de guía de remisión<span aria-hidden="true"> *</span></label><input id="guia-remision" required maxLength={40} value={datos.numeroGuiaRemision} onChange={(evento) => setDatos({ ...datos, numeroGuiaRemision: evento.target.value })} className="field-control" /></div>
                   <div><label htmlFor="modalidad" className="field-label">Modalidad de transporte<span aria-hidden="true"> *</span></label><select id="modalidad" value={datos.modalidad} onChange={(evento) => { const modalidad = evento.target.value as DatosProgramacionEntrega['modalidad']; setDatos({ ...datos, modalidad, tipoTransporte: tipoTransporteParaModalidad(modalidad, datos.tipoTransporte) }) }} className="field-control"><option value="movilidad_propia">Movilidad propia</option><option value="movilidad_externa">Movilidad externa</option>{edicion && esRecojoCliente ? <option value="recojo_cliente">Recojo del cliente (registro existente)</option> : null}</select></div>
-                  {edicion ? <div><label htmlFor="estado-distribucion" className="field-label">Estado de la entrega<span aria-hidden="true"> *</span></label><select id="estado-distribucion" value={datos.estado} onChange={(evento) => setDatos({ ...datos, estado: evento.target.value as DatosProgramacionEntrega['estado'] })} className="field-control">{[edicion.estado, ...obtenerEstadosSiguientes(edicion.estado)].map((valor) => <option key={valor} value={valor}>{etiquetasEstado[valor]}</option>)}</select></div> : null}
-                  {['entregado', 'entrega_parcial'].includes(datos.estado) || datos.fechaEntrega ? <div><label htmlFor="fecha-entrega" className="field-label">Fecha real de entrega{['entregado', 'entrega_parcial'].includes(datos.estado) ? <span aria-hidden="true"> *</span> : null}</label><input id="fecha-entrega" type="date" value={datos.fechaEntrega} onChange={(evento) => setDatos({ ...datos, fechaEntrega: evento.target.value })} className="field-control" /><p className="mt-1 text-xs text-muted-foreground">Se registra al confirmar la entrega, total o parcial.</p></div> : null}
                 </div>
                 <details className="border" open={requiereDatosTransporte || Boolean(datos.transportista || datos.conductor || datos.vehiculo || datos.placa)}>
                   <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Datos de ruta <span className="font-normal text-muted-foreground">· completar antes de iniciar el traslado</span></summary>
@@ -661,14 +677,7 @@ export function DistribucionPage() {
                 </details>
               </section>
 
-              <details className="border" open={['entregado', 'entrega_parcial', 'rechazado', 'devuelto'].includes(datos.estado) || Boolean(datos.evidencia || datos.incidencias.length || datos.observaciones)}>
-                <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Notas e incidencias <span className="font-normal text-muted-foreground">· evidencia al cerrar la entrega</span></summary>
-                <div className="grid gap-4 border-t p-4 sm:grid-cols-2">
-                  <div><label htmlFor="evidencia" className="field-label">Evidencia{datos.estado === 'entregado' ? <span aria-hidden="true"> *</span> : null}</label><input id="evidencia" required={datos.estado === 'entregado'} value={datos.evidencia} onChange={(evento) => setDatos({ ...datos, evidencia: evento.target.value })} className="field-control" placeholder="Ej. constancia, nombre de archivo o URL" /></div>
-                  <div><label htmlFor="incidencias" className="field-label">Incidencias{['rechazado', 'devuelto'].includes(datos.estado) ? <span aria-hidden="true"> *</span> : null}</label><textarea id="incidencias" rows={2} required={['rechazado', 'devuelto'].includes(datos.estado)} value={datos.incidencias.join('; ')} onChange={(evento) => setDatos({ ...datos, incidencias: evento.target.value ? evento.target.value.split(';').map((valor) => valor.trim()).filter(Boolean) : [] })} className="field-control" placeholder="Describe el problema ocurrido" /></div>
-                  <div className="sm:col-span-2"><label htmlFor="observaciones-entrega" className="field-label">Observaciones</label><textarea id="observaciones-entrega" rows={3} value={datos.observaciones} onChange={(evento) => setDatos({ ...datos, observaciones: evento.target.value })} className="field-control" /></div>
-                </div>
-              </details>
+              <div><label htmlFor="observaciones-entrega" className="field-label">Observaciones de planificación</label><textarea id="observaciones-entrega" rows={3} value={datos.observaciones} onChange={(evento) => setDatos({ ...datos, observaciones: evento.target.value })} className="field-control" placeholder="Indicaciones para preparar o coordinar esta entrega" /><p className="mt-1 text-xs text-muted-foreground">La evidencia y las incidencias se registran en cada resultado, no en la planificación.</p></div>
               </div>
             </div>
             <footer className="flex shrink-0 justify-end gap-2 border-t bg-background px-6 py-4"><Button type="button" variant="outline" onClick={() => setFormularioAbierto(false)}>Cancelar</Button><Button type="submit">{edicion ? 'Guardar cambios' : 'Programar entrega'}</Button></footer>

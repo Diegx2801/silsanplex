@@ -14,8 +14,8 @@ type VentaProgramable = Pick<Venta, 'estado'> & {
 
 /**
  * La programación actual es única por pedido y representa la salida completa
- * de sus bienes. Los despachos parciales continúan en Ventas; una futura
- * entrega parcial requerirá una programación por despacho y cantidades propias.
+ * de sus bienes. Las recepciones del cliente se cuantifican como eventos dentro
+ * de esa programación; los despachos parciales continúan en Ventas.
  */
 export function pedidoListoParaProgramarDistribucion(
   pedido: PedidoProgramable,

@@ -27,16 +27,54 @@ export const ESTADOS_DISTRIBUCION = [
   'cancelado',
 ] as const
 
+export const RESULTADOS_ENTREGA = ['entregado', 'entrega_parcial', 'rechazado'] as const
+
+export const esquemaResultadoEntrega = z.object({
+  entregaId: z.string().min(1),
+  lockVersion: z.number().int().positive(),
+  resultado: z.enum(RESULTADOS_ENTREGA),
+  fecha: z.string().refine(esFechaCalendarioValida, 'Ingresa una fecha válida'),
+  evidencia: z.string().trim().max(255).default(''),
+  incidencias: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+  lineas: z.array(z.object({
+    orderLineId: z.string().uuid(),
+    cantidad: z.number().nonnegative().max(999999999),
+  })).max(200).default([]),
+}).superRefine((resultado, contexto) => {
+  if (['entregado', 'entrega_parcial'].includes(resultado.resultado)) {
+    if (!resultado.evidencia.trim()) {
+      contexto.addIssue({ code: 'custom', path: ['evidencia'], message: 'Registra la evidencia de entrega' })
+    }
+    if (!resultado.lineas.some((linea) => linea.cantidad > 0)) {
+      contexto.addIssue({ code: 'custom', path: ['lineas'], message: 'Ingresa al menos una cantidad recibida' })
+    }
+  }
+  if (resultado.resultado === 'rechazado' && !resultado.incidencias.length) {
+    contexto.addIssue({ code: 'custom', path: ['incidencias'], message: 'Describe por qué no se completó la entrega' })
+  }
+})
+
+export type ResultadoEntrega = z.infer<typeof esquemaResultadoEntrega>
+
+export interface EventoResultadoEntrega {
+  id: string
+  resultado: typeof RESULTADOS_ENTREGA[number]
+  fecha: string
+  evidencia: string
+  incidencias: string[]
+  lineas: Array<{ orderLineId: string; cantidad: number }>
+}
+
 export const TRANSICIONES_DISTRIBUCION: Record<ProgramacionEntrega['estado'], readonly ProgramacionEntrega['estado'][]> = {
   programado: ['preparando', 'reprogramado', 'cancelado'],
   preparando: ['en_curso', 'reprogramado', 'cancelado'],
   en_curso: ['en_destino', 'entrega_parcial', 'reprogramado', 'rechazado'],
-  en_destino: ['entregado', 'entrega_parcial', 'rechazado', 'devuelto'],
+  en_destino: ['entregado', 'entrega_parcial', 'rechazado'],
   entregado: [],
-  entrega_parcial: ['en_curso', 'en_destino', 'entregado', 'reprogramado', 'devuelto'],
+  entrega_parcial: ['en_curso', 'en_destino', 'entregado', 'rechazado', 'reprogramado'],
   reprogramado: ['preparando', 'cancelado'],
-  rechazado: ['reprogramado', 'devuelto'],
-  devuelto: ['reprogramado'],
+  rechazado: ['reprogramado'],
+  devuelto: [],
   cancelado: [],
 }
 
@@ -52,6 +90,10 @@ export function puedeTransicionarEntrega(
 }
 
 export const esquemaLineaProgramacionEntrega = esquemaLineaOperacionVenta
+  .extend({
+    cantidadEntregadaCliente: z.number().nonnegative().optional(),
+    cantidadPendienteCliente: z.number().nonnegative().optional(),
+  })
 
 export const esquemaProgramacionEntrega = z.object({
   id: z.string().min(1),
@@ -77,10 +119,19 @@ export const esquemaProgramacionEntrega = z.object({
   placa: z.string().trim().max(20).default(''),
   observaciones: z.string().trim().max(500, 'Máximo 500 caracteres').default(''),
   evidencia: z.string().trim().max(255).default(''),
+  requiereConciliacionCantidades: z.boolean().default(false),
   estado: z.enum(ESTADOS_DISTRIBUCION).default('programado'),
   incidencias: z.array(z.string().trim().max(200)).default([]),
   seguimiento: z.enum(['en_curso', 'en_destino']).optional(),
   lineas: z.array(esquemaLineaProgramacionEntrega).default([]),
+  resultadosEntrega: z.array(z.object({
+    id: z.string().min(1),
+    resultado: z.enum(RESULTADOS_ENTREGA),
+    fecha: z.string(),
+    evidencia: z.string().default(''),
+    incidencias: z.array(z.string()).default([]),
+    lineas: z.array(z.object({ orderLineId: z.string().min(1), cantidad: z.number().nonnegative() })).default([]),
+  })).default([]),
 })
 
 export type ProgramacionEntrega = z.infer<typeof esquemaProgramacionEntrega>
@@ -154,6 +205,29 @@ export const esquemaDatosProgramacionEntrega = z.object({
 
 export type DatosProgramacionEntrega = z.infer<typeof esquemaDatosProgramacionEntrega>
 
+/** Infere si el registro cuantificado cierra la entrega o deja un saldo real. */
+export function inferirResultadoEntrega(
+  lineas: readonly Pick<ProgramacionEntrega['lineas'][number], 'id' | 'cantidad' | 'cantidadEntregadaCliente'>[],
+  cantidades: Readonly<Record<string, number>>,
+): 'entregado' | 'entrega_parcial' | undefined {
+  const pendientes = lineas.map((linea) => Math.max(0, linea.cantidad - (linea.cantidadEntregadaCliente ?? 0)))
+  let cantidadNueva = 0
+  let saldoFinal = 0
+
+  lineas.forEach((linea, index) => {
+    const recibida = cantidades[linea.id] ?? 0
+    if (recibida < 0 || recibida > pendientes[index]) {
+      saldoFinal = Number.POSITIVE_INFINITY
+      return
+    }
+    cantidadNueva += recibida
+    saldoFinal += Math.max(0, pendientes[index] - recibida)
+  })
+
+  if (cantidadNueva <= 0 || !Number.isFinite(saldoFinal)) return undefined
+  return saldoFinal === 0 ? 'entregado' : 'entrega_parcial'
+}
+
 /** Mantiene alineado el tipo persistido con la modalidad que elige logística. */
 export function tipoTransporteParaModalidad(
   modalidad: ProgramacionEntrega['modalidad'],
@@ -177,6 +251,8 @@ export function crearProgramacionEntrega(
     fechaEntrega: datos.fechaEntrega ?? '',
     seguimiento: datos.estado === 'en_curso' || datos.estado === 'en_destino' ? datos.estado : undefined,
     lineas: datos.lineas && datos.lineas.length ? datos.lineas : lineas,
+    requiereConciliacionCantidades: false,
+    resultadosEntrega: [],
   }
 }
 
@@ -266,7 +342,7 @@ export function resumirEntregas(
 
       resumen.total += 1
       if (entrega.estado === 'programado') resumen.programados += 1
-      if (entrega.estado === 'en_curso') resumen.enCurso += 1
+      if (entrega.estado === 'en_curso' || entrega.estado === 'entrega_parcial') resumen.enCurso += 1
       if (entrega.estado === 'en_destino') resumen.enDestino += 1
       if (entrega.estado === 'entregado') resumen.entregados += 1
       if (retrasada) resumen.atrasadas += 1
