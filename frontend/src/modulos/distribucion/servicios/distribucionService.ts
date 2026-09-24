@@ -4,6 +4,7 @@ import { fechaActualPeru } from '@/lib/fechas'
 import { supabase } from '@/lib/supabase'
 import {
   esquemaProgramacionEntrega,
+  esquemaDatosReprogramacionEntrega,
   esquemaLineaProgramacionEntrega,
   esquemaResultadoEntrega,
   ESTADOS_DISTRIBUCION,
@@ -171,6 +172,10 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (mensaje.includes('DISTRIBUTION_VERSION_REQUIRED') || mensaje.includes('DISTRIBUTION_VERSION_CONFLICT')) return 'La entrega cambió mientras la editabas. Actualiza la lista e inténtalo nuevamente.'
   if (mensaje.includes('DISTRIBUTION_RESCHEDULE_DATE_IN_PAST')) return 'La nueva fecha de programación debe ser hoy o una fecha futura.'
   if (mensaje.includes('DISTRIBUTION_ROUTE_ALREADY_STARTED')) return 'La entrega ya está en ruta o cerrada. Registra el resultado del intento antes de reprogramar.'
+  if (mensaje.includes('DISTRIBUTION_RESCHEDULE_COMMAND_REQUIRED')) return 'Usa la acción “Reprogramar fecha” para registrar el motivo y conservar la trazabilidad.'
+  if (mensaje.includes('DISTRIBUTION_RESCHEDULE_STATE_INVALID')) return 'Solo se puede reprogramar una entrega parcial, no entregada o que ya fue reprogramada.'
+  if (mensaje.includes('DISTRIBUTION_RESCHEDULE_DATE_UNCHANGED')) return 'Selecciona una fecha distinta a la programación actual.'
+  if (mensaje.includes('DISTRIBUTION_RESCHEDULE_REASON_REQUIRED')) return 'Describe el motivo de la reprogramación.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_RECONCILIATION_REQUIRED')) return 'Esta entrega histórica no tiene cantidades recibidas por producto. Debe conciliarse antes de registrar otro resultado.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_NOT_AT_DESTINATION')) return 'Confirma “Marcar en destino” antes de registrar el resultado de la entrega.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_STATE_INVALID')) return 'La entrega debe estar en ruta o tener un resultado parcial para registrar su recepción.'
@@ -310,6 +315,28 @@ export async function guardarEntrega(
   if (error) throw new Error(mensajeError(error))
 }
 
+export async function reprogramarEntrega(
+  organizationId: string,
+  entregaId: string,
+  lockVersion: number,
+  fechaProgramada: string,
+  motivo: string,
+  operationKey: string = crypto.randomUUID(),
+) {
+  const datos = esquemaDatosReprogramacionEntrega.parse({ fechaProgramada, motivo })
+  const { error } = await supabase.rpc('reschedule_distribution_delivery', {
+    payload: {
+      organization_id: organizationId,
+      delivery_id: entregaId,
+      expected_lock_version: lockVersion,
+      operation_key: operationKey,
+      scheduled_date: datos.fechaProgramada,
+      reason: datos.motivo,
+    },
+  })
+  if (error) throw new Error(mensajeError(error))
+}
+
 export async function registrarResultadoEntrega(
   organizationId: string,
   resultado: ResultadoEntrega,
@@ -340,6 +367,7 @@ const esquemaEventoEstadoEntrega = z.object({
   to_status: z.enum(ESTADOS_DISTRIBUCION).nullable(),
   from_scheduled_date: z.string().nullable(),
   to_scheduled_date: z.string().nullable(),
+  schedule_reason: z.string().nullable().optional(),
   actor_name: z.string(),
   occurred_at: z.string(),
 })
@@ -351,6 +379,7 @@ export type EventoEstadoEntrega = {
   estadoNuevo?: ProgramacionEntrega['estado']
   fechaProgramadaAnterior?: string
   fechaProgramadaNueva?: string
+  motivoReprogramacion?: string
   actorNombre: string
   fechaHora: string
 }
@@ -372,6 +401,7 @@ export async function listarHistorialEstadosEntrega(organizationId: string, deli
     estadoNuevo: evento.to_status ?? undefined,
     fechaProgramadaAnterior: evento.from_scheduled_date ?? undefined,
     fechaProgramadaNueva: evento.to_scheduled_date ?? undefined,
+    motivoReprogramacion: evento.schedule_reason ?? undefined,
     actorNombre: evento.actor_name,
     fechaHora: evento.occurred_at,
   }))

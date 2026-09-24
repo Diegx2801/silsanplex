@@ -1,6 +1,6 @@
 begin;
 
-select plan(127);
+select plan(139);
 
 select has_table('public', 'distribution_deliveries', 'existe la tabla persistente de distribución');
 select has_table('public', 'distribution_command_operations', 'existe el registro de operaciones idempotentes');
@@ -20,10 +20,12 @@ select has_column('public', 'distribution_deliveries', 'incidencias', 'existe el
 select has_column('public', 'distribution_deliveries', 'sale_id', 'existe el vínculo persistente con la venta');
 select has_column('public', 'distribution_deliveries', 'sale_number', 'existe el número de venta persistente');
 select has_function('public', 'save_distribution_delivery', array['jsonb'], 'existe el RPC de persistencia');
+select has_function('public', 'reschedule_distribution_delivery', array['jsonb'], 'existe el comando específico de reprogramación');
 select has_function('public', 'record_distribution_status_transition', '{}', 'existe la auditoría de transiciones');
 select has_function('public', 'list_distribution_delivery_status_history', array['uuid', 'uuid'], 'existe la lectura acotada del historial');
 select has_function('public', 'validate_distribution_rescheduled_date', '{}', 'existe la validación de fecha al reprogramar');
 select is(has_function_privilege('anon', 'public.list_distribution_delivery_status_history(uuid, uuid)', 'EXECUTE'), false, 'anon no puede leer el historial de distribución');
+select is(has_function_privilege('anon', 'public.reschedule_distribution_delivery(jsonb)', 'EXECUTE'), false, 'anon no puede reprogramar entregas');
 select is((select count(*) from pg_constraint where conname = 'distribution_deliveries_order_same_organization'), 1::bigint, 'la FK pedido-distribución conserva la organización');
 select ok((select relrowsecurity from pg_class where oid = 'public.distribution_deliveries'::regclass), 'la tabla mantiene RLS');
 select is(has_table_privilege('authenticated', 'public.distribution_deliveries', 'SELECT'), true, 'authenticated consulta distribución');
@@ -290,6 +292,24 @@ select is((select incidencias from public.distribution_deliveries where guide_nu
 select is((select sale_id from public.distribution_deliveries where guide_number = 'G-N-001'), 'a3111111-1111-4111-8111-111111111152'::uuid, 'la entrega queda ligada a la venta real');
 select is((select sale_number from public.distribution_deliveries where guide_number = 'G-N-001'), 'VEN-000002', 'persiste el número real de venta');
 select is((select order_items -> 0 ->> 'id' from public.distribution_deliveries where guide_number = 'G-N-001'), 'a3111111-1111-4111-8111-111111111142', 'las líneas se reconstruyen desde order_items y no desde el payload');
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expected_lock_version', 1,
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'order_number', 'PED-N-001', 'customer_name', 'Cliente nuevo',
+    'issue_date', '2026-09-01', 'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date + 1,
+    'guide_number', 'G-N-001', 'transport_type', 'externo', 'tracking_status', 'en_curso',
+    'delivery_status', 'reprogramado', 'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001',
+    'modalidad', 'movilidad_externa', 'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez',
+    'vehiculo', 'Camión', 'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
+    'incidencias', '[]'::jsonb, 'observations', 'Reprogramación fuera del flujo autorizado',
+    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+  ));
+$$, 'P0001', 'DISTRIBUTION_RESCHEDULE_COMMAND_REQUIRED', 'el guardado general no puede reprogramar una entrega antes de un intento');
 
 select lives_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
@@ -442,7 +462,7 @@ $$, 'registra un intento fallido después de confirmar la llegada');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'rechazado', 'el intento fallido deja la entrega lista para reprogramarse');
 select is((select failure_category from public.distribution_delivery_outcomes where operation_key = '41111111-1111-4111-8111-111111111116'), 'cliente_ausente', 'conserva la categoría estructurada del intento');
 
-select lives_ok($$
+select throws_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
     'id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
     'expected_lock_version', 5,
@@ -450,22 +470,79 @@ select lives_ok($$
     'order_id', 'a3111111-1111-4111-8111-111111111112',
     'sale_id', 'a3111111-1111-4111-8111-111111111152',
     'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
-    'issue_date', '2026-09-01',
-    'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
-    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'issue_date', '2026-09-01', 'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date + 1,
     'guide_number', 'G-N-001', 'transport_type', 'externo', 'tracking_status', 'en_curso',
     'delivery_status', 'reprogramado', 'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001',
     'modalidad', 'movilidad_externa', 'transportista', 'Transportes Prueba',
     'conductor', 'Ana Pérez', 'vehiculo', 'Camión', 'placa', 'ABC-123',
     'evidencia', 'foto-entrega.jpg', 'incidencias', jsonb_build_array('El cliente no estaba disponible'),
-    'observations', 'Reprogramado luego del intento fallido',
+    'observations', 'Reprogramado sin motivo',
     'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+  ));
+$$, 'P0001', 'DISTRIBUTION_RESCHEDULE_COMMAND_REQUIRED', 'el guardado general no puede reprogramar una entrega parcial o fallida');
+
+select throws_ok($$
+  select public.reschedule_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'delivery_id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expected_lock_version', 5, 'operation_key', '41111111-1111-4111-8111-111111111119',
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date + 1,
+    'reason', '  '
+  ));
+$$, 'P0001', 'DISTRIBUTION_RESCHEDULE_REASON_REQUIRED', 'exige un motivo no vacío para reprogramar');
+
+select throws_ok($$
+  select public.reschedule_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'delivery_id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expected_lock_version', 5, 'operation_key', '41111111-1111-4111-8111-111111111120',
+    'scheduled_date', (select scheduled_date from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'reason', 'Cliente solicitó otra fecha'
+  ));
+$$, 'P0001', 'DISTRIBUTION_RESCHEDULE_DATE_UNCHANGED', 'exige una fecha diferente a la actual');
+
+select throws_ok($$
+  select public.reschedule_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'delivery_id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expected_lock_version', 5, 'operation_key', '41111111-1111-4111-8111-111111111121',
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date - 1,
+    'reason', 'Cliente solicitó otra fecha'
+  ));
+$$, 'P0001', 'DISTRIBUTION_RESCHEDULE_DATE_IN_PAST', 'rechaza una nueva fecha en el pasado');
+
+select lives_ok($$
+  select public.reschedule_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'delivery_id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expected_lock_version', 5,
+    'operation_key', '41111111-1111-4111-8111-111111111122',
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date + 1,
+    'reason', 'Cliente solicitó recibir el pedido en otra fecha'
   ));
 $$, 'reprograma atómicamente un intento fallido con nueva fecha');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'reprogramado', 'persiste el estado reprogramado');
 select is((select fulfillment_status from public.orders where id = 'a3111111-1111-4111-8111-111111111112'), 'dispatched', 'reprogramar la entrega no deshace el despacho de Ventas');
-select is((select scheduled_date from public.distribution_deliveries where guide_number = 'G-N-001'), pg_catalog.timezone('America/Lima', pg_catalog.now())::date, 'persiste la fecha nueva en la reprogramación');
+select is((select scheduled_date from public.distribution_deliveries where guide_number = 'G-N-001'), pg_catalog.timezone('America/Lima', pg_catalog.now())::date + 1, 'persiste la fecha nueva en la reprogramación');
 select is((select lock_version from public.distribution_deliveries where guide_number = 'G-N-001'), 6::bigint, 'la reprogramación incrementa la versión una sola vez');
+select is(public.reschedule_distribution_delivery(jsonb_build_object(
+  'organization_id', 'd3111111-1111-4111-8111-111111111111',
+  'delivery_id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+  'expected_lock_version', 5,
+  'operation_key', '41111111-1111-4111-8111-111111111122',
+  'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date + 1,
+  'reason', 'Cliente solicitó recibir el pedido en otra fecha'
+)), (select id from public.distribution_deliveries where guide_number = 'G-N-001'), 'reintentar el mismo comando devuelve el resultado original');
+reset role;
+select ok((
+  select count(*) = 1 and bool_or(metadata ->> 'reason' = 'Cliente solicitó recibir el pedido en otra fecha')
+  from public.audit_events
+  where action = 'DISTRIBUTION_SCHEDULE_CHANGED'
+    and entity_id = (select id::text from public.distribution_deliveries where guide_number = 'G-N-001')
+), 'conserva un único evento con motivo de reprogramación en auditoría');
+select ok((select guide_number = 'G-N-001' and numero_despacho = 'DES-N-001' and direction = 'Av. Nueva 123' and transportista = 'Transportes Prueba' from public.distribution_deliveries where guide_number = 'G-N-001'), 'la reprogramación no modifica la guía, el destino ni el transporte');
+set local role authenticated;
 
 select lives_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
@@ -474,7 +551,7 @@ select lives_ok($$
     'order_id', 'a3111111-1111-4111-8111-111111111112', 'sale_id', 'a3111111-1111-4111-8111-111111111152',
     'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
     'issue_date', '2026-09-01', 'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
-    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date + 1,
     'guide_number', 'G-N-001', 'transport_type', 'externo', 'tracking_status', 'en_curso',
     'delivery_status', 'preparando', 'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001',
     'modalidad', 'movilidad_externa', 'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez',
@@ -490,7 +567,7 @@ select lives_ok($$
     'order_id', 'a3111111-1111-4111-8111-111111111112', 'sale_id', 'a3111111-1111-4111-8111-111111111152',
     'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
     'issue_date', '2026-09-01', 'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
-    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date + 1,
     'guide_number', 'G-N-001', 'transport_type', 'externo', 'tracking_status', 'en_curso',
     'delivery_status', 'en_curso', 'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001',
     'modalidad', 'movilidad_externa', 'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez',
@@ -499,6 +576,16 @@ select lives_ok($$
     'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
   ));
 $$, 'permite iniciar la ruta del nuevo intento');
+
+select throws_ok($$
+  select public.reschedule_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'delivery_id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'expected_lock_version', 8, 'operation_key', '41111111-1111-4111-8111-111111111123',
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date + 2,
+    'reason', 'Cliente volvió a pedir otra fecha'
+  ));
+$$, 'P0001', 'DISTRIBUTION_RESCHEDULE_STATE_INVALID', 'no permite reprogramar después de iniciar el nuevo traslado');
 
 select throws_ok($$
   select public.record_distribution_delivery_outcome(jsonb_build_object(
@@ -520,7 +607,7 @@ select lives_ok($$
     'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
     'issue_date', '2026-09-01',
     'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
-    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date + 1,
     'guide_number', 'G-N-001', 'transport_type', 'externo', 'tracking_status', 'en_destino',
     'delivery_status', 'en_destino', 'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001',
     'modalidad', 'movilidad_externa', 'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez',
@@ -571,7 +658,7 @@ select lives_ok($$
     'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
     'issue_date', '2026-09-01',
     'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
-    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date + 1,
     'guide_number', 'G-N-001', 'transport_type', 'externo', 'tracking_status', 'en_curso',
     'delivery_status', 'en_curso', 'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001',
     'modalidad', 'movilidad_externa', 'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez',
@@ -601,7 +688,7 @@ select lives_ok($$
     'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
     'issue_date', '2026-09-01',
     'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
-    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date + 1,
     'guide_number', 'G-N-001', 'transport_type', 'externo', 'tracking_status', 'en_destino',
     'delivery_status', 'en_destino', 'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001',
     'modalidad', 'movilidad_externa', 'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez',
@@ -672,6 +759,7 @@ select set_config('request.jwt.claim.sub', 'e3111111-1111-4111-8111-111111111111
 
 select is((select count(*) from public.list_distribution_delivery_status_history('d3111111-1111-4111-8111-111111111111', (select id from public.distribution_deliveries where guide_number = 'G-N-001'))), 14::bigint, 'presenta cronológicamente los intentos, la reprogramación y todas las etapas');
 select is((select actor_name from public.list_distribution_delivery_status_history('d3111111-1111-4111-8111-111111111111', (select id from public.distribution_deliveries where guide_number = 'G-N-001')) order by occurred_at desc limit 1), 'Operador distribución', 'muestra quién realizó la última transición');
+select is((select schedule_reason from public.list_distribution_delivery_status_history('d3111111-1111-4111-8111-111111111111', (select id from public.distribution_deliveries where guide_number = 'G-N-001')) where event_type = 'schedule' order by occurred_at desc limit 1), 'Cliente solicitó recibir el pedido en otra fecha', 'expone el motivo de reprogramación en el historial');
 select throws_ok($$
   select * from public.list_distribution_delivery_status_history(
     'd3111111-1111-4111-8111-111111111111',
@@ -748,7 +836,7 @@ select throws_ok($$
   set delivery_status = 'reprogramado',
       scheduled_date = pg_catalog.timezone('America/Lima', pg_catalog.now())::date - 1
   where id = 'f3111111-1111-4111-8111-111111111111'
-$$, 'P0001', 'DISTRIBUTION_RESCHEDULE_DATE_IN_PAST', 'la base de datos rechaza reprogramar una entrega a una fecha pasada');
+$$, 'P0001', 'DISTRIBUTION_RESCHEDULE_COMMAND_REQUIRED', 'la base de datos bloquea cambios directos de estado y fecha sin el comando de reprogramación');
 update public.distribution_deliveries
 set quantity_reconciliation_required = true
 where id = 'f3111111-1111-4111-8111-111111111111';

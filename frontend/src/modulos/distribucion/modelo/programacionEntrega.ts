@@ -261,6 +261,15 @@ export const esquemaDatosProgramacionEntrega = z.object({
 
 export type DatosProgramacionEntrega = z.infer<typeof esquemaDatosProgramacionEntrega>
 
+export const esquemaDatosReprogramacionEntrega = z.object({
+  fechaProgramada: z.string().refine(esFechaCalendarioValida, 'Ingresa una fecha programada válida'),
+  motivo: z.string().trim()
+    .min(3, 'Describe brevemente por qué se reprograma la entrega')
+    .max(300, 'El motivo no debe superar 300 caracteres'),
+})
+
+export type DatosReprogramacionEntrega = z.infer<typeof esquemaDatosReprogramacionEntrega>
+
 /** Infere si el registro cuantificado cierra la entrega o deja un saldo real. */
 export function inferirResultadoEntrega(
   lineas: readonly Pick<ProgramacionEntrega['lineas'][number], 'id' | 'cantidad' | 'cantidadEntregadaCliente'>[],

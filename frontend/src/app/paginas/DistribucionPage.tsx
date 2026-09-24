@@ -17,6 +17,7 @@ import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgr
 import { enriquecerLineasPedidoConSaldos, pedidoListoParaProgramarDistribucion } from '@/modulos/distribucion/modelo/pedidosProgramables'
 import {
   esquemaDatosProgramacionEntrega,
+  esquemaDatosReprogramacionEntrega,
   filtrarProgramacionesEntrega,
   listarEntregasAtrasadas,
   obtenerAccionPrincipalDistribucion,
@@ -85,7 +86,7 @@ export function DistribucionPage() {
   const { clientes } = useClientes()
   const { pedidos, cargando: cargandoPedidos, error: errorPedidos, reintentar: reintentarPedidos } = usePedidosPersistentes()
   const { ventas, cargando: cargandoVentas, error: errorVentas, reintentar: reintentarVentas } = useVentasPersistentes()
-  const { programaciones, guardar, actualizarEstado, registrarResultado, guardandoEstado, guardandoResultado, error: errorProgramaciones, reintentar: reintentarProgramaciones } = useProgramacionesEntrega()
+  const { programaciones, guardar, reprogramar, actualizarEstado, registrarResultado, guardandoEstado, guardandoResultado, error: errorProgramaciones, reintentar: reintentarProgramaciones } = useProgramacionesEntrega()
   const [busquedaPendientes, setBusquedaPendientes] = useState('')
   const [filtroAlmacenPendientes, setFiltroAlmacenPendientes] = useState('')
   const [paginaPendientes, setPaginaPendientes] = useState(1)
@@ -99,6 +100,7 @@ export function DistribucionPage() {
   const [formularioAbierto, setFormularioAbierto] = useState(false)
   const [edicion, setEdicion] = useState<ProgramacionEntrega | null>(null)
   const [reprogramacionEnCurso, setReprogramacionEnCurso] = useState(false)
+  const [motivoReprogramacion, setMotivoReprogramacion] = useState('')
   const [entregaPorCancelar, setEntregaPorCancelar] = useState<ProgramacionEntrega | null>(null)
   const [errorCancelacion, setErrorCancelacion] = useState('')
   const [pedidoDetalle, setPedidoDetalle] = useState<PedidoVenta | null>(null)
@@ -213,6 +215,7 @@ export function DistribucionPage() {
   const editarProgramacion = (programacion: ProgramacionEntrega, reprogramar = false) => {
     setEdicion(programacion)
     setReprogramacionEnCurso(reprogramar)
+    setMotivoReprogramacion('')
     const pedidoOrigen = pedidoPorId(programacion.pedidoId)
     const clienteOrigen = clientes.find((cliente) => cliente.id === pedidoOrigen?.clienteId)
     const direccionOrigen = clienteOrigen?.direccionesEntrega.find((direccion) => direccion.direccion === programacion.direccionEntrega)
@@ -293,6 +296,34 @@ export function DistribucionPage() {
 
   const enviar = async (evento: React.FormEvent<HTMLFormElement>) => {
     evento.preventDefault()
+    if (reprogramacionEnCurso && edicion) {
+      const resultadoReprogramacion = esquemaDatosReprogramacionEntrega.safeParse({
+        fechaProgramada: datos.fechaProgramada,
+        motivo: motivoReprogramacion,
+      })
+      if (!resultadoReprogramacion.success) {
+        setMensaje(resultadoReprogramacion.error.issues[0]?.message ?? 'Revisa la fecha y el motivo de reprogramación')
+        return
+      }
+      if (resultadoReprogramacion.data.fechaProgramada === edicion.fechaProgramada) {
+        setMensaje('Selecciona una fecha distinta a la programación actual')
+        return
+      }
+      if (resultadoReprogramacion.data.fechaProgramada < hoy) {
+        setMensaje('La nueva fecha programada no puede estar en el pasado')
+        return
+      }
+
+      const error = await reprogramar(edicion, resultadoReprogramacion.data.fechaProgramada, resultadoReprogramacion.data.motivo)
+      setMensaje(error ?? 'Entrega reprogramada. El motivo quedó registrado en el historial.')
+      if (!error) {
+        setFormularioAbierto(false)
+        setReprogramacionEnCurso(false)
+        setMotivoReprogramacion('')
+      }
+      return
+    }
+
     const resultado = esquemaDatosProgramacionEntrega.safeParse(datos)
     if (!resultado.success) {
       setMensaje(resultado.error.issues[0]?.message ?? 'Revisa los datos')
@@ -303,16 +334,6 @@ export function DistribucionPage() {
     if ((!pedido || !venta) && !edicion) {
       setMensaje('El pedido o la venta persistente ya no están disponibles; recarga la página')
       return
-    }
-    if (reprogramacionEnCurso && edicion) {
-      if (resultado.data.fechaProgramada === edicion.fechaProgramada) {
-        setMensaje('Selecciona una nueva fecha para reprogramar la entrega')
-        return
-      }
-      if (resultado.data.fechaProgramada < hoy) {
-        setMensaje('La nueva fecha programada no puede estar en el pasado')
-        return
-      }
     }
     if (!edicion && pedido && !pedidoListoParaProgramarDistribucion(pedido, venta)) {
       setMensaje('Completa el despacho de todos los bienes en Ventas antes de programar la entrega')
@@ -327,10 +348,11 @@ export function DistribucionPage() {
       ventaNumero: venta?.numeroInterno ?? edicion?.ventaNumero ?? '',
     }
     const error = await guardar(datosPersistentes, edicion?.id, pedido?.lineas ?? edicion?.lineas ?? [])
-    setMensaje(error ?? (reprogramacionEnCurso ? 'Entrega reprogramada.' : edicion ? 'Distribución actualizada.' : 'Distribución programada.'))
+    setMensaje(error ?? (edicion ? 'Distribución actualizada.' : 'Distribución programada.'))
     if (!error) {
       setFormularioAbierto(false)
       setReprogramacionEnCurso(false)
+      setMotivoReprogramacion('')
     }
   }
 
@@ -679,7 +701,7 @@ export function DistribucionPage() {
       {entregaResultado ? <DialogoResultadoEntrega abierto={Boolean(entregaResultado)} entrega={entregaResultado} guardando={guardandoResultado} alConfirmar={confirmarResultadoEntrega} alCambiarApertura={(abierto) => { if (!abierto) setEntregaResultado(null) }} /> : null}
 
       {puedeGestionarDistribucion && formularioAbierto ? (
-        <DialogPrimitive.Root open onOpenChange={(abierto) => { if (!abierto) { setFormularioAbierto(false); setReprogramacionEnCurso(false) } }}>
+        <DialogPrimitive.Root open onOpenChange={(abierto) => { if (!abierto) { setFormularioAbierto(false); setReprogramacionEnCurso(false); setMotivoReprogramacion('') } }}>
           <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-foreground/30" />
           <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-60 flex max-h-[90svh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden border bg-background shadow-xl outline-none">
@@ -704,6 +726,11 @@ export function DistribucionPage() {
                     <label htmlFor="fecha-programada" className="field-label">Nueva fecha programada<span aria-hidden="true"> *</span></label>
                     <input id="fecha-programada" required type="date" min={hoy} value={datos.fechaProgramada} onChange={(evento) => setDatos({ ...datos, fechaProgramada: evento.target.value })} className="field-control" />
                     <p className="mt-1 text-xs text-muted-foreground">Debe ser distinta de la fecha actual y no puede estar en el pasado.</p>
+                  </div>
+                  <div>
+                    <label htmlFor="motivo-reprogramacion" className="field-label">Motivo de reprogramación<span aria-hidden="true"> *</span></label>
+                    <textarea id="motivo-reprogramacion" required minLength={3} maxLength={300} rows={3} value={motivoReprogramacion} onChange={(evento) => setMotivoReprogramacion(evento.target.value)} className="field-control" placeholder="Ej. cliente solicitó recibir el pedido en otra fecha" />
+                    <p className="mt-1 text-xs text-muted-foreground">Quedará asociado al cambio de fecha en el historial de la entrega.</p>
                   </div>
                 </section>
               ) : (
@@ -789,7 +816,7 @@ export function DistribucionPage() {
               )}
               </div>
             </div>
-            <footer className="flex shrink-0 justify-end gap-2 border-t bg-background px-6 py-4"><Button type="button" variant="outline" onClick={() => { setFormularioAbierto(false); setReprogramacionEnCurso(false) }}>Cancelar</Button><Button type="submit">{reprogramacionEnCurso ? 'Confirmar nueva fecha' : edicion ? 'Guardar cambios' : 'Programar entrega'}</Button></footer>
+            <footer className="flex shrink-0 justify-end gap-2 border-t bg-background px-6 py-4"><Button type="button" variant="outline" disabled={guardandoEstado} onClick={() => { setFormularioAbierto(false); setReprogramacionEnCurso(false); setMotivoReprogramacion('') }}>Cancelar</Button><Button type="submit" disabled={guardandoEstado}>{guardandoEstado ? 'Guardando…' : reprogramacionEnCurso ? 'Confirmar reprogramación' : edicion ? 'Guardar cambios' : 'Programar entrega'}</Button></footer>
           </form>
           </DialogPrimitive.Content>
           </DialogPrimitive.Portal>

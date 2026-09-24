@@ -95,6 +95,7 @@ export function DialogoDetalleEntrega({ abierto, entrega, alCambiarApertura }: D
                           ? `${etiquetasEstado[evento.estadoAnterior]} → ${etiquetasEstado[evento.estadoNuevo ?? 'programado']}`
                           : `Entrega creada · ${etiquetasEstado[evento.estadoNuevo ?? 'programado']}`}</p>
                       <p className="mt-1 text-xs text-muted-foreground"><time dateTime={evento.fechaHora}>{formatoFechaHora.format(new Date(evento.fechaHora))}</time> · {evento.actorNombre}</p>
+                      {evento.tipo === 'schedule' && evento.motivoReprogramacion ? <p className="mt-1 text-sm text-muted-foreground">Motivo: {evento.motivoReprogramacion}</p> : null}
                     </li>
                   ))}
                 </ol>

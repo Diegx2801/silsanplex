@@ -4,6 +4,7 @@ import {
   crearProgramacionEntrega,
   obtenerAccionPrincipalDistribucion,
   esquemaDatosProgramacionEntrega,
+  esquemaDatosReprogramacionEntrega,
   esquemaProgramacionEntrega,
   esquemaResultadoEntrega,
   filtrarProgramacionesEntrega,
@@ -161,6 +162,12 @@ describe('programación de entrega', () => {
     expect(puedeTransicionarEntrega('rechazado', 'reprogramado')).toBe(true)
     expect(puedeTransicionarEntrega('entregado', 'en_curso')).toBe(false)
     expect(puedeTransicionarEntrega('en_destino', 'en_destino')).toBe(true)
+  })
+
+  it('valida los datos mínimos de una reprogramación independiente', () => {
+    expect(esquemaDatosReprogramacionEntrega.safeParse({ fechaProgramada: '2026-09-26', motivo: 'Cliente solicitó otra fecha' }).success).toBe(true)
+    expect(esquemaDatosReprogramacionEntrega.safeParse({ fechaProgramada: '2026-02-30', motivo: 'Cliente solicitó otra fecha' }).success).toBe(false)
+    expect(esquemaDatosReprogramacionEntrega.safeParse({ fechaProgramada: '2026-09-26', motivo: '  ' }).success).toBe(false)
   })
 
   it('solo permite registrar resultados tras confirmar llegada al destino', () => {
