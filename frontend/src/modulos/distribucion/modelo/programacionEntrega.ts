@@ -91,7 +91,7 @@ export interface EventoResultadoEntrega {
 export const TRANSICIONES_DISTRIBUCION: Record<ProgramacionEntrega['estado'], readonly ProgramacionEntrega['estado'][]> = {
   programado: ['preparando', 'reprogramado', 'cancelado'],
   preparando: ['en_curso', 'reprogramado', 'cancelado'],
-  en_curso: ['en_destino', 'entrega_parcial', 'rechazado'],
+  en_curso: ['en_destino'],
   en_destino: ['entregado', 'entrega_parcial', 'rechazado'],
   entregado: [],
   entrega_parcial: ['en_curso', 'en_destino', 'entregado', 'rechazado', 'reprogramado'],
@@ -117,9 +117,24 @@ export const ACCIONES_PRINCIPALES_DISTRIBUCION: Partial<Record<ProgramacionEntre
   reprogramado: { estado: 'preparando', etiqueta: 'Iniciar preparación' },
 }
 
-export function obtenerAccionPrincipalDistribucion(estado: ProgramacionEntrega['estado']) {
+export function obtenerAccionPrincipalDistribucion(
+  estado: ProgramacionEntrega['estado'],
+  seguimiento?: ProgramacionEntrega['seguimiento'],
+) {
+  if (estado === 'entrega_parcial' && seguimiento === 'en_curso') {
+    return { estado: 'en_destino' as const, etiqueta: 'Marcar en destino' }
+  }
+
   const accion = ACCIONES_PRINCIPALES_DISTRIBUCION[estado]
   return accion && puedeTransicionarEntrega(estado, accion.estado) ? accion : undefined
+}
+
+export function puedeRegistrarResultadoEntrega(
+  entrega: Pick<ProgramacionEntrega, 'estado' | 'seguimiento' | 'requiereConciliacionCantidades'>,
+) {
+  if (entrega.requiereConciliacionCantidades) return false
+  if (entrega.estado === 'en_destino') return true
+  return entrega.estado === 'entrega_parcial' && entrega.seguimiento === 'en_destino'
 }
 
 export function puedeTransicionarEntrega(

@@ -11,6 +11,7 @@ import {
   listarEntregasAtrasadas,
   obtenerResumenFechaEntrega,
   obtenerEstadosSiguientes,
+  puedeRegistrarResultadoEntrega,
   puedeTransicionarEntrega,
   resumirEntregas,
   tipoTransporteParaModalidad,
@@ -151,12 +152,25 @@ describe('programación de entrega', () => {
     expect(obtenerEstadosSiguientes('programado')).toEqual(['preparando', 'reprogramado', 'cancelado'])
     expect(puedeTransicionarEntrega('programado', 'preparando')).toBe(true)
     expect(puedeTransicionarEntrega('preparando', 'en_curso')).toBe(true)
+    expect(obtenerEstadosSiguientes('en_curso')).toEqual(['en_destino'])
+    expect(puedeTransicionarEntrega('en_curso', 'entrega_parcial')).toBe(false)
+    expect(puedeTransicionarEntrega('en_curso', 'rechazado')).toBe(false)
     expect(puedeTransicionarEntrega('programado', 'devuelto')).toBe(false)
     expect(puedeTransicionarEntrega('en_curso', 'reprogramado')).toBe(false)
     expect(puedeTransicionarEntrega('entrega_parcial', 'reprogramado')).toBe(true)
     expect(puedeTransicionarEntrega('rechazado', 'reprogramado')).toBe(true)
     expect(puedeTransicionarEntrega('entregado', 'en_curso')).toBe(false)
     expect(puedeTransicionarEntrega('en_destino', 'en_destino')).toBe(true)
+  })
+
+  it('solo permite registrar resultados tras confirmar llegada al destino', () => {
+    const base = { requiereConciliacionCantidades: false }
+
+    expect(puedeRegistrarResultadoEntrega({ ...base, estado: 'en_curso', seguimiento: 'en_curso' })).toBe(false)
+    expect(puedeRegistrarResultadoEntrega({ ...base, estado: 'en_destino', seguimiento: 'en_destino' })).toBe(true)
+    expect(puedeRegistrarResultadoEntrega({ ...base, estado: 'entrega_parcial', seguimiento: 'en_destino' })).toBe(true)
+    expect(puedeRegistrarResultadoEntrega({ ...base, estado: 'entrega_parcial', seguimiento: 'en_curso' })).toBe(false)
+    expect(puedeRegistrarResultadoEntrega({ ...base, requiereConciliacionCantidades: true, estado: 'en_destino', seguimiento: 'en_destino' })).toBe(false)
   })
 
   it('distingue la fecha de cierre de la última recepción o intento', () => {
@@ -216,6 +230,7 @@ describe('programación de entrega', () => {
     expect(obtenerAccionPrincipalDistribucion('preparando')).toEqual({ estado: 'en_curso', etiqueta: 'Iniciar traslado' })
     expect(obtenerAccionPrincipalDistribucion('en_curso')).toEqual({ estado: 'en_destino', etiqueta: 'Marcar en destino' })
     expect(obtenerAccionPrincipalDistribucion('entrega_parcial')).toEqual({ estado: 'en_curso', etiqueta: 'Reanudar traslado' })
+    expect(obtenerAccionPrincipalDistribucion('entrega_parcial', 'en_curso')).toEqual({ estado: 'en_destino', etiqueta: 'Marcar en destino' })
     expect(obtenerAccionPrincipalDistribucion('entregado')).toBeUndefined()
     expect(obtenerAccionPrincipalDistribucion('rechazado')).toBeUndefined()
   })

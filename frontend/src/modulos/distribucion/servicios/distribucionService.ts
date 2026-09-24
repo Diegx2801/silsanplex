@@ -172,6 +172,7 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (mensaje.includes('DISTRIBUTION_RESCHEDULE_DATE_IN_PAST')) return 'La nueva fecha de programación debe ser hoy o una fecha futura.'
   if (mensaje.includes('DISTRIBUTION_ROUTE_ALREADY_STARTED')) return 'La entrega ya está en ruta o cerrada. Registra el resultado del intento antes de reprogramar.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_RECONCILIATION_REQUIRED')) return 'Esta entrega histórica no tiene cantidades recibidas por producto. Debe conciliarse antes de registrar otro resultado.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME_NOT_AT_DESTINATION')) return 'Confirma “Marcar en destino” antes de registrar el resultado de la entrega.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_STATE_INVALID')) return 'La entrega debe estar en ruta o tener un resultado parcial para registrar su recepción.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_TOTAL_INCOMPLETE')) return 'Las cantidades no completan el saldo. Registra una entrega parcial o ajusta las cantidades recibidas.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_PARTIAL_INVALID')) return 'Una entrega parcial debe registrar cantidades recibidas y dejar un saldo pendiente.'

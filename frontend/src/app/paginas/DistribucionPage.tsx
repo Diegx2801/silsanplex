@@ -22,6 +22,7 @@ import {
   obtenerAccionPrincipalDistribucion,
   obtenerEstadosSiguientes,
   obtenerResumenFechaEntrega,
+  puedeRegistrarResultadoEntrega,
   resumirEntregas,
   tipoTransporteParaModalidad,
   type DatosProgramacionEntrega,
@@ -610,12 +611,19 @@ export function DistribucionPage() {
               <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{programaciones.length ? 'No hay coincidencias' : 'Aún no hay entregas programadas'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{programaciones.length ? 'Prueba con otra búsqueda o limpia los filtros.' : 'Programa una entrega desde un pedido confirmado para iniciar el seguimiento.'}</p></div>
             ) : (
               <div className="divide-y">{entregasVisibles.map((item) => {
-                const accionPrincipal = obtenerAccionPrincipalDistribucion(item.estado)
+                const accionPrincipal = obtenerAccionPrincipalDistribucion(item.estado, item.seguimiento)
                 const puedeReprogramar = ['entrega_parcial', 'rechazado', 'reprogramado'].includes(item.estado)
                 const puedeCancelar = obtenerEstadosSiguientes(item.estado).includes('cancelado')
-                const puedeRegistrarResultado = ['en_curso', 'en_destino', 'entrega_parcial'].includes(item.estado)
+                const puedeRegistrarResultado = puedeRegistrarResultadoEntrega(item)
                 const puedeEditar = ['programado', 'preparando'].includes(item.estado)
                 const resumenFechaEntrega = obtenerResumenFechaEntrega(item)
+                const mensajeEtapaEntrega = item.estado === 'en_curso'
+                  ? 'Marca en destino para habilitar el registro del resultado.'
+                  : item.estado === 'entrega_parcial' && item.seguimiento === 'en_curso'
+                    ? 'La ruta se reanudó. Marca en destino antes de registrar otra recepción.'
+                    : item.estado === 'entrega_parcial' && item.seguimiento === 'en_destino'
+                      ? 'Sigues en destino: puedes registrar una recepción adicional o reanudar el traslado.'
+                      : ''
 
                 return (
                   <article key={item.id} className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(10rem,1fr)_minmax(13rem,1.35fr)_minmax(9rem,0.85fr)_minmax(14rem,1.2fr)] lg:items-center">
@@ -625,11 +633,12 @@ export function DistribucionPage() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2"><span className="status-label" data-tone={tonoEstadoDistribucion(item.estado)}>{etiquetasEstado[item.estado]}</span><span className="text-xs text-muted-foreground">{etiquetasModalidad[item.modalidad ?? 'movilidad_propia']} · {item.tipoTransporte === 'interno' ? 'Interno' : 'Externo'}</span></div>
                       {item.requiereConciliacionCantidades ? <p role="status" className="mt-2 text-xs text-amber-800">Registro histórico por conciliar antes de continuar.</p> : null}
+                      {mensajeEtapaEntrega ? <p role="status" className="mt-2 text-xs text-muted-foreground">{mensajeEtapaEntrega}</p> : null}
                       {item.observaciones ? <p className="mt-2 text-xs text-muted-foreground">{item.observaciones}</p> : null}
                       {puedeGestionarDistribucion && !item.requiereConciliacionCantidades ? (
                         <div className="mt-3 flex flex-wrap gap-2 print:hidden">
                           {accionPrincipal ? <Button type="button" size="sm" disabled={guardandoEstado || guardandoResultado} onClick={() => void ejecutarTransicionEtapa(item, accionPrincipal.estado)}><ArrowRight aria-hidden="true" />{accionPrincipal.etiqueta}</Button> : null}
-                          {puedeRegistrarResultado ? <Button type="button" size="sm" variant={accionPrincipal ? 'outline' : 'default'} disabled={guardandoEstado || guardandoResultado} onClick={() => setEntregaResultado(item)}><PackageCheck aria-hidden="true" /> Registrar resultado</Button> : null}
+                          {puedeRegistrarResultado ? <Button type="button" size="sm" variant={accionPrincipal ? 'outline' : 'default'} disabled={guardandoEstado || guardandoResultado} onClick={() => setEntregaResultado(item)}><PackageCheck aria-hidden="true" />{item.estado === 'entrega_parcial' ? 'Registrar recepción adicional' : 'Registrar resultado'}</Button> : null}
                           {puedeReprogramar ? <Button type="button" size="sm" variant="outline" disabled={guardandoEstado} onClick={() => editarProgramacion(item, true)}><CalendarClock aria-hidden="true" /> Reprogramar fecha</Button> : null}
                           {puedeEditar ? <Button type="button" size="sm" variant="outline" disabled={guardandoEstado} onClick={() => editarProgramacion(item)}><Pencil aria-hidden="true" /> Editar planificación</Button> : null}
                           {puedeCancelar ? <Button type="button" size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={guardandoEstado} onClick={() => { setErrorCancelacion(''); setEntregaPorCancelar(item) }}><Ban aria-hidden="true" /> Cancelar</Button> : null}
