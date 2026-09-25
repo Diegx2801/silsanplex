@@ -12,11 +12,7 @@ type VentaProgramable = Pick<Venta, 'estado'> & {
   }>
 }
 
-/**
- * La programación actual es única por pedido y representa la salida completa
- * de sus bienes. Las recepciones del cliente se cuantifican como eventos dentro
- * de esa programación; los despachos parciales continúan en Ventas.
- */
+/** A delivery can cover a dispatched subset of the order's goods. */
 export function pedidoListoParaProgramarDistribucion(
   pedido: PedidoProgramable,
   venta: VentaProgramable | undefined,
@@ -57,4 +53,46 @@ export function enriquecerLineasPedidoConSaldos(
         cantidadPendiente: lineaVenta?.cantidadPendiente ?? linea.cantidad,
       }
     })
+}
+
+/**
+ * Returns the part of each sales-dispatched line that has not already been
+ * assigned to a live delivery. Cancelled plans release their allocation;
+ * delivered and in-progress plans continue to consume it.
+ */
+export function obtenerLineasDisponiblesDistribucion(
+  lineas: readonly PedidoVenta['lineas'][number][],
+  venta: { lineas: ReadonlyArray<Pick<LineaOperacionVenta, 'pedidoLineaId' | 'tipoProducto' | 'cantidadDespachada' | 'cantidadPendiente'>> } | undefined,
+  entregas: ReadonlyArray<{ id?: string; estado: string; lineas: ReadonlyArray<{ id: string; cantidad: number }> }>,
+  excluirEntregaId?: string,
+) {
+  const asignadasPorLinea = new Map<string, number>()
+  for (const entrega of entregas) {
+    if (entrega.estado === 'cancelado') continue
+    for (const linea of entrega.lineas) {
+      asignadasPorLinea.set(linea.id, (asignadasPorLinea.get(linea.id) ?? 0) + linea.cantidad)
+    }
+  }
+
+  const asignadasDeEntregaExcluida = new Map<string, number>()
+  if (excluirEntregaId) {
+    const entrega = entregas.find((item) => item.id === excluirEntregaId)
+    for (const linea of entrega?.lineas ?? []) {
+      asignadasDeEntregaExcluida.set(linea.id, (asignadasDeEntregaExcluida.get(linea.id) ?? 0) + linea.cantidad)
+    }
+  }
+
+  return enriquecerLineasPedidoConSaldos(lineas, venta)
+    .map((linea) => {
+      const cantidadDespachada = linea.cantidadDespachada ?? 0
+      const asignada = asignadasPorLinea.get(linea.id) ?? 0
+      const asignadaSinEntregaExcluida = Math.max(0, asignada - (asignadasDeEntregaExcluida.get(linea.id) ?? 0))
+      const despachada = Math.max(0, cantidadDespachada)
+      return {
+        ...linea,
+        cantidadDisponibleDistribucion: Math.max(0, despachada - asignada),
+        cantidadMaximaPlanificacion: Math.max(0, despachada - asignadaSinEntregaExcluida),
+      }
+    })
+    .filter((linea) => linea.cantidadDisponibleDistribucion > 0 || (excluirEntregaId && linea.cantidadMaximaPlanificacion > 0))
 }

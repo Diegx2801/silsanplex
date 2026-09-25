@@ -64,6 +64,12 @@ interface LineaResultadoFila {
   quantity_delivered: number | string
 }
 
+interface LineaEntregaFila {
+  delivery_id: string
+  order_line_id: string
+  quantity: number | string
+}
+
 const columnas = 'id,lock_version,order_id,sale_id,sale_number,order_number,customer_name,issue_date,delivery_date,scheduled_date,actual_delivery_date,guide_number,transport_type,tracking_status,delivery_status,direction,numero_despacho,modalidad,transportista,conductor,vehiculo,placa,evidencia,incidencias,observations,quantity_reconciliation_required,order_items,created_at' as const
 
 export function prepararPayloadEntrega(
@@ -103,7 +109,9 @@ export function prepararPayloadEntrega(
     evidencia: datos.evidencia,
     incidencias: Array.isArray(datos.incidencias) ? datos.incidencias : [],
     observations: datos.observaciones,
-    items: lineas.filter((linea) => linea.tipoProducto === 'good'),
+    items: lineas
+      .filter((linea) => linea.tipoProducto === 'good' && linea.cantidad > 0)
+      .map((linea) => ({ order_line_id: linea.id, quantity: linea.cantidad })),
   }
 }
 
@@ -149,10 +157,15 @@ function enriquecerEntrega(
   entrega: ProgramacionEntrega,
   pedido: Awaited<ReturnType<typeof listarPedidosPersistentes>>[number] | undefined,
   venta: Awaited<ReturnType<typeof listarVentasPersistentes>>[number] | undefined,
+  asignaciones: ReadonlyArray<{ orderLineId: string; quantity: number }>,
 ) {
   if (!pedido) return entrega
 
-  const lineas = enriquecerLineasPedidoConSaldos(pedido.lineas, venta)
+  const lineasPedido = enriquecerLineasPedidoConSaldos(pedido.lineas, venta)
+  const cantidadesAsignadas = new Map(asignaciones.map(({ orderLineId, quantity }) => [orderLineId, quantity]))
+  const lineas = lineasPedido
+    .filter((linea) => cantidadesAsignadas.has(linea.id))
+    .map((linea) => ({ ...linea, cantidad: cantidadesAsignadas.get(linea.id) ?? 0 }))
 
   return esquemaProgramacionEntrega.parse({
     ...entrega,
@@ -187,6 +200,11 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (mensaje.includes('DISTRIBUTION_OUTCOME_FAILURE_CATEGORY_INVALID')) return 'La categoría de incidencia no es válida para este resultado.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_REJECTION_INVALID')) return 'Describe una incidencia y no registres cantidades para informar un rechazo.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_DUPLICATE_LINE')) return 'Cada producto debe aparecer una sola vez en el resultado.'
+  if (mensaje.includes('DISTRIBUTION_ALLOCATION_EXCEEDS_DISPATCHED')) return 'La cantidad supera el saldo despachado que todavía no está asignado a otros envíos.'
+  if (mensaje.includes('DISTRIBUTION_ALLOCATION_LOCKED')) return 'Las cantidades de este envío ya no se pueden cambiar porque la ruta comenzó o tiene resultados registrados.'
+  if (mensaje.includes('DISTRIBUTION_ITEM_NOT_FOUND')) return 'Uno de los bienes ya no pertenece al pedido o no es un producto físico.'
+  if (mensaje.includes('DISTRIBUTION_ITEMS_DUPLICATE_LINE')) return 'Cada producto debe aparecer una sola vez en la asignación del envío.'
+  if (mensaje.includes('DISTRIBUTION_ITEM_QUANTITY_INVALID') || mensaje.includes('DISTRIBUTION_ITEMS_INVALID')) return 'Ingresa cantidades válidas para los bienes del envío.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME')) return 'No se pudo registrar el resultado. Actualiza la entrega y revisa las cantidades ingresadas.'
   if (mensaje.includes('DISTRIBUTION_DIRECTION_REQUIRED')) return 'Ingresa la dirección de entrega'
   if (mensaje.includes('DISTRIBUTION_ORDER_NOT_FOUND')) return 'El pedido persistente no existe en esta organización'
@@ -225,13 +243,18 @@ export async function listarEntregas(organizationId: string) {
   const entregas = ((data ?? []) as EntregaFila[]).map(mapearEntrega)
   if (!entregas.length) return entregas
 
-  // order_items se conserva solo como snapshot histórico. La lectura vigente
-  // reconstruye las líneas desde SQL y los saldos desde reservas persistentes.
+  // order_items se conserva solo como snapshot histórico. Las cantidades
+  // asignadas por envío proceden de la tabla normalizada; datos comerciales y
+  // despachos confirmados siguen reconstruyéndose desde sus módulos de origen.
   // Los eventos se leen por organización en consultas de conjunto, evitando
   // construir una URL PostgREST con listas de IDs potencialmente extensas.
-  const [pedidos, ventas, outcomesResponse] = await Promise.all([
+  const [pedidos, ventas, allocationsResponse, outcomesResponse] = await Promise.all([
     listarPedidosPersistentes(organizationId),
     listarVentasPersistentes(organizationId),
+    supabase
+      .from('distribution_delivery_items')
+      .select('delivery_id,order_line_id,quantity')
+      .eq('organization_id', organizationId),
     supabase
       .from('distribution_delivery_outcomes')
       .select('id,delivery_id,result_status,failure_category,occurred_on,evidence,incidents,created_at')
@@ -239,7 +262,15 @@ export async function listarEntregas(organizationId: string) {
       .order('occurred_on', { ascending: true })
       .order('created_at', { ascending: true }),
   ])
+  if (allocationsResponse.error) throw new Error(mensajeError(allocationsResponse.error))
   if (outcomesResponse.error) throw new Error(mensajeError(outcomesResponse.error))
+
+  const allocationsByDeliveryId = new Map<string, Array<{ orderLineId: string; quantity: number }>>()
+  for (const allocation of (allocationsResponse.data ?? []) as LineaEntregaFila[]) {
+    const lines = allocationsByDeliveryId.get(allocation.delivery_id) ?? []
+    lines.push({ orderLineId: allocation.order_line_id, quantity: Number(allocation.quantity) })
+    allocationsByDeliveryId.set(allocation.delivery_id, lines)
+  }
   const outcomes = (outcomesResponse.data ?? []) as ResultadoFila[]
   const outcomeLinesResponse = outcomes.length
     ? await supabase
@@ -286,6 +317,7 @@ export async function listarEntregas(organizationId: string) {
       entrega,
       pedidosPorId.get(entrega.pedidoId),
       ventasPorPedidoId.get(entrega.pedidoId),
+      allocationsByDeliveryId.get(entrega.id) ?? [],
     )
     return esquemaProgramacionEntrega.parse({
       ...enriquecida,

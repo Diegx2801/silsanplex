@@ -342,7 +342,7 @@ describe('programación de entrega', () => {
       placa: 'ABC-123',
       evidencia: 'foto-1.jpg',
       incidencias: ['Se confirma horario', 'Parada no programada'],
-      items: [{ id: 'linea-1', productoDescripcion: 'Producto', cantidad: 1, unidadMedida: 'UND' }],
+      items: [{ order_line_id: 'linea-1', quantity: 1 }],
     })
 
     expect(prepararPayloadEntrega('org-1', { ...datos, fechaEmision: '' }, []).issue_date).toBe(fechaActualPeru())

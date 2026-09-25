@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { enriquecerLineasPedidoConSaldos, pedidoListoParaProgramarDistribucion } from './pedidosProgramables'
+import { enriquecerLineasPedidoConSaldos, obtenerLineasDisponiblesDistribucion, pedidoListoParaProgramarDistribucion } from './pedidosProgramables'
 
 const pedido = {
   estado: 'confirmado',
@@ -57,5 +57,39 @@ describe('enriquecerLineasPedidoConSaldos', () => {
   it('no inventa despachos si el saldo de Ventas aún no está disponible', () => {
     const resultado = enriquecerLineasPedidoConSaldos([lineaOperativa], undefined)
     expect(resultado[0]).toMatchObject({ cantidadDespachada: 0, cantidadPendiente: 3 })
+  })
+})
+
+describe('obtenerLineasDisponiblesDistribucion', () => {
+  it('resta lo asignado a otros envíos y libera planes cancelados', () => {
+    const resultado = obtenerLineasDisponiblesDistribucion(
+      [lineaOperativa],
+      ventaCompleta,
+      [
+        { id: 'activa', estado: 'programado', lineas: [{ id: 'linea-pedido-1', cantidad: 1 }] },
+        { id: 'cancelada', estado: 'cancelado', lineas: [{ id: 'linea-pedido-1', cantidad: 1 }] },
+      ],
+    )
+
+    expect(resultado[0]).toMatchObject({ cantidadDisponibleDistribucion: 2, cantidadMaximaPlanificacion: 2 })
+  })
+
+  it('al editar incluye su propia asignación en el máximo, sin restarla dos veces', () => {
+    const resultado = obtenerLineasDisponiblesDistribucion(
+      [lineaOperativa],
+      ventaCompleta,
+      [{ id: 'actual', estado: 'preparando', lineas: [{ id: 'linea-pedido-1', cantidad: 2 }] }],
+      'actual',
+    )
+
+    expect(resultado[0]).toMatchObject({ cantidadDisponibleDistribucion: 1, cantidadMaximaPlanificacion: 3 })
+  })
+
+  it('no ofrece un pedido si todo lo despachado ya está asignado a entregas activas', () => {
+    expect(obtenerLineasDisponiblesDistribucion(
+      [lineaOperativa],
+      ventaCompleta,
+      [{ id: 'activa', estado: 'en_curso', lineas: [{ id: 'linea-pedido-1', cantidad: 3 }] }],
+    )).toEqual([])
   })
 })

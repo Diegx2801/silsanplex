@@ -1,8 +1,12 @@
 begin;
 
-select plan(139);
+select plan(154);
 
 select has_table('public', 'distribution_deliveries', 'existe la tabla persistente de distribución');
+select has_table('public', 'distribution_delivery_items', 'cada envío conserva sus cantidades de forma normalizada');
+select has_column('public', 'distribution_delivery_items', 'quantity', 'la asignación persiste la cantidad por línea y envío');
+select ok((select relrowsecurity from pg_class where oid = 'public.distribution_delivery_items'::regclass), 'las asignaciones mantienen RLS');
+select is(has_table_privilege('authenticated', 'public.distribution_delivery_items', 'SELECT'), true, 'authenticated consulta asignaciones de distribución');
 select has_table('public', 'distribution_command_operations', 'existe el registro de operaciones idempotentes');
 select has_column('public', 'distribution_deliveries', 'delivery_status', 'existe el estado operativo');
 select has_column('public', 'distribution_deliveries', 'scheduled_date', 'existe la fecha programada');
@@ -233,7 +237,7 @@ select throws_ok($$
     'issue_date', '2026-09-01', 'delivery_date', '2026-09-02',
     'guide_number', 'G-N-PENDING', 'transport_type', 'interno',
     'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-PENDING',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'P0001', 'DISTRIBUTION_ORDER_NOT_DISPATCHED', 'rechaza una venta con despacho pendiente o parcial');
 
@@ -271,7 +275,7 @@ select lives_ok($$
     'evidencia', 'foto-entrega.jpg',
     'incidencias', jsonb_build_array('Demora de 10 minutos'),
     'observations', 'Entrega de prueba',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'el RPC guarda una entrega con todos los campos nuevos');
 
@@ -292,6 +296,7 @@ select is((select incidencias from public.distribution_deliveries where guide_nu
 select is((select sale_id from public.distribution_deliveries where guide_number = 'G-N-001'), 'a3111111-1111-4111-8111-111111111152'::uuid, 'la entrega queda ligada a la venta real');
 select is((select sale_number from public.distribution_deliveries where guide_number = 'G-N-001'), 'VEN-000002', 'persiste el número real de venta');
 select is((select order_items -> 0 ->> 'id' from public.distribution_deliveries where guide_number = 'G-N-001'), 'a3111111-1111-4111-8111-111111111142', 'las líneas se reconstruyen desde order_items y no desde el payload');
+select is((select sum(quantity) from public.distribution_delivery_items where delivery_id = (select id from public.distribution_deliveries where guide_number = 'G-N-001')), 3::numeric, 'persiste la cantidad asignada a la guía');
 select throws_ok($$
   select public.save_distribution_delivery(jsonb_build_object(
     'id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
@@ -307,7 +312,7 @@ select throws_ok($$
     'modalidad', 'movilidad_externa', 'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez',
     'vehiculo', 'Camión', 'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
     'incidencias', '[]'::jsonb, 'observations', 'Reprogramación fuera del flujo autorizado',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'P0001', 'DISTRIBUTION_RESCHEDULE_COMMAND_REQUIRED', 'el guardado general no puede reprogramar una entrega antes de un intento');
 
@@ -324,7 +329,7 @@ select lives_ok($$
     'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
     'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
     'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'repite sin duplicar una operación equivalente');
 select is((select count(*) from public.distribution_deliveries where guide_number = 'G-N-001'), 1::bigint, 'el retry idempotente conserva una sola entrega');
@@ -342,7 +347,7 @@ select throws_ok($$
     'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
     'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
     'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'P0001', 'DISTRIBUTION_OPERATION_KEY_REUSED', 'rechaza reutilizar la clave con otro payload');
 
@@ -360,7 +365,7 @@ select lives_ok($$
     'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
     'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
     'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'permite una transición válida de programado a preparando');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'preparando', 'persiste la transición a preparación');
@@ -381,7 +386,7 @@ select lives_ok($$
     'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
     'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
     'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'permite una transición válida de preparando a en curso');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'en_curso', 'persiste la transición a en curso');
@@ -401,7 +406,7 @@ select throws_ok($$
     'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
     'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
     'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'P0001', 'DISTRIBUTION_ROUTE_ALREADY_STARTED', 'impide reprogramar una entrega que ya está en ruta');
 
@@ -443,7 +448,7 @@ select lives_ok($$
     'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001', 'modalidad', 'movilidad_externa',
     'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión', 'placa', 'ABC-123',
     'evidencia', 'foto-entrega.jpg', 'incidencias', '[]'::jsonb, 'observations', 'Llegada confirmada',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'confirma la llegada antes de habilitar resultados');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'en_destino', 'persiste la llegada confirmada');
@@ -478,7 +483,7 @@ select throws_ok($$
     'conductor', 'Ana Pérez', 'vehiculo', 'Camión', 'placa', 'ABC-123',
     'evidencia', 'foto-entrega.jpg', 'incidencias', jsonb_build_array('El cliente no estaba disponible'),
     'observations', 'Reprogramado sin motivo',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'P0001', 'DISTRIBUTION_RESCHEDULE_COMMAND_REQUIRED', 'el guardado general no puede reprogramar una entrega parcial o fallida');
 
@@ -557,7 +562,7 @@ select lives_ok($$
     'modalidad', 'movilidad_externa', 'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez',
     'vehiculo', 'Camión', 'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
     'incidencias', jsonb_build_array('El cliente no estaba disponible'), 'observations', 'Nuevo intento',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'permite preparar nuevamente una entrega reprogramada');
 select lives_ok($$
@@ -573,7 +578,7 @@ select lives_ok($$
     'modalidad', 'movilidad_externa', 'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez',
     'vehiculo', 'Camión', 'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
     'incidencias', jsonb_build_array('El cliente no estaba disponible'), 'observations', 'Nuevo intento en ruta',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'permite iniciar la ruta del nuevo intento');
 
@@ -784,7 +789,7 @@ select throws_ok($$
     'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
     'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
     'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'P0001', 'DISTRIBUTION_VERSION_CONFLICT', 'rechaza una versión obsoleta');
 
@@ -802,7 +807,7 @@ select throws_ok($$
     'transportista', 'Transportes Prueba', 'conductor', 'Ana Pérez', 'vehiculo', 'Camión',
     'placa', 'ABC-123', 'evidencia', 'foto-entrega.jpg',
     'incidencias', jsonb_build_array('Demora de 10 minutos'), 'observations', 'Entrega de prueba',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, 'P0001', 'DISTRIBUTION_INVALID_TRANSITION', 'rechaza saltar de en curso a devuelto');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'entregado', 'una transición inválida no modifica la entrega');
@@ -820,7 +825,7 @@ select lives_ok($$
     'direction', '', 'numero_despacho', '', 'modalidad', 'movilidad_propia',
     'transportista', '', 'conductor', '', 'vehiculo', '', 'placa', '',
     'evidencia', '', 'incidencias', '[]'::jsonb, 'observations', '',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-h', 'cantidad', 1))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111141', 'cantidad', 2))
   ));
 $$, 'una actualización de seguimiento no rompe filas históricas');
 select is((select delivery_status from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), 'preparando', 'actualiza el estado histórico mediante una transición válida');
@@ -886,7 +891,7 @@ select throws_ok($$
     'order_number', 'PED-000002', 'customer_name', 'Cliente persistente distribución',
     'issue_date', '2026-09-01', 'delivery_date', '2026-09-02', 'guide_number', 'G-N-001',
     'transport_type', 'externo', 'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-001',
-    'items', jsonb_build_array(jsonb_build_object('id', 'linea-falsa', 'cantidad', 999))
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3))
   ));
 $$, '23505', 'DISTRIBUTION_DUPLICATE_GUIDE_OR_ORDER', 'un retry no duplica la entrega');
 select is((select count(*) from public.distribution_deliveries where order_id = 'a3111111-1111-4111-8111-111111111112'), 1::bigint, 'el retry conserva una sola entrega');
@@ -952,6 +957,157 @@ select throws_ok($$
     'items', jsonb_build_array(jsonb_build_object('id', 'linea-i'))
   ));
 $$, '22023', 'DISTRIBUTION_INCIDENTS_INVALID', 'rechaza incidencias que no sean arreglo');
+
+reset role;
+-- Free the legacy fixture's valid allocation before testing two replacement
+-- shipments against the same already-dispatched order line.
+update public.distribution_deliveries
+set quantity_reconciliation_required = false
+where id = 'f3111111-1111-4111-8111-111111111111';
+update public.distribution_deliveries
+set delivery_status = 'cancelado'
+where id = 'f3111111-1111-4111-8111-111111111111';
+update public.sales set status = 'despachada' where id = 'a3111111-1111-4111-8111-111111111151';
+update public.orders set fulfillment_status = 'dispatched' where id = 'a3111111-1111-4111-8111-111111111111';
+set local role authenticated;
+
+select lives_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111111',
+    'sale_id', 'a3111111-1111-4111-8111-111111111151',
+    'order_number', 'PED-000001', 'customer_name', 'Cliente persistente distribución',
+    'issue_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'guide_number', 'G-H-002', 'transport_type', 'interno', 'tracking_status', 'en_curso',
+    'delivery_status', 'programado', 'direction', 'Av. Sucursal 1', 'numero_despacho', 'DES-H-002',
+    'modalidad', 'movilidad_propia', 'transportista', '', 'conductor', '', 'vehiculo', '', 'placa', '',
+    'evidencia', '', 'incidencias', '[]'::jsonb, 'observations', 'Primer envío parcial',
+    'operation_key', '51111111-1111-4111-8111-111111111111',
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111141', 'cantidad', 1))
+  ));
+$$, 'permite asignar solo parte de los bienes despachados a un envío independiente');
+
+select lives_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'id', (select id from public.distribution_deliveries where guide_number = 'G-H-002'),
+    'expected_lock_version', 1,
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111111', 'sale_id', 'a3111111-1111-4111-8111-111111111151',
+    'order_number', 'PED-000001', 'customer_name', 'Cliente persistente distribución',
+    'issue_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'guide_number', 'G-H-002', 'transport_type', 'interno', 'tracking_status', 'en_curso',
+    'delivery_status', 'preparando', 'direction', 'Av. Sucursal 1', 'numero_despacho', 'DES-H-002',
+    'modalidad', 'movilidad_propia', 'transportista', '', 'conductor', 'Conductor', 'vehiculo', 'Camión', 'placa', 'ABC-001',
+    'evidencia', '', 'incidencias', '[]'::jsonb, 'observations', 'Preparación del envío',
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111141', 'cantidad', 1))
+  ));
+$$, 'permite preparar un envío asignado');
+
+select lives_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'id', (select id from public.distribution_deliveries where guide_number = 'G-H-002'),
+    'expected_lock_version', 2,
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111111', 'sale_id', 'a3111111-1111-4111-8111-111111111151',
+    'order_number', 'PED-000001', 'customer_name', 'Cliente persistente distribución',
+    'issue_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'guide_number', 'G-H-002', 'transport_type', 'interno', 'tracking_status', 'en_curso',
+    'delivery_status', 'en_curso', 'direction', 'Av. Sucursal 1', 'numero_despacho', 'DES-H-002',
+    'modalidad', 'movilidad_propia', 'transportista', '', 'conductor', 'Conductor', 'vehiculo', 'Camión', 'placa', 'ABC-001',
+    'evidencia', '', 'incidencias', '[]'::jsonb, 'observations', 'Salida del envío',
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111141', 'cantidad', 1))
+  ));
+$$, 'permite iniciar el traslado del envío');
+
+select lives_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'id', (select id from public.distribution_deliveries where guide_number = 'G-H-002'),
+    'expected_lock_version', 3,
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111111', 'sale_id', 'a3111111-1111-4111-8111-111111111151',
+    'order_number', 'PED-000001', 'customer_name', 'Cliente persistente distribución',
+    'issue_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'guide_number', 'G-H-002', 'transport_type', 'interno', 'tracking_status', 'en_destino',
+    'delivery_status', 'en_destino', 'direction', 'Av. Sucursal 1', 'numero_despacho', 'DES-H-002',
+    'modalidad', 'movilidad_propia', 'transportista', '', 'conductor', 'Conductor', 'vehiculo', 'Camión', 'placa', 'ABC-001',
+    'evidencia', 'Llegada confirmada', 'incidencias', '[]'::jsonb, 'observations', 'Llegada a destino',
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111141', 'cantidad', 1))
+  ));
+$$, 'confirma la llegada del envío independiente');
+
+select throws_ok($$
+  select public.record_distribution_delivery_outcome(jsonb_build_object(
+    'organizationId', 'd3111111-1111-4111-8111-111111111111',
+    'entregaId', (select id from public.distribution_deliveries where guide_number = 'G-H-002'),
+    'expectedLockVersion', 4, 'operationKey', '51111111-1111-4111-8111-111111111115',
+    'resultado', 'entregado', 'fecha', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'evidencia', 'Conformidad cliente', 'incidencias', '[]'::jsonb,
+    'lineas', jsonb_build_array(jsonb_build_object('orderLineId', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 1))
+  ));
+$$, '22023', 'DISTRIBUTION_OUTCOME_LINE_NOT_IN_SHIPMENT', 'no acepta registrar en este envío bienes asignados a otro pedido');
+
+select lives_ok($$
+  select public.record_distribution_delivery_outcome(jsonb_build_object(
+    'organizationId', 'd3111111-1111-4111-8111-111111111111',
+    'entregaId', (select id from public.distribution_deliveries where guide_number = 'G-H-002'),
+    'expectedLockVersion', 4, 'operationKey', '51111111-1111-4111-8111-111111111112',
+    'resultado', 'entregado', 'fecha', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'evidencia', 'Conformidad cliente', 'incidencias', '[]'::jsonb,
+    'lineas', jsonb_build_array(jsonb_build_object('orderLineId', 'a3111111-1111-4111-8111-111111111141', 'cantidad', 1))
+  ));
+$$, 'cierra como entregado el envío aunque sea solo una parte del pedido');
+select is((select fulfillment_status from public.orders where id = 'a3111111-1111-4111-8111-111111111111'), 'partially_fulfilled', 'el pedido sigue parcialmente cumplido hasta entregar su saldo');
+
+select lives_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111111', 'sale_id', 'a3111111-1111-4111-8111-111111111151',
+    'order_number', 'PED-000001', 'customer_name', 'Cliente persistente distribución',
+    'issue_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'guide_number', 'G-H-003', 'transport_type', 'interno', 'tracking_status', 'en_curso',
+    'delivery_status', 'programado', 'direction', 'Av. Otra sucursal 2', 'numero_despacho', 'DES-H-003',
+    'modalidad', 'movilidad_propia', 'transportista', '', 'conductor', '', 'vehiculo', '', 'placa', '',
+    'evidencia', '', 'incidencias', '[]'::jsonb, 'observations', 'Segundo envío con otro destino',
+    'operation_key', '51111111-1111-4111-8111-111111111113',
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111141', 'cantidad', 1))
+  ));
+$$, 'permite crear otra entrega independiente para el saldo y asignarle otro destino');
+select is((
+  select sum(allocation.quantity)
+  from public.distribution_delivery_items allocation
+  join public.distribution_deliveries delivery
+    on delivery.organization_id = allocation.organization_id
+   and delivery.id = allocation.delivery_id
+  where allocation.order_id = 'a3111111-1111-4111-8111-111111111111'
+    and delivery.delivery_status <> 'cancelado'
+), 2::numeric, 'las guías independientes asignan exactamente la cantidad despachada del pedido');
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111111', 'sale_id', 'a3111111-1111-4111-8111-111111111151',
+    'order_number', 'PED-000001', 'customer_name', 'Cliente persistente distribución',
+    'issue_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'delivery_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'scheduled_date', pg_catalog.timezone('America/Lima', pg_catalog.now())::date,
+    'guide_number', 'G-H-004', 'transport_type', 'interno', 'tracking_status', 'en_curso',
+    'delivery_status', 'programado', 'direction', 'Av. Tercera sucursal 3', 'numero_despacho', 'DES-H-004',
+    'modalidad', 'movilidad_propia', 'transportista', '', 'conductor', '', 'vehiculo', '', 'placa', '',
+    'evidencia', '', 'incidencias', '[]'::jsonb, 'observations', '',
+    'operation_key', '51111111-1111-4111-8111-111111111114',
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111141', 'cantidad', 1))
+  ));
+$$, 'P0001', 'DISTRIBUTION_ALLOCATION_EXCEEDS_DISPATCHED', 'bloquea asignar dos veces las unidades ya planificadas');
 
 reset role;
 select * from finish();

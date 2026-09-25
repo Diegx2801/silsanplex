@@ -14,7 +14,7 @@ import { useClientes } from '@/modulos/clientes/estado/useClientes'
 import { DialogoDetalleEntrega } from '@/modulos/distribucion/componentes/DialogoDetalleEntrega'
 import { DialogoResultadoEntrega } from '@/modulos/distribucion/componentes/DialogoResultadoEntrega'
 import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
-import { enriquecerLineasPedidoConSaldos, pedidoListoParaProgramarDistribucion } from '@/modulos/distribucion/modelo/pedidosProgramables'
+import { obtenerLineasDisponiblesDistribucion, pedidoListoParaProgramarDistribucion } from '@/modulos/distribucion/modelo/pedidosProgramables'
 import {
   esquemaDatosProgramacionEntrega,
   esquemaDatosReprogramacionEntrega,
@@ -136,9 +136,14 @@ export function DistribucionPage() {
   })
   const busquedaDiferida = useDeferredValue(busqueda)
   const ventaPorPedido = useMemo(() => new Map(ventas.map((venta) => [venta.pedidoId, venta])), [ventas])
+  const lineasDisponiblesPorPedido = useMemo(() => new Map(pedidos.map((pedido) => [
+    pedido.id,
+    obtenerLineasDisponiblesDistribucion(pedido.lineas, ventaPorPedido.get(pedido.id), programaciones),
+  ])), [pedidos, programaciones, ventaPorPedido])
   const pedidosPorProgramar = useMemo(() => pedidos.filter(
-    (pedido) => pedidoListoParaProgramarDistribucion(pedido, ventaPorPedido.get(pedido.id)) && !programaciones.some((item) => item.pedidoId === pedido.id),
-  ), [pedidos, programaciones, ventaPorPedido])
+    (pedido) => pedidoListoParaProgramarDistribucion(pedido, ventaPorPedido.get(pedido.id))
+      && (lineasDisponiblesPorPedido.get(pedido.id) ?? []).length > 0,
+  ), [pedidos, lineasDisponiblesPorPedido, ventaPorPedido])
   const almacenesPendientes = useMemo(() => Array.from(new Set(pedidosPorProgramar.map((pedido) => pedido.almacenNombre).filter((almacen): almacen is string => Boolean(almacen)))).sort((a, b) => a.localeCompare(b, 'es-PE')), [pedidosPorProgramar])
   const pedidosPorProgramarFiltrados = useMemo(() => {
     const termino = normalizarBusqueda(busquedaPendientes.trim())
@@ -191,9 +196,16 @@ export function DistribucionPage() {
     })),
     { value: '__manual__', label: 'Ingresar otra dirección', secondaryText: 'Usa esta opción solo si no está en el maestro del cliente' },
   ], [direccionesCliente, pedidoSeleccionado?.direccionEntrega])
-  const lineasPedido = pedidoSeleccionado
-    ? enriquecerLineasPedidoConSaldos(pedidoSeleccionado.lineas, ventaPorPedido.get(pedidoSeleccionado.id))
-    : datos.lineas.filter((linea) => linea.tipoProducto === 'good')
+  const lineasDisponiblesSeleccionadas = pedidoSeleccionado
+    ? obtenerLineasDisponiblesDistribucion(pedidoSeleccionado.lineas, ventaPorPedido.get(pedidoSeleccionado.id), programaciones, edicion?.id)
+    : []
+  const maximaPorLinea = new Map(lineasDisponiblesSeleccionadas.map((linea) => [linea.id, linea.cantidadMaximaPlanificacion]))
+  const cantidadesActualesPorLinea = new Map(datos.lineas.map((linea) => [linea.id, linea.cantidad]))
+  const lineasPedido = lineasDisponiblesSeleccionadas.map((linea) => ({
+    ...linea,
+    cantidad: cantidadesActualesPorLinea.get(linea.id) ?? 0,
+    cantidadMaximaPlanificacion: maximaPorLinea.get(linea.id) ?? linea.cantidadDisponibleDistribucion,
+  }))
   const esRecojoCliente = datos.modalidad === 'recojo_cliente'
   const estadoRequiereTransporte = ['en_curso', 'en_destino', 'entregado', 'entrega_parcial'].includes(datos.estado)
   const requiereDatosTransporte = estadoRequiereTransporte && !esRecojoCliente
@@ -266,6 +278,11 @@ export function DistribucionPage() {
     const direccionPrincipal = cliente?.direccionesEntrega.find((direccion) => direccion.principal) ?? cliente?.direccionesEntrega[0]
     const destinoPedido = pedido.direccionEntrega
     setDireccionSeleccionadaId(destinoPedido ? '__pedido__' : direccionPrincipal?.id ?? direccionPrincipal?.direccion ?? '__manual__')
+    const lineasDisponibles = lineasDisponiblesPorPedido.get(pedido.id) ?? []
+    if (!lineasDisponibles.length) {
+      setMensaje('No queda saldo de bienes despachados sin asignar a otra entrega')
+      return
+    }
     setDatos({
       pedidoId: pedido.id,
       pedidoNumero: pedido.numero,
@@ -289,7 +306,7 @@ export function DistribucionPage() {
       estado: 'programado',
       seguimiento: 'en_curso',
       incidencias: [],
-      lineas: [],
+      lineas: lineasDisponibles.map((linea) => ({ ...linea, cantidad: linea.cantidadDisponibleDistribucion })),
     })
     setFormularioAbierto(true)
   }
@@ -339,6 +356,10 @@ export function DistribucionPage() {
       setMensaje('Completa el despacho de todos los bienes en Ventas antes de programar la entrega')
       return
     }
+    if (!resultado.data.lineas.some((linea) => linea.tipoProducto === 'good' && linea.cantidad > 0)) {
+      setMensaje('Asigna al menos un bien con saldo disponible a este envío')
+      return
+    }
     const datosPersistentes = {
       ...resultado.data,
       tipoTransporte: tipoTransporteParaModalidad(resultado.data.modalidad, resultado.data.tipoTransporte),
@@ -347,7 +368,7 @@ export function DistribucionPage() {
       ventaId: venta?.id ?? edicion?.ventaId ?? '',
       ventaNumero: venta?.numeroInterno ?? edicion?.ventaNumero ?? '',
     }
-    const error = await guardar(datosPersistentes, edicion?.id, pedido?.lineas ?? edicion?.lineas ?? [])
+    const error = await guardar(datosPersistentes, edicion?.id, resultado.data.lineas)
     setMensaje(error ?? (edicion ? 'Distribución actualizada.' : 'Distribución programada.'))
     if (!error) {
       setFormularioAbierto(false)
@@ -576,7 +597,7 @@ export function DistribucionPage() {
           <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(14rem,1fr)_minmax(15rem,18rem)_minmax(13rem,16rem)] lg:items-end">
             <div>
               <h2 id="pendientes-programacion-title" className="text-lg font-semibold">Pedidos por programar</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{pedidosPorProgramarFiltrados.length} de {pedidosPorProgramar.length} pedidos con bienes despachados y sin entrega asignada.</p>
+              <p className="mt-1 text-sm text-muted-foreground">{pedidosPorProgramarFiltrados.length} de {pedidosPorProgramar.length} pedidos con bienes despachados disponibles para asignar a un envío.</p>
             </div>
             <div>
               <label htmlFor="buscar-pedido-pendiente" className="field-label">Buscar</label>
@@ -595,7 +616,24 @@ export function DistribucionPage() {
           ) : !pedidosPorProgramarFiltrados.length ? (
             <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{pedidosPorProgramar.length ? 'No hay coincidencias' : 'No hay pedidos listos para programar'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{pedidosPorProgramar.length ? 'Prueba con otra búsqueda o limpia el filtro de almacén.' : 'Aquí aparecen pedidos de envío cuando todos sus bienes están despachados. Los despachos parciales continúan en Ventas y los recojos del cliente se gestionan allí.'}</p></div>
           ) : (
-            <div className="overflow-x-auto"><table className="w-full min-w-[58rem] border-collapse text-left text-sm"><thead className="border-b bg-muted/45"><tr><th className="px-5 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Pedido</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Cliente</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Almacén</th><th className="px-4 py-3 text-end font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Productos</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Estado</th><th className="px-5 py-3 text-end font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Acciones</th></tr></thead><tbody className="divide-y">{pedidosPorProgramarVisibles.map((pedido) => { const cantidadProductos = pedido.lineas.filter((linea) => linea.tipoProducto === 'good').length; return <tr key={pedido.id} className="hover:bg-muted/35"><td className="px-5 py-4 font-mono text-xs font-medium text-primary">{pedido.numero}</td><td className="max-w-[18rem] px-4 py-4"><p className="truncate font-medium">{pedido.clienteNombre}</p><p className="mt-1 text-xs text-muted-foreground">{pedido.clienteDocumento}</p></td><td className="px-4 py-4 text-sm text-muted-foreground">{pedido.almacenNombre ?? 'No especificado'}</td><td className="px-4 py-4 text-end font-mono tabular-nums">{cantidadProductos}</td><td className="px-4 py-4"><span className="status-label" data-tone={pedido.estadoCumplimiento === 'dispatched' ? 'listo' : 'pendiente'}>{etiquetaCumplimientoPedido(pedido)}</span></td><td className="px-5 py-4 text-end"><div className="flex justify-end gap-1"> <Button type="button" variant="ghost" size="icon" title="Ver detalle del pedido" aria-label={`Ver detalle de ${pedido.numero}`} onClick={(evento) => { disparadorPedidoDetalle.current = evento.currentTarget; setPedidoDetalle(pedido) }}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion ? <Button type="button" onClick={() => prepararPedido(pedido.id)}><Plus aria-hidden="true" /> Programar</Button> : null}</div></td></tr> })}</tbody></table></div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[58rem] border-collapse text-left text-sm">
+                <thead className="border-b bg-muted/45"><tr><th className="px-5 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Pedido</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Cliente</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Almacén</th><th className="px-4 py-3 text-end font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Bienes</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Estado</th><th className="px-5 py-3 text-end font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Acciones</th></tr></thead>
+                <tbody className="divide-y">{pedidosPorProgramarVisibles.map((pedido) => {
+                  const lineasDisponibles = lineasDisponiblesPorPedido.get(pedido.id) ?? []
+                  const cantidadProductos = lineasDisponibles.length
+                  const cantidadDisponible = lineasDisponibles.reduce((total, linea) => total + linea.cantidadDisponibleDistribucion, 0)
+                  return <tr key={pedido.id} className="hover:bg-muted/35">
+                    <td className="px-5 py-4 font-mono text-xs font-medium text-primary">{pedido.numero}</td>
+                    <td className="max-w-[18rem] px-4 py-4"><p className="truncate font-medium">{pedido.clienteNombre}</p><p className="mt-1 text-xs text-muted-foreground">{pedido.clienteDocumento}</p></td>
+                    <td className="px-4 py-4 text-sm text-muted-foreground">{pedido.almacenNombre ?? 'No especificado'}</td>
+                    <td className="px-4 py-4 text-end"><p className="font-mono tabular-nums">{cantidadProductos} producto{cantidadProductos === 1 ? '' : 's'}</p><p className="mt-1 text-xs text-muted-foreground">{cantidadDisponible} unidades sin asignar</p></td>
+                    <td className="px-4 py-4"><span className="status-label" data-tone={pedido.estadoCumplimiento === 'dispatched' ? 'listo' : 'pendiente'}>{etiquetaCumplimientoPedido(pedido)}</span></td>
+                    <td className="px-5 py-4 text-end"><div className="flex justify-end gap-1"><Button type="button" variant="ghost" size="icon" title="Ver detalle del pedido" aria-label={`Ver detalle de ${pedido.numero}`} onClick={(evento) => { disparadorPedidoDetalle.current = evento.currentTarget; setPedidoDetalle(pedido) }}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion ? <Button type="button" onClick={() => prepararPedido(pedido.id)}><Plus aria-hidden="true" /> Programar envío</Button> : null}</div></td>
+                  </tr>
+                })}</tbody>
+              </table>
+            </div>
           )}
           {pedidosPorProgramarFiltrados.length ? <PaginacionListado etiqueta="pedidos por programar" pagina={paginaPendientesVisible} tamanioPagina={tamanioPaginaPendientes} total={pedidosPorProgramarFiltrados.length} totalPaginas={totalPaginasPendientes} cantidadVisible={pedidosPorProgramarVisibles.length} alCambiarPagina={setPaginaPendientes} alCambiarTamanio={(siguiente) => { setTamanioPaginaPendientes(siguiente); setPaginaPendientes(1) }} /> : null}
         </section>
@@ -742,7 +780,22 @@ export function DistribucionPage() {
                   <div><label htmlFor="cliente-entrega" className="field-label">Cliente</label><input id="cliente-entrega" value={pedidoSeleccionado?.clienteNombre ?? datos.clienteNombre} readOnly className="field-control bg-muted/30" aria-readonly="true" /></div>
                   <div><label htmlFor="almacen-entrega" className="field-label">Almacén de salida (Ventas)</label><input id="almacen-entrega" value={pedidoSeleccionado?.almacenNombre ?? 'No especificado en el pedido'} readOnly className="field-control bg-muted/30" aria-readonly="true" /></div>
                 </div>
-                {lineasPedido.length ? <div className="border bg-muted/20 px-4 py-3"><p className="text-sm font-medium">Bienes listos para entrega</p><ul className="mt-3 space-y-2 text-sm">{lineasPedido.map((linea) => <li key={linea.id} className="flex flex-wrap justify-between gap-2"><span>{linea.productoDescripcion} <span className="text-muted-foreground">· {linea.unidadMedida}</span></span><span className="font-mono text-xs font-semibold tabular-nums">{linea.cantidadDespachada ?? linea.cantidad} {linea.unidadMedida} despachadas en Ventas</span></li>)}</ul><p className="mt-3 border-t pt-3 text-xs leading-5 text-muted-foreground">El despacho de estos bienes ya quedó registrado en Ventas. Aquí solo se programa y controla la entrega al cliente; no se vuelve a descontar inventario.</p></div> : null}
+                {lineasPedido.length ? <div className="border bg-muted/20 px-4 py-3">
+                  <div><p className="text-sm font-medium">Cantidades asignadas a este envío</p><p className="mt-1 text-xs text-muted-foreground">Puedes dividir los bienes despachados en varias entregas; cada una conserva su destino, guía y seguimiento.</p></div>
+                  <ul className="mt-3 divide-y">{lineasPedido.map((linea) => <li key={linea.id} className="grid gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center">
+                    <div><p className="text-sm font-medium">{linea.productoDescripcion} <span className="font-normal text-muted-foreground">· {linea.unidadMedida}</span></p><p className="mt-1 text-xs text-muted-foreground">{linea.cantidadMaximaPlanificacion} disponibles para este envío · {linea.cantidadDespachada ?? 0} despachadas en Ventas</p></div>
+                    <div><label htmlFor={`cantidad-envio-${linea.id}`} className="field-label">Cantidad para este envío</label><input id={`cantidad-envio-${linea.id}`} aria-label={`Cantidad de ${linea.productoDescripcion} para este envío`} type="number" min="0" max={linea.cantidadMaximaPlanificacion} step="any" value={linea.cantidad || ''} onChange={(evento) => {
+                      const cantidad = Number(evento.target.value)
+                      setDatos((actuales) => ({
+                        ...actuales,
+                        lineas: cantidad > 0
+                          ? [...actuales.lineas.filter((actual) => actual.id !== linea.id), { ...linea, cantidad }]
+                          : actuales.lineas.filter((actual) => actual.id !== linea.id),
+                      }))
+                    }} className="field-control text-end font-mono tabular-nums" /></div>
+                  </li>)}</ul>
+                  <p className="mt-2 border-t pt-3 text-xs leading-5 text-muted-foreground">El despacho de estos bienes ya quedó registrado en Ventas. Distribución solo asigna cantidades al envío y no vuelve a descontar inventario.</p>
+                </div> : null}
               </section>
 
               <section aria-labelledby="destino-entrega-title" className="space-y-4 border-t pt-5">

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const supabaseMock = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
 vi.mock('@/lib/supabase', () => ({ supabase: supabaseMock }))
 
-import { listarEntregas, listarHistorialEstadosEntrega, reprogramarEntrega } from './distribucionService'
+import { listarEntregas, listarHistorialEstadosEntrega, prepararPayloadEntrega, reprogramarEntrega } from './distribucionService'
 
 function cadena(respuesta: { data: unknown; error: { code?: string; message?: string } | null }) {
   const query = {
@@ -70,6 +70,13 @@ describe('lectura persistente de distribución', () => {
       }))
       .mockReturnValueOnce(cadena({
         data: [
+          { delivery_id: 'entrega-1', order_line_id: 'order-item-1', quantity: 2 },
+          { delivery_id: 'entrega-1', order_line_id: 'order-item-2', quantity: 1 },
+        ],
+        error: null,
+      }))
+      .mockReturnValueOnce(cadena({
+        data: [
           { id: 'resultado-1', delivery_id: 'entrega-1', result_status: 'entrega_parcial', occurred_on: '2026-09-02', evidence: 'firma parcial', incidents: [], created_at: '2026-09-02T12:00:00.000Z' },
           { id: 'resultado-2', delivery_id: 'entrega-1', result_status: 'rechazado', failure_category: 'cliente_ausente', occurred_on: '2026-09-03', evidence: '', incidents: ['Cliente ausente'], created_at: '2026-09-03T12:00:00.000Z' },
         ],
@@ -96,7 +103,7 @@ describe('lectura persistente de distribución', () => {
       ventaNumero: 'VEN-000001',
       lineas: [
           expect.objectContaining({ id: 'order-item-1', productoDescripcion: 'Producto parcial', cantidad: 2, cantidadDespachada: 1, cantidadPendiente: 1, cantidadEntregadaCliente: 1, cantidadPendienteCliente: 1 }),
-          expect.objectContaining({ id: 'order-item-2', productoDescripcion: 'Producto completo', cantidad: 3, cantidadDespachada: 3, cantidadPendiente: 0, cantidadEntregadaCliente: 0, cantidadPendienteCliente: 3 }),
+          expect.objectContaining({ id: 'order-item-2', productoDescripcion: 'Producto completo', cantidad: 1, cantidadDespachada: 3, cantidadPendiente: 0, cantidadEntregadaCliente: 0, cantidadPendienteCliente: 1 }),
         ],
       resultadosEntrega: [
         expect.objectContaining({ id: 'resultado-1', resultado: 'entrega_parcial', fecha: '2026-09-02', lineas: [{ orderLineId: 'order-item-1', cantidad: 1 }] }),
@@ -142,5 +149,23 @@ describe('lectura persistente de distribución', () => {
         reason: 'Cliente pidió otra fecha',
       },
     })
+  })
+})
+
+describe('payloads de asignación a envíos independientes', () => {
+  it('envía solo las líneas con cantidad asignada, identificadas por línea persistente', () => {
+    const payload = prepararPayloadEntrega('org-1', {
+      pedidoId: 'order-1', pedidoNumero: 'PED-000001', ventaId: 'sale-1', ventaNumero: 'VEN-000001',
+      clienteNombre: 'Cliente', direccionEntrega: 'Av. Principal 123', numeroDespacho: 'DES-001',
+      numeroGuiaRemision: 'G-001', fechaEmision: '2026-09-01', fechaProgramada: '2026-09-02',
+      fechaEntrega: '', tipoTransporte: 'interno', modalidad: 'movilidad_propia', transportista: '',
+      conductor: '', vehiculo: '', placa: '', observaciones: '', evidencia: '', estado: 'programado',
+      incidencias: [], lineas: [],
+    }, [
+      { id: 'order-line-1', productoId: 'product-1', tipoProducto: 'good', productoCodigo: 'P-1', productoDescripcion: 'Producto 1', unidadMedida: 'UND', cantidad: 2, precioUnitario: 10, lote: '', fechaVencimiento: '' },
+      { id: 'order-line-2', productoId: 'product-2', tipoProducto: 'good', productoCodigo: 'P-2', productoDescripcion: 'Producto 2', unidadMedida: 'UND', cantidad: 0, precioUnitario: 10, lote: '', fechaVencimiento: '' },
+    ])
+
+    expect(payload.items).toEqual([{ order_line_id: 'order-line-1', quantity: 2 }])
   })
 })

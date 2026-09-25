@@ -28,7 +28,6 @@ export function useProgramacionesEntrega() {
 
   const guardar = (datos: DatosProgramacionEntrega, id?: string, lineas: ProgramacionEntrega['lineas'] = []) => {
     if (!puedeGestionarDistribucion) return Promise.resolve('No tienes permiso para administrar distribución')
-    if (programaciones.some((item) => item.pedidoId === datos.pedidoId && item.id !== id)) return Promise.resolve('Este pedido ya tiene una entrega programada')
     return ejecutar(() => guardarMutation.mutateAsync({ datos, lineas, id, operationKey: crypto.randomUUID() }))
   }
 
