@@ -5,8 +5,11 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { Button } from '@/components/ui/button'
 import { fechaActualPeru } from '@/lib/fechas'
 import {
+  CATEGORIAS_NO_ENTREGA,
+  ETIQUETAS_CATEGORIA_NO_ENTREGA,
   esquemaResultadoEntrega,
   inferirResultadoEntrega,
+  puedeRegistrarResultadoEntrega,
   type ProgramacionEntrega,
   type ResultadoEntrega,
 } from '@/modulos/distribucion/modelo/programacionEntrega'
@@ -31,6 +34,7 @@ export function DialogoResultadoEntrega({
   const [modo, setModo] = useState<ModoResultado>('recibido')
   const [fecha, setFecha] = useState(fechaActualPeru())
   const [evidencia, setEvidencia] = useState('')
+  const [categoriaIncidencia, setCategoriaIncidencia] = useState<typeof CATEGORIAS_NO_ENTREGA[number]>('cliente_ausente')
   const [incidencia, setIncidencia] = useState('')
   const [cantidades, setCantidades] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
@@ -41,6 +45,7 @@ export function DialogoResultadoEntrega({
     setModo('recibido')
     setFecha(fechaActualPeru())
     setEvidencia('')
+    setCategoriaIncidencia('cliente_ausente')
     setIncidencia('')
     setCantidades(Object.fromEntries(entrega.lineas.map((linea) => [linea.id, '0'])))
     setError('')
@@ -63,6 +68,7 @@ export function DialogoResultadoEntrega({
     ? inferirResultadoEntrega(entrega.lineas, cantidadesNumericas)
     : 'rechazado'
   const cantidadNueva = Object.values(cantidadesNumericas).reduce((total, cantidad) => total + cantidad, 0)
+  const resultadoHabilitado = puedeRegistrarResultadoEntrega(entrega)
   const cantidadInvalida = entrega.lineas.some((linea) => {
     const pendiente = linea.cantidadPendienteCliente ?? Math.max(0, linea.cantidad - (linea.cantidadEntregadaCliente ?? 0))
     const cantidad = cantidadesNumericas[linea.id] ?? 0
@@ -77,6 +83,10 @@ export function DialogoResultadoEntrega({
 
   const enviar = async (evento: React.FormEvent<HTMLFormElement>) => {
     evento.preventDefault()
+    if (!resultadoHabilitado) {
+      setError('Marca en destino antes de registrar el resultado de la entrega.')
+      return
+    }
     if (!resultadoInferido) {
       setError('Ingresa la cantidad realmente recibida en al menos un producto.')
       return
@@ -86,6 +96,7 @@ export function DialogoResultadoEntrega({
       entregaId: entrega.id,
       lockVersion: entrega.lockVersion,
       resultado: resultadoInferido,
+      categoriaIncidencia: modo === 'no_entregado' ? categoriaIncidencia : undefined,
       fecha,
       evidencia: modo === 'recibido' ? evidencia : '',
       incidencias: modo === 'no_entregado' ? incidencia.split(/[;\n]/).map((item) => item.trim()).filter(Boolean) : [],
@@ -116,7 +127,7 @@ export function DialogoResultadoEntrega({
               <div>
                 <div className="grid size-10 place-items-center rounded-full bg-accent text-primary"><PackageCheck aria-hidden="true" className="size-5" /></div>
                 <DialogPrimitive.Title className="mt-4 text-xl font-semibold">Registrar resultado de entrega</DialogPrimitive.Title>
-                <DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">{entrega.pedidoNumero} · {entrega.clienteNombre}. Registra lo que recibió el cliente; el inventario ya salió en Ventas.</DialogPrimitive.Description>
+                <DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">{entrega.pedidoNumero} · {entrega.clienteNombre}. Registra lo recibido; el inventario ya salió en Ventas. Requiere confirmar la llegada a destino.</DialogPrimitive.Description>
               </div>
               <DialogPrimitive.Close asChild><Button type="button" variant="ghost" aria-label="Cerrar resultado"><X aria-hidden="true" /></Button></DialogPrimitive.Close>
             </header>
@@ -125,6 +136,7 @@ export function DialogoResultadoEntrega({
               {conciliacionPendiente ? (
                 <div role="alert" className="flex gap-3 border-s-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-950"><CircleAlert aria-hidden="true" className="size-5 shrink-0" /><p>Este es un registro histórico sin cantidades recibidas por producto. Debe conciliarse antes de continuar; no se asumirán cantidades.</p></div>
               ) : null}
+              {!resultadoHabilitado ? <div role="alert" className="border-s-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-950">Marca en destino antes de registrar el resultado de la entrega.</div> : null}
 
               <div className="grid gap-4 sm:grid-cols-2">
               <div><label htmlFor="resultado-modo" className="field-label">Resultado</label><select id="resultado-modo" value={modo} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('modo', evento.target.value as ModoResultado)} className="field-control"><option value="recibido">El cliente recibió bienes</option><option value="no_entregado">No se completó la entrega</option></select><p className="mt-1 text-xs text-muted-foreground">La entrega completa o parcial se determina según las cantidades registradas.</p></div>
@@ -149,18 +161,26 @@ export function DialogoResultadoEntrega({
                   <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/20 px-4 py-3 text-sm"><span className="status-label" data-tone={resultadoInferido === 'entregado' ? 'listo' : 'pendiente'}>{resultadoInferido === 'entregado' ? 'Todos los saldos quedarán cubiertos' : resultadoInferido === 'entrega_parcial' ? 'Quedará saldo para una entrega posterior' : cantidadInvalida ? 'Revisa las cantidades ingresadas' : 'Ingresa las cantidades recibidas'}</span><span className="text-xs text-muted-foreground">El resultado se calcula por producto.</span></div>
                 </section>
               ) : (
-                <div><label htmlFor="resultado-incidencia" className="field-label">Motivo <span aria-hidden="true">*</span></label><textarea id="resultado-incidencia" required maxLength={200} rows={3} value={incidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('incidencia', evento.target.value)} className="field-control" placeholder="Ej. cliente ausente, dirección no ubicada, cliente rechazó la recepción…" /></div>
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="resultado-categoria" className="field-label">Motivo principal <span aria-hidden="true">*</span></label>
+                    <select id="resultado-categoria" required value={categoriaIncidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => { operationKey.current = crypto.randomUUID(); setError(''); setCategoriaIncidencia(evento.target.value as typeof CATEGORIAS_NO_ENTREGA[number]) }} className="field-control">
+                      {CATEGORIAS_NO_ENTREGA.map((categoria) => <option key={categoria} value={categoria}>{ETIQUETAS_CATEGORIA_NO_ENTREGA[categoria]}</option>)}
+                    </select>
+                  </div>
+                  <div><label htmlFor="resultado-incidencia" className="field-label">Detalle del intento <span aria-hidden="true">*</span></label><textarea id="resultado-incidencia" required maxLength={200} rows={3} value={incidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('incidencia', evento.target.value)} className="field-control" placeholder="Describe brevemente lo ocurrido en esta visita…" /></div>
+                </div>
               )}
 
               {modo === 'recibido' ? <div><label htmlFor="resultado-evidencia" className="field-label">Evidencia o constancia <span aria-hidden="true">*</span></label><input id="resultado-evidencia" required maxLength={255} value={evidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('evidencia', evento.target.value)} className="field-control" placeholder="Nombre de archivo, referencia o URL" /><p className="mt-1 text-xs text-muted-foreground">Se conserva como referencia de la conformidad; este campo no adjunta archivos.</p></div> : null}
 
-              <p className="border-s-2 border-primary/40 ps-3 text-xs leading-5 text-muted-foreground">Registrar una entrega parcial o un intento fallido no descuenta stock. El saldo se calcula contra las cantidades recibidas y cualquier devolución física requiere el proceso de recepción de Inventario.</p>
+              <p className="border-s-2 border-primary/40 ps-3 text-xs leading-5 text-muted-foreground">Un intento sin entrega queda separado del rechazo expreso del cliente mediante su motivo. Registrar un intento fallido no descuenta stock; el saldo se calcula solo con lo recibido y cualquier devolución física requiere el proceso de recepción de Inventario.</p>
               {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
             </div>
 
             <footer className="flex shrink-0 justify-end gap-2 border-t bg-background px-5 py-4 sm:px-7">
               <Button type="button" variant="outline" disabled={guardando} onClick={() => alCambiarApertura(false)}>Cancelar</Button>
-              <Button type="submit" disabled={guardando || conciliacionPendiente || (modo === 'recibido' && (cantidadNueva <= 0 || cantidadInvalida))}>{guardando ? 'Registrando…' : modo === 'no_entregado' ? 'Registrar entrega no completada' : resultadoInferido === 'entregado' ? 'Confirmar entrega completa' : 'Confirmar entrega parcial'}</Button>
+              <Button type="submit" disabled={guardando || !resultadoHabilitado || conciliacionPendiente || (modo === 'recibido' && (cantidadNueva <= 0 || cantidadInvalida))}>{guardando ? 'Registrando…' : modo === 'no_entregado' ? 'Registrar entrega no completada' : resultadoInferido === 'entregado' ? 'Confirmar entrega completa' : 'Confirmar entrega parcial'}</Button>
             </footer>
           </form>
         </DialogPrimitive.Content>

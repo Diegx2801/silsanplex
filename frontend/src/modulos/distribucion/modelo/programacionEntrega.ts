@@ -28,11 +28,27 @@ export const ESTADOS_DISTRIBUCION = [
 ] as const
 
 export const RESULTADOS_ENTREGA = ['entregado', 'entrega_parcial', 'rechazado'] as const
+export const CATEGORIAS_NO_ENTREGA = [
+  'cliente_ausente',
+  'direccion_no_ubicada',
+  'cliente_rechaza_recepcion',
+  'restriccion_horaria_o_acceso',
+  'otro',
+] as const
+
+export const ETIQUETAS_CATEGORIA_NO_ENTREGA: Record<typeof CATEGORIAS_NO_ENTREGA[number], string> = {
+  cliente_ausente: 'Cliente ausente',
+  direccion_no_ubicada: 'Dirección no ubicada',
+  cliente_rechaza_recepcion: 'Cliente rechazó la recepción',
+  restriccion_horaria_o_acceso: 'Restricción de horario o acceso',
+  otro: 'Otro motivo',
+}
 
 export const esquemaResultadoEntrega = z.object({
   entregaId: z.string().min(1),
   lockVersion: z.number().int().positive(),
   resultado: z.enum(RESULTADOS_ENTREGA),
+  categoriaIncidencia: z.enum(CATEGORIAS_NO_ENTREGA).optional(),
   fecha: z.string().refine(esFechaCalendarioValida, 'Ingresa una fecha válida'),
   evidencia: z.string().trim().max(255).default(''),
   incidencias: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
@@ -52,6 +68,12 @@ export const esquemaResultadoEntrega = z.object({
   if (resultado.resultado === 'rechazado' && !resultado.incidencias.length) {
     contexto.addIssue({ code: 'custom', path: ['incidencias'], message: 'Describe por qué no se completó la entrega' })
   }
+  if (resultado.resultado === 'rechazado' && !resultado.categoriaIncidencia) {
+    contexto.addIssue({ code: 'custom', path: ['categoriaIncidencia'], message: 'Selecciona el motivo de no entrega' })
+  }
+  if (resultado.resultado !== 'rechazado' && resultado.categoriaIncidencia) {
+    contexto.addIssue({ code: 'custom', path: ['categoriaIncidencia'], message: 'La categoría solo aplica a un intento sin entrega' })
+  }
 })
 
 export type ResultadoEntrega = z.infer<typeof esquemaResultadoEntrega>
@@ -59,6 +81,7 @@ export type ResultadoEntrega = z.infer<typeof esquemaResultadoEntrega>
 export interface EventoResultadoEntrega {
   id: string
   resultado: typeof RESULTADOS_ENTREGA[number]
+  categoriaIncidencia?: typeof CATEGORIAS_NO_ENTREGA[number]
   fecha: string
   evidencia: string
   incidencias: string[]
@@ -68,7 +91,7 @@ export interface EventoResultadoEntrega {
 export const TRANSICIONES_DISTRIBUCION: Record<ProgramacionEntrega['estado'], readonly ProgramacionEntrega['estado'][]> = {
   programado: ['preparando', 'reprogramado', 'cancelado'],
   preparando: ['en_curso', 'reprogramado', 'cancelado'],
-  en_curso: ['en_destino', 'entrega_parcial', 'reprogramado', 'rechazado'],
+  en_curso: ['en_destino'],
   en_destino: ['entregado', 'entrega_parcial', 'rechazado'],
   entregado: [],
   entrega_parcial: ['en_curso', 'en_destino', 'entregado', 'rechazado', 'reprogramado'],
@@ -94,9 +117,24 @@ export const ACCIONES_PRINCIPALES_DISTRIBUCION: Partial<Record<ProgramacionEntre
   reprogramado: { estado: 'preparando', etiqueta: 'Iniciar preparación' },
 }
 
-export function obtenerAccionPrincipalDistribucion(estado: ProgramacionEntrega['estado']) {
+export function obtenerAccionPrincipalDistribucion(
+  estado: ProgramacionEntrega['estado'],
+  seguimiento?: ProgramacionEntrega['seguimiento'],
+) {
+  if (estado === 'entrega_parcial' && seguimiento === 'en_curso') {
+    return { estado: 'en_destino' as const, etiqueta: 'Marcar en destino' }
+  }
+
   const accion = ACCIONES_PRINCIPALES_DISTRIBUCION[estado]
   return accion && puedeTransicionarEntrega(estado, accion.estado) ? accion : undefined
+}
+
+export function puedeRegistrarResultadoEntrega(
+  entrega: Pick<ProgramacionEntrega, 'estado' | 'seguimiento' | 'requiereConciliacionCantidades'>,
+) {
+  if (entrega.requiereConciliacionCantidades) return false
+  if (entrega.estado === 'en_destino') return true
+  return entrega.estado === 'entrega_parcial' && entrega.seguimiento === 'en_destino'
 }
 
 export function puedeTransicionarEntrega(
@@ -144,6 +182,7 @@ export const esquemaProgramacionEntrega = z.object({
   resultadosEntrega: z.array(z.object({
     id: z.string().min(1),
     resultado: z.enum(RESULTADOS_ENTREGA),
+    categoriaIncidencia: z.enum(CATEGORIAS_NO_ENTREGA).optional(),
     fecha: z.string(),
     evidencia: z.string().default(''),
     incidencias: z.array(z.string()).default([]),
@@ -221,6 +260,15 @@ export const esquemaDatosProgramacionEntrega = z.object({
 })
 
 export type DatosProgramacionEntrega = z.infer<typeof esquemaDatosProgramacionEntrega>
+
+export const esquemaDatosReprogramacionEntrega = z.object({
+  fechaProgramada: z.string().refine(esFechaCalendarioValida, 'Ingresa una fecha programada válida'),
+  motivo: z.string().trim()
+    .min(3, 'Describe brevemente por qué se reprograma la entrega')
+    .max(300, 'El motivo no debe superar 300 caracteres'),
+})
+
+export type DatosReprogramacionEntrega = z.infer<typeof esquemaDatosReprogramacionEntrega>
 
 /** Infere si el registro cuantificado cierra la entrega o deja un saldo real. */
 export function inferirResultadoEntrega(
@@ -368,4 +416,23 @@ export function resumirEntregas(
     },
     { total: 0, programados: 0, enCurso: 0, enDestino: 0, entregados: 0, atrasadas: 0, conIncidencias: 0 },
   )
+}
+
+export function obtenerResumenFechaEntrega(
+  entrega: Pick<ProgramacionEntrega, 'estado' | 'fechaEntrega' | 'resultadosEntrega'>,
+): { etiqueta: string; fecha: string } {
+  if (entrega.estado === 'entregado') {
+    return { etiqueta: 'Entrega completada', fecha: entrega.fechaEntrega || '' }
+  }
+
+  const ultimoResultado = entrega.resultadosEntrega.at(-1)
+  if (ultimoResultado) {
+    return {
+      etiqueta: ultimoResultado.resultado === 'rechazado' ? 'Último intento' : 'Última recepción',
+      fecha: ultimoResultado.fecha,
+    }
+  }
+
+  if (entrega.fechaEntrega) return { etiqueta: 'Fecha registrada', fecha: entrega.fechaEntrega }
+  return { etiqueta: 'Sin recepción', fecha: '' }
 }

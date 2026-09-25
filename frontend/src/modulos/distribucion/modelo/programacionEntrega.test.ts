@@ -4,11 +4,15 @@ import {
   crearProgramacionEntrega,
   obtenerAccionPrincipalDistribucion,
   esquemaDatosProgramacionEntrega,
+  esquemaDatosReprogramacionEntrega,
   esquemaProgramacionEntrega,
+  esquemaResultadoEntrega,
   filtrarProgramacionesEntrega,
   inferirResultadoEntrega,
   listarEntregasAtrasadas,
+  obtenerResumenFechaEntrega,
   obtenerEstadosSiguientes,
+  puedeRegistrarResultadoEntrega,
   puedeTransicionarEntrega,
   resumirEntregas,
   tipoTransporteParaModalidad,
@@ -149,9 +153,55 @@ describe('programación de entrega', () => {
     expect(obtenerEstadosSiguientes('programado')).toEqual(['preparando', 'reprogramado', 'cancelado'])
     expect(puedeTransicionarEntrega('programado', 'preparando')).toBe(true)
     expect(puedeTransicionarEntrega('preparando', 'en_curso')).toBe(true)
+    expect(obtenerEstadosSiguientes('en_curso')).toEqual(['en_destino'])
+    expect(puedeTransicionarEntrega('en_curso', 'entrega_parcial')).toBe(false)
+    expect(puedeTransicionarEntrega('en_curso', 'rechazado')).toBe(false)
     expect(puedeTransicionarEntrega('programado', 'devuelto')).toBe(false)
+    expect(puedeTransicionarEntrega('en_curso', 'reprogramado')).toBe(false)
+    expect(puedeTransicionarEntrega('entrega_parcial', 'reprogramado')).toBe(true)
+    expect(puedeTransicionarEntrega('rechazado', 'reprogramado')).toBe(true)
     expect(puedeTransicionarEntrega('entregado', 'en_curso')).toBe(false)
     expect(puedeTransicionarEntrega('en_destino', 'en_destino')).toBe(true)
+  })
+
+  it('valida los datos mínimos de una reprogramación independiente', () => {
+    expect(esquemaDatosReprogramacionEntrega.safeParse({ fechaProgramada: '2026-09-26', motivo: 'Cliente solicitó otra fecha' }).success).toBe(true)
+    expect(esquemaDatosReprogramacionEntrega.safeParse({ fechaProgramada: '2026-02-30', motivo: 'Cliente solicitó otra fecha' }).success).toBe(false)
+    expect(esquemaDatosReprogramacionEntrega.safeParse({ fechaProgramada: '2026-09-26', motivo: '  ' }).success).toBe(false)
+  })
+
+  it('solo permite registrar resultados tras confirmar llegada al destino', () => {
+    const base = { requiereConciliacionCantidades: false }
+
+    expect(puedeRegistrarResultadoEntrega({ ...base, estado: 'en_curso', seguimiento: 'en_curso' })).toBe(false)
+    expect(puedeRegistrarResultadoEntrega({ ...base, estado: 'en_destino', seguimiento: 'en_destino' })).toBe(true)
+    expect(puedeRegistrarResultadoEntrega({ ...base, estado: 'entrega_parcial', seguimiento: 'en_destino' })).toBe(true)
+    expect(puedeRegistrarResultadoEntrega({ ...base, estado: 'entrega_parcial', seguimiento: 'en_curso' })).toBe(false)
+    expect(puedeRegistrarResultadoEntrega({ ...base, requiereConciliacionCantidades: true, estado: 'en_destino', seguimiento: 'en_destino' })).toBe(false)
+  })
+
+  it('distingue la fecha de cierre de la última recepción o intento', () => {
+    const resultadosEntrega = [
+      { id: 'resultado-1', resultado: 'entrega_parcial' as const, fecha: '2026-09-02', evidencia: 'firma parcial', incidencias: [], lineas: [] },
+      { id: 'resultado-2', resultado: 'rechazado' as const, fecha: '2026-09-03', evidencia: '', incidencias: ['Cliente ausente'], lineas: [] },
+    ]
+
+    expect(obtenerResumenFechaEntrega({ estado: 'entrega_parcial', fechaEntrega: '2026-09-02', resultadosEntrega: resultadosEntrega.slice(0, 1) }))
+      .toEqual({ etiqueta: 'Última recepción', fecha: '2026-09-02' })
+    expect(obtenerResumenFechaEntrega({ estado: 'rechazado', fechaEntrega: '2026-09-02', resultadosEntrega }))
+      .toEqual({ etiqueta: 'Último intento', fecha: '2026-09-03' })
+    expect(obtenerResumenFechaEntrega({ estado: 'entregado', fechaEntrega: '2026-09-04', resultadosEntrega }))
+      .toEqual({ etiqueta: 'Entrega completada', fecha: '2026-09-04' })
+  })
+
+  it('exige clasificar y describir un intento sin entrega', () => {
+    const base = {
+      entregaId: 'entrega-1', lockVersion: 1, resultado: 'rechazado' as const,
+      fecha: '2026-09-03', evidencia: '', incidencias: ['El cliente rechazó recibir el pedido'], lineas: [],
+    }
+
+    expect(esquemaResultadoEntrega.safeParse(base).success).toBe(false)
+    expect(esquemaResultadoEntrega.safeParse({ ...base, categoriaIncidencia: 'cliente_rechaza_recepcion' }).success).toBe(true)
   })
 
   it('reconoce los campos del formulario de programación', () => {
@@ -187,6 +237,7 @@ describe('programación de entrega', () => {
     expect(obtenerAccionPrincipalDistribucion('preparando')).toEqual({ estado: 'en_curso', etiqueta: 'Iniciar traslado' })
     expect(obtenerAccionPrincipalDistribucion('en_curso')).toEqual({ estado: 'en_destino', etiqueta: 'Marcar en destino' })
     expect(obtenerAccionPrincipalDistribucion('entrega_parcial')).toEqual({ estado: 'en_curso', etiqueta: 'Reanudar traslado' })
+    expect(obtenerAccionPrincipalDistribucion('entrega_parcial', 'en_curso')).toEqual({ estado: 'en_destino', etiqueta: 'Marcar en destino' })
     expect(obtenerAccionPrincipalDistribucion('entregado')).toBeUndefined()
     expect(obtenerAccionPrincipalDistribucion('rechazado')).toBeUndefined()
   })
@@ -277,6 +328,7 @@ describe('programación de entrega', () => {
       expected_lock_version: 7,
       operation_key: '11111111-1111-4111-8111-111111111111',
       organization_id: 'org-1',
+      scheduled_date: '2026-09-02',
       order_id: 'pedido-1',
       order_number: 'PED-001',
       customer_name: 'Cliente demo',

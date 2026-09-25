@@ -7,7 +7,7 @@ import { ZONA_HORARIA_NEGOCIO } from '@/lib/fechas'
 import { useAuth } from '@/features/auth/useAuth'
 import { formatearFechaDistribucion } from '@/modulos/distribucion/servicios/formatoDistribucion'
 import { listarHistorialEstadosEntrega } from '@/modulos/distribucion/servicios/distribucionService'
-import type { ProgramacionEntrega } from '@/modulos/distribucion/modelo/programacionEntrega'
+import { ETIQUETAS_CATEGORIA_NO_ENTREGA, obtenerResumenFechaEntrega, type ProgramacionEntrega } from '@/modulos/distribucion/modelo/programacionEntrega'
 
 const etiquetasEstado: Record<ProgramacionEntrega['estado'], string> = {
   programado: 'Programado',
@@ -47,6 +47,7 @@ export function DialogoDetalleEntrega({ abierto, entrega, alCambiarApertura }: D
     dateStyle: 'medium',
     timeStyle: 'short',
   })
+  const resumenFechaEntrega = obtenerResumenFechaEntrega(entrega)
 
   return (
     <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
@@ -72,7 +73,7 @@ export function DialogoDetalleEntrega({ abierto, entrega, alCambiarApertura }: D
               </div>
               <dl className="mt-6 grid gap-4 border-t pt-5 sm:grid-cols-4">
                 <div><dt className="text-xs text-muted-foreground">Fecha programada</dt><dd className="mt-1">{formatearFechaDistribucion(entrega.fechaProgramada)}</dd></div>
-                <div><dt className="text-xs text-muted-foreground">Entrega real</dt><dd className="mt-1">{formatearFechaDistribucion(entrega.fechaEntrega)}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">{resumenFechaEntrega.etiqueta}</dt><dd className="mt-1">{formatearFechaDistribucion(resumenFechaEntrega.fecha)}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Modalidad</dt><dd className="mt-1">{entrega.modalidad === 'recojo_cliente' ? 'Recojo del cliente' : entrega.modalidad === 'movilidad_externa' ? 'Movilidad externa' : 'Movilidad propia'}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Transporte</dt><dd className="mt-1">{entrega.tipoTransporte === 'externo' ? 'Externo' : 'Interno'}</dd></div>
               </dl>
@@ -88,8 +89,13 @@ export function DialogoDetalleEntrega({ abierto, entrega, alCambiarApertura }: D
                   {historialQuery.data.map((evento, indice) => (
                     <li key={evento.id} className={`relative pb-5 last:pb-0 ${indice === 0 ? 'before:hidden' : ''}`}>
                       <span aria-hidden="true" className="absolute -start-[1.56rem] top-1 size-2.5 rounded-full border-2 border-primary bg-background" />
-                      <p className="text-sm font-medium">{evento.estadoAnterior ? `${etiquetasEstado[evento.estadoAnterior]} → ${etiquetasEstado[evento.estadoNuevo]}` : `Entrega creada · ${etiquetasEstado[evento.estadoNuevo]}`}</p>
+                      <p className="text-sm font-medium">{evento.tipo === 'schedule'
+                        ? `Fecha programada: ${formatearFechaDistribucion(evento.fechaProgramadaAnterior)} → ${formatearFechaDistribucion(evento.fechaProgramadaNueva)}`
+                        : evento.estadoAnterior
+                          ? `${etiquetasEstado[evento.estadoAnterior]} → ${etiquetasEstado[evento.estadoNuevo ?? 'programado']}`
+                          : `Entrega creada · ${etiquetasEstado[evento.estadoNuevo ?? 'programado']}`}</p>
                       <p className="mt-1 text-xs text-muted-foreground"><time dateTime={evento.fechaHora}>{formatoFechaHora.format(new Date(evento.fechaHora))}</time> · {evento.actorNombre}</p>
+                      {evento.tipo === 'schedule' && evento.motivoReprogramacion ? <p className="mt-1 text-sm text-muted-foreground">Motivo: {evento.motivoReprogramacion}</p> : null}
                     </li>
                   ))}
                 </ol>
@@ -119,7 +125,7 @@ export function DialogoDetalleEntrega({ abierto, entrega, alCambiarApertura }: D
 
             <section className="border-t px-5 py-6 sm:px-7" aria-labelledby="detalle-entrega-eventos">
               <div className="mb-4 border-b pb-3"><h2 id="detalle-entrega-eventos" className="font-semibold">Historial de resultados</h2><p className="mt-1 text-sm text-muted-foreground">Registro cronológico de recepciones e intentos; la evidencia queda asociada a cada evento.</p></div>
-              {!entrega.resultadosEntrega.length ? <p className="border bg-muted/20 px-4 py-4 text-sm text-muted-foreground">Aún no se ha registrado el resultado de la entrega.</p> : <ol className="space-y-3">{entrega.resultadosEntrega.map((evento) => <li key={evento.id} className="border bg-muted/15 px-4 py-4"><div className="flex flex-wrap justify-between gap-2"><p className="font-medium">{etiquetasEstado[evento.resultado]}</p><time className="text-sm text-muted-foreground">{formatearFechaDistribucion(evento.fecha)}</time></div>{evento.lineas.length ? <ul className="mt-2 space-y-1 text-sm text-muted-foreground">{evento.lineas.map((lineaEvento) => { const linea = entrega.lineas.find((item) => item.id === lineaEvento.orderLineId); return <li key={lineaEvento.orderLineId}>{linea?.productoDescripcion ?? 'Producto'}: <span className="font-mono tabular-nums">{lineaEvento.cantidad} {linea?.unidadMedida ?? ''}</span></li> })}</ul> : null}<p className="mt-2 text-xs text-muted-foreground">{evento.evidencia ? `Evidencia: ${evento.evidencia}` : 'Sin evidencia de recepción'}{evento.incidencias.length ? ` · Incidencia: ${evento.incidencias.join(' · ')}` : ''}</p></li>)}</ol>}
+              {!entrega.resultadosEntrega.length ? <p className="border bg-muted/20 px-4 py-4 text-sm text-muted-foreground">Aún no se ha registrado el resultado de la entrega.</p> : <ol className="space-y-3">{entrega.resultadosEntrega.map((evento) => <li key={evento.id} className="border bg-muted/15 px-4 py-4"><div className="flex flex-wrap justify-between gap-2"><p className="font-medium">{etiquetasEstado[evento.resultado]}{evento.categoriaIncidencia ? ` · ${ETIQUETAS_CATEGORIA_NO_ENTREGA[evento.categoriaIncidencia]}` : ''}</p><time className="text-sm text-muted-foreground">{formatearFechaDistribucion(evento.fecha)}</time></div>{evento.lineas.length ? <ul className="mt-2 space-y-1 text-sm text-muted-foreground">{evento.lineas.map((lineaEvento) => { const linea = entrega.lineas.find((item) => item.id === lineaEvento.orderLineId); return <li key={lineaEvento.orderLineId}>{linea?.productoDescripcion ?? 'Producto'}: <span className="font-mono tabular-nums">{lineaEvento.cantidad} {linea?.unidadMedida ?? ''}</span></li> })}</ul> : null}<p className="mt-2 text-xs text-muted-foreground">{evento.evidencia ? `Evidencia: ${evento.evidencia}` : 'Sin evidencia de recepción'}{evento.incidencias.length ? ` · Incidencia: ${evento.incidencias.join(' · ')}` : ''}</p></li>)}</ol>}
             </section>
 
             <section className="grid gap-6 border-t px-5 py-6 sm:px-7 lg:grid-cols-2" aria-labelledby="detalle-entrega-seguimiento">

@@ -130,6 +130,38 @@ describe('PanelOperacionesVenta', () => {
     expect(screen.queryByText('Servicio completado')).not.toBeInTheDocument()
   })
 
+  it('distingue el despacho de Ventas de la entrega pendiente al cliente', () => {
+    renderPanel({
+      pedidos: [{ ...pedido, estado: 'atendido', modalidadCumplimiento: 'delivery', estadoCumplimiento: 'dispatched' }],
+      ventas: [{
+        ...venta,
+        estado: 'despachada',
+        lineas: [{ ...venta.lineas[0], cantidadDespachada: 10, cantidadPendiente: 0 }],
+      }],
+    })
+
+    expect(screen.getByText('Estado logístico: Despachado · pendiente de entrega')).toBeVisible()
+    expect(screen.getByText('1 entrega pendiente')).toBeVisible()
+    expect(screen.getByText('0 completados')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText('Estado operativo'), { target: { value: 'por-entregar' } })
+    expect(screen.getByText('1 de 1 operaciones visibles')).toBeVisible()
+  })
+
+  it('indica en el detalle que las cantidades de Ventas son despachadas, no entregadas', () => {
+    renderPanel({
+      pedidos: [pedido],
+      ventas: [{
+        ...venta,
+        estado: 'despachada',
+        lineas: [{ ...venta.lineas[0], cantidadDespachada: 10, cantidadPendiente: 0 }],
+      }],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalle' }))
+    expect(screen.getByText('Despachadas en Ventas: 10 · por despachar: 0')).toBeVisible()
+  })
+
   it('describe por separado bienes y servicios en una venta mixta completada', () => {
     renderPanel({
       pedidos: [pedido],

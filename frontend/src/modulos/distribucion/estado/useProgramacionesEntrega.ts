@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
 import { puedeTransicionarEntrega, type DatosProgramacionEntrega, type ProgramacionEntrega, type ResultadoEntrega } from '@/modulos/distribucion/modelo/programacionEntrega'
-import { guardarEntrega, listarEntregas, registrarResultadoEntrega } from '@/modulos/distribucion/servicios/distribucionService'
+import { guardarEntrega, listarEntregas, registrarResultadoEntrega, reprogramarEntrega } from '@/modulos/distribucion/servicios/distribucionService'
 
 export function useProgramacionesEntrega() {
   const { access, hasPermission } = useAuth()
@@ -12,6 +12,7 @@ export function useProgramacionesEntrega() {
   const queryKey = ['distribution-deliveries', organizationId] as const
   const query = useQuery({ queryKey, queryFn: () => listarEntregas(organizationId), enabled: Boolean(organizationId) })
   const guardarMutation = useMutation({ mutationFn: ({ datos, lineas, id, operationKey }: { datos: DatosProgramacionEntrega; lineas: ProgramacionEntrega['lineas']; id?: string; operationKey: string }) => guardarEntrega(organizationId, datos, lineas, id, operationKey), onSuccess: () => queryClient.invalidateQueries({ queryKey }) })
+  const reprogramarMutation = useMutation({ mutationFn: ({ entregaId, lockVersion, fechaProgramada, motivo, operationKey }: { entregaId: string; lockVersion: number; fechaProgramada: string; motivo: string; operationKey: string }) => reprogramarEntrega(organizationId, entregaId, lockVersion, fechaProgramada, motivo, operationKey), onSuccess: () => queryClient.invalidateQueries({ queryKey }) })
   const resultadoMutation = useMutation({ mutationFn: ({ resultado, operationKey }: { resultado: ResultadoEntrega; operationKey: string }) => registrarResultadoEntrega(organizationId, resultado, operationKey), onSuccess: () => queryClient.invalidateQueries({ queryKey }) })
 
   const ejecutar = async (operacion: () => Promise<unknown>) => {
@@ -29,6 +30,17 @@ export function useProgramacionesEntrega() {
     if (!puedeGestionarDistribucion) return Promise.resolve('No tienes permiso para administrar distribución')
     if (programaciones.some((item) => item.pedidoId === datos.pedidoId && item.id !== id)) return Promise.resolve('Este pedido ya tiene una entrega programada')
     return ejecutar(() => guardarMutation.mutateAsync({ datos, lineas, id, operationKey: crypto.randomUUID() }))
+  }
+
+  const reprogramar = (entrega: ProgramacionEntrega, fechaProgramada: string, motivo: string) => {
+    if (!puedeGestionarDistribucion) return Promise.resolve('No tienes permiso para administrar distribución')
+    return ejecutar(() => reprogramarMutation.mutateAsync({
+      entregaId: entrega.id,
+      lockVersion: entrega.lockVersion,
+      fechaProgramada,
+      motivo,
+      operationKey: crypto.randomUUID(),
+    }))
   }
 
   const actualizarEstado = (entrega: ProgramacionEntrega, estado: ProgramacionEntrega['estado']) => {
@@ -58,5 +70,5 @@ export function useProgramacionesEntrega() {
     return ejecutar(() => resultadoMutation.mutateAsync({ resultado, operationKey }))
   }
 
-  return { programaciones, guardar, actualizarEstado, actualizarSeguimiento, registrarResultado, guardandoEstado: guardarMutation.isPending, guardandoResultado: resultadoMutation.isPending, cargando: query.isLoading, error: query.error, reintentar: query.refetch }
+  return { programaciones, guardar, reprogramar, actualizarEstado, actualizarSeguimiento, registrarResultado, guardandoEstado: guardarMutation.isPending || reprogramarMutation.isPending, guardandoResultado: resultadoMutation.isPending, cargando: query.isLoading, error: query.error, reintentar: query.refetch }
 }

@@ -4,6 +4,7 @@ import { fechaActualPeru } from '@/lib/fechas'
 import { supabase } from '@/lib/supabase'
 import {
   esquemaProgramacionEntrega,
+  esquemaDatosReprogramacionEntrega,
   esquemaLineaProgramacionEntrega,
   esquemaResultadoEntrega,
   ESTADOS_DISTRIBUCION,
@@ -50,6 +51,7 @@ interface ResultadoFila {
   id: string
   delivery_id: string
   result_status: EventoResultadoEntrega['resultado']
+  failure_category?: EventoResultadoEntrega['categoriaIncidencia'] | null
   occurred_on: string
   evidence: string
   incidents: unknown
@@ -169,12 +171,20 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (mensaje.includes('DISTRIBUTION_NOT_FOUND')) return 'La entrega ya no existe'
   if (mensaje.includes('DISTRIBUTION_VERSION_REQUIRED') || mensaje.includes('DISTRIBUTION_VERSION_CONFLICT')) return 'La entrega cambió mientras la editabas. Actualiza la lista e inténtalo nuevamente.'
   if (mensaje.includes('DISTRIBUTION_RESCHEDULE_DATE_IN_PAST')) return 'La nueva fecha de programación debe ser hoy o una fecha futura.'
+  if (mensaje.includes('DISTRIBUTION_ROUTE_ALREADY_STARTED')) return 'La entrega ya está en ruta o cerrada. Registra el resultado del intento antes de reprogramar.'
+  if (mensaje.includes('DISTRIBUTION_RESCHEDULE_COMMAND_REQUIRED')) return 'Usa la acción “Reprogramar fecha” para registrar el motivo y conservar la trazabilidad.'
+  if (mensaje.includes('DISTRIBUTION_RESCHEDULE_STATE_INVALID')) return 'Solo se puede reprogramar una entrega parcial, no entregada o que ya fue reprogramada.'
+  if (mensaje.includes('DISTRIBUTION_RESCHEDULE_DATE_UNCHANGED')) return 'Selecciona una fecha distinta a la programación actual.'
+  if (mensaje.includes('DISTRIBUTION_RESCHEDULE_REASON_REQUIRED')) return 'Describe el motivo de la reprogramación.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_RECONCILIATION_REQUIRED')) return 'Esta entrega histórica no tiene cantidades recibidas por producto. Debe conciliarse antes de registrar otro resultado.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME_NOT_AT_DESTINATION')) return 'Confirma “Marcar en destino” antes de registrar el resultado de la entrega.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_STATE_INVALID')) return 'La entrega debe estar en ruta o tener un resultado parcial para registrar su recepción.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_TOTAL_INCOMPLETE')) return 'Las cantidades no completan el saldo. Registra una entrega parcial o ajusta las cantidades recibidas.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_PARTIAL_INVALID')) return 'Una entrega parcial debe registrar cantidades recibidas y dejar un saldo pendiente.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_QUANTITY_EXCEEDED')) return 'La cantidad recibida supera el saldo pendiente de al menos un producto.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_EVIDENCE_REQUIRED')) return 'Registra evidencia para confirmar los bienes recibidos.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME_FAILURE_CATEGORY_REQUIRED')) return 'Selecciona el motivo principal del intento sin entrega.'
+  if (mensaje.includes('DISTRIBUTION_OUTCOME_FAILURE_CATEGORY_INVALID')) return 'La categoría de incidencia no es válida para este resultado.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_REJECTION_INVALID')) return 'Describe una incidencia y no registres cantidades para informar un rechazo.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME_DUPLICATE_LINE')) return 'Cada producto debe aparecer una sola vez en el resultado.'
   if (mensaje.includes('DISTRIBUTION_OUTCOME')) return 'No se pudo registrar el resultado. Actualiza la entrega y revisa las cantidades ingresadas.'
@@ -224,7 +234,7 @@ export async function listarEntregas(organizationId: string) {
     listarVentasPersistentes(organizationId),
     supabase
       .from('distribution_delivery_outcomes')
-      .select('id,delivery_id,result_status,occurred_on,evidence,incidents,created_at')
+      .select('id,delivery_id,result_status,failure_category,occurred_on,evidence,incidents,created_at')
       .eq('organization_id', organizationId)
       .order('occurred_on', { ascending: true })
       .order('created_at', { ascending: true }),
@@ -251,6 +261,7 @@ export async function listarEntregas(organizationId: string) {
     const event = {
       id: outcome.id,
       resultado: outcome.result_status,
+      categoriaIncidencia: outcome.failure_category ?? undefined,
       fecha: outcome.occurred_on,
       evidencia: outcome.evidence,
       incidencias: Array.isArray(outcome.incidents) ? outcome.incidents.filter((value): value is string => typeof value === 'string') : [],
@@ -304,6 +315,28 @@ export async function guardarEntrega(
   if (error) throw new Error(mensajeError(error))
 }
 
+export async function reprogramarEntrega(
+  organizationId: string,
+  entregaId: string,
+  lockVersion: number,
+  fechaProgramada: string,
+  motivo: string,
+  operationKey: string = crypto.randomUUID(),
+) {
+  const datos = esquemaDatosReprogramacionEntrega.parse({ fechaProgramada, motivo })
+  const { error } = await supabase.rpc('reschedule_distribution_delivery', {
+    payload: {
+      organization_id: organizationId,
+      delivery_id: entregaId,
+      expected_lock_version: lockVersion,
+      operation_key: operationKey,
+      scheduled_date: datos.fechaProgramada,
+      reason: datos.motivo,
+    },
+  })
+  if (error) throw new Error(mensajeError(error))
+}
+
 export async function registrarResultadoEntrega(
   organizationId: string,
   resultado: ResultadoEntrega,
@@ -317,6 +350,7 @@ export async function registrarResultadoEntrega(
       expectedLockVersion: datos.lockVersion,
       operationKey,
       resultado: datos.resultado,
+      categoriaIncidencia: datos.categoriaIncidencia,
       fecha: datos.fecha,
       evidencia: datos.evidencia,
       incidencias: datos.incidencias,
@@ -328,16 +362,24 @@ export async function registrarResultadoEntrega(
 
 const esquemaEventoEstadoEntrega = z.object({
   event_id: z.string(),
+  event_type: z.enum(['status', 'schedule']),
   from_status: z.enum(ESTADOS_DISTRIBUCION).nullable(),
-  to_status: z.enum(ESTADOS_DISTRIBUCION),
+  to_status: z.enum(ESTADOS_DISTRIBUCION).nullable(),
+  from_scheduled_date: z.string().nullable(),
+  to_scheduled_date: z.string().nullable(),
+  schedule_reason: z.string().nullable().optional(),
   actor_name: z.string(),
   occurred_at: z.string(),
 })
 
 export type EventoEstadoEntrega = {
   id: string
+  tipo: 'status' | 'schedule'
   estadoAnterior?: ProgramacionEntrega['estado']
-  estadoNuevo: ProgramacionEntrega['estado']
+  estadoNuevo?: ProgramacionEntrega['estado']
+  fechaProgramadaAnterior?: string
+  fechaProgramadaNueva?: string
+  motivoReprogramacion?: string
   actorNombre: string
   fechaHora: string
 }
@@ -354,8 +396,12 @@ export async function listarHistorialEstadosEntrega(organizationId: string, deli
 
   return z.array(esquemaEventoEstadoEntrega).parse(data ?? []).map((evento) => ({
     id: evento.event_id,
+    tipo: evento.event_type,
     estadoAnterior: evento.from_status ?? undefined,
-    estadoNuevo: evento.to_status,
+    estadoNuevo: evento.to_status ?? undefined,
+    fechaProgramadaAnterior: evento.from_scheduled_date ?? undefined,
+    fechaProgramadaNueva: evento.to_scheduled_date ?? undefined,
+    motivoReprogramacion: evento.schedule_reason ?? undefined,
     actorNombre: evento.actor_name,
     fechaHora: evento.occurred_at,
   }))
