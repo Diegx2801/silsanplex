@@ -32,6 +32,11 @@ jobs:
             backend/package-lock.json
             frontend/package-lock.json
 
+      - name: Configurar Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.5
+
       - name: Instalar dependencias del backend
         run: npm ci
         working-directory: backend
