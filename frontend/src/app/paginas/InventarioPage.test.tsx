@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router'
 
 import { InventarioPage } from './InventarioPage'
 
@@ -24,8 +25,8 @@ vi.mock('@/modulos/inventario/estado/useAlmacenes', () => ({
 vi.mock('@/modulos/inventario/estado/useInventario', () => ({
   useInventario: mocks.useInventario,
 }))
-vi.mock('@/modulos/inventario/componentes/PanelGestionAlmacenes', () => ({
-  PanelGestionAlmacenes: () => <div data-testid="panel-almacenes" />,
+vi.mock('@/modulos/inventario/componentes/PanelExistenciasLotes', () => ({
+  PanelExistenciasLotes: () => <div data-testid="panel-lotes" />,
 }))
 vi.mock('@/modulos/inventario/componentes/DialogoMovimientoInventario', () => ({
   DialogoMovimientoInventario: () => null,
@@ -52,8 +53,24 @@ describe('InventarioPage paginada', () => {
     })
   })
 
+  it('muestra físico, reservado y disponible sin cargar movimientos', () => {
+    render(<MemoryRouter><InventarioPage /></MemoryRouter>)
+    expect(screen.getByRole('columnheader', { name: 'Físico' })).toBeVisible()
+    expect(screen.getByRole('columnheader', { name: 'Reservado' })).toBeVisible()
+    expect(screen.getByRole('columnheader', { name: 'Disponible' })).toBeVisible()
+    expect(mocks.useInventario.mock.calls.at(-1)?.[0].movimientos).toBeUndefined()
+    expect(screen.queryByRole('heading', { name: 'Historial de movimientos' })).not.toBeInTheDocument()
+  })
+
+  it('abre directamente lotes sin consultar el resumen por producto', () => {
+    render(<MemoryRouter initialEntries={['/inventario?vista=lotes']}><InventarioPage /></MemoryRouter>)
+    expect(screen.getByTestId('panel-lotes')).toBeVisible()
+    expect(mocks.useInventario).not.toHaveBeenCalled()
+    expect(screen.getByRole('link', { name: 'Por almacén y lote' })).toHaveAttribute('aria-current', 'page')
+  })
+
   it('reinicia Existencias a página 1 al cambiar búsqueda, filtro y tamaño', () => {
-    render(<InventarioPage />)
+    render(<MemoryRouter><InventarioPage /></MemoryRouter>)
     fireEvent.click(screen.getByRole('button', { name: 'Página siguiente de existencias' }))
     expect(mocks.useInventario.mock.calls.at(-1)?.[0].existencias.pagina).toBe(2)
 

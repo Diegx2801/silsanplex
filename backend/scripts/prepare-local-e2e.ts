@@ -263,6 +263,7 @@ async function createInventoryFixture(
     { lot: 'LOTE-E2E-C', quantity: 4, unit_cost: 30, expiration_date: futureDate(14) },
   ].map((lot) => admin.rpc('record_inventory_movement', {
     payload: {
+      document_reference: 'E2E-STOCK-SETUP',
       organization_id: organizationId,
       product_id: product.id,
       movement_type: 'entrada',

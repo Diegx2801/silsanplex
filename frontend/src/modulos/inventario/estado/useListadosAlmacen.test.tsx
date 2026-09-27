@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { renderHook } from '@testing-library/react'
+import { renderHook, waitFor } from '@testing-library/react'
 import type { PropsWithChildren } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -31,35 +31,111 @@ const kardex = {
 } satisfies ConsultaKardex
 
 describe('inventoryQueryKeys', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    for (const servicio of Object.values(mocks)) {
+      servicio.mockResolvedValue({ elementos: [], total: 0, totalPaginas: 0 })
+    }
+  })
+
+  it('consulta únicamente la vista solicitada y conserva ese alcance al invalidar', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const wrapper = ({ children }: PropsWithChildren) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const { result, rerender } = renderHook(
+      ({ vista }: { vista: 'kardex' | 'transferencias' }) =>
+        useListadosAlmacen(
+          vista === 'kardex' ? { kardex } : { transferencias: kardex },
+        ),
+      {
+        wrapper,
+        initialProps: { vista: 'kardex' as 'kardex' | 'transferencias' },
+      },
+    )
+
+    await waitFor(() => expect(result.current.kardex.isSuccess).toBe(true))
+    expect(mocks.listarKardex).toHaveBeenCalledTimes(1)
+    expect(mocks.listarTransferencias).not.toHaveBeenCalled()
+    expect(mocks.listarStockDetallado).not.toHaveBeenCalled()
+    expect(mocks.listarAlertasStock).not.toHaveBeenCalled()
+    expect(mocks.listarVencimientos).not.toHaveBeenCalled()
+
+    rerender({ vista: 'transferencias' })
+    await waitFor(() =>
+      expect(result.current.transferencias.isSuccess).toBe(true),
+    )
+    await queryClient.invalidateQueries({
+      queryKey: inventoryQueryKeys.warehouseManagement('org-1'),
+    })
+    expect(mocks.listarTransferencias).toHaveBeenCalledTimes(2)
+    expect(mocks.listarKardex).toHaveBeenCalledTimes(1)
+    expect(mocks.listarStockDetallado).not.toHaveBeenCalled()
+    expect(mocks.listarAlertasStock).not.toHaveBeenCalled()
+    expect(mocks.listarVencimientos).not.toHaveBeenCalled()
+  })
 
   it('useListadosAlmacen registra Kardex con la key canónica filtrada', () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
     const wrapper = ({ children }: PropsWithChildren) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     )
 
-    renderHook(() => useListadosAlmacen({
-      stock: {
-        pagina: 1, tamanioPagina: 25, busqueda: '', almacenId: '', ubicacionId: '',
-        lote: '', estado: '', vencimientoDesde: '', vencimientoHasta: '',
-        orden: 'vencimiento-asc',
-      },
-      alertas: { pagina: 1, tamanioPagina: 25, busqueda: '', almacenId: '', orden: 'producto-asc' },
-      vencimientos: {
-        pagina: 1, tamanioPagina: 25, busqueda: '', almacenId: '',
-        estadoVencimiento: '', fechaDesde: '', fechaHasta: '', orden: 'vencimiento-asc',
-      },
-      kardex,
-      transferencias: {
-        pagina: 1, tamanioPagina: 25, busqueda: '', almacenId: '',
-        fechaDesde: '', fechaHasta: '', orden: 'fecha-desc',
-      },
-    }), { wrapper })
+    renderHook(
+      () =>
+        useListadosAlmacen({
+          stock: {
+            pagina: 1,
+            tamanioPagina: 25,
+            busqueda: '',
+            almacenId: '',
+            ubicacionId: '',
+            lote: '',
+            estado: '',
+            vencimientoDesde: '',
+            vencimientoHasta: '',
+            orden: 'vencimiento-asc',
+          },
+          alertas: {
+            pagina: 1,
+            tamanioPagina: 25,
+            busqueda: '',
+            almacenId: '',
+            orden: 'producto-asc',
+          },
+          vencimientos: {
+            pagina: 1,
+            tamanioPagina: 25,
+            busqueda: '',
+            almacenId: '',
+            estadoVencimiento: '',
+            fechaDesde: '',
+            fechaHasta: '',
+            orden: 'vencimiento-asc',
+          },
+          kardex,
+          transferencias: {
+            pagina: 1,
+            tamanioPagina: 25,
+            busqueda: '',
+            almacenId: '',
+            fechaDesde: '',
+            fechaHasta: '',
+            orden: 'fecha-desc',
+          },
+        }),
+      { wrapper },
+    )
 
-    expect(queryClient.getQueryCache().find({
-      queryKey: inventoryQueryKeys.kardex('org-1', kardex),
-      exact: true,
-    })).toBeDefined()
+    expect(
+      queryClient.getQueryCache().find({
+        queryKey: inventoryQueryKeys.kardex('org-1', kardex),
+        exact: true,
+      }),
+    ).toBeDefined()
   })
 })

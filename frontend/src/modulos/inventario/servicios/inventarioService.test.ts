@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ConsultaExistenciasInventario } from '@/modulos/inventario/modelo/inventario'
-import { listarExistenciasInventario, listarMovimientosInventario } from './inventarioService'
+import type { ConsultaExistenciasInventario, DatosMovimientoInventario } from '@/modulos/inventario/modelo/inventario'
+import { listarExistenciasInventario, listarMovimientosInventario, registrarMovimientoInventario } from './inventarioService'
 
 const { from, rpc } = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
 
@@ -207,5 +207,31 @@ describe('listarMovimientosInventario', () => {
     expect(query.order).toHaveBeenNthCalledWith(1, 'operation_date', { ascending: false })
     expect(query.range).toHaveBeenCalledWith(300, 399)
     expect(resultado.total).toBe(1_250)
+  })
+})
+
+describe('registrarMovimientoInventario', () => {
+  const datos: DatosMovimientoInventario = {
+    productoId: 'product-1', tipo: 'entrada', cantidad: '2', almacen: 'Principal',
+    lote: '', fechaVencimiento: '', fechaOperacion: '2026-09-26',
+    motivo: 'Diferencia de conteo', documentoReferencia: 'ACTA-001',
+  }
+
+  beforeEach(() => rpc.mockReset())
+
+  it.each([
+    ['entrada', 'record_inventory_movement'],
+    ['salida', 'record_inventory_fefo_outbound'],
+  ] as const)('envía el documento separado del motivo para %s', async (tipo, nombreRpc) => {
+    rpc.mockResolvedValue({ error: null })
+    await registrarMovimientoInventario('org-1', { ...datos, tipo })
+    expect(rpc).toHaveBeenCalledWith(nombreRpc, {
+      payload: expect.objectContaining({ reason: 'Diferencia de conteo', document_reference: 'ACTA-001' }),
+    })
+  })
+
+  it('explica el rechazo del documento desde el servidor', async () => {
+    rpc.mockResolvedValue({ error: { message: 'INVENTORY_DOCUMENT_REFERENCE_INVALID' } })
+    await expect(registrarMovimientoInventario('org-1', datos)).rejects.toThrow('documento de sustento')
   })
 })

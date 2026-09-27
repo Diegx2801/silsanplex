@@ -133,7 +133,7 @@ $$;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','c2000000-0000-4000-8000-000000000001',true);
 
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','c1000000-0000-4000-8000-000000000001',
   'product_id','c3000000-0000-4000-8000-000000000001',
   'warehouse_id','c4000000-0000-4000-8000-000000000001',
@@ -165,8 +165,8 @@ select is((select s.status from public.sales s join public.orders o on o.id=s.or
 select is((select count(*) from public.inventory_movements where source_type='order-dispatch'), 0::bigint, 'servicio no crea movimientos');
 select is((select count(*) from public.inventory_kardex where product_id='c3000000-0000-4000-8000-000000000002'), 0::bigint, 'servicio no crea Kardex');
 reset role;
-select is((select count(*) from public.audit_events where action='ORDER_SERVICES_COMPLETED'), 2::bigint, 'cada cumplimiento administrativo audita una sola vez');
-select is((select (metadata->'items'->0->>'quantity_completed')::numeric from public.audit_events where action='ORDER_SERVICES_COMPLETED' order by id limit 1), 1::numeric, 'auditoria identifica la cantidad de servicio atendida');
+select is((select count(*) from public.audit_events where organization_id='c1000000-0000-4000-8000-000000000001' and action='ORDER_SERVICES_COMPLETED'), 2::bigint, 'cada cumplimiento administrativo audita una sola vez');
+select is((select (metadata->'items'->0->>'quantity_completed')::numeric from public.audit_events where organization_id='c1000000-0000-4000-8000-000000000001' and action='ORDER_SERVICES_COMPLETED' order by id limit 1), 1::numeric, 'auditoria identifica la cantidad de servicio atendida');
 set local role authenticated;
 select throws_ok($t$select public.complete_order_services(pg_temp.complete_services_payload('ce000000-0000-4000-8000-000000000001','cf000000-0000-4000-8000-000000000005',1))$t$, 'P0001', 'ORDER_SERVICE_NOT_PENDING', 'otra clave no vuelve a atender un pedido cerrado');
 select throws_ok($t$select public.complete_order_services(jsonb_set(pg_temp.complete_services_payload('ce000000-0000-4000-8000-000000000001','cf000000-0000-4000-8000-000000000003',2),'{items,0,quantity_to_complete}','99'::jsonb))$t$, 'P0001', 'ORDER_OPERATION_KEY_REUSED', 'retry con otra cantidad entra en conflicto');

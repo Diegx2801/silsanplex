@@ -38,6 +38,8 @@ export interface SaldoInventario {
   lote: string
   fechaVencimiento: string
   cantidad: number
+  cantidadReservada?: number
+  cantidadAsignable?: number
   valorInventario: number
   costoPromedio: number
 }
@@ -63,6 +65,7 @@ export interface MovimientoKardex {
   fechaOperacion: string
   fechaRegistro: string
   motivo: string
+  documentoReferencia?: string
   costoUnitario: number
   cantidadEntrada: number
   cantidadSalida: number

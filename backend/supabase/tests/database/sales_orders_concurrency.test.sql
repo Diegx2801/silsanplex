@@ -131,7 +131,7 @@ select set_config(
   '{"sub":"ca200000-0000-4000-8000-000000000001","role":"authenticated"}',
   true
 );
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','ca100000-0000-4000-8000-000000000001',
   'product_id','ca400000-0000-4000-8000-000000000001',
   'warehouse_id','ca500000-0000-4000-8000-000000000001',

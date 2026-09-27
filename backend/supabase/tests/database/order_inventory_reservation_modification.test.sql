@@ -57,25 +57,25 @@ insert into public.warehouse_locations (
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"b2f20000-0000-4000-8000-000000000001","role":"authenticated"}', true);
 
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2f10000-0000-4000-8000-000000000001', 'product_id','b2f40000-0000-4000-8000-000000000001',
   'warehouse_id','b2f50000-0000-4000-8000-000000000001', 'location_id','b2f60000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',5, 'unit_cost',10, 'stock_status','available', 'lot','MOD-A',
   'expiration_date','2099-01-01', 'operation_date','2026-09-01', 'reason','Stock modificacion lote A'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2f10000-0000-4000-8000-000000000001', 'product_id','b2f40000-0000-4000-8000-000000000001',
   'warehouse_id','b2f50000-0000-4000-8000-000000000001', 'location_id','b2f60000-0000-4000-8000-000000000002',
   'movement_type','entrada', 'quantity',5, 'unit_cost',12, 'stock_status','available', 'lot','MOD-B',
   'expiration_date','2099-02-01', 'operation_date','2026-09-01', 'reason','Stock modificacion lote B'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2f10000-0000-4000-8000-000000000001', 'product_id','b2f40000-0000-4000-8000-000000000002',
   'warehouse_id','b2f50000-0000-4000-8000-000000000001', 'location_id','b2f60000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',10, 'unit_cost',4, 'stock_status','available',
   'operation_date','2026-09-01', 'reason','Stock modificacion simple'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2f10000-0000-4000-8000-000000000001', 'product_id','b2f40000-0000-4000-8000-000000000003',
   'warehouse_id','b2f50000-0000-4000-8000-000000000001', 'location_id','b2f60000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',2, 'unit_cost',3, 'stock_status','available',

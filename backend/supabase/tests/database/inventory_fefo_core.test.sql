@@ -1,6 +1,6 @@
 begin;
 
-select plan(37);
+select plan(43);
 
 select has_view('public', 'inventory_fefo_candidates', 'existe la disponibilidad ordenada por FEFO');
 select has_function(
@@ -80,7 +80,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"a1000000-0000-4000-8000-000000000001",
     "product_id":"a3000000-0000-4000-8000-000000000001",
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
@@ -92,7 +92,7 @@ select lives_ok($$
 $$, 'registra el lote que vence primero');
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"a1000000-0000-4000-8000-000000000001",
     "product_id":"a3000000-0000-4000-8000-000000000001",
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
@@ -104,7 +104,7 @@ select lives_ok($$
 $$, 'registra el lote que vence despues');
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"a1000000-0000-4000-8000-000000000001",
     "product_id":"a3000000-0000-4000-8000-000000000001",
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
@@ -116,7 +116,7 @@ select lives_ok($$
 $$, 'registra un lote en cuarentena');
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"a1000000-0000-4000-8000-000000000001",
     "product_id":"a3000000-0000-4000-8000-000000000001",
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
@@ -181,7 +181,7 @@ select throws_ok($$
 $$, 'P0001', 'INVENTORY_FEFO_INSUFFICIENT_STOCK', 'el plan rechaza una cantidad no asignable');
 
 select throws_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"a1000000-0000-4000-8000-000000000001",
     "product_id":"a3000000-0000-4000-8000-000000000001",
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
@@ -193,7 +193,7 @@ select throws_ok($$
 $$, 'P0001', 'INVENTORY_FEFO_VIOLATION', 'una salida manual no salta el primer lote asignable');
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"a1000000-0000-4000-8000-000000000001",
     "product_id":"a3000000-0000-4000-8000-000000000001",
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
@@ -205,7 +205,7 @@ select lives_ok($$
 $$, 'permite consumir la parte no reservada del primer lote');
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"a1000000-0000-4000-8000-000000000001",
     "product_id":"a3000000-0000-4000-8000-000000000001",
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
@@ -217,7 +217,7 @@ select lives_ok($$
 $$, 'permite el siguiente lote si el anterior ya no es asignable');
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"a1000000-0000-4000-8000-000000000001",
     "product_id":"a3000000-0000-4000-8000-000000000001",
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
@@ -267,7 +267,7 @@ select lives_ok($$
 $$, 'la transferencia del primer lote asignable es valida');
 
 select lives_ok($$
-  select public.record_inventory_fefo_outbound('{
+  select public.record_inventory_fefo_outbound('{"document_reference":"TEST-FIXTURE",
     "organization_id":"a1000000-0000-4000-8000-000000000001",
     "product_id":"a3000000-0000-4000-8000-000000000001",
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
@@ -289,7 +289,7 @@ select results_eq(
 );
 
 select throws_ok($$
-  select public.record_inventory_fefo_outbound('{
+  select public.record_inventory_fefo_outbound('{"document_reference":"TEST-FIXTURE",
     "organization_id":"a1000000-0000-4000-8000-000000000001",
     "product_id":"a3000000-0000-4000-8000-000000000001",
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
@@ -305,7 +305,7 @@ select is(
 );
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"a1000000-0000-4000-8000-000000000001",
     "product_id":"a3000000-0000-4000-8000-000000000001",
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
@@ -371,7 +371,7 @@ select is(
 );
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"a1000000-0000-4000-8000-000000000001",
     "product_id":"a3000000-0000-4000-8000-000000000001",
     "warehouse_id":"a4000000-0000-4000-8000-000000000001",
@@ -421,6 +421,32 @@ select is(
   false,
   'anon no puede solicitar planes FEFO'
 );
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
+
+select throws_ok($$
+  select public.record_inventory_movement('{"organization_id":"a1000000-0000-4000-8000-000000000001"}'::jsonb)
+$$, '22023', 'INVENTORY_DOCUMENT_REFERENCE_INVALID', 'manual entry requires a document');
+select throws_ok($$
+  select public.record_inventory_fefo_outbound('{"organization_id":"a1000000-0000-4000-8000-000000000001","document_reference":"   "}'::jsonb)
+$$, '22023', 'INVENTORY_DOCUMENT_REFERENCE_INVALID', 'FEFO rejects blank document references');
+select throws_ok($$
+  select public.record_inventory_movement(jsonb_build_object(
+    'organization_id','a1000000-0000-4000-8000-000000000001', 'document_reference', repeat('X', 121)))
+$$, '22023', 'INVENTORY_DOCUMENT_REFERENCE_INVALID', 'manual document length is validated server-side');
+select ok(exists (
+  select 1 from public.inventory_movements where organization_id = 'a1000000-0000-4000-8000-000000000001'
+  and document_reference = 'TEST-FIXTURE' and source_type = 'fefo-outbound'
+), 'FEFO persists the document separately for generated allocations');
+select ok(exists (
+  select 1 from public.inventory_movements where organization_id = 'a1000000-0000-4000-8000-000000000001'
+  and document_reference = 'TEST-FIXTURE' and reason = 'Ingreso FEFO primero'
+), 'manual movement keeps reason and document separate');
+select ok(exists (
+  select 1 from public.inventory_kardex where organization_id = 'a1000000-0000-4000-8000-000000000001'
+  and document_reference = 'TEST-FIXTURE' and reason = 'Ingreso FEFO primero'
+), 'Kardex preserves the supporting document alongside the reason');
 
 select * from finish();
 rollback;

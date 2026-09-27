@@ -92,7 +92,7 @@ insert into public.products (
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a1b20000-0000-4000-8000-000000000001', true);
 
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','a1b10000-0000-4000-8000-000000000001',
   'product_id','a1b70000-0000-4000-8000-000000000001',
   'warehouse_id','a1b50000-0000-4000-8000-000000000001',
@@ -100,7 +100,7 @@ select public.record_inventory_movement(jsonb_build_object(
   'movement_type','entrada','quantity',20,'unit_cost',10,
   'stock_status','available','operation_date','2026-09-05','reason','Stock P1B gravado'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','a1b10000-0000-4000-8000-000000000001',
   'product_id','a1b70000-0000-4000-8000-000000000002',
   'warehouse_id','a1b50000-0000-4000-8000-000000000001',

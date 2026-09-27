@@ -61,6 +61,27 @@ export const seccionesNavegacion: SeccionNavegacion[] = [
         permission: PERMISSIONS.INVENTORY_VIEW,
         hijos: [
           {
+            titulo: 'Existencias y lotes',
+            ruta: '/inventario',
+            descripcion: 'Stock físico, reservado y disponible',
+            icono: Boxes,
+            permission: PERMISSIONS.INVENTORY_VIEW,
+          },
+          {
+            titulo: 'Movimientos y Kardex',
+            ruta: '/inventario/movimientos',
+            descripcion: 'Operaciones y trazabilidad de stock',
+            icono: ReceiptText,
+            permission: PERMISSIONS.INVENTORY_VIEW,
+          },
+          {
+            titulo: 'Control de stock',
+            ruta: '/inventario/control',
+            descripcion: 'Alertas y condiciones del stock',
+            icono: PackageSearch,
+            permission: PERMISSIONS.INVENTORY_VIEW,
+          },
+          {
             titulo: 'Almacenes y ubicaciones',
             ruta: '/inventario/almacenes',
             descripcion: 'Estructura física del inventario',

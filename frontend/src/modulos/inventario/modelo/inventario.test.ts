@@ -5,6 +5,7 @@ import {
   calcularExistencias,
   calcularExistenciasDesdeResumen,
   calcularSaldoDisponible,
+  esquemaDatosMovimientoInventario,
   crearMovimientoInventario,
   obtenerVariacion,
   resumirInventario,
@@ -32,6 +33,7 @@ const datosBase = {
   fechaVencimiento: '2027-12-31',
   fechaOperacion: '2026-08-19',
   motivo: 'Recepción de mercadería',
+  documentoReferencia: 'ACTA-001',
 } satisfies DatosMovimientoInventario
 
 function movimiento(
@@ -57,6 +59,11 @@ function movimiento(
 }
 
 describe('inventario', () => {
+  it('exige documento de sustento separado del motivo', () => {
+    expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, documentoReferencia: '   ' }).success).toBe(false)
+    expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, documentoReferencia: 'x'.repeat(121) }).success).toBe(false)
+    expect(esquemaDatosMovimientoInventario.parse({ ...datosBase, documentoReferencia: ' ACTA-001 ' }).documentoReferencia).toBe('ACTA-001')
+  })
   it('convierte entradas y salidas en variaciones con signo', () => {
     expect(obtenerVariacion({ tipo: 'entrada', cantidad: 5 })).toBe(5)
     expect(obtenerVariacion({ tipo: 'ajuste-positivo', cantidad: 2 })).toBe(2)

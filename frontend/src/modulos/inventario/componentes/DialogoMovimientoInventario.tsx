@@ -61,6 +61,7 @@ export function DialogoMovimientoInventario({
       fechaVencimiento: '',
       fechaOperacion: hoy(),
       motivo: '',
+      documentoReferencia: '',
     },
   })
   const productoId = watch('productoId')
@@ -94,11 +95,15 @@ export function DialogoMovimientoInventario({
     const error = await alGuardar(datos)
     if (error) {
       setError(
-        error.includes('vencimiento')
-          ? 'fechaVencimiento'
-          : error.includes('lote')
-            ? 'lote'
-            : 'cantidad',
+        error.includes('documento')
+          ? 'documentoReferencia'
+          : error.includes('motivo')
+            ? 'motivo'
+            : error.includes('vencimiento')
+              ? 'fechaVencimiento'
+              : error.includes('lote')
+                ? 'lote'
+                : 'cantidad',
         { message: error },
       )
       return
@@ -124,8 +129,8 @@ export function DialogoMovimientoInventario({
                 Registrar movimiento
               </DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">
-                La existencia se actualizará desde este movimiento y quedará en
-                el historial de la sesión.
+                La existencia se actualizará desde este movimiento. El documento,
+                motivo y usuario quedarán registrados en el historial.
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close asChild>
@@ -312,12 +317,12 @@ export function DialogoMovimientoInventario({
 
               <div className="sm:col-span-2">
                 <label htmlFor="motivo-movimiento" className="field-label">
-                  Motivo o referencia *
+                  Motivo del movimiento *
                 </label>
                 <textarea
                   id="motivo-movimiento"
                   rows={3}
-                  placeholder="Ej. Recepción de compra, despacho o corrección de conteo"
+                  placeholder="Ej. Diferencia confirmada en conteo físico"
                   className="field-control py-2"
                   aria-invalid={Boolean(errors.motivo)}
                   {...register('motivo')}
@@ -325,6 +330,20 @@ export function DialogoMovimientoInventario({
                 {errors.motivo ? (
                   <p className="field-error">{errors.motivo.message}</p>
                 ) : null}
+              </div>
+              <div className="sm:col-span-2">
+                <label htmlFor="documento-movimiento" className="field-label">Documento de sustento *</label>
+                <input
+                  id="documento-movimiento"
+                  className="field-control"
+                  placeholder="Ej. Acta de ajuste AJ-2026-001"
+                  maxLength={120}
+                  aria-invalid={Boolean(errors.documentoReferencia)}
+                  aria-describedby="documento-movimiento-ayuda"
+                  {...register('documentoReferencia')}
+                />
+                <p id="documento-movimiento-ayuda" className="field-help">Indica el número o referencia del documento que autoriza este movimiento.</p>
+                {errors.documentoReferencia ? <p className="field-error">{errors.documentoReferencia.message}</p> : null}
               </div>
             </div>
 

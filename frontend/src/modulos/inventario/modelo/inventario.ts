@@ -33,6 +33,7 @@ export const esquemaDatosMovimientoInventario = z.object({
   costoUnitario: z.string().optional(),
   fechaVencimiento: z.string(),
   fechaOperacion: z.string().min(1, 'Selecciona la fecha de operación'),
+  documentoReferencia: z.string().trim().min(1, 'Ingresa el documento de sustento').max(120, 'Máximo 120 caracteres'),
   motivo: z
     .string()
     .trim()
@@ -64,6 +65,10 @@ export const esquemaMovimientoInventario = z.object({
   fechaOperacion: z.string().min(1),
   fechaRegistro: z.string().datetime(),
   motivo: z.string().min(1),
+  documentoReferencia: z.string().optional(),
+  creadoPor: z.string().optional(),
+  fuenteTipo: z.string().optional(),
+  fuenteId: z.string().optional(),
 })
 
 export type MovimientoInventario = z.infer<typeof esquemaMovimientoInventario>
@@ -275,6 +280,7 @@ export function crearMovimientoInventario(
     fechaOperacion: datos.fechaOperacion,
     fechaRegistro: ahora.toISOString(),
     motivo: datos.motivo,
+    documentoReferencia: datos.documentoReferencia,
   }
 }
 

@@ -34,10 +34,14 @@ interface MovimientoFila {
   operation_date: string
   created_at: string
   reason: string
+  document_reference: string | null
+  created_by: string | null
+  source_type: string | null
+  source_id: string | null
 }
 
 const columnasMovimiento =
-  'id,product_id,product_code,product_description,unit_of_measure,movement_type,quantity,warehouse,warehouse_id,location_id,stock_status,unit_cost,lot,expiration_date,operation_date,created_at,reason' as const
+  'id,product_id,product_code,product_description,unit_of_measure,movement_type,quantity,warehouse,warehouse_id,location_id,stock_status,unit_cost,lot,expiration_date,operation_date,created_at,reason,document_reference,created_by,source_type,source_id' as const
 
 interface ExistenciaFila {
   product_id: string
@@ -77,10 +81,16 @@ function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
     fechaOperacion: fila.operation_date,
     fechaRegistro: fila.created_at,
     motivo: fila.reason,
+    documentoReferencia: fila.document_reference ?? undefined,
+    creadoPor: fila.created_by ?? undefined,
+    fuenteTipo: fila.source_type ?? undefined,
+    fuenteId: fila.source_id ?? undefined,
   }
 }
 
 function mensajeError(error: { code?: string; message?: string }) {
+  if (error.message?.includes('INVENTORY_DOCUMENT_REFERENCE_INVALID')) return 'Ingresa un documento de sustento de hasta 120 caracteres'
+  if (error.message?.includes('INVENTORY_REASON_INVALID')) return 'Describe el motivo del movimiento con entre 3 y 180 caracteres'
   if (error.message?.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no generan stock ni movimientos de inventario'
   if (error.message?.includes('INVENTORY_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock disponible'
   if (error.message?.includes('INVENTORY_RESERVED_STOCK')) return 'La cantidad afectaría unidades reservadas por otro proceso'
@@ -242,6 +252,7 @@ export async function registrarMovimientoInventario(organizationId: string, dato
       expiration_date: datos.fechaVencimiento,
       operation_date: datos.fechaOperacion,
       reason: datos.motivo,
+      document_reference: datos.documentoReferencia,
     },
   })
   if (error) throw new Error(mensajeError(error))

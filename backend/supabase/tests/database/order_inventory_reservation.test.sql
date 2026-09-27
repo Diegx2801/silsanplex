@@ -65,67 +65,67 @@ insert into public.warehouse_locations (id, organization_id, warehouse_id, code,
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"b2c00000-0000-4000-8000-000000000001","role":"authenticated"}', true);
 
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2b00000-0000-4000-8000-000000000001', 'product_id','b2e00000-0000-4000-8000-000000000001',
   'warehouse_id','b2f00000-0000-4000-8000-000000000001', 'location_id','b2a00000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',5, 'unit_cost',10, 'stock_status','available', 'lot','LOTE-A',
   'expiration_date','2099-01-01', 'operation_date','2026-09-01', 'reason','Stock lote A'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2b00000-0000-4000-8000-000000000001', 'product_id','b2e00000-0000-4000-8000-000000000001',
   'warehouse_id','b2f00000-0000-4000-8000-000000000001', 'location_id','b2a00000-0000-4000-8000-000000000002',
   'movement_type','entrada', 'quantity',5, 'unit_cost',12, 'stock_status','available', 'lot','LOTE-B',
   'expiration_date','2099-02-01', 'operation_date','2026-09-01', 'reason','Stock lote B'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2b00000-0000-4000-8000-000000000001', 'product_id','b2e00000-0000-4000-8000-000000000002',
   'warehouse_id','b2f00000-0000-4000-8000-000000000001', 'location_id','b2a00000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',5, 'unit_cost',4, 'stock_status','available',
   'operation_date','2026-09-01', 'reason','Stock simple uno'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2b00000-0000-4000-8000-000000000001', 'product_id','b2e00000-0000-4000-8000-000000000002',
   'warehouse_id','b2f00000-0000-4000-8000-000000000002', 'location_id','b2a00000-0000-4000-8000-000000000003',
   'movement_type','entrada', 'quantity',2, 'unit_cost',5, 'stock_status','available',
   'operation_date','2026-09-01', 'reason','Stock simple dos'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2b00000-0000-4000-8000-000000000001', 'product_id','b2e00000-0000-4000-8000-000000000003',
   'warehouse_id','b2f00000-0000-4000-8000-000000000001', 'location_id','b2a00000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',4, 'unit_cost',3, 'stock_status','available',
   'operation_date','2026-09-01', 'reason','Stock multilinea'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2b00000-0000-4000-8000-000000000001', 'product_id','b2e00000-0000-4000-8000-000000000004',
   'warehouse_id','b2f00000-0000-4000-8000-000000000001', 'location_id','b2a00000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',2, 'unit_cost',3, 'stock_status','available',
   'operation_date','2026-09-01', 'reason','Stock insuficiente A'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2b00000-0000-4000-8000-000000000001', 'product_id','b2e00000-0000-4000-8000-000000000008',
   'warehouse_id','b2f00000-0000-4000-8000-000000000001', 'location_id','b2a00000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',1, 'unit_cost',3, 'stock_status','available',
   'operation_date','2026-09-01', 'reason','Stock parcial A'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2b00000-0000-4000-8000-000000000001', 'product_id','b2e00000-0000-4000-8000-000000000009',
   'warehouse_id','b2f00000-0000-4000-8000-000000000001', 'location_id','b2a00000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',1, 'unit_cost',3, 'stock_status','available',
   'operation_date','2026-09-01', 'reason','Stock parcial B'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2b00000-0000-4000-8000-000000000001', 'product_id','b2e00000-0000-4000-8000-000000000005',
   'warehouse_id','b2f00000-0000-4000-8000-000000000001', 'location_id','b2a00000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',5, 'unit_cost',2, 'stock_status','available', 'lot','EXP',
   'expiration_date','2020-01-01', 'operation_date','2026-09-01', 'reason','Lote vencido'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2b00000-0000-4000-8000-000000000001', 'product_id','b2e00000-0000-4000-8000-000000000006',
   'warehouse_id','b2f00000-0000-4000-8000-000000000001', 'location_id','b2a00000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',5, 'unit_cost',2, 'stock_status','quarantine', 'lot','Q',
   'expiration_date','2027-01-01', 'operation_date','2026-09-01', 'reason','Lote cuarentena'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2b00000-0000-4000-8000-000000000001', 'product_id','b2e00000-0000-4000-8000-000000000007',
   'warehouse_id','b2f00000-0000-4000-8000-000000000001', 'location_id','b2a00000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',5, 'unit_cost',2, 'stock_status','damaged', 'lot','D',

@@ -53,7 +53,7 @@ insert into public.warehouse_locations (
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"b3c00000-0000-4000-8000-000000000001","role":"authenticated"}', true);
 
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b3b00000-0000-4000-8000-000000000001',
   'product_id','b3e00000-0000-4000-8000-000000000001',
   'warehouse_id','b3f00000-0000-4000-8000-000000000001',
@@ -62,7 +62,7 @@ select public.record_inventory_movement(jsonb_build_object(
   'stock_status','available', 'lot','A', 'expiration_date','2099-01-01',
   'operation_date','2026-09-01', 'reason','Ingreso lote A'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b3b00000-0000-4000-8000-000000000001',
   'product_id','b3e00000-0000-4000-8000-000000000001',
   'warehouse_id','b3f00000-0000-4000-8000-000000000001',

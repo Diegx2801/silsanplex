@@ -14,8 +14,8 @@ import {
 } from '@/modulos/inventario/servicios/inventarioService'
 
 interface ConsultasInventario {
-  existencias: ConsultaExistenciasInventario
-  movimientos: ConsultaMovimientosInventario
+  existencias?: ConsultaExistenciasInventario
+  movimientos?: ConsultaMovimientosInventario
 }
 
 export function useInventario(consultas: ConsultasInventario) {
@@ -25,20 +25,20 @@ export function useInventario(consultas: ConsultasInventario) {
   const inventoryQueryKey = ['inventory', organizationId] as const
   const existenciasQuery = useQuery({
     queryKey: [...inventoryQueryKey, 'existencias', consultas.existencias],
-    queryFn: () => listarExistenciasInventario(organizationId, consultas.existencias),
-    enabled: Boolean(organizationId),
+    queryFn: () => listarExistenciasInventario(organizationId, consultas.existencias!),
+    enabled: Boolean(organizationId && consultas.existencias),
     placeholderData: keepPreviousData,
   })
   const resumenQuery = useQuery({
     queryKey: [...inventoryQueryKey, 'resumen-existencias'],
     queryFn: () => contarResumenExistencias(organizationId),
-    enabled: Boolean(organizationId),
+    enabled: Boolean(organizationId && consultas.existencias),
     staleTime: 30_000,
   })
   const movimientosQuery = useQuery({
     queryKey: [...inventoryQueryKey, 'movimientos', consultas.movimientos],
-    queryFn: () => listarMovimientosInventario(organizationId, consultas.movimientos),
-    enabled: Boolean(organizationId),
+    queryFn: () => listarMovimientosInventario(organizationId, consultas.movimientos!),
+    enabled: Boolean(organizationId && consultas.movimientos),
     placeholderData: keepPreviousData,
   })
   const mutation = useMutation({

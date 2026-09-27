@@ -52,7 +52,7 @@ insert into public.warehouse_locations (id, organization_id, warehouse_id, code,
   ('b4a00000-0000-4000-8000-000000000001', 'b4b00000-0000-4000-8000-000000000001', 'b4f00000-0000-4000-8000-000000000001', 'G', 'General concurrente', 'b4c00000-0000-4000-8000-000000000001', 'b4c00000-0000-4000-8000-000000000001');
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"b4c00000-0000-4000-8000-000000000001","role":"authenticated"}', true);
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b4b00000-0000-4000-8000-000000000001', 'product_id','b4e00000-0000-4000-8000-000000000001',
   'warehouse_id','b4f00000-0000-4000-8000-000000000001', 'location_id','b4a00000-0000-4000-8000-000000000001',
   'movement_type','entrada', 'quantity',10, 'unit_cost',8, 'stock_status','available', 'lot','C',
@@ -98,8 +98,8 @@ insert into dispatch_concurrency_workers select 'b', process_id from extensions.
 select isnt((select process_id from dispatch_concurrency_workers where worker_name = 'a'), (select process_id from dispatch_concurrency_workers where worker_name = 'b'), 'los despachos concurrentes usan sesiones distintas');
 
 select pg_catalog.pg_advisory_lock(907290100000000003);
-select is(extensions.dblink_send_query('dispatch_worker_a', $$select dispatch_concurrency_test.worker(907290100000000003, 'b4300000-0000-4000-8000-000000000001', 'b4c00000-0000-4000-8000-000000000001', (select id from public.orders where order_number = 'PED-000001'), (select id from public.sales where internal_number = 'VEN-000001'), (select id from public.order_items where order_id = (select id from public.orders where order_number = 'PED-000001')))$$), 1, 'se inicia el despacho A');
-select is(extensions.dblink_send_query('dispatch_worker_b', $$select dispatch_concurrency_test.worker(907290100000000003, 'b4300000-0000-4000-8000-000000000002', 'b4c00000-0000-4000-8000-000000000002', (select id from public.orders where order_number = 'PED-000001'), (select id from public.sales where internal_number = 'VEN-000001'), (select id from public.order_items where order_id = (select id from public.orders where order_number = 'PED-000001')))$$), 1, 'se inicia el despacho B');
+select is(extensions.dblink_send_query('dispatch_worker_a', $$select dispatch_concurrency_test.worker(907290100000000003, 'b4300000-0000-4000-8000-000000000001', 'b4c00000-0000-4000-8000-000000000001', (select id from public.orders where organization_id = 'b4b00000-0000-4000-8000-000000000001' and order_number = 'PED-000001'), (select id from public.sales where organization_id = 'b4b00000-0000-4000-8000-000000000001' and internal_number = 'VEN-000001'), (select id from public.order_items where order_id = (select id from public.orders where organization_id = 'b4b00000-0000-4000-8000-000000000001' and order_number = 'PED-000001')))$$), 1, 'se inicia el despacho A');
+select is(extensions.dblink_send_query('dispatch_worker_b', $$select dispatch_concurrency_test.worker(907290100000000003, 'b4300000-0000-4000-8000-000000000002', 'b4c00000-0000-4000-8000-000000000002', (select id from public.orders where organization_id = 'b4b00000-0000-4000-8000-000000000001' and order_number = 'PED-000001'), (select id from public.sales where organization_id = 'b4b00000-0000-4000-8000-000000000001' and internal_number = 'VEN-000001'), (select id from public.order_items where order_id = (select id from public.orders where organization_id = 'b4b00000-0000-4000-8000-000000000001' and order_number = 'PED-000001')))$$), 1, 'se inicia el despacho B');
 do $$ begin for attempt in 1..100 loop exit when (select count(*) from pg_catalog.pg_locks lock where lock.locktype = 'advisory' and not lock.granted and lock.pid in (select process_id from dispatch_concurrency_workers)) = 2; perform pg_catalog.pg_sleep(0.02); end loop; end; $$;
 select ok((select count(*) from pg_catalog.pg_locks lock where lock.locktype = 'advisory' and not lock.granted and lock.pid in (select process_id from dispatch_concurrency_workers)) = 2, 'ambos despachos esperan la barrera');
 select ok(pg_catalog.pg_advisory_unlock(907290100000000003), 'se libera la barrera');
@@ -107,7 +107,7 @@ insert into dispatch_concurrency_results select 'a', result from extensions.dbli
 insert into dispatch_concurrency_results select 'b', result from extensions.dblink_get_result('dispatch_worker_b') as response(result text);
 select is((select count(*) from dispatch_concurrency_results where result like 'ok:%'), 1::bigint, 'solo un despacho consume la reserva concurrente');
 select is((select count(*) from dispatch_concurrency_results where result like 'error:P0001:ORDER_DISPATCH_EXCEEDS_RESERVED%'), 1::bigint, 'el segundo despacho excedente falla');
-select is((select count(*) from public.inventory_movements where source_type = 'order-dispatch'), 1::bigint, 'la carrera no duplica movimientos');
+select is((select count(*) from public.inventory_movements where organization_id = 'b4b00000-0000-4000-8000-000000000001' and source_type = 'order-dispatch'), 1::bigint, 'la carrera no duplica movimientos');
 select is((select sum(quantity - quantity_consumed) from public.inventory_reservations where source_type = 'order-item' and source_id = (select id from public.order_items where order_id = :'order_id')), 4.000::numeric, 'la reserva queda con el saldo pendiente correcto');
 select is((select sum(physical_quantity) from public.inventory_bucket_availability where product_id = 'b4e00000-0000-4000-8000-000000000001'), 4.000::numeric, 'el fisico solo se descuenta una vez');
 

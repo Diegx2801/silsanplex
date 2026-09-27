@@ -209,7 +209,7 @@ select set_config(
 );
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"d1000000-0000-4000-8000-000000000001",
     "product_id":"d5000000-0000-4000-8000-000000000001",
     "warehouse_id":"d6000000-0000-4000-8000-000000000001",
@@ -221,7 +221,7 @@ select lives_ok($$
 $$, 'registra stock available');
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"d1000000-0000-4000-8000-000000000001",
     "product_id":"d5000000-0000-4000-8000-000000000001",
     "warehouse_id":"d6000000-0000-4000-8000-000000000001",
@@ -233,7 +233,7 @@ select lives_ok($$
 $$, 'registra stock damaged como inventario fisico valido');
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"d1000000-0000-4000-8000-000000000001",
     "product_id":"d5000000-0000-4000-8000-000000000001",
     "warehouse_id":"d6000000-0000-4000-8000-000000000001",

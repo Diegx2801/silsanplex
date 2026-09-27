@@ -1,6 +1,6 @@
 begin;
 
-select plan(49);
+select plan(57);
 
 select is(
   to_regprocedure('inventory_internal.assert_inventory_read(uuid)') is not null,
@@ -220,7 +220,7 @@ select throws_ok(
   'la RPC bloquea consultar una organizacion ajena'
 );
 select throws_ok(
-  $$select public.record_inventory_movement(jsonb_build_object(
+  $$select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
     'organization_id', 'd1a00000-0000-4000-8000-000000000001',
     'product_id', 'd1a40000-0000-4000-8000-000000000006',
     'movement_type', 'entrada', 'quantity', '1', 'warehouse', 'Almacen D1A A',
@@ -353,6 +353,39 @@ select throws_ok(
   $$select public.inventory_low_stock_alerts_read('d1a00000-0000-4000-8000-000000000001', '', null::uuid, 'producto-asc', 51, 0)$$,
   '22023', 'INVENTORY_READ_PAGINATION_INVALID',
   'las alertas rechazan limit mayor que 50'
+);
+
+select is(
+  (public.inventory_stock_detail_read('d1a00000-0000-4000-8000-000000000001', 'P-A-RESERVA') -> 'items' -> 0 ->> 'physical_quantity')::numeric,
+  2::numeric, 'stock detallado muestra fisico aunque este reservado'
+);
+select is(
+  (public.inventory_stock_detail_read('d1a00000-0000-4000-8000-000000000001', 'P-A-RESERVA') -> 'items' -> 0 ->> 'reserved_quantity')::numeric,
+  2::numeric, 'stock detallado expone reservas canonicas sin permiso comercial'
+);
+select is(
+  (public.inventory_stock_detail_read('d1a00000-0000-4000-8000-000000000001', 'P-A-RESERVA') -> 'items' -> 0 ->> 'assignable_quantity')::numeric,
+  0::numeric, 'stock reservado no se presenta como asignable'
+);
+select is(
+  (public.inventory_stock_detail_read('d1a00000-0000-4000-8000-000000000001', requested_offset => 1000) ->> 'total_count')::integer,
+  3, 'pagina vacia conserva conteo factual de stock detallado'
+);
+select is(
+  (public.inventory_stock_detail_read('d1a00000-0000-4000-8000-000000000001', requested_lot => 'A-STOCK') ->> 'total_count')::integer,
+  1, 'stock detallado filtra por lote'
+);
+select throws_ok(
+  $$select public.inventory_stock_detail_read('d1a00000-0000-4000-8000-000000000002')$$,
+  '42501', 'INVENTORY_READ_FORBIDDEN', 'stock detallado impide lectura de otra organizacion'
+);
+select throws_ok(
+  $$select public.inventory_stock_detail_read('d1a00000-0000-4000-8000-000000000001', requested_limit => 101)$$,
+  '22023', 'INVENTORY_READ_FILTER_INVALID', 'stock detallado limita paginas a 100'
+);
+select is(
+  has_function_privilege('anon', 'public.inventory_stock_detail_read(uuid,text,uuid,uuid,text,text,date,date,text,integer,integer)', 'EXECUTE'),
+  false, 'stock detallado no se expone a anon'
 );
 
 reset role;

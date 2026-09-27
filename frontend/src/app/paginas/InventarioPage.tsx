@@ -1,52 +1,18 @@
-import {
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Boxes,
-  ClipboardList,
-  PackageCheck,
-  PackageX,
-  Plus,
-  Search,
-} from 'lucide-react'
-import {
-  type MouseEvent as ReactMouseEvent,
-  useRef,
-  useState,
-} from 'react'
+import { Boxes, PackageCheck, PackageX, Search } from 'lucide-react'
+import { useState } from 'react'
+import { useSearchParams } from 'react-router'
 
-import { Button } from '@/components/ui/button'
-import { PERMISSIONS } from '@/features/auth/permissions'
-import { useAuth } from '@/features/auth/useAuth'
-import { DialogoMovimientoInventario } from '@/modulos/inventario/componentes/DialogoMovimientoInventario'
 import { EstadoListadoInventario } from '@/modulos/inventario/componentes/EstadoListadoInventario'
 import { PaginacionInventario } from '@/modulos/inventario/componentes/PaginacionInventario'
-import { PanelGestionAlmacenes } from '@/modulos/inventario/componentes/PanelGestionAlmacenes'
+import { PanelExistenciasLotes } from '@/modulos/inventario/componentes/PanelExistenciasLotes'
+import { VistasInventario } from '@/modulos/inventario/componentes/VistasInventario'
 import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import { useDebounceInventario } from '@/modulos/inventario/estado/useDebounceInventario'
 import { useInventario } from '@/modulos/inventario/estado/useInventario'
-import {
-  movimientoEsSalida,
-  tiposMovimientoInventario,
-  type DatosMovimientoInventario,
-  type ExistenciaInventario,
-  type FiltroStockInventario,
-  type MovimientoInventario,
-  type OrdenExistenciasInventario,
-} from '@/modulos/inventario/modelo/inventario'
+import type { ExistenciaInventario, FiltroStockInventario, OrdenExistenciasInventario } from '@/modulos/inventario/modelo/inventario'
 import type { TamanioPaginaInventario } from '@/modulos/inventario/modelo/paginacionInventario'
 
-const formatoCantidad = new Intl.NumberFormat('es-PE', {
-  maximumFractionDigits: 3,
-})
-const formatoFecha = new Intl.DateTimeFormat('es-PE', {
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-})
-
-function etiquetaTipo(tipo: MovimientoInventario['tipo']) {
-  return tiposMovimientoInventario.find((item) => item.valor === tipo)!.etiqueta
-}
+const formatoCantidad = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 3 })
 
 function EstadoStock({ existencia }: { existencia: ExistenciaInventario }) {
   const tieneStock = existencia.stockAsignable > 0
@@ -58,195 +24,73 @@ function EstadoStock({ existencia }: { existencia: ExistenciaInventario }) {
   )
 }
 
-function MovimientoFila({ movimiento }: { movimiento: MovimientoInventario }) {
-  const esSalida = movimientoEsSalida(movimiento.tipo)
-  const Icono = esSalida ? ArrowUpFromLine : ArrowDownToLine
 
+export function InventarioPage() {
+  const [parametros] = useSearchParams()
+  const vista = parametros.get('vista') === 'lotes' ? 'lotes' : 'productos'
   return (
-    <article className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-      <div className="flex min-w-0 items-start gap-3">
-        <span
-          className={`mt-0.5 grid size-9 shrink-0 place-items-center rounded-full ${
-            esSalida
-              ? 'bg-[#f4e7c6] text-[#79520d]'
-              : 'bg-accent text-primary'
-          }`}
-        >
-          <Icono aria-hidden="true" className="size-4" />
-        </span>
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h3 className="font-medium">{movimiento.productoDescripcion}</h3>
-            <span className="font-mono text-xs text-muted-foreground">
-              {movimiento.productoCodigo}
-            </span>
-          </div>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            {movimiento.motivo} · {movimiento.almacen}
-            {movimiento.lote ? ` · Lote ${movimiento.lote}` : ''}
-          </p>
-        </div>
-      </div>
-      <div className="flex items-center justify-between gap-4 lg:block lg:text-end">
-        <p
-          className={`font-mono text-sm font-semibold tabular-nums ${
-            esSalida ? 'text-[#79520d]' : 'text-primary'
-          }`}
-        >
-          {esSalida ? '−' : '+'}
-          {formatoCantidad.format(movimiento.cantidad)}{' '}
-          <span className="font-sans text-xs font-normal text-muted-foreground">
-            {movimiento.unidadMedida || 'unid.'}
-          </span>
+    <div className="space-y-8">
+      <header className="border-b pb-7">
+        <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">Inventario</span>
+        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Existencias y lotes</h1>
+        <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
+          Consulta el stock físico, las reservas y la cantidad disponible por producto, almacén y lote.
         </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {etiquetaTipo(movimiento.tipo)} ·{' '}
-          {formatoFecha.format(new Date(`${movimiento.fechaOperacion}T12:00:00`))}
-        </p>
-      </div>
-    </article>
+      </header>
+      <VistasInventario etiqueta="Vistas de existencias" vista={vista} opciones={[
+        { valor: 'productos', etiqueta: 'Por producto' },
+        { valor: 'lotes', etiqueta: 'Por almacén y lote' },
+      ]} />
+      <p className="text-sm leading-6 text-muted-foreground">
+        El stock físico incluye todas las condiciones. El disponible excluye las reservas y los bienes en cuarentena, dañados o vencidos.
+      </p>
+      {vista === 'productos' ? <ExistenciasPorProducto /> : <ExistenciasPorLote />}
+    </div>
   )
 }
 
-export function InventarioPage() {
-  const { access, hasPermission } = useAuth()
-  const organizationId = access?.organizationId ?? ''
-  const puedeGestionar = hasPermission(PERMISSIONS.INVENTORY_MANAGE)
+function ExistenciasPorLote() {
+  const gestion = useAlmacenes()
+  return (
+    <EstadoListadoInventario cargando={gestion.cargando} error={gestion.error} vacio={false}
+      mensajeVacio="" alReintentar={() => void gestion.reintentar()}>
+      <PanelExistenciasLotes almacenes={gestion.almacenes} ubicaciones={gestion.ubicaciones} />
+    </EstadoListadoInventario>
+  )
+}
+
+function ExistenciasPorProducto() {
   const [busqueda, setBusqueda] = useState('')
   const busquedaDebounced = useDebounceInventario(busqueda)
   const [filtroStock, setFiltroStock] = useState<FiltroStockInventario>('todos')
   const [ordenExistencias, setOrdenExistencias] = useState<OrdenExistenciasInventario>('producto-asc')
   const [paginaExistencias, setPaginaExistencias] = useState(1)
   const [tamanioExistencias, setTamanioExistencias] = useState<TamanioPaginaInventario>(25)
-  const [busquedaMovimientos, setBusquedaMovimientos] = useState('')
-  const busquedaMovimientosDebounced = useDebounceInventario(busquedaMovimientos)
-  const [paginaMovimientos, setPaginaMovimientos] = useState(1)
-  const [tamanioMovimientos, setTamanioMovimientos] = useState<TamanioPaginaInventario>(25)
-  const [tipoMovimiento, setTipoMovimiento] = useState<MovimientoInventario['tipo'] | ''>('')
-  const [almacenMovimientos, setAlmacenMovimientos] = useState('')
-  const [fechaMovimientosDesde, setFechaMovimientosDesde] = useState('')
-  const [fechaMovimientosHasta, setFechaMovimientosHasta] = useState('')
   const inventario = useInventario({
-    existencias: {
-      pagina: paginaExistencias,
-      tamanioPagina: tamanioExistencias,
-      busqueda: busquedaDebounced,
-      filtroStock,
-      orden: ordenExistencias,
-    },
-    movimientos: {
-      pagina: paginaMovimientos,
-      tamanioPagina: tamanioMovimientos,
-      busqueda: busquedaMovimientosDebounced,
-      almacenId: almacenMovimientos,
-      tipo: tipoMovimiento,
-      fechaDesde: fechaMovimientosDesde,
-      fechaHasta: fechaMovimientosHasta,
-      orden: 'fecha-desc',
-    },
+    existencias: { pagina: paginaExistencias, tamanioPagina: tamanioExistencias, busqueda: busquedaDebounced, filtroStock, orden: ordenExistencias },
   })
-  const gestionAlmacenes = useAlmacenes()
-  const [dialogoAbierto, setDialogoAbierto] = useState(false)
-  const [mensaje, setMensaje] = useState('')
-  const disparador = useRef<HTMLButtonElement | null>(null)
   const existencias = inventario.existencias?.elementos ?? []
-  const historial = inventario.movimientos?.elementos ?? []
-  const resumen = inventario.resumenExistencias ?? {
-    productos: inventario.existencias?.total ?? 0,
-    productosConStock: 0,
-    productosSinStock: 0,
-  }
-
-  const abrirMovimiento = (evento: ReactMouseEvent<HTMLButtonElement>) => {
-    disparador.current = evento.currentTarget
-    setDialogoAbierto(true)
-  }
-
-  const guardarMovimiento = async (datos: DatosMovimientoInventario) => {
-    const error = await inventario.registrarMovimiento(datos)
-    if (!error) {
-      setMensaje('Movimiento registrado y existencia actualizada.')
-    }
-    return error
-  }
-
+  const resumen = inventario.resumenExistencias
   const metricas = [
-    {
-      etiqueta: 'Productos con stock',
-      valor: resumen.productosConStock,
-      icono: PackageCheck,
-    },
-    {
-      etiqueta: 'Productos controlados',
-      valor: resumen.productos,
-      icono: Boxes,
-    },
-    {
-      etiqueta: 'Productos sin stock',
-      valor: resumen.productosSinStock,
-      icono: PackageX,
-    },
-    {
-      etiqueta: 'Movimientos registrados',
-      valor: inventario.movimientos?.total ?? 0,
-      icono: ClipboardList,
-    },
+    { etiqueta: 'Productos con stock', valor: resumen?.productosConStock, icono: PackageCheck },
+    { etiqueta: 'Productos controlados', valor: resumen?.productos, icono: Boxes },
+    { etiqueta: 'Productos sin stock', valor: resumen?.productosSinStock, icono: PackageX },
   ]
-
   return (
-    <div className="space-y-8">
-      <header className="flex flex-col gap-5 border-b pb-7 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">
-            Existencias autoritativas en PostgreSQL
-          </span>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">
-            Inventario
-          </h1>
-          <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
-            Consulta existencias y registra entradas, salidas o ajustes con
-            trazabilidad persistente por usuario y fecha.
-          </p>
-        </div>
-        {puedeGestionar ? <Button
-          type="button"
-          size="lg"
-          disabled={!gestionAlmacenes.almacenes.length}
-          onClick={abrirMovimiento}
-        >
-          <Plus aria-hidden="true" />
-          Registrar movimiento
-        </Button> : null}
-      </header>
-
+    <>
       <section aria-label="Resumen de inventario" className="ledger-sheet">
-        <div className="grid sm:grid-cols-2 xl:grid-cols-4">
-          {metricas.map((metrica) => {
-            const Icono = metrica.icono
-            return (
-              <article
-                key={metrica.etiqueta}
-                className="border-b px-5 py-5 last:border-b-0 sm:border-e sm:[&:nth-child(2)]:border-e-0 xl:border-b-0 xl:[&:nth-child(2)]:border-e xl:last:border-e-0"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
-                    {metrica.etiqueta}
-                  </p>
-                  <Icono aria-hidden="true" className="size-4 text-primary" />
-                </div>
-                <p className="mt-3 font-mono text-2xl font-semibold tabular-nums">
-                  {metrica.valor}
-                </p>
-              </article>
-            )
-          })}
+        <div className="grid sm:grid-cols-3">
+          {metricas.map(({ etiqueta, valor, icono: Icono }) => (
+            <article key={etiqueta} className="border-b px-5 py-5 last:border-b-0 sm:border-b-0 sm:border-e sm:last:border-e-0">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">{etiqueta}</p>
+                <Icono aria-hidden="true" className="size-4 text-primary" />
+              </div>
+              <p className="mt-3 font-mono text-2xl font-semibold tabular-nums">{valor ?? '—'}</p>
+            </article>
+          ))}
         </div>
       </section>
-
-      <p role="status" aria-live="polite" className="sr-only">
-        {mensaje}
-      </p>
-
       <section aria-labelledby="existencias-title" className="ledger-sheet">
         <div className="grid gap-4 border-b px-5 py-5 sm:px-6 xl:grid-cols-[minmax(14rem,1fr)_15rem_11rem_13rem] xl:items-end">
           <div>
@@ -340,9 +184,11 @@ export function InventarioPage() {
                     </div>
                     <EstadoStock existencia={existencia} />
                   </div>
-                  <dl className="mt-5 grid grid-cols-3 gap-3 border-t pt-4 text-sm">
+                  <dl className="mt-5 grid grid-cols-2 gap-3 border-t pt-4 text-sm">
+                    <div><dt className="text-xs text-muted-foreground">Físico</dt><dd className="mt-1 font-mono tabular-nums">{formatoCantidad.format(existencia.stockFisico)}</dd></div>
+                    <div><dt className="text-xs text-muted-foreground">Reservado</dt><dd className="mt-1 font-mono tabular-nums">{formatoCantidad.format(existencia.stockReservado)}</dd></div>
                     <div>
-                      <dt className="text-xs text-muted-foreground">Asignable</dt>
+                      <dt className="text-xs text-muted-foreground">Disponible</dt>
                       <dd className="mt-1 font-mono font-semibold tabular-nums">
                         {formatoCantidad.format(existencia.stockAsignable)}
                       </dd>
@@ -369,7 +215,9 @@ export function InventarioPage() {
                   <tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
                     <th className="px-6 py-3 font-medium">Código</th>
                     <th className="px-4 py-3 font-medium">Producto</th>
-                    <th className="px-4 py-3 text-end font-medium">Asignable</th>
+                    <th className="px-4 py-3 text-end font-medium">Físico</th>
+                    <th className="px-4 py-3 text-end font-medium">Reservado</th>
+                    <th className="px-4 py-3 text-end font-medium">Disponible</th>
                     <th className="px-4 py-3 text-end font-medium">Almacenes</th>
                     <th className="px-4 py-3 text-end font-medium">Lotes</th>
                     <th className="px-6 py-3 font-medium">Estado</th>
@@ -387,6 +235,8 @@ export function InventarioPage() {
                           {existencia.laboratorio || 'Sin laboratorio'}
                         </p>
                       </td>
+                      <td className="px-4 py-4 text-end font-mono tabular-nums">{formatoCantidad.format(existencia.stockFisico)}</td>
+                      <td className="px-4 py-4 text-end font-mono tabular-nums">{formatoCantidad.format(existencia.stockReservado)}</td>
                       <td className="px-4 py-4 text-end font-mono font-semibold tabular-nums">
                         {formatoCantidad.format(existencia.stockAsignable)}{' '}
                         <span className="font-sans text-xs font-normal text-muted-foreground">
@@ -427,140 +277,7 @@ export function InventarioPage() {
         ) : null}
       </section>
 
-      <section aria-labelledby="historial-title" className="ledger-sheet">
-        <div className="grid gap-4 border-b px-5 py-5 sm:px-6 xl:grid-cols-[minmax(14rem,1fr)_14rem_11rem_12rem_11rem] xl:items-end">
-          <div>
-            <h2 id="historial-title" className="text-lg font-semibold">
-              Historial de movimientos
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {inventario.movimientos?.total ?? 0} movimientos persistentes
-            </p>
-          </div>
-          <label className="field-label">
-            Buscar
-            <input
-              type="search"
-              value={busquedaMovimientos}
-              onChange={(evento) => {
-                setBusquedaMovimientos(evento.target.value)
-                setPaginaMovimientos(1)
-              }}
-              className="field-control"
-              placeholder="Producto, código o lote"
-            />
-          </label>
-          <label className="field-label">
-            Tipo
-            <select
-              value={tipoMovimiento}
-              onChange={(evento) => {
-                setTipoMovimiento(evento.target.value as MovimientoInventario['tipo'] | '')
-                setPaginaMovimientos(1)
-              }}
-              className="field-control"
-            >
-              <option value="">Todos</option>
-              {tiposMovimientoInventario.map((tipo) => (
-                <option key={tipo.valor} value={tipo.valor}>{tipo.etiqueta}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field-label">
-            Almacén
-            <select
-              value={almacenMovimientos}
-              onChange={(evento) => {
-                setAlmacenMovimientos(evento.target.value)
-                setPaginaMovimientos(1)
-              }}
-              className="field-control"
-            >
-              <option value="">Todos</option>
-              {gestionAlmacenes.almacenes.map((almacen) => (
-                <option key={almacen.id} value={almacen.id}>{almacen.nombre}</option>
-              ))}
-            </select>
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="field-label">
-              Desde
-              <input
-                type="date"
-                value={fechaMovimientosDesde}
-                onChange={(evento) => {
-                  setFechaMovimientosDesde(evento.target.value)
-                  setPaginaMovimientos(1)
-                }}
-                className="field-control"
-              />
-            </label>
-            <label className="field-label">
-              Hasta
-              <input
-                type="date"
-                value={fechaMovimientosHasta}
-                onChange={(evento) => {
-                  setFechaMovimientosHasta(evento.target.value)
-                  setPaginaMovimientos(1)
-                }}
-                className="field-control"
-              />
-            </label>
-          </div>
-        </div>
-        <EstadoListadoInventario
-          cargando={inventario.cargandoMovimientos}
-          error={inventario.errorMovimientos}
-          vacio={!historial.length}
-          mensajeVacio="No hay movimientos que coincidan con los filtros activos."
-          alReintentar={() => void inventario.reintentarMovimientos()}
-        >
-          <div className="divide-y">
-            {historial.map((movimiento) => (
-              <MovimientoFila key={movimiento.id} movimiento={movimiento} />
-            ))}
-          </div>
-        </EstadoListadoInventario>
-        {inventario.movimientos && !inventario.errorMovimientos ? (
-          <PaginacionInventario
-            etiqueta="movimientos"
-            pagina={paginaMovimientos}
-            tamanioPagina={tamanioMovimientos}
-            total={inventario.movimientos.total}
-            totalPaginas={inventario.movimientos.totalPaginas}
-            cantidadVisible={historial.length}
-            cargando={inventario.actualizandoMovimientos}
-            alCambiarPagina={setPaginaMovimientos}
-            alCambiarTamanio={(tamanio) => {
-              setTamanioMovimientos(tamanio)
-              setPaginaMovimientos(1)
-            }}
-          />
-        ) : null}
-      </section>
 
-      <PanelGestionAlmacenes
-        organizationId={organizationId}
-        almacenes={gestionAlmacenes.almacenes}
-        ubicaciones={gestionAlmacenes.ubicaciones}
-        puedeGestionar={puedeGestionar}
-        transferir={gestionAlmacenes.transferir}
-        reclasificar={gestionAlmacenes.reclasificar}
-        configurar={gestionAlmacenes.configurar}
-      />
-
-      {dialogoAbierto && puedeGestionar ? (
-        <DialogoMovimientoInventario
-          abierto={dialogoAbierto}
-          organizationId={organizationId}
-          almacenes={gestionAlmacenes.almacenes.filter((almacen) => almacen.activo)}
-          ubicaciones={gestionAlmacenes.ubicaciones}
-          alCambiarApertura={setDialogoAbierto}
-          alGuardar={guardarMovimiento}
-          alRestaurarFoco={() => disparador.current?.focus()}
-        />
-      ) : null}
-    </div>
+    </>
   )
 }

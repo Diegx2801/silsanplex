@@ -58,7 +58,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '92000000-0000-4000-8000-000000000001', true);
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"91000000-0000-4000-8000-000000000001",
     "product_id":"93000000-0000-4000-8000-000000000001",
     "warehouse_id":"94000000-0000-4000-8000-000000000001",
@@ -70,7 +70,7 @@ select lives_ok($$
 $$, 'registra el primer vencimiento del lote');
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"91000000-0000-4000-8000-000000000001",
     "product_id":"93000000-0000-4000-8000-000000000001",
     "warehouse_id":"94000000-0000-4000-8000-000000000001",
@@ -93,7 +93,7 @@ select results_eq(
 );
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"91000000-0000-4000-8000-000000000001",
     "product_id":"93000000-0000-4000-8000-000000000001",
     "warehouse_id":"94000000-0000-4000-8000-000000000001",
@@ -127,7 +127,7 @@ select is(
 );
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"91000000-0000-4000-8000-000000000001",
     "product_id":"93000000-0000-4000-8000-000000000002",
     "warehouse_id":"94000000-0000-4000-8000-000000000001",
@@ -149,7 +149,7 @@ select results_eq(
 );
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"91000000-0000-4000-8000-000000000001",
     "product_id":"93000000-0000-4000-8000-000000000003",
     "warehouse_id":"94000000-0000-4000-8000-000000000001",
@@ -200,7 +200,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '92000000-0000-4000-8000-000000000001', true);
 
 select throws_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"91000000-0000-4000-8000-000000000001",
     "product_id":"93000000-0000-4000-8000-000000000001",
     "warehouse_id":"94000000-0000-4000-8000-000000000001",

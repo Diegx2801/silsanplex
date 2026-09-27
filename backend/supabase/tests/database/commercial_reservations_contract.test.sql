@@ -189,7 +189,7 @@ select set_config(
 );
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"f2b00000-0000-4000-8000-000000000001",
     "product_id":"f2e00000-0000-4000-8000-000000000001",
     "warehouse_id":"f2f00000-0000-4000-8000-000000000001",
@@ -200,7 +200,7 @@ select lives_ok($$
   }'::jsonb)
 $$, 'registra stock fisico en el primer lote');
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"f2b00000-0000-4000-8000-000000000001",
     "product_id":"f2e00000-0000-4000-8000-000000000001",
     "warehouse_id":"f2f00000-0000-4000-8000-000000000001",
@@ -211,7 +211,7 @@ select lives_ok($$
   }'::jsonb)
 $$, 'registra stock fisico en el segundo lote');
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"f2b00000-0000-4000-8000-000000000001",
     "product_id":"f2e00000-0000-4000-8000-000000000002",
     "warehouse_id":"f2f00000-0000-4000-8000-000000000001",
@@ -298,12 +298,12 @@ values
   );
 
 select is(
-  (select count(*) from public.inventory_reservations where source_type = 'order-item'),
+  (select count(*) from public.inventory_reservations where organization_id = 'f2b00000-0000-4000-8000-000000000001' and source_type = 'order-item'),
   2::bigint,
   'una linea permite dos reservas en buckets FEFO distintos'
 );
 select is(
-  (select sum(quantity) from public.inventory_reservations where source_type = 'order-item'),
+  (select sum(quantity) from public.inventory_reservations where organization_id = 'f2b00000-0000-4000-8000-000000000001' and source_type = 'order-item'),
   7.000::numeric,
   'las reservas de la linea suman la cantidad solicitada'
 );

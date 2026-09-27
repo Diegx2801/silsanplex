@@ -105,12 +105,10 @@ export async function buscarAlmacenesDisponibles(
   }))
 }
 
-const columnasSaldo =
-  'product_id,product_code,product_description,unit_of_measure,warehouse_id,warehouse_code,warehouse_name,location_id,location_code,location_name,stock_status,lot,expiration_date,quantity,inventory_value,average_cost' as const
 const columnasVencimiento =
   'product_id,product_code,product_description,unit_of_measure,warehouse_id,warehouse_code,warehouse_name,location_id,location_code,location_name,stock_status,lot,expiration_date,physical_quantity,inventory_value,average_cost,expiration_alert_days,days_until_expiration,expiration_state' as const
 const columnasKardex =
-  'id,product_id,product_code,product_description,warehouse,warehouse_id,stock_status,lot,operation_date,created_at,reason,unit_cost,inbound_quantity,outbound_quantity,inbound_value,outbound_value,running_quantity,running_value,ledger_sequence' as const
+  'id,product_id,product_code,product_description,warehouse,warehouse_id,stock_status,lot,operation_date,created_at,reason,document_reference,unit_cost,inbound_quantity,outbound_quantity,inbound_value,outbound_value,running_quantity,running_value,ledger_sequence' as const
 
 function aplicarBusqueda<T extends { or: (filtro: string) => T }>(query: T, busqueda: string) {
   const termino = normalizarBusquedaInventario(busqueda)
@@ -123,35 +121,28 @@ export async function listarStockDetallado(
   organizationId: string,
   consulta: ConsultaStockDetallado,
 ) {
-  const { desde, hasta } = normalizarPaginacion(consulta)
-  let query = aplicarBusqueda(
-    supabase.from('inventory_balances').select(columnasSaldo, { count: 'exact' }).eq('organization_id', organizationId).neq('quantity', 0),
-    consulta.busqueda,
-  )
-  if (consulta.almacenId) query = query.eq('warehouse_id', consulta.almacenId)
-  if (consulta.ubicacionId) query = query.eq('location_id', consulta.ubicacionId)
-  if (consulta.lote.trim()) query = query.ilike('lot', `%${normalizarBusquedaInventario(consulta.lote)}%`)
-  if (consulta.estado) query = query.eq('stock_status', consulta.estado)
-  if (consulta.vencimientoDesde) query = query.gte('expiration_date', consulta.vencimientoDesde)
-  if (consulta.vencimientoHasta) query = query.lte('expiration_date', consulta.vencimientoHasta)
-
-  if (consulta.orden === 'producto-asc') {
-    query = query.order('product_description', { ascending: true })
-  } else {
-    query = query.order('expiration_date', {
-      ascending: consulta.orden === 'vencimiento-asc',
-      nullsFirst: false,
-    })
-  }
-  const { data, error, count } = await query
-    .order('product_id', { ascending: true })
-    .order('warehouse_id', { ascending: true })
-    .order('location_id', { ascending: true })
-    .order('stock_status', { ascending: true })
-    .order('lot', { ascending: true, nullsFirst: true })
-    .range(desde, hasta)
+  const { desde } = normalizarPaginacion(consulta)
+  const { data, error } = await supabase.rpc('inventory_stock_detail_read', {
+    requested_organization_id: organizationId,
+    search_term: normalizarBusquedaInventario(consulta.busqueda),
+    requested_warehouse_id: consulta.almacenId || null,
+    requested_location_id: consulta.ubicacionId || null,
+    requested_lot: normalizarBusquedaInventario(consulta.lote),
+    requested_status: consulta.estado || null,
+    expiration_from: consulta.vencimientoDesde || null,
+    expiration_to: consulta.vencimientoHasta || null,
+    requested_sort: consulta.orden,
+    requested_limit: consulta.tamanioPagina,
+    requested_offset: desde,
+  })
   if (error) throw new Error(errorAlmacen(error))
-  return crearResultadoPaginado((data ?? []).map(mapearSaldo), count, consulta)
+  const respuesta = leerRespuestaReadInventario<Record<string, unknown>>(data)
+  const elementos = respuesta.items.map((fila) => ({
+    ...mapearSaldoBucket(fila),
+    cantidadReservada: Number(fila.reserved_quantity),
+    cantidadAsignable: Number(fila.assignable_quantity),
+  }))
+  return crearResultadoPaginado(elementos, respuesta.totalCount, consulta)
 }
 
 export async function listarAlertasStock(
@@ -269,6 +260,7 @@ export async function listarKardex(
       fechaOperacion: fila.operation_date,
       fechaRegistro: fila.created_at,
       motivo: fila.reason,
+      documentoReferencia: fila.document_reference ?? undefined,
       costoUnitario: Number(fila.unit_cost),
       cantidadEntrada: Number(fila.inbound_quantity),
       cantidadSalida: Number(fila.outbound_quantity),

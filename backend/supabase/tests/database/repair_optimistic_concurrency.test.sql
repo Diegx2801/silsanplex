@@ -264,7 +264,7 @@ select results_eq(
 );
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"c1100000-0000-4000-8000-000000000001",
     "product_id":"c1500000-0000-4000-8000-000000000001",
     "warehouse_id":"c1600000-0000-4000-8000-000000000001",

@@ -172,7 +172,7 @@ select set_config('request.jwt.claim.sub', '92000000-0000-4000-8000-000000000001
 
 select lives_ok(
   $$select public.record_inventory_movement(
-    '{"organization_id":"91000000-0000-4000-8000-000000000001","product_id":"93000000-0000-4000-8000-000000000001","warehouse_id":"94000000-0000-4000-8000-000000000001","location_id":"95000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":"5","unit_cost":"10","stock_status":"available","operation_date":"2026-09-07","reason":"Stock de prueba"}'::jsonb
+    '{"document_reference":"TEST-FIXTURE","organization_id":"91000000-0000-4000-8000-000000000001","product_id":"93000000-0000-4000-8000-000000000001","warehouse_id":"94000000-0000-4000-8000-000000000001","location_id":"95000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":"5","unit_cost":"10","stock_status":"available","operation_date":"2026-09-07","reason":"Stock de prueba"}'::jsonb
   )$$,
   'prepara stock mediante el contrato autoritativo'
 );
@@ -192,7 +192,7 @@ select throws_ok(
 );
 select lives_ok(
   $$select public.record_inventory_movement(
-    '{"organization_id":"91000000-0000-4000-8000-000000000001","product_id":"93000000-0000-4000-8000-000000000001","warehouse_id":"94000000-0000-4000-8000-000000000001","location_id":"95000000-0000-4000-8000-000000000001","movement_type":"ajuste-negativo","quantity":"5","unit_cost":"10","stock_status":"available","operation_date":"2026-09-07","reason":"Retiro de stock de prueba"}'::jsonb
+    '{"document_reference":"TEST-FIXTURE","organization_id":"91000000-0000-4000-8000-000000000001","product_id":"93000000-0000-4000-8000-000000000001","warehouse_id":"94000000-0000-4000-8000-000000000001","location_id":"95000000-0000-4000-8000-000000000001","movement_type":"ajuste-negativo","quantity":"5","unit_cost":"10","stock_status":"available","operation_date":"2026-09-07","reason":"Retiro de stock de prueba"}'::jsonb
   )$$,
   'deja el bucket sin saldo antes de desactivar'
 );

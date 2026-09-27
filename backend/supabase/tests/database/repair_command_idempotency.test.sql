@@ -253,7 +253,7 @@ select throws_ok($$
 $$, 'P0001', 'REPAIR_OPERATION_KEY_REUSED', 'a creation key cannot be reused with changed data');
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"d2100000-0000-4000-8000-000000000001",
     "product_id":"d2500000-0000-4000-8000-000000000001",
     "warehouse_id":"d2600000-0000-4000-8000-000000000001",

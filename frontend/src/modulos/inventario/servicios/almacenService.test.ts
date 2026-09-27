@@ -37,15 +37,21 @@ describe('listados paginados de almacén', () => {
   })
 
   it('pagina stock detallado con filtros persistentes', async () => {
-    const query = crearQuery()
-    await listarStockDetallado('org-1', {
+    rpc.mockResolvedValue({ data: { items: [{ physical_quantity: '10', reserved_quantity: '3', assignable_quantity: '7' }], total_count: 120 }, error: null })
+    const resultado = await listarStockDetallado('org-1', {
       ...base,
       ubicacionId: 'ubicacion-1', lote: 'L-01', estado: 'available',
       vencimientoDesde: '2026-01-01', vencimientoHasta: '2026-12-31', orden: 'vencimiento-asc',
     })
-    expect(query.eq).toHaveBeenCalledWith('location_id', 'ubicacion-1')
-    expect(query.ilike).toHaveBeenCalledWith('lot', '%L-01%')
-    expect(query.range).toHaveBeenCalledWith(50, 99)
+    expect(rpc).toHaveBeenCalledWith('inventory_stock_detail_read', {
+      requested_organization_id: 'org-1', search_term: '', requested_warehouse_id: null,
+      requested_location_id: 'ubicacion-1', requested_lot: 'L-01', requested_status: 'available',
+      expiration_from: '2026-01-01', expiration_to: '2026-12-31',
+      requested_sort: 'vencimiento-asc', requested_limit: 50, requested_offset: 50,
+    })
+    expect(resultado.total).toBe(120)
+    expect(resultado.elementos[0]).toMatchObject({ cantidad: 10, cantidadReservada: 3, cantidadAsignable: 7 })
+    expect(from).not.toHaveBeenCalled()
   })
 
   it('pagina alertas con conteo exacto', async () => {

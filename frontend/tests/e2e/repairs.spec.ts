@@ -59,6 +59,7 @@ async function fixture(page: Page) {
     .eq('organization_id', organizationId).eq('warehouse_id', warehouseId)
     .eq('code', 'GENERAL').single())
   await checked(api.rpc('record_inventory_movement', { payload: {
+    document_reference: reference,
     organization_id: organizationId, product_id: product.id, warehouse_id: warehouseId,
     location_id: location.id, movement_type: 'entrada', quantity: 2, unit_cost: 10,
     stock_status: 'available', operation_date: new Date().toISOString().slice(0, 10), reason: reference,
@@ -335,6 +336,7 @@ test('catálogos remotos permiten seleccionar después del registro 1000 y resol
   await edit.getByRole('button', { name: 'Cancelar', exact: true }).click()
 
   await checked(f.api.rpc('record_inventory_movement', { payload: {
+    document_reference: f.reference,
     organization_id: f.organizationId, product_id: catalogProductId,
     warehouse_id: f.warehouseId, location_id: f.locationId, movement_type: 'entrada',
     quantity: 2, unit_cost: 10, stock_status: 'available',

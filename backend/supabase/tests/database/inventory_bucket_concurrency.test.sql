@@ -165,7 +165,7 @@ begin
   );
 
   movement_id := public.record_inventory_movement(
-    jsonb_build_object(
+    jsonb_build_object('document_reference', 'TEST-FIXTURE',
       'organization_id', 'c1000000-0000-4000-8000-000000000001',
       'product_id', 'c3000000-0000-4000-8000-000000000001',
       'warehouse_id', 'c4000000-0000-4000-8000-000000000001',
