@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
+import { DialogoAjusteStock } from '@/modulos/inventario/componentes/DialogoAjusteStock'
 import { DialogoMovimientoInventario } from '@/modulos/inventario/componentes/DialogoMovimientoInventario'
 import { EstadoListadoInventario } from '@/modulos/inventario/componentes/EstadoListadoInventario'
 import { PaginacionInventario } from '@/modulos/inventario/componentes/PaginacionInventario'
@@ -147,6 +148,7 @@ export function InventarioPage() {
   })
   const gestionAlmacenes = useAlmacenes()
   const [dialogoAbierto, setDialogoAbierto] = useState(false)
+  const [ajusteAbierto, setAjusteAbierto] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const disparador = useRef<HTMLButtonElement | null>(null)
   const existencias = inventario.existencias?.elementos ?? []
@@ -160,6 +162,11 @@ export function InventarioPage() {
   const abrirMovimiento = (evento: ReactMouseEvent<HTMLButtonElement>) => {
     disparador.current = evento.currentTarget
     setDialogoAbierto(true)
+  }
+
+  const abrirAjusteStock = (evento: ReactMouseEvent<HTMLButtonElement>) => {
+    disparador.current = evento.currentTarget
+    setAjusteAbierto(true)
   }
 
   const guardarMovimiento = async (datos: DatosMovimientoInventario) => {
@@ -208,15 +215,29 @@ export function InventarioPage() {
             trazabilidad persistente por usuario y fecha.
           </p>
         </div>
-        {puedeGestionar ? <Button
-          type="button"
-          size="lg"
-          disabled={!gestionAlmacenes.almacenes.length}
-          onClick={abrirMovimiento}
-        >
-          <Plus aria-hidden="true" />
-          Registrar movimiento
-        </Button> : null}
+        {puedeGestionar ? (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              disabled={!gestionAlmacenes.almacenes.filter((almacen) => almacen.activo).length}
+              onClick={abrirAjusteStock}
+            >
+              <ArrowUpFromLine aria-hidden="true" />
+              Ajustar stock
+            </Button>
+            <Button
+              type="button"
+              size="lg"
+              disabled={!gestionAlmacenes.almacenes.filter((almacen) => almacen.activo).length}
+              onClick={abrirMovimiento}
+            >
+              <Plus aria-hidden="true" />
+              Registrar movimiento
+            </Button>
+          </div>
+        ) : null}
       </header>
 
       <section aria-label="Resumen de inventario" className="ledger-sheet">
@@ -557,6 +578,17 @@ export function InventarioPage() {
           almacenes={gestionAlmacenes.almacenes.filter((almacen) => almacen.activo)}
           ubicaciones={gestionAlmacenes.ubicaciones}
           alCambiarApertura={setDialogoAbierto}
+          alGuardar={guardarMovimiento}
+          alRestaurarFoco={() => disparador.current?.focus()}
+        />
+      ) : null}
+      {ajusteAbierto && puedeGestionar ? (
+        <DialogoAjusteStock
+          abierto={ajusteAbierto}
+          organizationId={organizationId}
+          almacenes={gestionAlmacenes.almacenes.filter((almacen) => almacen.activo)}
+          ubicaciones={gestionAlmacenes.ubicaciones}
+          alCambiarApertura={setAjusteAbierto}
           alGuardar={guardarMovimiento}
           alRestaurarFoco={() => disparador.current?.focus()}
         />

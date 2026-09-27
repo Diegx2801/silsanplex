@@ -48,6 +48,23 @@ describe('SelectorProductoInventario', () => {
     expect(screen.getByText('1 opciones encontradas de 72')).toBeVisible()
   })
 
+  it('puede exigir una selección explícita sin escoger el primer producto', async () => {
+    const onValueChange = vi.fn()
+    render(
+      <SelectorProductoInventario
+        id="producto"
+        name="productoId"
+        etiqueta="Producto"
+        organizationId="org-1"
+        autoSeleccionarPrimeraOpcion={false}
+        onValueChange={onValueChange}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Producto' })).toHaveValue(''))
+    expect(onValueChange).not.toHaveBeenCalled()
+  })
+
   it('envía la búsqueda al hook y comunica cambios de selección', () => {
     const opcionDos = { ...opcionUno, id: 'producto-2', codigo: 'SKU-002' }
     useOpcionesProductoInventario.mockReturnValue({

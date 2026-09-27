@@ -54,6 +54,7 @@ describe('InventarioPage paginada', () => {
 
   it('reinicia Existencias a página 1 al cambiar búsqueda, filtro y tamaño', () => {
     render(<InventarioPage />)
+    expect(screen.queryByRole('button', { name: 'Ajustar stock' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Página siguiente de existencias' }))
     expect(mocks.useInventario.mock.calls.at(-1)?.[0].existencias.pagina).toBe(2)
 

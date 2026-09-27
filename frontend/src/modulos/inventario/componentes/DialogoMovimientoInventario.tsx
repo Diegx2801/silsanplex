@@ -125,7 +125,7 @@ export function DialogoMovimientoInventario({
               </DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">
                 La existencia se actualizará desde este movimiento y quedará en
-                el historial de la sesión.
+                el Kardex persistente.
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close asChild>

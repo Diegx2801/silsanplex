@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ConsultaExistenciasInventario } from '@/modulos/inventario/modelo/inventario'
-import { listarExistenciasInventario, listarMovimientosInventario } from './inventarioService'
+import {
+  listarBucketsAjusteStock,
+  listarExistenciasInventario,
+  listarMovimientosInventario,
+  registrarMovimientoInventario,
+} from './inventarioService'
 
 const { from, rpc } = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
 
@@ -21,6 +26,18 @@ function crearQuery(respuesta: RespuestaSupabase) {
     query[metodo] = vi.fn(() => query)
   }
   query.range = vi.fn(() => Promise.resolve(respuesta))
+  from.mockReturnValue(query)
+  return query
+}
+
+function crearQueryVista(respuesta: RespuestaSupabase) {
+  const query: Record<string, ReturnType<typeof vi.fn>> = {}
+  for (const metodo of ['select', 'eq', 'gt']) query[metodo] = vi.fn(() => query)
+  query.order = vi.fn()
+    .mockReturnValueOnce(query)
+    .mockReturnValueOnce(query)
+    .mockReturnValueOnce(query)
+    .mockResolvedValueOnce(respuesta)
   from.mockReturnValue(query)
   return query
 }
@@ -207,5 +224,108 @@ describe('listarMovimientosInventario', () => {
     expect(query.order).toHaveBeenNthCalledWith(1, 'operation_date', { ascending: false })
     expect(query.range).toHaveBeenCalledWith(300, 399)
     expect(resultado.total).toBe(1_250)
+  })
+})
+
+describe('listarBucketsAjusteStock', () => {
+  beforeEach(() => from.mockReset())
+
+  it('consulta el bucket exacto sin aplicar FEFO ni mezclar ubicaciones', async () => {
+    const query = crearQueryVista({
+      data: [{
+        product_id: 'producto-1',
+        product_code: 'SKU-001',
+        product_description: 'Producto uno',
+        unit_of_measure: 'UND',
+        warehouse_id: 'almacen-1',
+        warehouse_code: 'CENTRAL',
+        warehouse_name: 'Almacén central',
+        location_id: 'ubicacion-1',
+        location_code: 'A-01',
+        location_name: 'Anaquel A',
+        stock_status: 'available',
+        lot: 'LOTE-1',
+        expiration_date: '2027-12-31',
+        physical_quantity: 8,
+        reserved_quantity: 3,
+        average_cost: 12.5,
+      }],
+      error: null,
+      count: null,
+    })
+
+    const resultado = await listarBucketsAjusteStock('org-1', 'producto-1', 'almacen-1')
+
+    expect(query.eq).toHaveBeenCalledWith('organization_id', 'org-1')
+    expect(query.eq).toHaveBeenCalledWith('product_id', 'producto-1')
+    expect(query.eq).toHaveBeenCalledWith('warehouse_id', 'almacen-1')
+    expect(query.gt).toHaveBeenCalledWith('physical_quantity', 0)
+    expect(resultado).toEqual([expect.objectContaining({
+      productoId: 'producto-1',
+      ubicacionId: 'ubicacion-1',
+      lote: 'LOTE-1',
+      fechaVencimiento: '2027-12-31',
+      cantidadFisica: 8,
+      cantidadReservada: 3,
+      costoPromedio: 12.5,
+    })])
+  })
+
+  it('traduce errores de lectura sin inventar buckets', async () => {
+    crearQueryVista({ data: null, error: { code: '42501', message: 'forbidden' }, count: null })
+    await expect(listarBucketsAjusteStock('org-1', 'producto-1', 'almacen-1')).rejects.toThrow(
+      'No se pudo consultar el stock por bucket',
+    )
+  })
+})
+
+describe('registrarMovimientoInventario', () => {
+  beforeEach(() => rpc.mockReset())
+
+  it('envía los ajustes negativos a la RPC canónica sin FEFO', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await registrarMovimientoInventario('org-1', {
+      productoId: 'producto-1',
+      tipo: 'ajuste-negativo',
+      cantidad: '2',
+      almacen: 'Almacén central',
+      almacenId: 'almacen-1',
+      ubicacionId: 'ubicacion-1',
+      estadoStock: 'available',
+      costoUnitario: '12.5000',
+      lote: 'LOTE-1',
+      fechaVencimiento: '2027-12-31',
+      fechaOperacion: '2026-09-27',
+      motivo: 'Ajuste manual [damaged] Producto deteriorado — Envase roto',
+    })
+
+    expect(rpc).toHaveBeenCalledWith('record_inventory_movement', {
+      payload: expect.objectContaining({
+        movement_type: 'ajuste-negativo',
+        quantity: '2',
+        warehouse_id: 'almacen-1',
+        location_id: 'ubicacion-1',
+        lot: 'LOTE-1',
+        expiration_date: '2027-12-31',
+      }),
+    })
+  })
+
+  it('traduce errores de bucket y ubicación para la interfaz', async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message: 'INVENTORY_LOCATION_UNAVAILABLE' } })
+    await expect(registrarMovimientoInventario('org-1', {
+      productoId: 'producto-1',
+      tipo: 'ajuste-negativo',
+      cantidad: '1',
+      almacen: 'Almacén central',
+      almacenId: 'almacen-1',
+      ubicacionId: 'ubicacion-1',
+      estadoStock: 'available',
+      costoUnitario: '12.5000',
+      lote: '',
+      fechaVencimiento: '',
+      fechaOperacion: '2026-09-27',
+      motivo: 'Ajuste manual [lost] Pérdida',
+    })).rejects.toThrow('La ubicación seleccionada ya no está activa')
   })
 })
