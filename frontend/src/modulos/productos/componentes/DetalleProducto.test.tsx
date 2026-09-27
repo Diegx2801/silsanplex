@@ -24,6 +24,10 @@ vi.mock('@/modulos/productos/estado/useProductoDetalle', () => ({
   }),
 }))
 
+vi.mock('@/modulos/compras/componentes/HistorialPreciosCompra', () => ({
+  HistorialPreciosCompra: () => null,
+}))
+
 import { DetalleProducto } from './DetalleProducto'
 import { DialogoProducto } from './DialogoProducto'
 import { GestorImagenesProducto } from './GestorImagenesProducto'
