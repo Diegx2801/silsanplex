@@ -10,6 +10,7 @@ interface Props {
   etiqueta: string
   organizationId: string
   deshabilitado?: boolean
+  autoSeleccionarPrimeraOpcion?: boolean
   value?: string
   selectedOption?: ProductoInventarioOpcion | null
   onValueChange?: (value: string, option?: ProductoInventarioOpcion) => void
@@ -21,6 +22,7 @@ export function SelectorProductoInventario({
   etiqueta,
   organizationId,
   deshabilitado = false,
+  autoSeleccionarPrimeraOpcion = true,
   value,
   selectedOption = null,
   onValueChange,
@@ -39,13 +41,13 @@ export function SelectorProductoInventario({
   const sinOpciones = opciones.length === 0
 
   useEffect(() => {
-    if (opciones.length === 0) return
+    if (opciones.length === 0 || !autoSeleccionarPrimeraOpcion) return
     if (!opciones.some((opcion) => opcion.id === seleccion)) {
       const siguiente = opciones[0]
       if (value === undefined) setSeleccionInterna(siguiente.id)
       onValueChange?.(siguiente.id, siguiente)
     }
-  }, [onValueChange, opciones, seleccion, value])
+  }, [autoSeleccionarPrimeraOpcion, onValueChange, opciones, seleccion, value])
 
   const cambiarSeleccion = (nextValue: string) => {
     if (value === undefined) setSeleccionInterna(nextValue)
@@ -80,6 +82,9 @@ export function SelectorProductoInventario({
         disabled={deshabilitado || sinOpciones}
       >
         {sinOpciones ? <option value="">{opcionesQuery.isLoading ? 'Consultando productos...' : 'No hay productos disponibles'}</option> : null}
+        {!sinOpciones && !seleccion && !autoSeleccionarPrimeraOpcion ? (
+          <option value="">Selecciona un producto</option>
+        ) : null}
         {opciones.map((opcion) => (
           <option key={opcion.id} value={opcion.id}>
             {opcion.codigo} · {opcion.descripcion}

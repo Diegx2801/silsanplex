@@ -138,8 +138,8 @@ export function DialogoMovimientoInventario({
                 Registrar movimiento
               </DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">
-                La existencia se actualizará desde este movimiento. El documento,
-                motivo y usuario quedarán registrados en el historial.
+                La existencia se actualizará desde este movimiento y el documento,
+                motivo y usuario quedarán registrados en el Kardex persistente.
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close asChild>

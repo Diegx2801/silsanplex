@@ -142,7 +142,7 @@ values (
 
 create schema inventory_concurrency_test;
 
-create function inventory_concurrency_test.record_outbound_and_wait(
+create function inventory_concurrency_test.record_adjustment_and_wait(
   requested_gate_key bigint
 )
 returns uuid
@@ -170,13 +170,13 @@ begin
       'product_id', 'c3000000-0000-4000-8000-000000000001',
       'warehouse_id', 'c4000000-0000-4000-8000-000000000001',
       'location_id', 'c5000000-0000-4000-8000-000000000001',
-      'movement_type', 'salida',
+      'movement_type', 'ajuste-negativo',
       'quantity', 1,
       'stock_status', 'available',
       'lot', 'LOTE-CONC',
       'expiration_date', '2030-01-31',
       'operation_date', current_date,
-      'reason', 'Primera salida concurrente'
+      'reason', 'Primer ajuste negativo concurrente'
     )
   );
 
@@ -185,7 +185,7 @@ begin
 end;
 $$;
 
-create function inventory_concurrency_test.direct_outbound()
+create function inventory_concurrency_test.direct_adjustment()
 returns uuid
 language plpgsql
 security definer
@@ -206,7 +206,7 @@ begin
     'CONC-001',
     'Producto para concurrencia',
     'UND',
-    'salida',
+    'ajuste-negativo',
     1,
     'Almacen concurrencia',
     'c4000000-0000-4000-8000-000000000001',
@@ -216,7 +216,7 @@ begin
     'LOTE-CONC',
     '2030-01-31',
     current_date,
-    'Segunda salida concurrente',
+    'Segundo ajuste negativo concurrente',
     'manual',
     'c2000000-0000-4000-8000-000000000001'
   )
@@ -265,10 +265,10 @@ select pg_catalog.pg_advisory_lock(907270100000000001);
 select is(
   extensions.dblink_send_query(
     'inventory_worker_a',
-    'select inventory_concurrency_test.record_outbound_and_wait(907270100000000001)'
+    'select inventory_concurrency_test.record_adjustment_and_wait(907270100000000001)'
   ),
   1,
-  'la primera salida se inicia de forma asincrona'
+  'el primer ajuste negativo se inicia de forma asincrona'
 );
 
 do $$
@@ -302,16 +302,16 @@ select ok(
       and lock.locktype = 'advisory'
       and not lock.granted
   ),
-  'la primera salida conserva el lock del bucket antes de confirmar'
+  'el primer ajuste negativo conserva el lock del bucket antes de confirmar'
 );
 
 select is(
   extensions.dblink_send_query(
     'inventory_worker_b',
-    'select inventory_concurrency_test.direct_outbound()'
+    'select inventory_concurrency_test.direct_adjustment()'
   ),
   1,
-  'la segunda salida se inicia mientras la primera sigue abierta'
+  'el segundo ajuste negativo se inicia mientras el primero sigue abierto'
 );
 
 do $$
@@ -345,7 +345,7 @@ select ok(
       and lock.locktype = 'advisory'
       and not lock.granted
   ),
-  'la segunda salida espera el mismo lock canonico del bucket'
+  'el segundo ajuste negativo espera el mismo lock canonico del bucket'
 );
 
 select ok(
@@ -360,7 +360,7 @@ from extensions.dblink_get_result('inventory_worker_a')
 
 select ok(
   (select movement_id from inventory_concurrency_results where worker_name = 'a') is not null,
-  'la primera salida confirma correctamente'
+  'el primer ajuste negativo confirma correctamente'
 );
 
 insert into inventory_concurrency_results
@@ -370,7 +370,7 @@ from extensions.dblink_get_result('inventory_worker_b', false)
 
 select ok(
   extensions.dblink_error_message('inventory_worker_b') like '%INVENTORY_INSUFFICIENT_STOCK%',
-  'la segunda salida relee el saldo confirmado y falla por stock insuficiente'
+  'el segundo ajuste negativo relee el saldo confirmado y falla por stock insuficiente'
 );
 
 select is(
@@ -392,10 +392,10 @@ select is(
     select count(*)
     from public.inventory_movements movement
     where movement.organization_id = 'c1000000-0000-4000-8000-000000000001'
-      and movement.movement_type = 'salida'
+      and movement.movement_type = 'ajuste-negativo'
   ),
   1::bigint,
-  'solo una de las dos salidas concurrentes queda persistida'
+  'solo uno de los dos ajustes negativos concurrentes queda persistido'
 );
 
 select extensions.dblink_disconnect('inventory_worker_a');

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type {
+  BucketAjusteStock,
   CandidatoFefo,
   ConsultaExistenciasInventario,
   ConsultaMovimientosInventario,
@@ -8,6 +9,7 @@ import type {
   MovimientoInventario,
   ResumenExistenciasInventario,
 } from '@/modulos/inventario/modelo/inventario'
+import type { EstadoStock } from '@/modulos/inventario/modelo/almacen'
 import {
   crearResultadoPaginado,
   normalizarBusquedaInventario,
@@ -94,6 +96,9 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (error.message?.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no generan stock ni movimientos de inventario'
   if (error.message?.includes('INVENTORY_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock disponible'
   if (error.message?.includes('INVENTORY_RESERVED_STOCK')) return 'La cantidad afectaría unidades reservadas por otro proceso'
+  if (error.message?.includes('INVENTORY_WAREHOUSE_UNAVAILABLE')) return 'El almacén seleccionado ya no está activo o disponible'
+  if (error.message?.includes('INVENTORY_LOCATION_UNAVAILABLE')) return 'La ubicación seleccionada ya no está activa o no pertenece al almacén'
+  if (error.message?.includes('INVENTORY_BUCKET_UNAVAILABLE')) return 'El bucket seleccionado ya no está disponible'
   if (error.message?.includes('INVENTORY_FEFO_VIOLATION')) return 'Debes utilizar primero el lote con vencimiento más próximo'
   if (error.message?.includes('INVENTORY_EXPIRED_STOCK')) return 'El lote seleccionado está vencido y no puede despacharse'
   if (error.message?.includes('INVENTORY_MAXIMUM_STOCK_EXCEEDED')) return 'La entrada superaría el stock máximo configurado para el producto'
@@ -233,6 +238,64 @@ export async function listarCandidatosFefo(
     costoPromedio: Number(fila.average_cost),
     ordenFefo: Number(fila.fefo_rank),
   })) as CandidatoFefo[]
+}
+
+interface BucketAjusteStockFila {
+  product_id: string
+  product_code: string
+  product_description: string
+  unit_of_measure: string | null
+  warehouse_id: string
+  warehouse_code: string
+  warehouse_name: string
+  location_id: string
+  location_code: string
+  location_name: string
+  stock_status: EstadoStock
+  lot: string | null
+  expiration_date: string | null
+  physical_quantity: number
+  reserved_quantity: number
+  average_cost: number
+}
+
+export async function listarBucketsAjusteStock(
+  organizationId: string,
+  productId: string,
+  warehouseId: string,
+) {
+  const { data, error } = await supabase
+    .from('inventory_bucket_availability')
+    .select('product_id,product_code,product_description,unit_of_measure,warehouse_id,warehouse_code,warehouse_name,location_id,location_code,location_name,stock_status,lot,expiration_date,physical_quantity,reserved_quantity,average_cost')
+    .eq('organization_id', organizationId)
+    .eq('product_id', productId)
+    .eq('warehouse_id', warehouseId)
+    .gt('physical_quantity', 0)
+    .order('location_code')
+    .order('stock_status')
+    .order('normalized_lot')
+    .order('expiration_date')
+
+  if (error) throw new Error('No se pudo consultar el stock por bucket')
+
+  return ((data ?? []) as BucketAjusteStockFila[]).map((fila): BucketAjusteStock => ({
+    productoId: fila.product_id,
+    productoCodigo: fila.product_code,
+    productoDescripcion: fila.product_description,
+    unidadMedida: fila.unit_of_measure ?? '',
+    almacenId: fila.warehouse_id,
+    almacenCodigo: fila.warehouse_code,
+    almacenNombre: fila.warehouse_name,
+    ubicacionId: fila.location_id,
+    ubicacionCodigo: fila.location_code,
+    ubicacionNombre: fila.location_name,
+    estadoStock: fila.stock_status,
+    lote: fila.lot ?? '',
+    fechaVencimiento: fila.expiration_date ?? '',
+    cantidadFisica: Number(fila.physical_quantity),
+    cantidadReservada: Number(fila.reserved_quantity),
+    costoPromedio: Number(fila.average_cost),
+  }))
 }
 
 export async function registrarMovimientoInventario(organizationId: string, datos: DatosMovimientoInventario) {

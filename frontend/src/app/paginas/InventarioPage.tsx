@@ -1,7 +1,12 @@
-import { Boxes, PackageCheck, PackageX, Search } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowUpFromLine, Boxes, PackageCheck, PackageX, Plus, Search } from 'lucide-react'
+import { type MouseEvent as ReactMouseEvent, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 
+import { Button } from '@/components/ui/button'
+import { PERMISSIONS } from '@/features/auth/permissions'
+import { useAuth } from '@/features/auth/useAuth'
+import { DialogoAjusteStock } from '@/modulos/inventario/componentes/DialogoAjusteStock'
+import { DialogoMovimientoInventario } from '@/modulos/inventario/componentes/DialogoMovimientoInventario'
 import { EstadoListadoInventario } from '@/modulos/inventario/componentes/EstadoListadoInventario'
 import { PaginacionInventario } from '@/modulos/inventario/componentes/PaginacionInventario'
 import { PanelExistenciasLotes } from '@/modulos/inventario/componentes/PanelExistenciasLotes'
@@ -9,7 +14,7 @@ import { VistasInventario } from '@/modulos/inventario/componentes/VistasInventa
 import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import { useDebounceInventario } from '@/modulos/inventario/estado/useDebounceInventario'
 import { useInventario } from '@/modulos/inventario/estado/useInventario'
-import type { ExistenciaInventario, FiltroStockInventario, OrdenExistenciasInventario } from '@/modulos/inventario/modelo/inventario'
+import type { DatosMovimientoInventario, ExistenciaInventario, FiltroStockInventario, OrdenExistenciasInventario } from '@/modulos/inventario/modelo/inventario'
 import type { TamanioPaginaInventario } from '@/modulos/inventario/modelo/paginacionInventario'
 
 const formatoCantidad = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 3 })
@@ -28,15 +33,70 @@ function EstadoStock({ existencia }: { existencia: ExistenciaInventario }) {
 export function InventarioPage() {
   const [parametros] = useSearchParams()
   const vista = parametros.get('vista') === 'lotes' ? 'lotes' : 'productos'
+  const { access, hasPermission } = useAuth()
+  const organizationId = access?.organizationId ?? ''
+  const puedeGestionar = hasPermission(PERMISSIONS.INVENTORY_MANAGE)
+  const gestionAlmacenes = useAlmacenes()
+  const almacenesActivos = gestionAlmacenes.almacenes.filter((almacen) => almacen.activo)
+  const registro = useInventario({})
+  const [dialogoAbierto, setDialogoAbierto] = useState(false)
+  const [ajusteAbierto, setAjusteAbierto] = useState(false)
+  const [mensaje, setMensaje] = useState('')
+  const disparador = useRef<HTMLButtonElement | null>(null)
+
+  const abrirMovimiento = (evento: ReactMouseEvent<HTMLButtonElement>) => {
+    disparador.current = evento.currentTarget
+    setMensaje('')
+    setDialogoAbierto(true)
+  }
+
+  const abrirAjusteStock = (evento: ReactMouseEvent<HTMLButtonElement>) => {
+    disparador.current = evento.currentTarget
+    setMensaje('')
+    setAjusteAbierto(true)
+  }
+
+  const guardarMovimiento = async (datos: DatosMovimientoInventario) => {
+    const error = await registro.registrarMovimiento(datos)
+    if (!error) setMensaje('Movimiento registrado y existencia actualizada.')
+    return error
+  }
+
   return (
     <div className="space-y-8">
-      <header className="border-b pb-7">
-        <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">Inventario</span>
-        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Existencias y lotes</h1>
-        <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
-          Consulta el stock físico, las reservas y la cantidad disponible por producto, almacén y lote.
-        </p>
+      <header className="flex flex-col gap-5 border-b pb-7 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">Inventario</span>
+          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Existencias y lotes</h1>
+          <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
+            Consulta el stock físico, las reservas y la cantidad disponible por producto, almacén y lote.
+          </p>
+        </div>
+        {puedeGestionar ? (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              disabled={!organizationId || !almacenesActivos.length}
+              onClick={abrirAjusteStock}
+            >
+              <ArrowUpFromLine aria-hidden="true" />
+              Ajustar stock
+            </Button>
+            <Button
+              type="button"
+              size="lg"
+              disabled={!organizationId || !almacenesActivos.length}
+              onClick={abrirMovimiento}
+            >
+              <Plus aria-hidden="true" />
+              Registrar movimiento
+            </Button>
+          </div>
+        ) : null}
       </header>
+      <p role="status" aria-live="polite" className="sr-only">{mensaje}</p>
       <VistasInventario etiqueta="Vistas de existencias" vista={vista} opciones={[
         { valor: 'productos', etiqueta: 'Por producto' },
         { valor: 'lotes', etiqueta: 'Por almacén y lote' },
@@ -44,13 +104,36 @@ export function InventarioPage() {
       <p className="text-sm leading-6 text-muted-foreground">
         El stock físico incluye todas las condiciones. El disponible excluye las reservas y los bienes en cuarentena, dañados o vencidos.
       </p>
-      {vista === 'productos' ? <ExistenciasPorProducto /> : <ExistenciasPorLote />}
+      {vista === 'productos'
+        ? <ExistenciasPorProducto />
+        : <ExistenciasPorLote gestion={gestionAlmacenes} />}
+      {dialogoAbierto && puedeGestionar && almacenesActivos.length ? (
+        <DialogoMovimientoInventario
+          abierto={dialogoAbierto}
+          organizationId={organizationId}
+          almacenes={almacenesActivos}
+          ubicaciones={gestionAlmacenes.ubicaciones}
+          alCambiarApertura={setDialogoAbierto}
+          alGuardar={guardarMovimiento}
+          alRestaurarFoco={() => disparador.current?.focus()}
+        />
+      ) : null}
+      {ajusteAbierto && puedeGestionar && almacenesActivos.length ? (
+        <DialogoAjusteStock
+          abierto={ajusteAbierto}
+          organizationId={organizationId}
+          almacenes={almacenesActivos}
+          ubicaciones={gestionAlmacenes.ubicaciones}
+          alCambiarApertura={setAjusteAbierto}
+          alGuardar={guardarMovimiento}
+          alRestaurarFoco={() => disparador.current?.focus()}
+        />
+      ) : null}
     </div>
   )
 }
 
-function ExistenciasPorLote() {
-  const gestion = useAlmacenes()
+function ExistenciasPorLote({ gestion }: { gestion: ReturnType<typeof useAlmacenes> }) {
   return (
     <EstadoListadoInventario cargando={gestion.cargando} error={gestion.error} vacio={false}
       mensajeVacio="" alReintentar={() => void gestion.reintentar()}>
@@ -71,6 +154,7 @@ function ExistenciasPorProducto() {
   })
   const existencias = inventario.existencias?.elementos ?? []
   const resumen = inventario.resumenExistencias
+
   const metricas = [
     { etiqueta: 'Productos con stock', valor: resumen?.productosConStock, icono: PackageCheck },
     { etiqueta: 'Productos controlados', valor: resumen?.productos, icono: Boxes },
@@ -276,7 +360,6 @@ function ExistenciasPorProducto() {
           />
         ) : null}
       </section>
-
 
     </>
   )
