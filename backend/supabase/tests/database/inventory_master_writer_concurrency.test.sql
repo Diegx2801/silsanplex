@@ -3,7 +3,7 @@ insert into d1b1_extension_state
 select exists (select 1 from pg_catalog.pg_extension where extname = 'dblink');
 create extension if not exists dblink with schema extensions;
 
-select plan(53);
+select plan(54);
 
 begin;
 drop schema if exists d1b1_concurrency_test cascade;
@@ -171,6 +171,7 @@ begin
     'warehouse', 'D1 master primero',
     'movement_type', 'entrada', 'quantity', 1, 'unit_cost', 10,
     'stock_status', 'available', 'operation_date', current_date,
+    'document_reference', 'D1B1-FALLBACK-TEST',
     'reason', 'Fallback legacy D1B1'
   ));
   return 'ok';
@@ -199,6 +200,11 @@ commit;
 select has_function('inventory_internal', 'lock_inventory_master_scope', array['uuid','uuid','uuid'], 'existe helper interno de master lock');
 select is(has_function_privilege('authenticated', 'inventory_internal.lock_inventory_master_scope(uuid,uuid,uuid)', 'EXECUTE'), false, 'authenticated no ejecuta el helper interno');
 select ok(pg_get_functiondef('public.lock_inventory_fefo_scope(uuid,uuid,uuid)'::regprocedure) like '%lock_inventory_master_scope%', 'FEFO adquiere master antes de su scope');
+select ok(
+  pg_get_functiondef('public.record_inventory_movement(jsonb)'::regprocedure) like '%record_inventory_movement_d1b1_core%'
+  and pg_get_functiondef('public.record_inventory_movement(jsonb)'::regprocedure) like '%lock_inventory_master_scope%',
+  'la RPC publica de movimientos conserva el wrapper D1B1'
+);
 
 select extensions.dblink_connect('d1b1_writer', 'host=supabase_db_backend port=5432 dbname=postgres user=postgres password=postgres');
 select extensions.dblink_connect('d1b1_lifecycle', 'host=supabase_db_backend port=5432 dbname=postgres user=postgres password=postgres');
