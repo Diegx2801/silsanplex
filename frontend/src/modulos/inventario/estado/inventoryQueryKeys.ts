@@ -5,6 +5,8 @@ export const inventoryQueryKeys = {
     ['warehouse-management', organizationId] as const,
   listings: (organizationId: string) =>
     [...inventoryQueryKeys.warehouseManagement(organizationId), 'listados'] as const,
+  stockPolicy: (organizationId: string, productId: string, warehouseId: string) =>
+    [...inventoryQueryKeys.warehouseManagement(organizationId), 'politica-stock', productId, warehouseId] as const,
   kardexRoot: (organizationId: string) =>
     [...inventoryQueryKeys.listings(organizationId), 'kardex'] as const,
   kardex: (organizationId: string, filters: ConsultaKardex) =>

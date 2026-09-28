@@ -7,6 +7,7 @@ import type {
   ConsultaStockDetallado,
   ConsultaTransferencias,
   ConsultaVencimientos,
+  ConfiguracionAlertasStock,
   DatosAlmacen,
   DatosReclasificacion,
   DatosTransferencia,
@@ -430,6 +431,29 @@ export async function cambiarEstadoUbicacion(
     is_active: !ubicacion.activa,
   } })
   if (error) throw new Error(errorAlmacen(error))
+}
+
+export async function obtenerConfiguracionAlertasStock(
+  organizationId: string,
+  productId: string,
+  warehouseId: string,
+): Promise<ConfiguracionAlertasStock | null> {
+  const { data, error } = await supabase
+    .from('product_warehouse_settings')
+    .select('default_location_id,minimum_stock,expiration_alert_days')
+    .eq('organization_id', organizationId)
+    .eq('product_id', productId)
+    .eq('warehouse_id', warehouseId)
+    .maybeSingle()
+
+  if (error) throw new Error(errorAlmacen(error))
+  if (!data) return null
+
+  return {
+    ubicacionId: data.default_location_id,
+    stockMinimo: Number(data.minimum_stock),
+    diasVencimiento: Number(data.expiration_alert_days),
+  }
 }
 
 export async function configurarAlertas(organizationId: string, userId: string, datos: {

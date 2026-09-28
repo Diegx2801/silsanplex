@@ -1,4 +1,5 @@
 import { AlertTriangle, Boxes, ShieldAlert } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { SelectorProductoInventario } from './SelectorProductoInventario'
@@ -12,9 +13,14 @@ import { PaginacionInventario } from './PaginacionInventario'
 import { useDebounceInventario } from '../estado/useDebounceInventario'
 import { useListadosAlmacen } from '../estado/useListadosAlmacen'
 import type { TamanioPaginaInventario } from '../modelo/paginacionInventario'
+import type { ProductoInventarioOpcion } from '../modelo/productoInventarioRead'
+import { obtenerConfiguracionAlertasStock } from '../servicios/almacenService'
+import { inventoryQueryKeys } from '../estado/inventoryQueryKeys'
 
 import {
+  esquemaConfiguracionAlertasStock,
   esquemaReclasificacion,
+  etiquetasEstadoStock,
   type Almacen,
   type UbicacionAlmacen,
   type DatosReclasificacion,
@@ -47,10 +53,16 @@ export function PanelControlStock(props: Props) {
   const [reclasificacionAlmacenId, setReclasificacionAlmacenId] = useState(
     almacenesActivos[0]?.id ?? '',
   )
+  const [productoReclasificar, setProductoReclasificar] =
+    useState<ProductoInventarioOpcion | null>(null)
   const [politicaAlmacenId, setPoliticaAlmacenId] = useState(
     almacenesActivos[0]?.id ?? '',
   )
-  const { mensaje, guardando, resolver, ejecutar } =
+  const [politicaProductoId, setPoliticaProductoId] = useState('')
+  const [politicaUbicacionId, setPoliticaUbicacionId] = useState('')
+  const [stockMinimo, setStockMinimo] = useState('0')
+  const [diasVencimiento, setDiasVencimiento] = useState('30')
+  const { mensaje, guardando, resolver } =
     useResultadoOperacionAlmacen()
   const [alertasConsulta, setAlertasConsulta] = useState({
     pagina: 1,
@@ -78,8 +90,53 @@ export function PanelControlStock(props: Props) {
     alertas: { ...alertasConsulta, busqueda: alertasBusqueda },
     vencimientos: { ...vencimientosConsulta, busqueda: vencimientosBusqueda },
   })
+  const politicaQuery = useQuery({
+    queryKey: inventoryQueryKeys.stockPolicy(
+      organizationId,
+      politicaProductoId,
+      politicaAlmacenId,
+    ),
+    queryFn: () => obtenerConfiguracionAlertasStock(
+      organizationId,
+      politicaProductoId,
+      politicaAlmacenId,
+    ),
+    enabled: Boolean(organizationId && politicaProductoId && politicaAlmacenId),
+  })
+  const ubicacionesPolitica = useMemo(
+    () => ubicaciones.filter(
+      (ubicacion) => ubicacion.almacenId === politicaAlmacenId && ubicacion.activa,
+    ),
+    [politicaAlmacenId, ubicaciones],
+  )
   const alertas = listados.alertas.data?.elementos ?? []
   const vencimientos = listados.vencimientos.data?.elementos ?? []
+  useEffect(() => {
+    if (
+      !politicaProductoId ||
+      !politicaAlmacenId ||
+      !politicaQuery.isSuccess ||
+      politicaQuery.isFetching
+    ) return
+
+    const configuracion = politicaQuery.data
+    const ubicacionGuardada = configuracion?.ubicacionId
+    const ubicacionActiva = ubicacionesPolitica.some(
+      (ubicacion) => ubicacion.id === ubicacionGuardada,
+    )
+    setPoliticaUbicacionId(
+      ubicacionActiva ? ubicacionGuardada! : ubicacionesPolitica[0]?.id ?? '',
+    )
+    setStockMinimo(String(configuracion?.stockMinimo ?? 0))
+    setDiasVencimiento(String(configuracion?.diasVencimiento ?? 30))
+  }, [
+    politicaAlmacenId,
+    politicaProductoId,
+    politicaQuery.data,
+    politicaQuery.isFetching,
+    politicaQuery.isSuccess,
+    ubicacionesPolitica,
+  ])
   useEffect(() => {
     if (
       !almacenesActivos.some(
@@ -105,7 +162,22 @@ export function PanelControlStock(props: Props) {
       motivo: valor(datos, 'motivo'),
     }
     void resolver(
-      esquemaReclasificacion.safeParse(entrada),
+      esquemaReclasificacion.superRefine((datos, contexto) => {
+        if (productoReclasificar?.controlLote && !datos.lote) {
+          contexto.addIssue({
+            code: 'custom',
+            path: ['lote'],
+            message: 'Este producto requiere identificar el lote a reclasificar',
+          })
+        }
+        if (productoReclasificar?.controlVencimiento && !datos.fechaVencimiento) {
+          contexto.addIssue({
+            code: 'custom',
+            path: ['fechaVencimiento'],
+            message: 'Este producto requiere identificar el vencimiento del lote',
+          })
+        }
+      }).safeParse(entrada),
       props.reclasificar,
       'Stock reclasificado correctamente.',
     )
@@ -114,15 +186,22 @@ export function PanelControlStock(props: Props) {
   const guardarConfiguracion = (evento: FormEvent<HTMLFormElement>) => {
     evento.preventDefault()
     const datos = new FormData(evento.currentTarget)
-    void ejecutar(
-      () =>
-        props.configurar({
-          productoId: valor(datos, 'productoId'),
-          almacenId: valor(datos, 'almacenId'),
-          ubicacionId: valor(datos, 'ubicacionId'),
-          stockMinimo: Number(valor(datos, 'stockMinimo')),
-          diasVencimiento: Number(valor(datos, 'diasVencimiento')),
-        }),
+    const entrada = {
+      productoId: valor(datos, 'productoId'),
+      almacenId: valor(datos, 'almacenId'),
+      ubicacionId: valor(datos, 'ubicacionId'),
+      stockMinimo: valor(datos, 'stockMinimo'),
+      diasVencimiento: valor(datos, 'diasVencimiento'),
+    }
+    void resolver(
+      esquemaConfiguracionAlertasStock.safeParse(entrada),
+      (configuracion) => props.configurar({
+        productoId: configuracion.productoId,
+        almacenId: configuracion.almacenId,
+        ubicacionId: configuracion.ubicacionId,
+        stockMinimo: Number(configuracion.stockMinimo),
+        diasVencimiento: Number(configuracion.diasVencimiento),
+      }),
       'Política de alertas actualizada.',
     )
   }
@@ -395,7 +474,13 @@ export function PanelControlStock(props: Props) {
                   {alerta.almacenNombre} · {alerta.lote || 'Sin lote'} ·{' '}
                   {alerta.fechaVencimiento}
                 </p>
-                <div className="mt-3">
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span
+                    className="status-label"
+                    data-tone={alerta.estado === 'available' ? 'listo' : 'revision'}
+                  >
+                    {etiquetasEstadoStock[alerta.estado]}
+                  </span>
                   <span className="status-label" data-tone="revision">
                     {alerta.estadoVencimiento === 'expired'
                       ? 'Vencido'
@@ -447,6 +532,9 @@ export function PanelControlStock(props: Props) {
                 name="productoId"
                 etiqueta="Producto"
                 organizationId={organizationId}
+                value={productoReclasificar?.id ?? ''}
+                selectedOption={productoReclasificar}
+                onValueChange={(_productoId, opcion) => setProductoReclasificar(opcion ?? null)}
               />
             </div>
             <div>
@@ -522,6 +610,10 @@ export function PanelControlStock(props: Props) {
               <input
                 id="reclasificar-cantidad"
                 name="cantidad"
+                type="number"
+                min="0.001"
+                step="0.001"
+                inputMode="decimal"
                 required
                 className="field-control"
               />
@@ -534,7 +626,12 @@ export function PanelControlStock(props: Props) {
                 id="reclasificar-lote"
                 name="lote"
                 className="field-control"
+                required={productoReclasificar?.controlLote}
+                placeholder={productoReclasificar?.controlLote ? 'Obligatorio' : 'Sin lote'}
               />
+              {productoReclasificar?.controlLote ? (
+                <p className="field-help">Indica exactamente el lote del saldo origen.</p>
+              ) : null}
             </div>
             <div>
               <label className="field-label" htmlFor="reclasificar-vencimiento">
@@ -545,7 +642,11 @@ export function PanelControlStock(props: Props) {
                 name="fechaVencimiento"
                 type="date"
                 className="field-control"
+                required={productoReclasificar?.controlVencimiento}
               />
+              {productoReclasificar?.controlVencimiento ? (
+                <p className="field-help">Selecciona el vencimiento exacto del saldo origen.</p>
+              ) : null}
             </div>
             <div>
               <label className="field-label" htmlFor="reclasificar-motivo">
@@ -592,7 +693,7 @@ export function PanelControlStock(props: Props) {
             </p>
           </div>
           <form
-            className="grid gap-4 p-5 sm:p-6 lg:grid-cols-5 lg:items-end"
+            className="grid gap-4 p-5 sm:p-6 lg:grid-cols-6 lg:items-end"
             onSubmit={guardarConfiguracion}
           >
             <div className="lg:col-span-2">
@@ -601,6 +702,8 @@ export function PanelControlStock(props: Props) {
                 name="productoId"
                 etiqueta="Producto"
                 organizationId={organizationId}
+                value={politicaProductoId}
+                onValueChange={(productoId) => setPoliticaProductoId(productoId)}
               />
             </div>
             <label className="field-label">
@@ -610,7 +713,9 @@ export function PanelControlStock(props: Props) {
                 className="field-control"
                 value={politicaAlmacenId}
                 onChange={(e) => setPoliticaAlmacenId(e.target.value)}
+                disabled={!almacenesActivos.length}
               >
+                {!almacenesActivos.length ? <option value="">No hay almacenes activos</option> : null}
                 {almacenesActivos.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.nombre}
@@ -620,45 +725,86 @@ export function PanelControlStock(props: Props) {
             </label>
             <label className="field-label">
               Ubicación predeterminada
-              <select name="ubicacionId" className="field-control">
-                {ubicaciones
-                  .filter((u) => u.almacenId === politicaAlmacenId && u.activa)
-                  .map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.codigo} · {u.nombre}
-                    </option>
-                  ))}
+              <select
+                name="ubicacionId"
+                className="field-control"
+                value={politicaUbicacionId}
+                onChange={(e) => setPoliticaUbicacionId(e.target.value)}
+                disabled={!ubicacionesPolitica.length || politicaQuery.isFetching}
+                required
+              >
+                {!ubicacionesPolitica.length ? <option value="">No hay ubicaciones activas</option> : null}
+                {ubicacionesPolitica.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.codigo} · {u.nombre}
+                  </option>
+                ))}
               </select>
             </label>
-            <label className="field-label">
-              Stock mínimo
+            <div>
+              <label className="field-label" htmlFor="politica-stock-minimo">
+                Stock mínimo
+              </label>
               <input
+                id="politica-stock-minimo"
                 name="stockMinimo"
                 type="number"
                 min="0"
+                max="99999999999.999"
                 step="0.001"
                 className="field-control"
-                placeholder="0"
+                value={stockMinimo}
+                onChange={(e) => setStockMinimo(e.target.value)}
+                required
               />
-            </label>
-            <label className="field-label">
-              Alerta de vencimiento (días)
+              <p className="field-help">Al guardar 0, se alerta cuando el stock asignable llega a cero.</p>
+            </div>
+            <div>
+              <label className="field-label" htmlFor="politica-dias-vencimiento">
+                Alerta de vencimiento (días)
+              </label>
               <input
+                id="politica-dias-vencimiento"
                 name="diasVencimiento"
                 type="number"
                 min="0"
                 max="3650"
-                defaultValue="30"
+                step="1"
                 className="field-control"
+                value={diasVencimiento}
+                onChange={(e) => setDiasVencimiento(e.target.value)}
+                required
               />
-            </label>
+              <p className="field-help">0 alerta solo para lotes vencidos o que vencen hoy; sin política se usan 30 días.</p>
+            </div>
             <Button
-              className="lg:col-start-5"
+              type="submit"
+              className="lg:col-start-6"
               variant="outline"
-              disabled={guardando || !almacenesActivos.length}
+              disabled={
+                guardando ||
+                !politicaProductoId ||
+                !almacenesActivos.length ||
+                !ubicacionesPolitica.length ||
+                politicaQuery.isLoading ||
+                politicaQuery.isFetching ||
+                politicaQuery.isError
+              }
             >
-              Guardar política
+              {politicaQuery.isFetching ? 'Cargando política…' : 'Guardar política'}
             </Button>
+            {politicaQuery.isError ? (
+              <p role="alert" className="field-error lg:col-span-6">
+                No se pudo consultar la política guardada. Reintenta antes de cambiarla.
+              </p>
+            ) : null}
+            {politicaProductoId && !politicaQuery.isLoading && !politicaQuery.isFetching && politicaQuery.isSuccess ? (
+              <p role="status" className="field-help lg:col-span-6">
+                {politicaQuery.data
+                  ? 'Se cargó la política actual de este producto y almacén; puedes actualizar sus valores.'
+                  : 'Aún no hay política guardada para esta combinación. El vencimiento usa el umbral predeterminado de 30 días.'}
+              </p>
+            ) : null}
           </form>
         </section>
       ) : null}

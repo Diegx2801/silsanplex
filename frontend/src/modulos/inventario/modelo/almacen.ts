@@ -23,6 +23,12 @@ export interface UbicacionAlmacen {
   version?: number
 }
 
+export interface ConfiguracionAlertasStock {
+  ubicacionId: string | null
+  stockMinimo: number
+  diasVencimiento: number
+}
+
 export interface SaldoInventario {
   productoId: string
   productoCodigo: string
@@ -181,13 +187,28 @@ export const esquemaReclasificacion = z.object({
   path: ['estadoDestino'],
 })
 
+export const esquemaConfiguracionAlertasStock = z.object({
+  productoId: z.string().uuid('Selecciona un producto válido'),
+  almacenId: z.string().uuid('Selecciona un almacén válido'),
+  ubicacionId: z.string().uuid('Selecciona una ubicación válida'),
+  stockMinimo: z.string().trim().refine(
+    (valor) => /^\d+(\.\d{1,3})?$/.test(valor) && Number(valor) >= 0 && Number(valor) <= 99999999999.999,
+    'Ingresa un stock mínimo entre cero y 99,999,999,999.999 con hasta 3 decimales',
+  ),
+  diasVencimiento: z.string().trim().refine(
+    (valor) => /^\d+$/.test(valor) && Number(valor) <= 3650,
+    'Ingresa un número entero entre 0 y 3650 días',
+  ),
+})
+
 export type DatosAlmacen = z.infer<typeof esquemaAlmacen>
 export type DatosUbicacion = z.infer<typeof esquemaUbicacion>
 export type DatosTransferencia = z.infer<typeof esquemaTransferencia>
 export type DatosReclasificacion = z.infer<typeof esquemaReclasificacion>
+export type DatosConfiguracionAlertasStock = z.infer<typeof esquemaConfiguracionAlertasStock>
 
 export const etiquetasEstadoStock: Record<EstadoStock, string> = {
   available: 'Disponible',
   quarantine: 'Cuarentena',
-  damaged: 'Danado / inmovilizado',
+  damaged: 'Dañado / inmovilizado',
 }

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { esquemaAlmacen, esquemaReclasificacion, esquemaTransferencia } from './almacen'
+import {
+  esquemaAlmacen,
+  esquemaConfiguracionAlertasStock,
+  esquemaReclasificacion,
+  esquemaTransferencia,
+} from './almacen'
 
 const id = (numero: number) => `00000000-0000-4000-8000-${String(numero).padStart(12, '0')}`
 
@@ -25,5 +30,26 @@ describe('modelo de almacenes', () => {
       estadoDestino: 'damaged', cantidad: '1', lote: 'L-01', fechaVencimiento: '', motivo: 'Revision',
     })
     expect(resultado.success).toBe(false)
+  })
+
+  it('acepta stock mínimo cero para alertar cuando se agote', () => {
+    expect(esquemaConfiguracionAlertasStock.safeParse({
+      productoId: id(1), almacenId: id(2), ubicacionId: id(3),
+      stockMinimo: '0', diasVencimiento: '30',
+    }).success).toBe(true)
+  })
+
+  it.each(['-1', '1.1234', '1e3', '100000000000', ''])('rechaza stock mínimo inválido: %s', (stockMinimo) => {
+    expect(esquemaConfiguracionAlertasStock.safeParse({
+      productoId: id(1), almacenId: id(2), ubicacionId: id(3),
+      stockMinimo, diasVencimiento: '30',
+    }).success).toBe(false)
+  })
+
+  it.each(['-1', '1.5', '3651', ''])('rechaza días de alerta inválidos: %s', (diasVencimiento) => {
+    expect(esquemaConfiguracionAlertasStock.safeParse({
+      productoId: id(1), almacenId: id(2), ubicacionId: id(3),
+      stockMinimo: '0', diasVencimiento,
+    }).success).toBe(false)
   })
 })

@@ -92,6 +92,15 @@ export function DialogoMovimientoInventario({
   ])
 
   const guardar = async (datos: DatosMovimientoInventario) => {
+    if (producto?.controlLote && !datos.lote.trim()) {
+      setError('lote', { message: 'Este producto requiere ingresar el lote.' })
+      return
+    }
+    if (producto?.controlVencimiento && !datos.fechaVencimiento) {
+      setError('fechaVencimiento', { message: 'Este producto requiere fecha de vencimiento.' })
+      return
+    }
+
     const error = await alGuardar(datos)
     if (error) {
       setError(
