@@ -3,6 +3,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { HistorialPreciosCompra } from '@/modulos/compras/componentes/HistorialPreciosCompra'
+import { ResumenDesempenoProveedor } from '@/modulos/proveedores/componentes/ResumenDesempenoProveedor'
 import { tiposDocumentoProveedor, type Proveedor } from '@/modulos/proveedores/modelo/proveedor'
 
 interface Props {
@@ -28,6 +29,7 @@ export function DetalleProveedor({ abierto, proveedor, puedeGestionar, alEditar,
         <Seccion titulo="Contacto principal"><Dato etiqueta="Persona" contenido={valor(proveedor.contacto)} /><Dato etiqueta="Cargo" contenido={valor(proveedor.cargoContacto)} /><Dato etiqueta="Teléfono" contenido={valor(proveedor.telefono)} /><Dato etiqueta="Correo" contenido={valor(proveedor.email)} /></Seccion>
         <Seccion titulo="Condición comercial"><Dato etiqueta="Forma de pago" contenido={proveedor.condicionCredito === 'contado' ? 'Contado' : 'Crédito'} /><Dato etiqueta="Plazo" contenido={proveedor.condicionCredito === 'contado' ? 'Pago inmediato' : `${proveedor.diasCredito} días`} /><Dato etiqueta="Fuente fiscal" contenido={valor(proveedor.fuenteDatosFiscales)} /><Dato etiqueta="Última consulta" contenido={proveedor.fechaConsultaSunat ? new Intl.DateTimeFormat('es-PE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(proveedor.fechaConsultaSunat)) : 'Sin consultar'} /></Seccion>
         {proveedor.observaciones ? <section className="border-t pt-5"><h2 className="font-semibold">Observaciones</h2><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{proveedor.observaciones}</p></section> : null}
+        <ResumenDesempenoProveedor proveedorId={proveedor.id} abierto={abierto} />
         <HistorialPreciosCompra modo="proveedor" proveedorId={proveedor.id} />
       </div>
       {puedeGestionar ? <footer className="flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end sm:px-7"><Button type="button" variant="outline" onClick={alCambiarEstado}>{proveedor.activo ? 'Desactivar' : 'Activar'}</Button><Button type="button" onClick={alEditar}><Pencil /> Editar</Button></footer> : null}
