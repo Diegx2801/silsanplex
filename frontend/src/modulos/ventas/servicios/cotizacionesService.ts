@@ -23,6 +23,15 @@ interface CotizacionFila {
   issued_at: string | null
   accepted_at: string | null
   rejected_at: string | null
+  subtotal: number | string
+  taxable_base: number | string
+  exempt_amount: number | string
+  unaffected_amount: number | string
+  tax: number | string
+  total: number | string
+  created_by: string | null
+  issued_by: string | null
+  accepted_order_id: string | null
 }
 
 interface LineaCotizacionFila {
@@ -35,12 +44,24 @@ interface LineaCotizacionFila {
   quantity: number | string
   unit_price: number | string
   tax_affectation: 'por-definir' | 'gravado' | 'exonerado' | 'inafecto' | null
+  line_subtotal: number | string | null
 }
 
 interface ClienteFila {
   id: string
   document_number: string
   legal_name: string
+}
+
+interface PedidoRelacionadoFila {
+  id: string
+  order_number: string
+}
+
+interface UsuarioFila {
+  id: string
+  full_name: string
+  email: string
 }
 
 const columnasCotizacion = [
@@ -58,6 +79,15 @@ const columnasCotizacion = [
   'issued_at',
   'accepted_at',
   'rejected_at',
+  'subtotal',
+  'taxable_base',
+  'exempt_amount',
+  'unaffected_amount',
+  'tax',
+  'total',
+  'created_by',
+  'issued_by',
+  'accepted_order_id',
 ].join(',')
 
 const columnasLinea = [
@@ -70,6 +100,7 @@ const columnasLinea = [
   'quantity',
   'unit_price',
   'tax_affectation',
+  'line_subtotal',
 ].join(',')
 
 function mensajeError(error: { code?: string | null; message?: string | null }) {
@@ -129,6 +160,8 @@ function mapearCotizacion(
   fila: CotizacionFila,
   lineas: readonly LineaCotizacionFila[],
   clientes: ReadonlyMap<string, ClienteFila>,
+  pedidos: ReadonlyMap<string, PedidoRelacionadoFila>,
+  usuarios: ReadonlyMap<string, UsuarioFila>,
 ): Cotizacion {
   const cliente = clientes.get(fila.customer_id)
   if (!cliente) throw new Error('La cotización no tiene un cliente válido')
@@ -153,18 +186,37 @@ function mapearCotizacion(
         cantidad: Number(linea.quantity),
         precioUnitario: Number(linea.unit_price),
         afectacionIgv: linea.tax_affectation ?? 'por-definir',
+        subtotal: linea.line_subtotal === null ? undefined : Number(linea.line_subtotal),
       })),
     estado: fila.status,
     fechaRegistro: fila.created_at,
     fechaCambioEstado: fila.accepted_at ?? fila.rejected_at ?? fila.issued_at,
+    totalesPersistidos: {
+      subtotal: Number(fila.subtotal),
+      igv: Number(fila.tax),
+      total: Number(fila.total),
+    },
+    creadoPor: fila.created_by ? usuarios.get(fila.created_by)?.full_name ?? usuarios.get(fila.created_by)?.email : undefined,
+    emitidoPor: fila.issued_by ? usuarios.get(fila.issued_by)?.full_name ?? usuarios.get(fila.issued_by)?.email : undefined,
+    pedidoRelacionado: fila.accepted_order_id
+      ? (() => {
+          const pedido = pedidos.get(fila.accepted_order_id)
+          return pedido ? { id: pedido.id, numero: pedido.order_number } : undefined
+        })()
+      : undefined,
   }
 }
 
-export async function listarCotizacionesPersistentes(organizationId: string) {
-  const { data, error } = await supabase
+async function listarCotizacionesPersistentesBase(
+  organizationId: string,
+  customerId?: string,
+) {
+  let consulta = supabase
     .from('sales_quotes')
     .select(columnasCotizacion)
     .eq('organization_id', organizationId)
+  if (customerId) consulta = consulta.eq('customer_id', customerId)
+  const { data, error } = await consulta
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
   if (error) throw new Error(mensajeError(error))
@@ -173,19 +225,57 @@ export async function listarCotizacionesPersistentes(organizationId: string) {
   if (!cotizaciones.length) return []
   const ids = cotizaciones.map((cotizacion) => cotizacion.id)
   const clientesIds = [...new Set(cotizaciones.map((cotizacion) => cotizacion.customer_id))]
-  const [lineasResult, clientesResult] = await Promise.all([
+  const pedidosIds = cotizaciones
+    .map((cotizacion) => cotizacion.accepted_order_id)
+    .filter((id): id is string => Boolean(id))
+  const usuariosIds = [...new Set(
+    cotizaciones.flatMap((cotizacion) => [cotizacion.created_by, cotizacion.issued_by])
+      .filter((id): id is string => Boolean(id)),
+  )]
+  const [lineasResult, clientesResult, pedidosResult, usuariosResult] = await Promise.all([
     supabase.from('sales_quote_items').select(columnasLinea).eq('organization_id', organizationId).in('quote_id', ids),
     supabase.from('customers').select('id,document_number,legal_name').eq('organization_id', organizationId).in('id', clientesIds),
+    pedidosIds.length
+      ? supabase.from('orders').select('id,order_number').eq('organization_id', organizationId).in('id', pedidosIds)
+      : Promise.resolve({ data: [], error: null }),
+    usuariosIds.length
+      ? supabase.from('profiles').select('id,full_name,email').in('id', usuariosIds)
+      : Promise.resolve({ data: [], error: null }),
   ])
   if (lineasResult.error) throw new Error(mensajeError(lineasResult.error))
   if (clientesResult.error) throw new Error(mensajeError(clientesResult.error))
+  if (pedidosResult.error) throw new Error(mensajeError(pedidosResult.error))
+  if (usuariosResult.error) throw new Error(mensajeError(usuariosResult.error))
 
   const clientes = new Map(
     ((clientesResult.data ?? []) as unknown as ClienteFila[]).map((cliente) => [cliente.id, cliente]),
   )
-  return cotizaciones.map((cotizacion) =>
-    mapearCotizacion(cotizacion, (lineasResult.data ?? []) as unknown as LineaCotizacionFila[], clientes),
+  const pedidos = new Map(
+    ((pedidosResult.data ?? []) as unknown as PedidoRelacionadoFila[]).map((pedido) => [pedido.id, pedido]),
   )
+  const usuarios = new Map(
+    ((usuariosResult.data ?? []) as unknown as UsuarioFila[]).map((usuario) => [usuario.id, usuario]),
+  )
+  return cotizaciones.map((cotizacion) =>
+    mapearCotizacion(
+      cotizacion,
+      (lineasResult.data ?? []) as unknown as LineaCotizacionFila[],
+      clientes,
+      pedidos,
+      usuarios,
+    ),
+  )
+}
+
+export function listarCotizacionesPersistentes(organizationId: string) {
+  return listarCotizacionesPersistentesBase(organizationId)
+}
+
+export function listarCotizacionesPersistentesPorCliente(
+  organizationId: string,
+  customerId: string,
+) {
+  return listarCotizacionesPersistentesBase(organizationId, customerId)
 }
 
 function operationKeyOrNew(operationKey?: string) {

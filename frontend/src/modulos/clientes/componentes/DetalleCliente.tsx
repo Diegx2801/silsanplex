@@ -1,8 +1,15 @@
 import { Eye, MapPin, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
+import { useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { useAuth } from '@/features/auth/useAuth'
+import { PERMISSIONS } from '@/features/auth/permissions'
+import { fechaActualPeru, formatearFechaCalendarioPeru, formatearFechaHoraPeru } from '@/lib/fechas'
 import type { Cliente } from '@/modulos/clientes/modelo/cliente'
+import { DialogoDetalleCotizacion } from '@/modulos/ventas/componentes/DialogoDetalleCotizacion'
+import { useCotizacionesPersistentesPorCliente } from '@/modulos/ventas/estado/useCotizacionesPersistentes'
+import { calcularTotalesCotizacion, type Cotizacion, type EstadoCotizacion } from '@/modulos/ventas/modelo/cotizacion'
 
 interface DetalleClienteProps {
   abierto: boolean
@@ -20,6 +27,30 @@ function Dato({ etiqueta, valor }: { etiqueta: string; valor: string }) {
   )
 }
 
+type FiltroCotizacionesCliente = 'todos' | EstadoCotizacion | 'vencida'
+
+const etiquetasEstado: Record<FiltroCotizacionesCliente, string> = {
+  todos: 'Todas',
+  borrador: 'Borrador',
+  emitida: 'Emitida',
+  aceptada: 'Aceptada',
+  rechazada: 'Rechazada',
+  vencida: 'Vencida',
+}
+
+const formatoMoneda = new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' })
+
+function estadoVisibleCotizacion(cotizacion: Cotizacion): FiltroCotizacionesCliente {
+  return cotizacion.estado === 'emitida' && cotizacion.fechaValidez < fechaActualPeru()
+    ? 'vencida'
+    : cotizacion.estado
+}
+
+function totalCotizacion(cotizacion: Cotizacion) {
+  return cotizacion.totalesPersistidos?.total
+    ?? calcularTotalesCotizacion(cotizacion.lineas, cotizacion.preciosIncluyenIgv).total
+}
+
 const etiquetasDocumento: Record<Cliente['tipoDocumento'], string> = {
   ruc: 'RUC',
   dni: 'DNI',
@@ -33,8 +64,19 @@ export function DetalleCliente({
   alCambiarApertura,
   alRestaurarFoco,
 }: DetalleClienteProps) {
+  const { hasPermission } = useAuth()
+  const puedeConsultarCotizaciones = hasPermission(PERMISSIONS.CUSTOMERS_VIEW) && hasPermission(PERMISSIONS.SALES_VIEW)
+  const historial = useCotizacionesPersistentesPorCliente(cliente.id, abierto && puedeConsultarCotizaciones)
+  const [filtroCotizaciones, setFiltroCotizaciones] = useState<FiltroCotizacionesCliente>('todos')
+  const [cotizacionSeleccionada, setCotizacionSeleccionada] = useState<Cotizacion | null>(null)
+  const cotizacionesFiltradas = useMemo(
+    () => historial.cotizaciones.filter((cotizacion) => filtroCotizaciones === 'todos' || estadoVisibleCotizacion(cotizacion) === filtroCotizaciones),
+    [filtroCotizaciones, historial.cotizaciones],
+  )
+
   return (
-    <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
+    <>
+      <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-60 bg-foreground/30" />
         <DialogPrimitive.Content
@@ -110,11 +152,82 @@ export function DetalleCliente({
                 </ul>
               ) : <p className="mt-3 text-sm text-muted-foreground">Sin direcciones de entrega adicionales.</p>}
             </section>
+
+            {puedeConsultarCotizaciones ? (
+              <section className="border-t px-5 py-6 sm:px-7" aria-labelledby="detalle-cliente-cotizaciones">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <h2 id="detalle-cliente-cotizaciones" className="font-semibold">Cotizaciones</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Historial persistente de propuestas comerciales de este cliente.</p>
+                  </div>
+                  <span className="font-mono text-xs text-muted-foreground">{historial.cotizaciones.length} registradas</span>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar cotizaciones">
+                  {(Object.keys(etiquetasEstado) as FiltroCotizacionesCliente[]).map((filtro) => (
+                    <Button
+                      key={filtro}
+                      type="button"
+                      size="sm"
+                      variant={filtroCotizaciones === filtro ? 'default' : 'outline'}
+                      onClick={() => setFiltroCotizaciones(filtro)}
+                    >
+                      {etiquetasEstado[filtro]}
+                    </Button>
+                  ))}
+                </div>
+
+                {historial.cargando ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando cotizaciones…</p> : historial.error ? (
+                  <div className="py-10 text-center">
+                    <p className="text-sm text-destructive">No se pudo cargar el historial de cotizaciones.</p>
+                    <Button className="mt-3" type="button" variant="outline" onClick={() => void historial.reintentar()}>Reintentar</Button>
+                  </div>
+                ) : historial.cotizaciones.length === 0 ? <p className="py-10 text-center text-sm text-muted-foreground">Este cliente aún no tiene cotizaciones registradas.</p> : cotizacionesFiltradas.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">No hay cotizaciones para el filtro seleccionado.</p>
+                ) : (
+                  <ul className="mt-4 space-y-3">
+                    {cotizacionesFiltradas.map((cotizacion) => {
+                      const estado = estadoVisibleCotizacion(cotizacion)
+                      return (
+                        <li key={cotizacion.id} className="border bg-muted/20 px-4 py-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="font-mono text-sm font-semibold text-primary">{cotizacion.numero}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">Creada {formatearFechaHoraPeru(cotizacion.fechaRegistro)}</p>
+                            </div>
+                            <span className="status-label" data-tone={estado === 'emitida' || estado === 'aceptada' ? 'listo' : 'revision'}>{etiquetasEstado[estado]}</span>
+                          </div>
+                          <dl className="mt-4 grid gap-x-5 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                            <div><dt className="text-xs text-muted-foreground">Emisión</dt><dd className="mt-1">{formatearFechaCalendarioPeru(cotizacion.fechaEmision)}</dd></div>
+                            <div><dt className="text-xs text-muted-foreground">Válida hasta</dt><dd className="mt-1">{formatearFechaCalendarioPeru(cotizacion.fechaValidez)}</dd></div>
+                            <div><dt className="text-xs text-muted-foreground">Líneas</dt><dd className="mt-1">{cotizacion.lineas.length}</dd></div>
+                            <div><dt className="text-xs text-muted-foreground">Total</dt><dd className="mt-1 font-mono font-semibold">{formatoMoneda.format(totalCotizacion(cotizacion))}</dd></div>
+                          </dl>
+                          {cotizacion.pedidoRelacionado ? <p className="mt-3 text-xs text-muted-foreground">Pedido relacionado: <span className="font-mono text-foreground">{cotizacion.pedidoRelacionado.numero}</span></p> : null}
+                          <div className="mt-4 flex justify-end">
+                            <Button type="button" variant="outline" size="sm" onClick={() => setCotizacionSeleccionada(cotizacion)}><Eye aria-hidden="true" /> Ver detalle</Button>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </section>
+            ) : null}
           </div>
 
           <footer className="flex justify-end border-t px-5 py-4 sm:px-7"><Button type="button" variant="outline" onClick={() => alCambiarApertura(false)}>Cerrar</Button></footer>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+      </DialogPrimitive.Root>
+      {cotizacionSeleccionada ? (
+        <DialogoDetalleCotizacion
+          abierto
+          cotizacion={cotizacionSeleccionada}
+          alCambiarApertura={(abiertoCotizacion) => { if (!abiertoCotizacion) setCotizacionSeleccionada(null) }}
+          alRestaurarFoco={() => undefined}
+        />
+      ) : null}
+    </>
   )
 }

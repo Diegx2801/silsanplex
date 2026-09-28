@@ -1,12 +1,13 @@
 begin;
 
-select plan(24);
+select plan(35);
 
 select has_table('public', 'sales_quotes', 'existe el encabezado persistente de cotizaciones');
 select has_table('public', 'sales_quote_items', 'existen las lineas persistentes de cotizaciones');
 select has_function('public', 'save_sales_quote', array['jsonb'], 'existe la RPC de guardado de cotizacion');
 select has_function('public', 'issue_sales_quote', array['uuid', 'uuid'], 'existe la RPC de emision de cotizacion');
 select has_function('public', 'reject_sales_quote', array['uuid', 'uuid', 'text'], 'existe la RPC de rechazo de cotizacion');
+select has_index('public', 'sales_quotes', 'sales_quotes_organization_customer_created_idx', 'existe el indice de historial por cliente');
 
 insert into public.organizations (id, name, slug)
 values ('a9b00000-0000-4000-8000-000000000001', 'Cotizaciones uno', 'cotizaciones-uno');
@@ -61,6 +62,35 @@ values (
   'a9c00000-0000-4000-8000-000000000001'
 );
 
+insert into public.organizations (id, name, slug)
+values ('a9b00000-0000-4000-8000-000000000002', 'Cotizaciones dos', 'cotizaciones-dos');
+insert into public.customers (
+  id, organization_id, document_type, document_number, legal_name
+)
+values (
+  'a9d00000-0000-4000-8000-000000000002',
+  'a9b00000-0000-4000-8000-000000000002', 'RUC', '20999999002', 'Cliente otra organizacion'
+);
+insert into public.sales_quotes (
+  id, organization_id, quote_number, operation_key, customer_id,
+  issue_date, valid_until, status, notes, subtotal, taxable_base,
+  exempt_amount, unaffected_amount, tax, total
+)
+values (
+  'a9100000-0000-4000-8000-000000000003',
+  'a9b00000-0000-4000-8000-000000000002', 'COT-000001',
+  'a9200000-0000-4000-8000-000000000003',
+  'a9d00000-0000-4000-8000-000000000002',
+  '2026-09-16', '2026-09-30', 'borrador', '', 0, 0, 0, 0, 0, 0
+);
+insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+values (
+  'a9c00000-0000-4000-8000-000000000002',
+  'sin-ventas@test.local', '{"full_name":"Sin ventas"}', now(), now()
+);
+insert into public.organization_memberships (organization_id, user_id)
+values ('a9b00000-0000-4000-8000-000000000001', 'a9c00000-0000-4000-8000-000000000002');
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -95,6 +125,11 @@ select is((select status from public.sales_quotes where id = :'quote_id'), 'borr
 select is((select total from public.sales_quotes where id = :'quote_id'), 236.00::numeric, 'calcula total con IGV incluido');
 select is((select count(*) from public.sales_quote_items where quote_id = :'quote_id'), 1::bigint, 'guarda una linea con snapshot');
 select is((select tax_affectation from public.sales_quote_items where quote_id = :'quote_id'), 'gravado', 'conserva la afectacion tributaria');
+select is((select product_code from public.sales_quote_items where quote_id = :'quote_id'), 'COT-001', 'conserva el codigo historico del producto');
+select is((select product_description from public.sales_quote_items where quote_id = :'quote_id'), 'Producto cotizable', 'conserva la descripcion historica del producto');
+select is((select unit_price from public.sales_quote_items where quote_id = :'quote_id'), 118.0000::numeric, 'conserva el precio unitario historico cotizado');
+select is((select line_subtotal from public.sales_quote_items where quote_id = :'quote_id'), 236.0000::numeric, 'conserva el subtotal historico de la linea');
+select is((select valid_until from public.sales_quotes where id = :'quote_id'), '2026-09-30'::date, 'conserva la vigencia de la cotizacion');
 
 select public.issue_sales_quote(
   'a9b00000-0000-4000-8000-000000000001', :'quote_id'
@@ -165,6 +200,41 @@ select throws_ok($$select public.save_sales_quote(jsonb_build_object(
     'product_id','a9e00000-0000-4000-8000-000000000001','quantity',1,'unit_price',10
   ))
 ))$$, 'P0001', 'SALES_QUOTE_NOT_DRAFT', 'una cotizacion rechazada es inmutable');
+
+select is((
+  select count(*)
+  from public.sales_quotes
+  where organization_id = 'a9b00000-0000-4000-8000-000000000001'
+    and customer_id = 'a9d00000-0000-4000-8000-000000000001'
+), 2::bigint, 'el historial se puede filtrar por customer_id');
+select is((
+  select string_agg(quote_number, ',' order by created_at desc, id desc)
+  from public.sales_quotes
+  where organization_id = 'a9b00000-0000-4000-8000-000000000001'
+    and customer_id = 'a9d00000-0000-4000-8000-000000000001'
+), 'COT-000002,COT-000001', 'el historial ordena las cotizaciones mas recientes primero');
+select is((
+  select count(*)
+  from public.sales_quotes
+  where customer_id = 'a9d00000-0000-4000-8000-000000000002'
+), 0::bigint, 'un customer_id externo no revela cotizaciones');
+select is((
+  select count(*)
+  from public.sales_quotes
+  where id = 'a9100000-0000-4000-8000-000000000003'
+), 0::bigint, 'RLS aisla cotizaciones de otra organizacion');
+
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"a9c00000-0000-4000-8000-000000000002","role":"authenticated"}',
+  true
+);
+select is((select count(*) from public.sales_quotes), 0::bigint, 'un usuario sin SALES_VIEW no puede leer cotizaciones');
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"a9c00000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
 
 select * from finish();
 rollback;

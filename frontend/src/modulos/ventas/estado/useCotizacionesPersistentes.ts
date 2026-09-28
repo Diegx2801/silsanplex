@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
+import { PERMISSIONS } from '@/features/auth/permissions'
 import type { Cliente } from '@/modulos/clientes/modelo/cliente'
 import type { Producto } from '@/modulos/productos/modelo/producto'
 import {
@@ -12,10 +13,33 @@ import {
   emitirCotizacionPersistente,
   guardarCotizacionPersistente,
   listarCotizacionesPersistentes,
+  listarCotizacionesPersistentesPorCliente,
 } from '@/modulos/ventas/servicios/cotizacionesService'
 
 export const cotizacionesQueryKeys = {
   all: (organizationId: string) => ['sales-quotes', organizationId] as const,
+  byCustomer: (organizationId: string, customerId: string) => ['sales-quotes', organizationId, 'customer', customerId] as const,
+}
+
+export function useCotizacionesPersistentesPorCliente(
+  customerId: string,
+  habilitado = true,
+) {
+  const { access, hasPermission } = useAuth()
+  const organizationId = access?.organizationId ?? ''
+  const puedeConsultar = hasPermission(PERMISSIONS.CUSTOMERS_VIEW) && hasPermission(PERMISSIONS.SALES_VIEW)
+  const query = useQuery({
+    queryKey: cotizacionesQueryKeys.byCustomer(organizationId, customerId),
+    queryFn: () => listarCotizacionesPersistentesPorCliente(organizationId, customerId),
+    enabled: habilitado && puedeConsultar && Boolean(organizationId && customerId),
+  })
+
+  return {
+    cotizaciones: query.data ?? [],
+    cargando: query.isLoading,
+    error: query.error,
+    reintentar: () => query.refetch(),
+  }
 }
 
 export function useCotizacionesPersistentes(

@@ -69,6 +69,7 @@ export const esquemaLineaCotizacion = z.object({
   unidadMedida: z.string(),
   cantidad: z.number().positive(),
   precioUnitario: z.number().nonnegative(),
+  subtotal: z.number().nonnegative().optional(),
   // The tax affectation is snapshotted when the quote is persisted. Older
   // session-only quotes may not have it, so it remains optional for backward
   // compatibility and defaults to gravado in the calculator.
@@ -94,6 +95,17 @@ export const esquemaCotizacion = z.object({
   estado: z.enum(['borrador', 'emitida', 'aceptada', 'rechazada']),
   fechaRegistro: z.string().datetime(),
   fechaCambioEstado: z.string().datetime().nullable(),
+  totalesPersistidos: z.object({
+    subtotal: z.number().nonnegative(),
+    igv: z.number().nonnegative(),
+    total: z.number().nonnegative(),
+  }).optional(),
+  creadoPor: z.string().optional(),
+  emitidoPor: z.string().optional(),
+  pedidoRelacionado: z.object({
+    id: z.string().min(1),
+    numero: z.string().min(1),
+  }).optional(),
 })
 
 export type Cotizacion = z.infer<typeof esquemaCotizacion>

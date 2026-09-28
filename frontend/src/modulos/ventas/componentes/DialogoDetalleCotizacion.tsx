@@ -55,7 +55,7 @@ export function DialogoDetalleCotizacion({
   alCambiarApertura,
   alRestaurarFoco,
 }: DialogoDetalleCotizacionProps) {
-  const totales = calcularTotalesCotizacion(
+  const totalesPersistidos = cotizacion.totalesPersistidos ?? calcularTotalesCotizacion(
     cotizacion.lineas,
     cotizacion.preciosIncluyenIgv,
   )
@@ -167,7 +167,7 @@ export function DialogoDetalleCotizacion({
                           {formatoMoneda.format(linea.precioUnitario)}
                         </td>
                         <td className="px-4 py-4 text-end font-mono font-semibold tabular-nums">
-                          {formatoMoneda.format(linea.cantidad * linea.precioUnitario)}
+                          {formatoMoneda.format(linea.subtotal ?? linea.cantidad * linea.precioUnitario)}
                         </td>
                         <td className="px-4 py-4 text-muted-foreground">
                           {etiquetasAfectacion[linea.afectacionIgv ?? 'gravado']}
@@ -189,18 +189,29 @@ export function DialogoDetalleCotizacion({
               <dl className="border px-4 py-4 text-sm">
                 <div className="flex justify-between gap-4 border-b py-2">
                   <dt className="text-muted-foreground">Subtotal</dt>
-                  <dd className="font-mono tabular-nums">{formatoMoneda.format(totales.subtotal)}</dd>
+                  <dd className="font-mono tabular-nums">{formatoMoneda.format(totalesPersistidos.subtotal)}</dd>
                 </div>
                 <div className="flex justify-between gap-4 border-b py-2">
                   <dt className="text-muted-foreground">IGV</dt>
-                  <dd className="font-mono tabular-nums">{formatoMoneda.format(totales.igv)}</dd>
+                  <dd className="font-mono tabular-nums">{formatoMoneda.format(totalesPersistidos.igv)}</dd>
                 </div>
                 <div className="flex justify-between gap-4 pt-3 font-semibold">
                   <dt>Total</dt>
-                  <dd className="font-mono tabular-nums">{formatoMoneda.format(totales.total)}</dd>
+                  <dd className="font-mono tabular-nums">{formatoMoneda.format(totalesPersistidos.total)}</dd>
                 </div>
               </dl>
             </section>
+
+            {cotizacion.creadoPor || cotizacion.emitidoPor || cotizacion.pedidoRelacionado ? (
+              <section className="border-t px-5 py-6 sm:px-7" aria-labelledby="detalle-cotizacion-relaciones">
+                <h2 id="detalle-cotizacion-relaciones" className="font-semibold">Trazabilidad comercial</h2>
+                <dl className="mt-3 grid gap-4 sm:grid-cols-2">
+                  {cotizacion.creadoPor ? <div><dt className="text-xs text-muted-foreground">Creado por</dt><dd className="mt-1 text-sm">{cotizacion.creadoPor}</dd></div> : null}
+                  {cotizacion.emitidoPor ? <div><dt className="text-xs text-muted-foreground">Emitido por</dt><dd className="mt-1 text-sm">{cotizacion.emitidoPor}</dd></div> : null}
+                  {cotizacion.pedidoRelacionado ? <div><dt className="text-xs text-muted-foreground">Pedido relacionado</dt><dd className="mt-1 text-sm font-mono">{cotizacion.pedidoRelacionado.numero}</dd></div> : null}
+                </dl>
+              </section>
+            ) : null}
           </div>
 
           <footer className="flex justify-end border-t px-5 py-4 sm:px-7">
