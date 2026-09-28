@@ -12,6 +12,7 @@ import {
   listarStockDetallado,
   listarTransferencias,
   listarVencimientos,
+  obtenerConfiguracionAlertasStock,
 } from './almacenService'
 
 const { from, rpc } = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
@@ -24,6 +25,7 @@ function crearQuery(data: Record<string, unknown>[] = [], count = data.length) {
     query[metodo] = vi.fn(() => query)
   }
   query.range = vi.fn(() => Promise.resolve({ data, count, error: null }))
+  query.maybeSingle = vi.fn(() => Promise.resolve({ data: data[0] ?? null, error: null }))
   from.mockReturnValue(query)
   return query
 }
@@ -37,15 +39,21 @@ describe('listados paginados de almacén', () => {
   })
 
   it('pagina stock detallado con filtros persistentes', async () => {
-    const query = crearQuery()
-    await listarStockDetallado('org-1', {
+    rpc.mockResolvedValue({ data: { items: [{ physical_quantity: '10', reserved_quantity: '3', assignable_quantity: '7' }], total_count: 120 }, error: null })
+    const resultado = await listarStockDetallado('org-1', {
       ...base,
       ubicacionId: 'ubicacion-1', lote: 'L-01', estado: 'available',
       vencimientoDesde: '2026-01-01', vencimientoHasta: '2026-12-31', orden: 'vencimiento-asc',
     })
-    expect(query.eq).toHaveBeenCalledWith('location_id', 'ubicacion-1')
-    expect(query.ilike).toHaveBeenCalledWith('lot', '%L-01%')
-    expect(query.range).toHaveBeenCalledWith(50, 99)
+    expect(rpc).toHaveBeenCalledWith('inventory_stock_detail_read', {
+      requested_organization_id: 'org-1', search_term: '', requested_warehouse_id: null,
+      requested_location_id: 'ubicacion-1', requested_lot: 'L-01', requested_status: 'available',
+      expiration_from: '2026-01-01', expiration_to: '2026-12-31',
+      requested_sort: 'vencimiento-asc', requested_limit: 50, requested_offset: 50,
+    })
+    expect(resultado.total).toBe(120)
+    expect(resultado.elementos[0]).toMatchObject({ cantidad: 10, cantidadReservada: 3, cantidadAsignable: 7 })
+    expect(from).not.toHaveBeenCalled()
   })
 
   it('pagina alertas con conteo exacto', async () => {
@@ -93,6 +101,37 @@ describe('listados paginados de almacén', () => {
       'source_warehouse_id.eq.almacen-1,destination_warehouse_id.eq.almacen-1',
     )
     expect(query.range).toHaveBeenCalledWith(50, 99)
+  })
+})
+
+describe('configuración de control de stock', () => {
+  beforeEach(() => from.mockReset())
+
+  it('recupera la política guardada por producto y almacén', async () => {
+    const query = crearQuery([{
+      default_location_id: 'ubicacion-1',
+      minimum_stock: '5.250',
+      expiration_alert_days: 45,
+    }])
+
+    await expect(obtenerConfiguracionAlertasStock('org-1', 'producto-1', 'almacen-1'))
+      .resolves.toEqual({
+        ubicacionId: 'ubicacion-1',
+        stockMinimo: 5.25,
+        diasVencimiento: 45,
+      })
+
+    expect(from).toHaveBeenCalledWith('product_warehouse_settings')
+    expect(query.eq).toHaveBeenNthCalledWith(1, 'organization_id', 'org-1')
+    expect(query.eq).toHaveBeenNthCalledWith(2, 'product_id', 'producto-1')
+    expect(query.eq).toHaveBeenNthCalledWith(3, 'warehouse_id', 'almacen-1')
+  })
+
+  it('retorna null cuando la combinación aún no tiene política guardada', async () => {
+    crearQuery([])
+
+    await expect(obtenerConfiguracionAlertasStock('org-1', 'producto-1', 'almacen-1'))
+      .resolves.toBeNull()
   })
 })
 

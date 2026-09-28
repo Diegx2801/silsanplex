@@ -109,7 +109,7 @@ insert into public.warehouse_locations (
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"bc200000-0000-4000-8000-000000000001","role":"authenticated"}', true);
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','bc100000-0000-4000-8000-000000000001',
   'product_id','bc400000-0000-4000-8000-000000000001',
   'warehouse_id','bc500000-0000-4000-8000-000000000001',

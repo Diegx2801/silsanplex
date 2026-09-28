@@ -27,14 +27,22 @@ function ContenidoNavegacion({
   const [gruposAbiertos, setGruposAbiertos] = useState<string[]>(() =>
     seccionesNavegacion
       .flatMap((seccion) => seccion.elementos)
-      .filter((elemento) => elemento.hijos?.length && pathname.startsWith(`${elemento.ruta}/`))
+      .filter(
+        (elemento) =>
+          elemento.hijos?.length &&
+          (pathname === elemento.ruta || pathname.startsWith(`${elemento.ruta}/`)),
+      )
       .map((elemento) => elemento.ruta),
   )
 
   useEffect(() => {
     const padreActivo = seccionesNavegacion
       .flatMap((seccion) => seccion.elementos)
-      .find((elemento) => elemento.hijos?.some((hijo) => hijo.ruta === pathname))
+      .find(
+        (elemento) =>
+          elemento.hijos?.length &&
+          (pathname === elemento.ruta || pathname.startsWith(`${elemento.ruta}/`)),
+      )
     if (padreActivo) {
       setGruposAbiertos((actuales) =>
         actuales.includes(padreActivo.ruta) ? actuales : [...actuales, padreActivo.ruta],
@@ -145,6 +153,7 @@ function ContenidoNavegacion({
                               <li key={hijo.ruta}>
                                 <NavLink
                                   to={hijo.ruta}
+                                  end
                                   onClick={alNavegar}
                                   className={({ isActive }) => cn(
                                     'flex min-h-9 items-center gap-2 rounded-md px-3 text-xs font-medium text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',

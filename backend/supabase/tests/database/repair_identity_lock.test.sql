@@ -160,7 +160,7 @@ declare
   quote_id uuid;
   part_id uuid;
 begin
-  perform public.record_inventory_movement('{
+  perform public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"b1040000-0000-4000-8000-000000000001",
     "product_id":"b5040000-0000-4000-8000-000000000001",
     "warehouse_id":"b6040000-0000-4000-8000-000000000001",

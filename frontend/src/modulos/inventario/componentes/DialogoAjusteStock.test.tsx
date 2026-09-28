@@ -106,6 +106,7 @@ function completarFormulario() {
     target: { value: claveBucketAjusteStock(bucket) },
   })
   fireEvent.change(screen.getByLabelText(/Cantidad a descontar/), { target: { value: '2' } })
+  fireEvent.change(screen.getByLabelText(/Documento de sustento/), { target: { value: 'ACTA-001' } })
 }
 
 describe('DialogoAjusteStock', () => {
@@ -136,6 +137,7 @@ describe('DialogoAjusteStock', () => {
     expect(await screen.findByText('Selecciona un producto')).toBeVisible()
     expect(screen.getByText('Selecciona el bucket exacto que vas a descontar')).toBeVisible()
     expect(screen.getByText('Ingresa una cantidad mayor a cero con hasta 3 decimales')).toBeVisible()
+    expect(screen.getByText('Ingresa el documento de sustento')).toBeVisible()
   })
 
   it('exige observación cuando el motivo es Otro', async () => {
@@ -167,6 +169,7 @@ describe('DialogoAjusteStock', () => {
       estadoStock: 'available',
       lote: 'LOTE-1',
       fechaVencimiento: '2027-12-31',
+      documentoReferencia: 'ACTA-001',
       motivo: 'Ajuste manual [damaged] Producto deteriorado — Envase roto',
     })))
     expect(alCambiarApertura).toHaveBeenCalledWith(false)

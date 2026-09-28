@@ -68,7 +68,7 @@ select set_config(
   true
 );
 
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id', 'a9b00000-0000-4000-8000-000000000001',
   'product_id', 'a9e00000-0000-4000-8000-000000000001',
   'warehouse_id', 'a9f00000-0000-4000-8000-000000000001',

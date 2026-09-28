@@ -50,26 +50,26 @@ insert into public.warehouse_locations (
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'd2000000-0000-4000-8000-000000000001', true);
 
-select lives_ok($$select public.record_inventory_movement('{
+select lives_ok($$select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
   "organization_id":"d1000000-0000-4000-8000-000000000001","product_id":"d3000000-0000-4000-8000-000000000001",
   "warehouse_id":"d4000000-0000-4000-8000-000000000001","location_id":"d5000000-0000-4000-8000-000000000001",
   "movement_type":"entrada","quantity":"3","unit_cost":"10","stock_status":"available",
   "lot":"LOTE-A","expiration_date":"2026-10-15","operation_date":"2026-08-29","reason":"Ingreso lote A"
 }'::jsonb)$$, 'registra lote A');
-select lives_ok($$select public.record_inventory_movement('{
+select lives_ok($$select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
   "organization_id":"d1000000-0000-4000-8000-000000000001","product_id":"d3000000-0000-4000-8000-000000000001",
   "warehouse_id":"d4000000-0000-4000-8000-000000000001","location_id":"d5000000-0000-4000-8000-000000000001",
   "movement_type":"entrada","quantity":"6","unit_cost":"20","stock_status":"available",
   "lot":"LOTE-B","expiration_date":"2026-11-15","operation_date":"2026-08-29","reason":"Ingreso lote B"
 }'::jsonb)$$, 'registra lote B');
-select lives_ok($$select public.record_inventory_movement('{
+select lives_ok($$select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
   "organization_id":"d1000000-0000-4000-8000-000000000001","product_id":"d3000000-0000-4000-8000-000000000001",
   "warehouse_id":"d4000000-0000-4000-8000-000000000001","location_id":"d5000000-0000-4000-8000-000000000001",
   "movement_type":"entrada","quantity":"4","unit_cost":"30","stock_status":"available",
   "lot":"LOTE-C","expiration_date":"2026-12-15","operation_date":"2026-08-29","reason":"Ingreso lote C"
 }'::jsonb)$$, 'registra lote C');
 
-select lives_ok($$select public.record_inventory_fefo_outbound('{
+select lives_ok($$select public.record_inventory_fefo_outbound('{"document_reference":"TEST-FIXTURE",
   "organization_id":"d1000000-0000-4000-8000-000000000001","product_id":"d3000000-0000-4000-8000-000000000001",
   "warehouse_id":"d4000000-0000-4000-8000-000000000001","quantity":"5",
   "operation_date":"2026-08-29","reason":"Salida multilote determinista"

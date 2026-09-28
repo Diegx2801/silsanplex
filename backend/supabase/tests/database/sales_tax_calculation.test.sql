@@ -59,7 +59,7 @@ insert into public.products (
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a3b20000-0000-4000-8000-000000000001', true);
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','a3b10000-0000-4000-8000-000000000001',
   'product_id','a3b70000-0000-4000-8000-000000000001',
   'warehouse_id','a3b50000-0000-4000-8000-000000000001',

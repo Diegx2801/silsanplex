@@ -79,7 +79,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', 'c2000000-0000-4000-8000-000000000001', true);
 
 select lives_ok($$
-  select public.record_inventory_movement(jsonb_build_object(
+  select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
     'organization_id', 'c1000000-0000-4000-8000-000000000001',
     'product_id', 'c3000000-0000-4000-8000-000000000001',
     'warehouse_id', 'c4000000-0000-4000-8000-000000000001',
@@ -119,7 +119,7 @@ select is(
 );
 
 select throws_ok($$
-  select public.record_inventory_movement(jsonb_build_object(
+  select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
     'organization_id', 'c1000000-0000-4000-8000-000000000001',
     'product_id', 'c3000000-0000-4000-8000-000000000002',
     'warehouse_id', 'c4000000-0000-4000-8000-000000000001',
@@ -132,7 +132,7 @@ $$, 'P0001', 'INVENTORY_SERVICE_PRODUCT_FORBIDDEN',
   'un servicio no puede crear una entrada manual');
 
 select throws_ok($$
-  select public.record_inventory_movement(jsonb_build_object(
+  select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
     'organization_id', 'c1000000-0000-4000-8000-000000000001',
     'product_id', 'c3000000-0000-4000-8000-000000000002',
     'warehouse_id', 'c4000000-0000-4000-8000-000000000001',
@@ -182,7 +182,7 @@ $$, 'P0001', 'INVENTORY_SERVICE_PRODUCT_FORBIDDEN',
   'un servicio no entra en FEFO');
 
 select throws_ok($$
-  select public.record_inventory_fefo_outbound(jsonb_build_object(
+  select public.record_inventory_fefo_outbound(jsonb_build_object('document_reference', 'TEST-FIXTURE',
     'organization_id', 'c1000000-0000-4000-8000-000000000001',
     'product_id', 'c3000000-0000-4000-8000-000000000002',
     'warehouse_id', 'c4000000-0000-4000-8000-000000000001',

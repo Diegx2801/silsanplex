@@ -187,7 +187,7 @@ select set_config(
 );
 
 select lives_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"b1000000-0000-4000-8000-000000000001",
     "product_id":"b5000000-0000-4000-8000-000000000001",
     "warehouse_id":"b6000000-0000-4000-8000-000000000001",
@@ -256,7 +256,7 @@ select throws_ok($$
 $$, 'P0001', 'INVENTORY_FEFO_INSUFFICIENT_STOCK', 'el plan FEFO descuenta la reserva de reparacion');
 
 select throws_ok($$
-  select public.record_inventory_fefo_outbound('{
+  select public.record_inventory_fefo_outbound('{"document_reference":"TEST-FIXTURE",
     "organization_id":"b1000000-0000-4000-8000-000000000001",
     "product_id":"b5000000-0000-4000-8000-000000000001",
     "warehouse_id":"b6000000-0000-4000-8000-000000000001",
@@ -272,7 +272,7 @@ select is(
 );
 
 select throws_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"b1000000-0000-4000-8000-000000000001",
     "product_id":"b5000000-0000-4000-8000-000000000001",
     "warehouse_id":"b6000000-0000-4000-8000-000000000001",
@@ -283,7 +283,7 @@ select throws_ok($$
 $$, 'P0001', 'INVENTORY_RESERVED_STOCK', 'la salida manual no usa stock reservado');
 
 select throws_ok($$
-  select public.record_inventory_movement('{
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
     "organization_id":"b1000000-0000-4000-8000-000000000001",
     "product_id":"b5000000-0000-4000-8000-000000000001",
     "warehouse_id":"b6000000-0000-4000-8000-000000000001",

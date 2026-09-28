@@ -50,7 +50,7 @@ insert into public.warehouse_locations (
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'd1200000-0000-4000-8000-000000000001', true);
 
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id', 'd1100000-0000-4000-8000-000000000001',
   'product_id', 'd1300000-0000-4000-8000-000000000002',
   'warehouse_id', 'd1400000-0000-4000-8000-000000000001',
@@ -59,7 +59,7 @@ select public.record_inventory_movement(jsonb_build_object(
   'stock_status', 'available', 'operation_date', current_date,
   'reason', 'Stock vigente'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id', 'd1100000-0000-4000-8000-000000000001',
   'product_id', 'd1300000-0000-4000-8000-000000000003',
   'warehouse_id', 'd1400000-0000-4000-8000-000000000001',
@@ -68,7 +68,7 @@ select public.record_inventory_movement(jsonb_build_object(
   'stock_status', 'available', 'operation_date', current_date,
   'reason', 'Stock para reserva'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id', 'd1100000-0000-4000-8000-000000000001',
   'product_id', 'd1300000-0000-4000-8000-000000000004',
   'warehouse_id', 'd1400000-0000-4000-8000-000000000001',
@@ -78,7 +78,7 @@ select public.record_inventory_movement(jsonb_build_object(
   'expiration_date', current_date + 30, 'operation_date', current_date,
   'reason', 'Lote vigente'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id', 'd1100000-0000-4000-8000-000000000001',
   'product_id', 'd1300000-0000-4000-8000-000000000005',
   'warehouse_id', 'd1400000-0000-4000-8000-000000000001',
@@ -87,7 +87,7 @@ select public.record_inventory_movement(jsonb_build_object(
   'stock_status', 'available', 'operation_date', current_date,
   'reason', 'Entrada histórica'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id', 'd1100000-0000-4000-8000-000000000001',
   'product_id', 'd1300000-0000-4000-8000-000000000005',
   'warehouse_id', 'd1400000-0000-4000-8000-000000000001',

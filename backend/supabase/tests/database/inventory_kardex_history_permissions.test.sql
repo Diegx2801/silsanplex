@@ -26,9 +26,9 @@ select is(
     'location_id:uuid', 'stock_status:text', 'unit_cost:numeric', 'transfer_id:uuid',
     'inbound_quantity:numeric', 'outbound_quantity:numeric', 'inbound_value:numeric',
     'outbound_value:numeric', 'running_quantity:numeric', 'running_value:numeric',
-    'ledger_sequence:int8'
+    'ledger_sequence:int8', 'document_reference:text'
   ]::text[],
-  'inventory_kardex conserva exactamente nombres, orden y tipos de sus 29 columnas'
+  'inventory_kardex conserva el contrato histórico y agrega el documento de sustento al final'
 );
 
 insert into public.organizations (id, name, slug) values
@@ -97,7 +97,7 @@ insert into public.warehouse_locations (
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'c4200000-0000-4000-8000-000000000001', true);
 
-select lives_ok($$select public.record_inventory_movement('{
+select lives_ok($$select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
   "organization_id":"c4100000-0000-4000-8000-000000000001",
   "product_id":"c4300000-0000-4000-8000-000000000001",
   "warehouse_id":"c4400000-0000-4000-8000-000000000001",
@@ -106,7 +106,7 @@ select lives_ok($$select public.record_inventory_movement('{
   "stock_status":"available","operation_date":"2026-09-01",
   "reason":"Entrada histórica C4"
 }'::jsonb)$$, 'el producto físico recibe una entrada válida');
-select lives_ok($$select public.record_inventory_movement('{
+select lives_ok($$select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
   "organization_id":"c4100000-0000-4000-8000-000000000001",
   "product_id":"c4300000-0000-4000-8000-000000000001",
   "warehouse_id":"c4400000-0000-4000-8000-000000000001",
@@ -185,7 +185,7 @@ select is(
 );
 
 select set_config('request.jwt.claim.sub', 'c4200000-0000-4000-8000-000000000001', true);
-select throws_ok($$select public.record_inventory_movement('{
+select throws_ok($$select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
   "organization_id":"c4100000-0000-4000-8000-000000000001",
   "product_id":"c4300000-0000-4000-8000-000000000002",
   "warehouse_id":"c4400000-0000-4000-8000-000000000001",

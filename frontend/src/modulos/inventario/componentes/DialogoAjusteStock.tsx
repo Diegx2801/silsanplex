@@ -226,6 +226,7 @@ export function DialogoAjusteStock({
         lote: bucket.lote,
         fechaVencimiento: bucket.fechaVencimiento,
         fechaOperacion: hoy(),
+        documentoReferencia: datos.documentoReferencia,
         motivo: crearMotivoAjusteStock(datos.motivoAjuste, datos.observacion),
       })
     } catch {
@@ -363,6 +364,21 @@ export function DialogoAjusteStock({
               {bucketSeleccionado ? (
                 <DetalleStock bucket={bucketSeleccionado} cantidad={cantidadNumero} />
               ) : null}
+
+              <div>
+                <label htmlFor="documento-ajuste-stock" className="field-label">Documento de sustento *</label>
+                <input
+                  id="documento-ajuste-stock"
+                  autoComplete="off"
+                  maxLength={120}
+                  placeholder="Ej. Acta de ajuste AJ-2026-001"
+                  className="field-control"
+                  aria-invalid={Boolean(errors.documentoReferencia)}
+                  {...register('documentoReferencia')}
+                />
+                <p className="field-help">Referencia al acta, conteo físico u otra autorización del ajuste.</p>
+                {errors.documentoReferencia ? <p className="field-error">{errors.documentoReferencia.message}</p> : null}
+              </div>
 
               <div>
                 <label htmlFor="cantidad-ajuste-stock" className="field-label">Cantidad a descontar *</label>

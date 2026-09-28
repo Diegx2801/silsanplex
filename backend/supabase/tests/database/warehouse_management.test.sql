@@ -1,6 +1,6 @@
 begin;
 
-select plan(50);
+select plan(52);
 
 -- Keep non-expired inventory fixtures stable as the calendar advances. The
 -- 30-day window also preserves the expiration-alert assertion below.
@@ -48,6 +48,14 @@ select trigger_is(
   'public',
   'enforce_inventory_outbound_balance',
   'toda salida pasa por la barrera autoritativa de saldo'
+);
+select trigger_is(
+  'public',
+  'inventory_movements',
+  'inventory_movements_require_controlled_expiration',
+  'public',
+  'require_expiration_for_manual_stock_receipt',
+  'el ledger impide entradas manuales sin vencimiento cuando el producto lo controla'
 );
 select is(
   public.inventory_bucket_lock_key(
@@ -116,9 +124,9 @@ insert into public.user_roles (organization_id, user_id, role_code) values
   ('81000000-0000-4000-8000-000000000001', '82000000-0000-4000-8000-000000000002', 'GERENCIA'),
   ('81000000-0000-4000-8000-000000000002', '82000000-0000-4000-8000-000000000003', 'ALMACEN');
 
-insert into public.products (id, organization_id, code, description, unit_of_measure, batch_control) values
-  ('83000000-0000-4000-8000-000000000001', '81000000-0000-4000-8000-000000000001', 'LOT-001', 'Producto trazable', 'UND', true),
-  ('83000000-0000-4000-8000-000000000002', '81000000-0000-4000-8000-000000000002', 'OTR-001', 'Producto ajeno', 'UND', false);
+insert into public.products (id, organization_id, code, description, unit_of_measure, batch_control, expiration_control) values
+  ('83000000-0000-4000-8000-000000000001', '81000000-0000-4000-8000-000000000001', 'LOT-001', 'Producto trazable', 'UND', true, true),
+  ('83000000-0000-4000-8000-000000000002', '81000000-0000-4000-8000-000000000002', 'OTR-001', 'Producto ajeno', 'UND', false, false);
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '82000000-0000-4000-8000-000000000001', true);
@@ -148,7 +156,7 @@ $$, 'configura minimo y ventana de vencimiento');
 select is((select has_low_stock_alert from public.inventory_alerts where product_id = '83000000-0000-4000-8000-000000000001'), true, 'alerta stock cero aun sin movimientos');
 
 select lives_ok($$
-  select public.record_inventory_movement(jsonb_build_object(
+  select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
     'organization_id', '81000000-0000-4000-8000-000000000001',
     'product_id', '83000000-0000-4000-8000-000000000001',
     'warehouse_id', '84000000-0000-4000-8000-000000000001',
@@ -165,7 +173,7 @@ select lives_ok($$
 $$, 'registra entrada por almacen, ubicacion y lote');
 
 select throws_ok($$
-  select public.record_inventory_movement(jsonb_build_object(
+  select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
     'organization_id', '81000000-0000-4000-8000-000000000001',
     'product_id', '83000000-0000-4000-8000-000000000001',
     'warehouse_id', '84000000-0000-4000-8000-000000000001',
@@ -188,7 +196,22 @@ select results_eq(
 select is((select has_low_stock_alert from public.inventory_alerts where product_id = '83000000-0000-4000-8000-000000000001'), true, 'genera alerta de stock minimo');
 select is((select has_expiration_alert from public.inventory_alerts where product_id = '83000000-0000-4000-8000-000000000001'), true, 'genera alerta de vencimiento');
 select throws_ok($$
-  select public.record_inventory_movement(jsonb_build_object(
+  select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
+    'organization_id', '81000000-0000-4000-8000-000000000001',
+    'product_id', '83000000-0000-4000-8000-000000000001',
+    'warehouse_id', '84000000-0000-4000-8000-000000000001',
+    'location_id', '85000000-0000-4000-8000-000000000001',
+    'movement_type', 'entrada',
+    'quantity', '1',
+    'unit_cost', '7.5',
+    'stock_status', 'available',
+    'lot', 'LOTE-SIN-VENCIMIENTO',
+    'operation_date', '2026-08-21',
+    'reason', 'Entrada sin vencimiento'
+  ))
+$$, 'P0001', 'INVENTORY_EXPIRATION_REQUIRED', 'rechaza entrada manual sin fecha de vencimiento controlada');
+select throws_ok($$
+  select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
     'organization_id', '81000000-0000-4000-8000-000000000001',
     'product_id', '83000000-0000-4000-8000-000000000001',
     'warehouse_id', '84000000-0000-4000-8000-000000000001',
@@ -273,7 +296,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '82000000-0000-4000-8000-000000000002', true);
 select is((select count(*) from public.inventory_balances), 3::bigint, 'GERENCIA consulta balances de su empresa');
 select throws_ok($$
-  select public.record_inventory_movement('{"organization_id":"81000000-0000-4000-8000-000000000001","product_id":"83000000-0000-4000-8000-000000000001","warehouse_id":"84000000-0000-4000-8000-000000000001","location_id":"85000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":"1","unit_cost":"1","stock_status":"available","lot":"L-2026","operation_date":"2026-08-21","reason":"Sin permiso"}'::jsonb)
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE","organization_id":"81000000-0000-4000-8000-000000000001","product_id":"83000000-0000-4000-8000-000000000001","warehouse_id":"84000000-0000-4000-8000-000000000001","location_id":"85000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":"1","unit_cost":"1","stock_status":"available","lot":"L-2026","operation_date":"2026-08-21","reason":"Sin permiso"}'::jsonb)
 $$, '42501', 'INVENTORY_FORBIDDEN', 'GERENCIA no modifica inventario');
 
 reset role;

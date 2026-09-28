@@ -111,6 +111,32 @@ export const router = createBrowserRouter([
         },
       },
       {
+        path: 'inventario/movimientos',
+        lazy: async () => {
+          const { MovimientosInventarioPage } = await import('@/app/paginas/MovimientosInventarioPage')
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.INVENTORY_VIEW}>
+                <MovimientosInventarioPage />
+              </PermissionRoute>
+            ),
+          }
+        },
+      },
+      {
+        path: 'inventario/control',
+        lazy: async () => {
+          const { ControlStockPage } = await import('@/app/paginas/ControlStockPage')
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.INVENTORY_VIEW}>
+                <ControlStockPage />
+              </PermissionRoute>
+            ),
+          }
+        },
+      },
+      {
         path: 'inventario/almacenes',
         lazy: async () => {
           const { AlmacenesPage } = await import(

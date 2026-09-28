@@ -53,7 +53,7 @@ insert into public.warehouse_locations (id, organization_id, warehouse_id, code,
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'b2a00000-0000-4000-8000-000000000001', true);
 
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','a2a00000-0000-4000-8000-000000000001',
   'product_id','d2a00000-0000-4000-8000-000000000001',
   'warehouse_id','e2a00000-0000-4000-8000-000000000001',
@@ -61,7 +61,7 @@ select public.record_inventory_movement(jsonb_build_object(
   'movement_type','entrada','quantity',10,'unit_cost',10,
   'stock_status','available','operation_date','2026-09-01','reason','Stock de pedidos persistentes'
 ));
-select public.record_inventory_movement(jsonb_build_object(
+select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','a2a00000-0000-4000-8000-000000000001',
   'product_id','d2a00000-0000-4000-8000-000000000002',
   'warehouse_id','e2a00000-0000-4000-8000-000000000001',
@@ -87,7 +87,7 @@ select is((select count(*) from public.order_items), 1::bigint, 'se crea la line
 select results_eq($$select subtotal, tax, total from public.orders limit 1$$, $$values (40.00::numeric, 7.20::numeric, 47.20::numeric)$$, 'los totales se calculan en PostgreSQL');
 select is((select status from public.orders limit 1), 'confirmado', 'el pedido inicia confirmado');
 set local role postgres;
-select is((select count(*) from public.audit_events where action = 'ORDER_CREATED'), 1::bigint, 'se registra auditoria del pedido');
+select is((select count(*) from public.audit_events where organization_id = 'a2a00000-0000-4000-8000-000000000001' and action = 'ORDER_CREATED'), 1::bigint, 'se registra auditoria del pedido');
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'b2a00000-0000-4000-8000-000000000001', true);
 
@@ -193,7 +193,7 @@ select is((select count(*) from public.sales), 1::bigint, 'se crea una venta');
 select is((select count(*) from public.sale_items), 1::bigint, 'la venta conserva sus lineas');
 select is((select order_id from public.sales limit 1), (select id from public.orders order by order_number limit 1), 'la venta conserva el vinculo al pedido');
 set local role postgres;
-select is((select count(*) from public.audit_events where action = 'SALE_CREATED'), 1::bigint, 'se registra auditoria de venta');
+select is((select count(*) from public.audit_events where organization_id = 'a2a00000-0000-4000-8000-000000000001' and action = 'SALE_CREATED'), 1::bigint, 'se registra auditoria de venta');
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'b2a00000-0000-4000-8000-000000000001', true);
 select is((select internal_number from public.sales limit 1), 'VEN-000001', 'la numeracion interna de venta es correlativa');

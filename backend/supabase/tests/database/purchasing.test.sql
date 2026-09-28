@@ -227,7 +227,7 @@ select throws_ok($$
   )
 $$, '23505', null, 'el documento de compra no se duplica');
 select throws_ok($$
-  select public.record_inventory_movement('{"organization_id":"d1111111-1111-4111-8111-111111111111","product_id":"f2222222-2222-4222-8222-222222222222","movement_type":"entrada","quantity":"1","warehouse":"Almacén principal","lot":"","expiration_date":"","operation_date":"2026-08-21","reason":"Entrada manual"}'::jsonb)
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE","organization_id":"d1111111-1111-4111-8111-111111111111","product_id":"f2222222-2222-4222-8222-222222222222","movement_type":"entrada","quantity":"1","warehouse":"Almacén principal","lot":"","expiration_date":"","operation_date":"2026-08-21","reason":"Entrada manual"}'::jsonb)
 $$, '42501', 'INVENTORY_FORBIDDEN', 'COMPRAS no registra movimientos manuales');
 
 reset role;
@@ -235,10 +235,10 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', 'e2222222-2222-4222-8222-222222222222', true);
 select ok(public.has_organization_permission('d1111111-1111-4111-8111-111111111111', 'PURCHASES_RECEIVE'), 'ALMACEN puede recibir compras');
 select lives_ok($$
-  select public.record_inventory_movement('{"organization_id":"d1111111-1111-4111-8111-111111111111","product_id":"f2222222-2222-4222-8222-222222222222","movement_type":"entrada","quantity":"2","warehouse":"Almacén principal","lot":"","expiration_date":"","operation_date":"2026-08-21","reason":"Entrada manual"}'::jsonb)
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE","organization_id":"d1111111-1111-4111-8111-111111111111","product_id":"f2222222-2222-4222-8222-222222222222","movement_type":"entrada","quantity":"2","warehouse":"Almacén principal","lot":"","expiration_date":"","operation_date":"2026-08-21","reason":"Entrada manual"}'::jsonb)
 $$, 'ALMACEN registra una entrada manual');
 select throws_ok($$
-  select public.record_inventory_movement('{"organization_id":"d1111111-1111-4111-8111-111111111111","product_id":"f2222222-2222-4222-8222-222222222222","movement_type":"salida","quantity":"100","warehouse":"Almacén principal","lot":"","expiration_date":"","operation_date":"2026-08-21","reason":"Salida excesiva"}'::jsonb)
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE","organization_id":"d1111111-1111-4111-8111-111111111111","product_id":"f2222222-2222-4222-8222-222222222222","movement_type":"salida","quantity":"100","warehouse":"Almacén principal","lot":"","expiration_date":"","operation_date":"2026-08-21","reason":"Salida excesiva"}'::jsonb)
 $$, 'P0001', 'INVENTORY_INSUFFICIENT_STOCK', 'inventario rechaza saldo negativo');
 select throws_ok($$
   select public.save_purchase_order('{"organization_id":"d1111111-1111-4111-8111-111111111111","supplier_id":"fa111111-1111-4111-8111-111111111111","document_type":"factura","series":"F002","document_number":"1","issue_date":"2026-08-21","warehouse":"Almacén principal","items":[]}'::jsonb)

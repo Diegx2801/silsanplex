@@ -300,12 +300,12 @@ select set_config(
 
 select lives_ok($$
   select public.record_inventory_movement(
-    '{"organization_id":"f1000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000001","warehouse_id":"f6000000-0000-4000-8000-000000000001","location_id":"f7000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":10,"unit_cost":8,"stock_status":"available","operation_date":"2026-08-27","reason":"Stock inicial reparaciones"}'::jsonb
+    '{"document_reference":"TEST-FIXTURE","organization_id":"f1000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000001","warehouse_id":"f6000000-0000-4000-8000-000000000001","location_id":"f7000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":10,"unit_cost":8,"stock_status":"available","operation_date":"2026-08-27","reason":"Stock inicial reparaciones"}'::jsonb
   )
 $$, 'prepara stock disponible en el libro canonico');
 select lives_ok($$
   select public.record_inventory_movement(
-    '{"organization_id":"f1000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000004","warehouse_id":"f6000000-0000-4000-8000-000000000001","location_id":"f7000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":3,"unit_cost":12,"stock_status":"available","expiration_date":"2099-12-31","operation_date":"2026-08-27","reason":"Stock con vencimiento"}'::jsonb
+    '{"document_reference":"TEST-FIXTURE","organization_id":"f1000000-0000-4000-8000-000000000001","product_id":"f5000000-0000-4000-8000-000000000004","warehouse_id":"f6000000-0000-4000-8000-000000000001","location_id":"f7000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":3,"unit_cost":12,"stock_status":"available","expiration_date":"2099-12-31","operation_date":"2026-08-27","reason":"Stock con vencimiento"}'::jsonb
   )
 $$, 'prepara stock con vencimiento para reparaciones');
 
