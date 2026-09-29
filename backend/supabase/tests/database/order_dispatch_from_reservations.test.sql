@@ -1,6 +1,6 @@
 begin;
 
-select plan(28);
+select plan(37);
 
 select has_function(
   'public', 'dispatch_order_from_reservations', array['jsonb'],
@@ -100,6 +100,12 @@ select public.dispatch_order_from_reservations(jsonb_build_object(
 )) as partial_dispatch_id \gset
 select is((select count(*) from public.inventory_movements where source_type = 'order-dispatch'), 2::bigint, 'el despacho parcial consume dos lotes FEFO');
 select is((select sum(quantity) from public.inventory_movements where source_type = 'order-dispatch'), 6.000::numeric, 'el parcial genera exactamente la cantidad solicitada');
+select is((select count(*) from public.inventory_movements where source_type = 'order-dispatch' and document_reference is not null), 2::bigint, 'cada movimiento nuevo tiene referencia documental');
+select is((select count(distinct document_reference) from public.inventory_movements where source_type = 'order-dispatch'), 1::bigint, 'un despacho parcial comparte la referencia de su operacion');
+select is((select max(document_reference) from public.inventory_movements where source_type = 'order-dispatch'), 'PED:PED-000001|OP:b3300000-0000-4000-8000-000000000001', 'la referencia combina pedido y operation_key');
+select is((select jsonb_array_length(metadata -> 'movement_ids') from public.audit_events where action = 'ORDER_DISPATCHED' and entity_id = :'order_id' and metadata ->> 'operation_key' = 'b3300000-0000-4000-8000-000000000001'), 2, 'ORDER_DISPATCHED conserva los movimientos de la operacion');
+select ok((select metadata -> 'allocations' @> jsonb_build_array(jsonb_build_object('quantity', 4, 'lot', 'A', 'expiration_date', '2099-01-01')) from public.audit_events where action = 'ORDER_DISPATCHED' and entity_id = :'order_id' and metadata ->> 'operation_key' = 'b3300000-0000-4000-8000-000000000001'), 'ORDER_DISPATCHED conserva cantidad, lote y vencimiento');
+select is((select count(*) from public.audit_events audit cross join lateral jsonb_array_elements_text(audit.metadata -> 'movement_ids') movement_id join public.inventory_movements movement on movement.id = movement_id::uuid where audit.action = 'ORDER_DISPATCHED' and audit.entity_id = :'order_id' and audit.metadata ->> 'operation_key' = 'b3300000-0000-4000-8000-000000000001' and movement.document_reference = 'PED:PED-000001|OP:b3300000-0000-4000-8000-000000000001'), 2::bigint, 'la auditoria enlaza la operacion con sus referencias Kardex');
 select is((select sum(quantity - quantity_consumed) from public.inventory_reservations where source_type = 'order-item' and source_id = (select id from public.order_items where order_id = :'order_id')), 4.000::numeric, 'quedan cuatro unidades reservadas');
 select is((select sum(physical_quantity) from public.inventory_bucket_availability where product_id = 'b3e00000-0000-4000-8000-000000000001'), 4.000::numeric, 'el stock fisico disminuye a cuatro');
 select is((select sum(reserved_quantity) from public.inventory_bucket_availability where product_id = 'b3e00000-0000-4000-8000-000000000001'), 4.000::numeric, 'la reserva disminuye a cuatro');
@@ -121,6 +127,7 @@ select public.dispatch_order_from_reservations(jsonb_build_object(
 )) as retry_dispatch_id \gset
 select is(:'retry_dispatch_id'::uuid, :'order_id'::uuid, 'retry devuelve el pedido original');
 select is((select count(*) from public.inventory_movements where source_type = 'order-dispatch'), 2::bigint, 'retry no duplica movimientos');
+select is((select count(*) from public.inventory_movements where source_type = 'order-dispatch' and document_reference = 'PED:PED-000001|OP:b3300000-0000-4000-8000-000000000001'), 2::bigint, 'retry conserva la referencia documental estable');
 
 select public.dispatch_order_from_reservations(jsonb_build_object(
   'organization_id','b3b00000-0000-4000-8000-000000000001', 'order_id', :'order_id', 'sale_id', :'sale_id',
@@ -128,6 +135,8 @@ select public.dispatch_order_from_reservations(jsonb_build_object(
   'items',jsonb_build_array(jsonb_build_object('order_item_id',(select id from public.order_items where order_id = :'order_id'), 'quantity',4))
 )) as complete_dispatch_id \gset
 select is((select count(*) from public.inventory_movements where source_type = 'order-dispatch'), 3::bigint, 'segundo despacho crea el movimiento restante');
+select is((select count(*) from public.inventory_movements where source_type = 'order-dispatch' and document_reference = 'PED:PED-000001|OP:b3300000-0000-4000-8000-000000000002'), 1::bigint, 'el segundo despacho tiene su propia referencia');
+select is((select count(distinct document_reference) from public.inventory_movements where source_type = 'order-dispatch'), 2::bigint, 'los despachos parciales conservan identidades documentales distintas');
 select is((select sum(quantity - quantity_consumed) from public.inventory_reservations where source_type = 'order-item' and source_id = (select id from public.order_items where order_id = :'order_id')), 0.000::numeric, 'la reserva queda completamente consumida');
 select is((select status from public.inventory_reservations where source_type = 'order-item' and source_id = (select id from public.order_items where order_id = :'order_id') and lot = 'A'), 'consumed', 'lote A consumido');
 select is((select status from public.inventory_reservations where source_type = 'order-item' and source_id = (select id from public.order_items where order_id = :'order_id') and lot = 'B'), 'consumed', 'lote B consumido');

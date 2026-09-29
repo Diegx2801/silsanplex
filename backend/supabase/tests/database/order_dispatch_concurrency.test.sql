@@ -3,7 +3,7 @@ insert into dispatch_concurrency_extension_state
 select exists (select 1 from pg_catalog.pg_extension where extname = 'dblink');
 create extension if not exists dblink with schema extensions;
 
-select plan(10);
+select plan(11);
 
 begin;
 drop schema if exists dispatch_concurrency_test cascade;
@@ -108,6 +108,7 @@ insert into dispatch_concurrency_results select 'b', result from extensions.dbli
 select is((select count(*) from dispatch_concurrency_results where result like 'ok:%'), 1::bigint, 'solo un despacho consume la reserva concurrente');
 select is((select count(*) from dispatch_concurrency_results where result like 'error:P0001:ORDER_DISPATCH_EXCEEDS_RESERVED%'), 1::bigint, 'el segundo despacho excedente falla');
 select is((select count(*) from public.inventory_movements where organization_id = 'b4b00000-0000-4000-8000-000000000001' and source_type = 'order-dispatch'), 1::bigint, 'la carrera no duplica movimientos');
+select is((select count(*) from public.inventory_movements where organization_id = 'b4b00000-0000-4000-8000-000000000001' and source_type = 'order-dispatch' and document_reference in ('PED:PED-000001|OP:b4300000-0000-4000-8000-000000000001', 'PED:PED-000001|OP:b4300000-0000-4000-8000-000000000002')), 1::bigint, 'la carrera conserva una referencia documental de operacion');
 select is((select sum(quantity - quantity_consumed) from public.inventory_reservations where source_type = 'order-item' and source_id = (select id from public.order_items where order_id = :'order_id')), 4.000::numeric, 'la reserva queda con el saldo pendiente correcto');
 select is((select sum(physical_quantity) from public.inventory_bucket_availability where product_id = 'b4e00000-0000-4000-8000-000000000001'), 4.000::numeric, 'el fisico solo se descuenta una vez');
 
