@@ -71,7 +71,7 @@ describe('DialogoConfirmacionRecepcion', () => {
   it('marca todos los campos inválidos de cada partida', async () => {
     const alConfirmar = renderDialog()
     expect(screen.getByText(/unidad UND/)).toBeVisible()
-    fireEvent.change(screen.getByLabelText(/Cantidad/), { target: { value: '' } })
+    fireEvent.change(screen.getByLabelText(/Cantidad \(UND\)/), { target: { value: '' } })
     fireEvent.change(screen.getByLabelText(/Ubicación/), { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar recepción' }))
 
@@ -80,7 +80,7 @@ describe('DialogoConfirmacionRecepcion', () => {
     expect(screen.getByText('Selecciona una ubicación activa.')).toBeVisible()
     expect(screen.getByText('Ingresa el lote del producto.')).toBeVisible()
     expect(screen.getByText('Ingresa la fecha de vencimiento.')).toBeVisible()
-    expect(screen.getByLabelText(/Cantidad/)).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText(/Cantidad \(UND\)/)).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByLabelText(/Ubicación/)).toHaveAttribute('aria-invalid', 'true')
     expect(alConfirmar).not.toHaveBeenCalled()
   })
@@ -100,5 +100,39 @@ describe('DialogoConfirmacionRecepcion', () => {
         fechaVencimiento: '2027-09-01',
       })],
     })))
+  })
+
+  it('envía aceptación y rechazo con motivos estructurados', async () => {
+    const alConfirmar = renderDialog()
+    fireEvent.change(screen.getByLabelText(/Lote/), { target: { value: 'LOTE-1' } })
+    fireEvent.change(screen.getByLabelText(/Vencimiento/), { target: { value: '2027-09-01' } })
+    fireEvent.change(screen.getByLabelText('Cantidad aceptada'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('Cantidad rechazada'), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar motivo' }))
+    fireEvent.change(screen.getByLabelText('Cantidad'), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar recepción' }))
+
+    await waitFor(() => expect(alConfirmar).toHaveBeenCalledWith(expect.objectContaining({
+      lineas: [expect.objectContaining({
+        inspeccion: {
+          cantidadInspeccionada: '5',
+          cantidadAceptada: '3',
+          cantidadRechazada: '2',
+          observacion: '',
+          motivos: [{ codigo: 'quality', cantidad: '2', texto: '' }],
+        },
+      })],
+    })))
+  })
+
+  it('impide confirmar cuando no se conserva la cantidad inspeccionada', async () => {
+    const alConfirmar = renderDialog()
+    fireEvent.change(screen.getByLabelText(/Lote/), { target: { value: 'LOTE-1' } })
+    fireEvent.change(screen.getByLabelText(/Vencimiento/), { target: { value: '2027-09-01' } })
+    fireEvent.change(screen.getByLabelText('Cantidad aceptada'), { target: { value: '4' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar recepción' }))
+
+    expect(await screen.findByText('La cantidad aceptada más la rechazada debe coincidir con la cantidad recibida.')).toBeVisible()
+    expect(alConfirmar).not.toHaveBeenCalled()
   })
 })

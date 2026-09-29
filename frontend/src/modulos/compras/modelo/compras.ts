@@ -125,6 +125,27 @@ export interface LineaRecepcionCompra {
   ubicacionId: string
   lote: string
   fechaVencimiento: string
+  inspeccion?: InspeccionRecepcionCompra
+}
+
+export type CodigoMotivoInspeccionRecepcion =
+  | 'quality'
+  | 'documentation'
+  | 'quantity_mismatch'
+  | 'other'
+
+export interface MotivoInspeccionRecepcionCompra {
+  codigo: CodigoMotivoInspeccionRecepcion
+  cantidad: string
+  texto: string
+}
+
+export interface InspeccionRecepcionCompra {
+  cantidadInspeccionada: string
+  cantidadAceptada: string
+  cantidadRechazada: string
+  observacion: string
+  motivos: MotivoInspeccionRecepcionCompra[]
 }
 
 export interface DatosRecepcionCompra {

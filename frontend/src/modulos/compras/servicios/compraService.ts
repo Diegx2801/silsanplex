@@ -118,6 +118,13 @@ function mapearCompra(fila: CompraFila): Compra {
 
 function mensajeError(error: { code?: string; message?: string }) {
   const mensaje = error.message ?? ''
+  if (mensaje.includes('PURCHASE_RECEIPT_INSPECTION_QUANTITY_INVALID')) return 'La cantidad inspeccionada debe coincidir con la recibida y conservar aceptación más rechazo'
+  if (mensaje.includes('PURCHASE_RECEIPT_INSPECTION_REASONS_TOTAL_MISMATCH')) return 'La suma de los motivos debe coincidir con la cantidad rechazada'
+  if (mensaje.includes('PURCHASE_RECEIPT_INSPECTION_REASON_INVALID')) return 'Completa un motivo de rechazo válido'
+  if (mensaje.includes('PURCHASE_RECEIPT_INSPECTION_OBSERVATION_INVALID')) return 'La observación de inspección no puede superar 600 caracteres'
+  if (mensaje.includes('PURCHASE_RECEIPT_INSPECTION_SERVICE_FORBIDDEN')) return 'Los servicios no requieren inspección física'
+  if (mensaje.includes('PURCHASE_RECEIPT_INSPECTION_QUANTITY_MISMATCH')) return 'La inspección no coincide con la línea de recepción'
+  if (mensaje.includes('SUPPLIER_RETURN_NO_ACCEPTED_QUANTITY')) return 'La recepción no tiene cantidad aceptada disponible para devolver'
   if (mensaje.includes('PURCHASE_RECEIPT_IDEMPOTENCY_CONFLICT')) return 'La clave de recepción ya fue usada con datos diferentes; inicia una nueva operación'
   if (mensaje.includes('PURCHASE_RECEIPT_IDEMPOTENCY_LEGACY_UNVERIFIABLE')) return 'No se puede verificar el reintento de una recepción histórica; inicia una nueva operación'
   if (mensaje.includes('PURCHASE_RECEIPT_KEY_CONFLICT')) return 'La clave de recepción ya pertenece a otra orden'
@@ -266,7 +273,7 @@ export async function recibirCompraPersistente(
   compraId: string,
   datos: DatosRecepcionCompra,
 ) {
-  const { error } = await supabase.rpc('receive_purchase_order_partial', {
+  const { error } = await supabase.rpc('receive_purchase_order_partial_inspected', {
     payload: {
       organization_id: organizationId,
       purchase_order_id: compraId,
@@ -279,6 +286,21 @@ export async function recibirCompraPersistente(
         location_id: linea.fulfillmentMode === 'administrative' ? null : linea.ubicacionId,
         lot: linea.fulfillmentMode === 'administrative' ? null : linea.lote,
         expiration_date: linea.fulfillmentMode === 'administrative' ? null : linea.fechaVencimiento,
+        ...(linea.inspeccion && linea.fulfillmentMode !== 'administrative'
+          ? {
+              inspection: {
+                inspected_quantity: linea.inspeccion.cantidadInspeccionada,
+                accepted_quantity: linea.inspeccion.cantidadAceptada,
+                rejected_quantity: linea.inspeccion.cantidadRechazada,
+                observation: linea.inspeccion.observacion,
+                findings: linea.inspeccion.motivos.map((motivo) => ({
+                  reason_code: motivo.codigo,
+                  reason_text: motivo.texto || null,
+                  quantity: motivo.cantidad,
+                })),
+              },
+            }
+          : {}),
       })),
     },
   })

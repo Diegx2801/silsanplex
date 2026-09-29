@@ -117,7 +117,7 @@ describe('compraService', () => {
       operationKey: 'c1111111-1111-4111-8111-111111111111', observacion: 'Primera entrega',
       lineas: [{ purchaseOrderItemId: 'linea-1', cantidad: '2', ubicacionId: 'u-1', lote: 'L1', fechaVencimiento: '2027-01-01' }],
     })
-    expect(supabaseMock.rpc).toHaveBeenCalledWith('receive_purchase_order_partial', {
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('receive_purchase_order_partial_inspected', {
       payload: expect.objectContaining({
         purchase_order_id: 'compra-1', operation_key: 'c1111111-1111-4111-8111-111111111111',
         items: [expect.objectContaining({ purchase_order_item_id: 'linea-1', location_id: 'u-1' })],
@@ -131,7 +131,7 @@ describe('compraService', () => {
       operationKey: 'c1111111-1111-4111-8111-111111111112', observacion: '',
       lineas: [{ purchaseOrderItemId: 'linea-1', cantidad: '1', fulfillmentMode: 'administrative', ubicacionId: '', lote: '', fechaVencimiento: '' }],
     })
-    expect(supabaseMock.rpc).toHaveBeenCalledWith('receive_purchase_order_partial', {
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('receive_purchase_order_partial_inspected', {
       payload: expect.objectContaining({
         items: [expect.objectContaining({ fulfillment_mode: 'administrative', location_id: null, lot: null, expiration_date: null })],
       }),

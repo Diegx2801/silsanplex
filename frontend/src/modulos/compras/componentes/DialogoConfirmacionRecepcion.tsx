@@ -3,11 +3,17 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import type { Compra, DatosRecepcionCompra, LineaRecepcionCompra } from '@/modulos/compras/modelo/compras'
+import type {
+  Compra,
+  DatosRecepcionCompra,
+  InspeccionRecepcionCompra,
+  LineaRecepcionCompra,
+  MotivoInspeccionRecepcionCompra,
+} from '@/modulos/compras/modelo/compras'
 import type { UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
 
 interface FilaRecepcion extends LineaRecepcionCompra { id: string }
-type CampoError = 'general' | 'cantidad' | 'ubicacionId' | 'lote' | 'fechaVencimiento'
+type CampoError = 'general' | 'cantidad' | 'ubicacionId' | 'lote' | 'fechaVencimiento' | 'inspeccion'
 type ErroresFila = Partial<Record<CampoError, string>>
 interface Props {
   abierto: boolean
@@ -17,6 +23,23 @@ interface Props {
   alConfirmar: (datos: DatosRecepcionCompra) => Promise<string | undefined>
   alRestaurarFoco: () => void
 }
+
+function crearInspeccion(cantidad: string): InspeccionRecepcionCompra {
+  return {
+    cantidadInspeccionada: cantidad,
+    cantidadAceptada: cantidad,
+    cantidadRechazada: '0',
+    observacion: '',
+    motivos: [],
+  }
+}
+
+const motivosDisponibles: Array<{ codigo: MotivoInspeccionRecepcionCompra['codigo']; etiqueta: string }> = [
+  { codigo: 'quality', etiqueta: 'Calidad / condición del producto' },
+  { codigo: 'documentation', etiqueta: 'Documentación' },
+  { codigo: 'quantity_mismatch', etiqueta: 'Diferencia de cantidad' },
+  { codigo: 'other', etiqueta: 'Otro' },
+]
 
 export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alCambiarApertura, alConfirmar, alRestaurarFoco }: Props) {
   const ubicacionesDestino = useMemo(
@@ -34,13 +57,35 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
       ubicacionId: linea.tipoProducto === 'service' ? '' : ubicacionesDestino[0]?.id ?? '',
       lote: linea.tipoProducto === 'service' ? '' : linea.lote,
       fechaVencimiento: linea.tipoProducto === 'service' ? '' : linea.fechaVencimiento,
+      inspeccion: linea.tipoProducto === 'service' ? undefined : crearInspeccion(String(linea.cantidadPendiente)),
     })))
   const [procesando, setProcesando] = useState(false)
   const [error, setError] = useState('')
   const [erroresFilas, setErroresFilas] = useState<Record<string, ErroresFila>>({})
 
   const actualizar = (id: string, cambio: Partial<FilaRecepcion>) => {
-    setFilas((actuales) => actuales.map((fila) => fila.id === id ? { ...fila, ...cambio } : fila))
+    setFilas((actuales) => actuales.map((fila) => {
+      if (fila.id !== id) return fila
+      if (cambio.cantidad === undefined || !fila.inspeccion) return { ...fila, ...cambio }
+      const cantidadAnterior = Number(fila.cantidad)
+      const cantidadNueva = cambio.cantidad
+      const inspeccionConservada = Math.abs(
+        Number(fila.inspeccion.cantidadAceptada)
+        + Number(fila.inspeccion.cantidadRechazada)
+        - cantidadAnterior,
+      ) <= 0.0005
+      return {
+        ...fila,
+        ...cambio,
+        inspeccion: {
+          ...fila.inspeccion,
+          cantidadInspeccionada: cantidadNueva,
+          cantidadAceptada: inspeccionConservada && Number(fila.inspeccion.cantidadRechazada) === 0
+            ? cantidadNueva
+            : fila.inspeccion.cantidadAceptada,
+        },
+      }
+    }))
     setError('')
     setErroresFilas((actuales) => {
       if (!actuales[id]) return actuales
@@ -63,6 +108,7 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
       ubicacionId: linea.tipoProducto === 'service' ? '' : ubicacionesDestino[0]?.id ?? '',
       lote: linea.tipoProducto === 'service' ? '' : linea.lote,
       fechaVencimiento: linea.tipoProducto === 'service' ? '' : linea.fechaVencimiento,
+      inspeccion: linea.tipoProducto === 'service' ? undefined : crearInspeccion(''),
     }])
   }
 
@@ -73,6 +119,58 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
       const { [id]: _omitido, ...resto } = actuales
       return resto
     })
+  }
+
+  const actualizarInspeccion = (id: string, cambio: Partial<InspeccionRecepcionCompra>) => {
+    setFilas((actuales) => actuales.map((fila) => fila.id === id && fila.inspeccion
+      ? { ...fila, inspeccion: { ...fila.inspeccion, ...cambio } }
+      : fila))
+    setError('')
+    setErroresFilas((actuales) => {
+      if (!actuales[id]) return actuales
+      const { [id]: _omitido, ...resto } = actuales
+      return resto
+    })
+  }
+
+  const actualizarMotivo = (id: string, indiceMotivo: number, cambio: Partial<MotivoInspeccionRecepcionCompra>) => {
+    setFilas((actuales) => actuales.map((fila) => {
+      if (fila.id !== id || !fila.inspeccion) return fila
+      return {
+        ...fila,
+        inspeccion: {
+          ...fila.inspeccion,
+          motivos: fila.inspeccion.motivos.map((motivo, indice) => indice === indiceMotivo ? { ...motivo, ...cambio } : motivo),
+        },
+      }
+    }))
+    setError('')
+  }
+
+  const agregarMotivo = (id: string) => {
+    setFilas((actuales) => actuales.map((fila) => {
+      if (fila.id !== id || !fila.inspeccion) return fila
+      return {
+        ...fila,
+        inspeccion: {
+          ...fila.inspeccion,
+          motivos: [...fila.inspeccion.motivos, { codigo: 'quality', cantidad: '', texto: '' }],
+        },
+      }
+    }))
+  }
+
+  const quitarMotivo = (id: string, indiceMotivo: number) => {
+    setFilas((actuales) => actuales.map((fila) => {
+      if (fila.id !== id || !fila.inspeccion) return fila
+      return {
+        ...fila,
+        inspeccion: {
+          ...fila.inspeccion,
+          motivos: fila.inspeccion.motivos.filter((_, indice) => indice !== indiceMotivo),
+        },
+      }
+    }))
   }
 
   const confirmar = async () => {
@@ -114,6 +212,30 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
       if (linea.controlVencimiento && !fila.fechaVencimiento) {
         agregarError(fila.id, 'fechaVencimiento', 'Ingresa la fecha de vencimiento.')
       }
+      if (!esServicio) {
+        const inspeccion = fila.inspeccion
+        const cantidadAceptada = Number(inspeccion?.cantidadAceptada)
+        const cantidadRechazada = Number(inspeccion?.cantidadRechazada)
+        const motivos = inspeccion?.motivos ?? []
+        const sumaMotivos = motivos.reduce((total, motivo) => total + Number(motivo.cantidad), 0)
+        if (!inspeccion
+          || !Number.isFinite(cantidadAceptada)
+          || !Number.isFinite(cantidadRechazada)
+          || cantidadAceptada < 0
+          || cantidadRechazada < 0
+          || Math.abs(cantidadAceptada + cantidadRechazada - cantidad) > 0.0005
+        ) {
+          agregarError(fila.id, 'inspeccion', 'La cantidad aceptada más la rechazada debe coincidir con la cantidad recibida.')
+        } else if (cantidadRechazada > 0) {
+          if (!motivos.length || motivos.some((motivo) => !Number.isFinite(Number(motivo.cantidad)) || Number(motivo.cantidad) <= 0 || (motivo.codigo === 'other' && !motivo.texto.trim()))) {
+            agregarError(fila.id, 'inspeccion', 'Agrega motivos válidos para toda la cantidad rechazada.')
+          } else if (Math.abs(sumaMotivos - cantidadRechazada) > 0.0005) {
+            agregarError(fila.id, 'inspeccion', 'La suma de los motivos debe coincidir con la cantidad rechazada.')
+          }
+        } else if (motivos.length) {
+          agregarError(fila.id, 'inspeccion', 'No registres motivos si no hay cantidad rechazada.')
+        }
+      }
       if (Number.isFinite(cantidad) && cantidad > 0) {
         cantidades.set(linea.id, (cantidades.get(linea.id) ?? 0) + cantidad)
       }
@@ -134,7 +256,12 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
     setProcesando(true)
     const resultado = await alConfirmar({
       operationKey, observacion,
-      lineas: filas.map(({ id: _id, ...fila }) => fila),
+      lineas: filas.map(({ id: _id, ...fila }) => ({
+        ...fila,
+        inspeccion: fila.inspeccion
+          ? { ...fila.inspeccion, cantidadInspeccionada: fila.cantidad }
+          : undefined,
+      })),
     })
     setProcesando(false)
     if (resultado) return setError(resultado)
@@ -148,7 +275,7 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
         <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-70 max-h-[90vh] w-[calc(100%-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background p-5 shadow-xl outline-none sm:p-6" onCloseAutoFocus={(evento) => { evento.preventDefault(); alRestaurarFoco() }}>
           <div className="grid size-10 place-items-center rounded-full bg-accent text-primary"><PackageCheck aria-hidden="true" className="size-5" /></div>
           <DialogPrimitive.Title className="mt-4 text-xl font-semibold">Registrar recepción</DialogPrimitive.Title>
-          <DialogPrimitive.Description className="mt-2 text-sm leading-6 text-muted-foreground">Confirma solo lo recibido. Los bienes entran a inventario; los servicios se marcan atendidos sin generar stock.</DialogPrimitive.Description>
+          <DialogPrimitive.Description className="mt-2 text-sm leading-6 text-muted-foreground">Registra lo recibido físicamente y el resultado de la inspección. Solo la cantidad aceptada entra a inventario; los servicios se marcan atendidos sin generar stock.</DialogPrimitive.Description>
           <div className="mt-5 space-y-5">
             {compra.lineas.filter((linea) => linea.cantidadPendiente > 0).map((linea) => (
               <section key={linea.id} className="border p-4">
@@ -173,6 +300,37 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
                           <label htmlFor={`recepcion-${fila.id}-ubicacion`}><span className="field-label">Ubicación</span><select id={`recepcion-${fila.id}-ubicacion`} className="field-control" value={fila.ubicacionId} aria-invalid={Boolean(erroresFila?.ubicacionId)} aria-describedby={erroresFila?.ubicacionId ? idError('ubicacionId') : undefined} onChange={(e) => actualizar(fila.id, { ubicacionId: e.target.value })}><option value="">Selecciona</option>{ubicacionesDestino.map((u) => <option key={u.id} value={u.id}>{u.codigo} · {u.nombre}</option>)}</select>{erroresFila?.ubicacionId ? <span id={idError('ubicacionId')} className="field-error">{erroresFila.ubicacionId}</span> : null}</label>
                           <label htmlFor={`recepcion-${fila.id}-lote`}><span className="field-label">Lote{linea.controlLote ? ' *' : ''}</span><input id={`recepcion-${fila.id}-lote`} className="field-control" maxLength={60} value={fila.lote} aria-invalid={Boolean(erroresFila?.lote)} aria-describedby={erroresFila?.lote ? idError('lote') : undefined} onChange={(e) => actualizar(fila.id, { lote: e.target.value })} />{erroresFila?.lote ? <span id={idError('lote')} className="field-error">{erroresFila.lote}</span> : null}</label>
                           <label htmlFor={`recepcion-${fila.id}-vencimiento`}><span className="field-label">Vencimiento{linea.controlVencimiento ? ' *' : ''}</span><input id={`recepcion-${fila.id}-vencimiento`} className="field-control" type="date" value={fila.fechaVencimiento} aria-invalid={Boolean(erroresFila?.fechaVencimiento)} aria-describedby={erroresFila?.fechaVencimiento ? idError('fechaVencimiento') : undefined} onChange={(e) => actualizar(fila.id, { fechaVencimiento: e.target.value })} />{erroresFila?.fechaVencimiento ? <span id={idError('fechaVencimiento')} className="field-error">{erroresFila.fechaVencimiento}</span> : null}</label>
+                          {fila.inspeccion ? (
+                            <div className="md:col-span-full border border-dashed bg-muted/20 p-3">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div>
+                                  <p className="text-sm font-medium">Inspección de recepción</p>
+                                  <p className="mt-1 text-xs text-muted-foreground">Inspeccionada: {fila.cantidad} {linea.unidadMedida}. Solo la cantidad aceptada ingresa al stock disponible.</p>
+                                </div>
+                                <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">Sin cuarentena</span>
+                              </div>
+                              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                <label htmlFor={'recepcion-' + fila.id + '-aceptada'}><span className="field-label">Cantidad aceptada</span><input id={'recepcion-' + fila.id + '-aceptada'} className="field-control" type="number" min="0" step="0.001" value={fila.inspeccion.cantidadAceptada} aria-invalid={Boolean(erroresFila?.inspeccion)} onChange={(e) => actualizarInspeccion(fila.id, { cantidadAceptada: e.target.value })} /></label>
+                                <label htmlFor={'recepcion-' + fila.id + '-rechazada'}><span className="field-label">Cantidad rechazada</span><input id={'recepcion-' + fila.id + '-rechazada'} className="field-control" type="number" min="0" step="0.001" value={fila.inspeccion.cantidadRechazada} aria-invalid={Boolean(erroresFila?.inspeccion)} onChange={(e) => actualizarInspeccion(fila.id, { cantidadRechazada: e.target.value })} /></label>
+                              </div>
+                              {erroresFila?.inspeccion ? <p id={idError('inspeccion')} role="alert" className="mt-2 field-error">{erroresFila.inspeccion}</p> : null}
+                              <div className="mt-3 space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Motivos del rechazo</span>
+                                  <Button type="button" variant="outline" size="sm" onClick={() => agregarMotivo(fila.id)}><Plus /> Agregar motivo</Button>
+                                </div>
+                                {fila.inspeccion.motivos.map((motivo, indiceMotivo) => (
+                                  <div key={indiceMotivo} className="grid gap-2 border-t pt-2 sm:grid-cols-[1fr_8rem_1fr_auto]">
+                                    <label htmlFor={'recepcion-' + fila.id + '-motivo-' + indiceMotivo + '-codigo'}><span className="field-label">Motivo</span><select id={'recepcion-' + fila.id + '-motivo-' + indiceMotivo + '-codigo'} className="field-control" value={motivo.codigo} onChange={(e) => actualizarMotivo(fila.id, indiceMotivo, { codigo: e.target.value as MotivoInspeccionRecepcionCompra['codigo'] })}>{motivosDisponibles.map((opcion) => <option key={opcion.codigo} value={opcion.codigo}>{opcion.etiqueta}</option>)}</select></label>
+                                    <label htmlFor={'recepcion-' + fila.id + '-motivo-' + indiceMotivo + '-cantidad'}><span className="field-label">Cantidad</span><input id={'recepcion-' + fila.id + '-motivo-' + indiceMotivo + '-cantidad'} className="field-control" type="number" min="0.001" step="0.001" value={motivo.cantidad} onChange={(e) => actualizarMotivo(fila.id, indiceMotivo, { cantidad: e.target.value })} /></label>
+                                    <label htmlFor={'recepcion-' + fila.id + '-motivo-' + indiceMotivo + '-texto'}><span className="field-label">{motivo.codigo === 'other' ? 'Detalle *' : 'Detalle (opcional)'}</span><input id={'recepcion-' + fila.id + '-motivo-' + indiceMotivo + '-texto'} className="field-control" maxLength={240} value={motivo.texto} onChange={(e) => actualizarMotivo(fila.id, indiceMotivo, { texto: e.target.value })} /></label>
+                                    <Button type="button" variant="ghost" size="icon" className="self-end" aria-label="Quitar motivo" onClick={() => quitarMotivo(fila.id, indiceMotivo)}><Trash2 /></Button>
+                                  </div>
+                                ))}
+                              </div>
+                              <label className="mt-3 block"><span className="field-label">Observación de inspección</span><textarea className="field-control min-h-16" maxLength={600} value={fila.inspeccion.observacion} onChange={(e) => actualizarInspeccion(fila.id, { observacion: e.target.value })} /></label>
+                            </div>
+                          ) : null}
                         </>}
                         <Button type="button" variant="ghost" size="icon" className="self-end" disabled={indice === 0 && partidas.length === 1} aria-label="Quitar partida" onClick={() => quitarPartida(fila.id)}><Trash2 /></Button>
                       </div>
