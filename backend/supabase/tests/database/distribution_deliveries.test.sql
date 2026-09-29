@@ -1,6 +1,14 @@
 begin;
 
-select plan(154);
+select plan(173);
+
+select has_column('public', 'orders', 'delivery_address_snapshot', 'D1 order destination snapshot column exists');
+select has_function('public', 'prepare_distribution_delivery_payload', array['jsonb'], 'D1 destination payload preparation exists');
+select is(has_function_privilege('anon', 'public.save_distribution_delivery(jsonb)', 'EXECUTE'), false, 'anon cannot save deliveries');
+select is(has_function_privilege('anon', 'public.record_distribution_delivery_outcome(jsonb)', 'EXECUTE'), false, 'anon cannot record outcomes');
+select is((select count(*) from pg_constraint where conname = 'distribution_deliveries_sale_same_organization'), 1::bigint, 'delivery sale FK preserves organization');
+select is((select count(*) from pg_constraint where conname = 'distribution_delivery_items_delivery_order_same_organization'), 1::bigint, 'delivery allocations bind delivery and order');
+select is((select convalidated from pg_constraint where conname = 'distribution_deliveries_order_same_organization'), true, 'delivery order FK is validated');
 
 select has_table('public', 'distribution_deliveries', 'existe la tabla persistente de distribución');
 select has_table('public', 'distribution_delivery_items', 'cada envío conserva sus cantidades de forma normalizada');
@@ -87,13 +95,13 @@ insert into public.warehouse_locations (
 );
 
 insert into public.orders (
-  id, organization_id, order_number, customer_id, warehouse_id, order_date,
+  id, organization_id, order_number, customer_id, warehouse_id, delivery_address_snapshot, order_date,
   status, operation_key, created_by, updated_by
 ) values
   (
     'a3111111-1111-4111-8111-111111111111',
     'd3111111-1111-4111-8111-111111111111', 'PED-000001',
-    'c3111111-1111-4111-8111-111111111111', 'a3111111-1111-4111-8111-111111111121',
+    'c3111111-1111-4111-8111-111111111111', 'a3111111-1111-4111-8111-111111111121', '{}'::jsonb,
     '2026-08-30', 'confirmado', 'a3111111-1111-4111-8111-111111111131',
     'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
   ),
@@ -101,6 +109,7 @@ insert into public.orders (
     'a3111111-1111-4111-8111-111111111112',
     'd3111111-1111-4111-8111-111111111111', 'PED-000002',
     'c3111111-1111-4111-8111-111111111111', 'a3111111-1111-4111-8111-111111111121',
+    '{"address_line":"Av. Nueva 123","label":"Principal"}'::jsonb,
     '2026-09-01', 'confirmado', 'a3111111-1111-4111-8111-111111111132',
     'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
   );
@@ -178,6 +187,19 @@ insert into public.inventory_reservations (
     'e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111'
   );
 
+create temporary table d1_inventory_baseline as
+select
+  (select count(*)::bigint
+   from public.inventory_movements
+   where organization_id = 'd3111111-1111-4111-8111-111111111111') as movement_count,
+  (select coalesce(sum(quantity_consumed), 0)
+   from public.inventory_reservations
+   where organization_id = 'd3111111-1111-4111-8111-111111111111') as consumed_quantity,
+  (select count(*)::bigint
+   from public.inventory_reservations
+   where organization_id = 'd3111111-1111-4111-8111-111111111111') as reservation_count;
+grant select on d1_inventory_baseline to authenticated;
+
 -- Simula una fila creada antes de que existieran las columnas nuevas.
 insert into public.distribution_deliveries (
   id, organization_id, order_id, order_number, customer_name, issue_date,
@@ -249,6 +271,15 @@ where source_type = 'order-item'
   and source_id = 'a3111111-1111-4111-8111-111111111142';
 set local role authenticated;
 
+reset role;
+update d1_inventory_baseline
+set consumed_quantity = (
+  select coalesce(sum(quantity_consumed), 0)
+  from public.inventory_reservations
+  where organization_id = 'd3111111-1111-4111-8111-111111111111'
+);
+set local role authenticated;
+
 select is((select sum(quantity_consumed) from public.inventory_reservations where source_type = 'order-item' and source_id = 'a3111111-1111-4111-8111-111111111142'), 3::numeric, 'la salida física queda completa sin forzar el estado global de la venta');
 
 select lives_ok($$
@@ -265,7 +296,6 @@ select lives_ok($$
     'tracking_status', 'en_curso',
     'delivery_status', 'programado',
     'operation_key', '31111111-1111-4111-8111-111111111111',
-    'direction', 'Av. Nueva 123',
     'numero_despacho', 'DES-N-001',
     'modalidad', 'movilidad_externa',
     'transportista', 'Transportes Prueba',
@@ -1108,6 +1138,60 @@ select throws_ok($$
     'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111141', 'cantidad', 1))
   ));
 $$, 'P0001', 'DISTRIBUTION_ALLOCATION_EXCEEDS_DISPATCHED', 'bloquea asignar dos veces las unidades ya planificadas');
+
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'e3111111-1111-4111-8111-111111111111', true);
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'id', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'direction', 'Av. Destino alternativo no autorizado'
+  ));
+$$, 'P0001', 'DISTRIBUTION_DIRECTION_IMMUTABLE', 'D1 preserves the historical destination snapshot');
+
+select is((select direction from public.distribution_deliveries where guide_number = 'G-N-001'), 'Av. Nueva 123', 'D1 default destination remains persisted on the delivery');
+select ok((select customer_name from public.distribution_deliveries where guide_number = 'G-N-001') like 'Cliente persistente%', 'D1 does not rewrite delivery customer snapshot');
+select is((select direction from public.distribution_deliveries where guide_number = 'G-H-002'), 'Av. Sucursal 1', 'D1 keeps the first alternate destination');
+select is((select direction from public.distribution_deliveries where guide_number = 'G-H-003'), 'Av. Otra sucursal 2', 'D1 keeps the second alternate destination');
+
+reset role;
+update public.orders
+set delivery_address_snapshot = '{"address_line":"Av. Pedido actualizado al final"}'::jsonb
+where id = 'a3111111-1111-4111-8111-111111111112';
+update public.customers
+set legal_name = 'Cliente actualizado al final'
+where id = 'c3111111-1111-4111-8111-111111111111';
+set local role authenticated;
+select is((select direction from public.distribution_deliveries where guide_number = 'G-N-001'), 'Av. Nueva 123', 'D1 does not rewrite delivery destination after order changes');
+select ok((select customer_name from public.distribution_deliveries where guide_number = 'G-N-001') like 'Cliente persistente%', 'D1 does not rewrite delivery customer snapshot after customer changes');
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111111',
+    'sale_id', 'a3111111-1111-4111-8111-111111111151',
+    'guide_number', 'G-I-NO-DESTINATION',
+    'transport_type', 'interno',
+    'numero_despacho', 'DES-I-NO-DESTINATION',
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111141', 'cantidad', 1))
+  ));
+$$, 'P0001', 'DISTRIBUTION_ORDER_DESTINATION_SNAPSHOT_REQUIRED', 'D1 rejects a new delivery without a valid explicit or default destination');
+
+select throws_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111151',
+    'direction', 'Av. Venta incoherente'
+  ));
+$$, 'P0001', 'DISTRIBUTION_SALE_MISMATCH', 'D1 rejects a sale belonging to another order');
+
+select is((select count(*)::bigint from public.inventory_movements where organization_id = 'd3111111-1111-4111-8111-111111111111'), (select movement_count from d1_inventory_baseline), 'D1 distribution lifecycle does not create inventory movements');
+select is((select coalesce(sum(quantity_consumed), 0) from public.inventory_reservations where organization_id = 'd3111111-1111-4111-8111-111111111111'), (select consumed_quantity from d1_inventory_baseline), 'D1 distribution lifecycle does not consume reservations');
+select is((select count(*)::bigint from public.inventory_reservations where organization_id = 'd3111111-1111-4111-8111-111111111111'), (select reservation_count from d1_inventory_baseline), 'D1 distribution lifecycle does not mutate reservation rows');
 
 reset role;
 select * from finish();
