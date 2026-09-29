@@ -28,6 +28,10 @@ vi.mock('@/modulos/compras/componentes/HistorialPreciosCompra', () => ({
   HistorialPreciosCompra: () => null,
 }))
 
+vi.mock('@/modulos/compras/componentes/ComparacionProveedoresProducto', () => ({
+  ComparacionProveedoresProducto: () => null,
+}))
+
 import { DetalleProducto } from './DetalleProducto'
 import { DialogoProducto } from './DialogoProducto'
 import { GestorImagenesProducto } from './GestorImagenesProducto'
