@@ -13,7 +13,7 @@ import { fechaActualPeru, ZONA_HORARIA_NEGOCIO } from '@/lib/fechas'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
 import { DialogoDetalleEntrega } from '@/modulos/distribucion/componentes/DialogoDetalleEntrega'
 import { DialogoResultadoEntrega } from '@/modulos/distribucion/componentes/DialogoResultadoEntrega'
-import { useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
+import { useMovimientosDisponiblesDistribucion, useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
 import { obtenerLineasDisponiblesDistribucion, pedidoListoParaProgramarDistribucion } from '@/modulos/distribucion/modelo/pedidosProgramables'
 import {
   esquemaDatosProgramacionEntrega,
@@ -179,6 +179,7 @@ export function DistribucionPage() {
   const pedidoPorId = (pedidoId: string) => pedidos.find((pedido) => pedido.id === pedidoId)
   const ventaPorPedidoId = (pedidoId: string) => ventaPorPedido.get(pedidoId)
   const pedidoSeleccionado = pedidoPorId(datos.pedidoId)
+  const movimientosQuery = useMovimientosDisponiblesDistribucion(formularioAbierto ? datos.pedidoId : '', edicion?.id)
   const clienteSeleccionado = clientes.find((cliente) => cliente.id === pedidoSeleccionado?.clienteId)
   const direccionesCliente = useMemo(() => clienteSeleccionado?.direccionesEntrega ?? [], [clienteSeleccionado])
   const opcionesDirecciones = useMemo<ComboboxOption[]>(() => [
@@ -200,12 +201,25 @@ export function DistribucionPage() {
     ? obtenerLineasDisponiblesDistribucion(pedidoSeleccionado.lineas, ventaPorPedido.get(pedidoSeleccionado.id), programaciones, edicion?.id)
     : []
   const maximaPorLinea = new Map(lineasDisponiblesSeleccionadas.map((linea) => [linea.id, linea.cantidadMaximaPlanificacion]))
-  const cantidadesActualesPorLinea = new Map(datos.lineas.map((linea) => [linea.id, linea.cantidad]))
+  const lineasActualesPorId = new Map(datos.lineas.map((linea) => [linea.id, linea]))
   const lineasPedido = lineasDisponiblesSeleccionadas.map((linea) => ({
     ...linea,
-    cantidad: cantidadesActualesPorLinea.get(linea.id) ?? 0,
+    cantidad: lineasActualesPorId.get(linea.id)?.cantidad ?? 0,
     cantidadMaximaPlanificacion: maximaPorLinea.get(linea.id) ?? linea.cantidadDisponibleDistribucion,
+    asignacionesMovimiento: lineasActualesPorId.get(linea.id)?.asignacionesMovimiento ?? [],
   }))
+  const cantidadAsignadaPorLinea = new Map(
+    lineasPedido.map((linea) => [
+      linea.id,
+      (linea.asignacionesMovimiento ?? []).reduce((total, asignacion) => total + asignacion.quantity, 0),
+    ]),
+  )
+  const movimientosPorLinea = new Map<string, typeof movimientosQuery.movimientos>()
+  for (const movimiento of movimientosQuery.movimientos) {
+    const movimientos = movimientosPorLinea.get(movimiento.orderLineId) ?? []
+    movimientos.push(movimiento)
+    movimientosPorLinea.set(movimiento.orderLineId, movimientos)
+  }
   const esRecojoCliente = datos.modalidad === 'recojo_cliente'
   const estadoRequiereTransporte = ['en_curso', 'en_destino', 'entregado', 'entrega_parcial'].includes(datos.estado)
   const requiereDatosTransporte = estadoRequiereTransporte && !esRecojoCliente
@@ -306,7 +320,11 @@ export function DistribucionPage() {
       estado: 'programado',
       seguimiento: 'en_curso',
       incidencias: [],
-      lineas: lineasDisponibles.map((linea) => ({ ...linea, cantidad: linea.cantidadDisponibleDistribucion })),
+      lineas: lineasDisponibles.map((linea) => ({
+        ...linea,
+        cantidad: linea.cantidadDisponibleDistribucion,
+        asignacionesMovimiento: [],
+      })),
     })
     setFormularioAbierto(true)
   }
@@ -358,6 +376,15 @@ export function DistribucionPage() {
     }
     if (!resultado.data.lineas.some((linea) => linea.tipoProducto === 'good' && linea.cantidad > 0)) {
       setMensaje('Asigna al menos un bien con saldo disponible a este envío')
+      return
+    }
+    const lineaSinTrazabilidad = resultado.data.lineas.find((linea) => {
+      if (linea.tipoProducto !== 'good' || linea.cantidad <= 0) return false
+      const asignado = (linea.asignacionesMovimiento ?? []).reduce((total, asignacion) => total + asignacion.quantity, 0)
+      return asignado !== linea.cantidad
+    })
+    if (lineaSinTrazabilidad) {
+      setMensaje('Completa la asignación de movimientos para cada bien. La suma debe coincidir con la cantidad del envío.')
       return
     }
     const datosPersistentes = {
@@ -782,18 +809,66 @@ export function DistribucionPage() {
                 </div>
                 {lineasPedido.length ? <div className="border bg-muted/20 px-4 py-3">
                   <div><p className="text-sm font-medium">Cantidades asignadas a este envío</p><p className="mt-1 text-xs text-muted-foreground">Puedes dividir los bienes despachados en varias entregas; cada una conserva su destino, guía y seguimiento.</p></div>
-                  <ul className="mt-3 divide-y">{lineasPedido.map((linea) => <li key={linea.id} className="grid gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center">
-                    <div><p className="text-sm font-medium">{linea.productoDescripcion} <span className="font-normal text-muted-foreground">· {linea.unidadMedida}</span></p><p className="mt-1 text-xs text-muted-foreground">{linea.cantidadMaximaPlanificacion} disponibles para este envío · {linea.cantidadDespachada ?? 0} despachadas en Ventas</p></div>
-                    <div><label htmlFor={`cantidad-envio-${linea.id}`} className="field-label">Cantidad para este envío</label><input id={`cantidad-envio-${linea.id}`} aria-label={`Cantidad de ${linea.productoDescripcion} para este envío`} type="number" min="0" max={linea.cantidadMaximaPlanificacion} step="any" value={linea.cantidad || ''} onChange={(evento) => {
-                      const cantidad = Number(evento.target.value)
-                      setDatos((actuales) => ({
-                        ...actuales,
-                        lineas: cantidad > 0
-                          ? [...actuales.lineas.filter((actual) => actual.id !== linea.id), { ...linea, cantidad }]
-                          : actuales.lineas.filter((actual) => actual.id !== linea.id),
-                      }))
-                    }} className="field-control text-end font-mono tabular-nums" /></div>
-                  </li>)}</ul>
+                  <ul className="mt-3 divide-y">{lineasPedido.map((linea) => {
+                    const movimientos = movimientosPorLinea.get(linea.id) ?? []
+                    const cantidadAsignada = cantidadAsignadaPorLinea.get(linea.id) ?? 0
+                    const cantidadPendienteAsignar = Math.max(0, linea.cantidad - cantidadAsignada)
+                    return <li key={linea.id} className="py-3">
+                      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center">
+                        <div><p className="text-sm font-medium">{linea.productoDescripcion} <span className="font-normal text-muted-foreground">· {linea.unidadMedida}</span></p><p className="mt-1 text-xs text-muted-foreground">{linea.cantidadMaximaPlanificacion} disponibles para este envío · {linea.cantidadDespachada ?? 0} despachadas en Ventas</p></div>
+                        <div><label htmlFor={'cantidad-envio-' + linea.id} className="field-label">Cantidad para este envío</label><input id={'cantidad-envio-' + linea.id} aria-label={'Cantidad de ' + linea.productoDescripcion + ' para este envío'} type="number" min="0" max={linea.cantidadMaximaPlanificacion} step="any" value={linea.cantidad || ''} onChange={(evento) => {
+                          const cantidad = Number(evento.target.value)
+                          setDatos((actuales) => ({
+                            ...actuales,
+                            lineas: cantidad > 0
+                              ? [...actuales.lineas.filter((actual) => actual.id !== linea.id), { ...linea, cantidad }]
+                              : actuales.lineas.filter((actual) => actual.id !== linea.id),
+                          }))
+                        }} className="field-control text-end font-mono tabular-nums" /></div>
+                      </div>
+                      {linea.tipoProducto === 'good' && linea.cantidad > 0 ? (
+                        <div className="mt-3 border-s bg-background ps-4">
+                          <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <p className="text-xs font-semibold uppercase tracking-[.06em] text-primary">Lotes y salidas físicas</p>
+                            <p className={cantidadPendienteAsignar === 0 ? 'text-xs font-mono tabular-nums text-emerald-700' : 'text-xs font-mono tabular-nums text-amber-700'}>
+                              Asignado: {cantidadAsignada} · Pendiente: {cantidadPendienteAsignar}
+                            </p>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">Selecciona explícitamente cuánto toma esta entrega de cada movimiento. No se aplica FEFO automático.</p>
+                          {movimientosQuery.cargando ? <p role="status" className="mt-2 text-xs text-muted-foreground">Cargando movimientos disponibles…</p> : null}
+                          {movimientosQuery.error ? <p role="alert" className="mt-2 text-xs text-destructive">No se pudieron cargar las salidas físicas. Reintenta antes de guardar.</p> : null}
+                          {!movimientosQuery.cargando && !movimientosQuery.error && !movimientos.length ? <p className="mt-2 text-xs text-amber-700">No hay movimientos físicos disponibles para esta línea.</p> : null}
+                          {movimientos.length ? <ul className="mt-3 space-y-2">{movimientos.map((movimiento) => {
+                            const asignacionActual = (linea.asignacionesMovimiento ?? []).find((asignacion) => asignacion.inventoryMovementId === movimiento.inventoryMovementId)?.quantity ?? 0
+                            return <li key={movimiento.inventoryMovementId} className="grid gap-3 border bg-muted/15 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_8rem] sm:items-center">
+                              <div className="text-xs">
+                                <p className="font-medium">Lote {movimiento.lote || 'sin lote'} · vence {movimiento.fechaVencimiento || 'sin vencimiento'}</p>
+                                <p className="mt-1 text-muted-foreground">{movimiento.almacen || 'Almacén no informado'} · ubicación {movimiento.ubicacionId || 'no informada'} · disponible {movimiento.cantidadDisponible}</p>
+                                <p className="mt-1 text-muted-foreground">Despacho: {movimiento.referenciaDocumento || movimiento.operationKey || 'referencia no disponible'}</p>
+                              </div>
+                              <div><label htmlFor={'movimiento-' + linea.id + '-' + movimiento.inventoryMovementId} className="field-label">Cantidad del lote</label><input id={'movimiento-' + linea.id + '-' + movimiento.inventoryMovementId} aria-label={'Cantidad del lote ' + (movimiento.lote || movimiento.inventoryMovementId)} type="number" min="0" max={movimiento.cantidadDisponible} step="any" value={asignacionActual || ''} onChange={(evento) => {
+                                const cantidad = Number(evento.target.value)
+                                setDatos((actuales) => ({
+                                  ...actuales,
+                                  lineas: actuales.lineas.map((actual) => {
+                                    if (actual.id !== linea.id) return actual
+                                    const asignaciones = (actual.asignacionesMovimiento ?? []).filter((asignacion) => asignacion.inventoryMovementId !== movimiento.inventoryMovementId)
+                                    return {
+                                      ...actual,
+                                      asignacionesMovimiento: cantidad > 0
+                                        ? [...asignaciones, { inventoryMovementId: movimiento.inventoryMovementId, quantity: cantidad }]
+                                        : asignaciones,
+                                    }
+                                  }),
+                                }))
+                              }} className="field-control text-end font-mono tabular-nums" /></div>
+                            </li>
+                          })}</ul> : null}
+                          <p className="mt-2 text-xs text-muted-foreground">Cantidad de entrega: {linea.cantidad} · Asignado a movimientos: {cantidadAsignada} · Pendiente por asignar: {cantidadPendienteAsignar}</p>
+                        </div>
+                      ) : null}
+                    </li>
+                  })}</ul>
                   <p className="mt-2 border-t pt-3 text-xs leading-5 text-muted-foreground">El despacho de estos bienes ya quedó registrado en Ventas. Distribución solo asigna cantidades al envío y no vuelve a descontar inventario.</p>
                 </div> : null}
               </section>

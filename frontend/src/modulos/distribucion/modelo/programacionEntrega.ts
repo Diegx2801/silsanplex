@@ -148,6 +148,12 @@ export const esquemaLineaProgramacionEntrega = esquemaLineaOperacionVenta
   .extend({
     cantidadEntregadaCliente: z.number().nonnegative().optional(),
     cantidadPendienteCliente: z.number().nonnegative().optional(),
+    // D3: la selección física es explícita por entrega. Los registros
+    // históricos pueden no tener allocations y se mantienen legibles.
+    asignacionesMovimiento: z.array(z.object({
+      inventoryMovementId: z.string().uuid(),
+      quantity: z.number().positive(),
+    })).optional(),
   })
 
 export const esquemaProgramacionEntrega = z.object({

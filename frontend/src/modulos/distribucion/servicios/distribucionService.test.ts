@@ -3,7 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const supabaseMock = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
 vi.mock('@/lib/supabase', () => ({ supabase: supabaseMock }))
 
-import { listarEntregas, listarHistorialEstadosEntrega, prepararPayloadEntrega, reprogramarEntrega } from './distribucionService'
+import {
+  listarEntregas,
+  listarHistorialEstadosEntrega,
+  listarMovimientosDisponibles,
+  listarTrazabilidadEntrega,
+  prepararPayloadEntrega,
+  reprogramarEntrega,
+} from './distribucionService'
 
 function cadena(respuesta: { data: unknown; error: { code?: string; message?: string } | null }) {
   const query = {
@@ -21,7 +28,10 @@ function cadena(respuesta: { data: unknown; error: { code?: string; message?: st
 }
 
 describe('lectura persistente de distribución', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    supabaseMock.rpc.mockResolvedValue({ data: [], error: null })
+  })
 
   it('carga líneas de SQL y expone saldos parciales y completos', async () => {
     supabaseMock.from
@@ -153,6 +163,11 @@ describe('lectura persistente de distribución', () => {
 })
 
 describe('payloads de asignación a envíos independientes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    supabaseMock.rpc.mockResolvedValue({ data: [], error: null })
+  })
+
   it('envía solo las líneas con cantidad asignada, identificadas por línea persistente', () => {
     const payload = prepararPayloadEntrega('org-1', {
       pedidoId: 'order-1', pedidoNumero: 'PED-000001', ventaId: 'sale-1', ventaNumero: 'VEN-000001',
@@ -166,6 +181,79 @@ describe('payloads de asignación a envíos independientes', () => {
       { id: 'order-line-2', productoId: 'product-2', tipoProducto: 'good', productoCodigo: 'P-2', productoDescripcion: 'Producto 2', unidadMedida: 'UND', cantidad: 0, precioUnitario: 10, lote: '', fechaVencimiento: '' },
     ])
 
-    expect(payload.items).toEqual([{ order_line_id: 'order-line-1', quantity: 2 }])
+    expect(payload.items).toEqual([{
+      order_line_id: 'order-line-1',
+      quantity: 2,
+      movement_allocations: [],
+    }])
+  })
+
+  it('envía allocations explícitas sin convertir la referencia documental en una relación', () => {
+    const payload = prepararPayloadEntrega('org-1', {
+      pedidoId: 'order-1', pedidoNumero: 'PED-000001', ventaId: 'sale-1', ventaNumero: 'VEN-000001',
+      clienteNombre: 'Cliente', direccionEntrega: 'Av. Principal 123', numeroDespacho: 'DES-001',
+      numeroGuiaRemision: 'G-001', fechaEmision: '2026-09-01', fechaProgramada: '2026-09-02',
+      fechaEntrega: '', tipoTransporte: 'interno', modalidad: 'movilidad_propia', transportista: '',
+      conductor: '', vehiculo: '', placa: '', observaciones: '', evidencia: '', estado: 'programado',
+      incidencias: [], lineas: [],
+    }, [{
+      id: 'order-line-1', productoId: 'product-1', tipoProducto: 'good', productoCodigo: 'P-1',
+      productoDescripcion: 'Producto 1', unidadMedida: 'UND', cantidad: 2, precioUnitario: 10,
+      lote: '', fechaVencimiento: '', asignacionesMovimiento: [
+        { inventoryMovementId: '11111111-1111-4111-8111-111111111111', quantity: 1.25 },
+        { inventoryMovementId: '22222222-2222-4222-8222-222222222222', quantity: 0.75 },
+      ],
+    }])
+
+    expect(payload.items).toEqual([{
+      order_line_id: 'order-line-1',
+      quantity: 2,
+      movement_allocations: [
+        { inventory_movement_id: '11111111-1111-4111-8111-111111111111', quantity: 1.25 },
+        { inventory_movement_id: '22222222-2222-4222-8222-222222222222', quantity: 0.75 },
+      ],
+    }])
+  })
+
+  it('normaliza movimientos disponibles y traza sin perder los atributos del ledger', async () => {
+    supabaseMock.rpc
+      .mockResolvedValueOnce({
+        data: [{
+          inventory_movement_id: 'movement-1', order_item_id: 'line-1',
+          quantity_physical: '60', quantity_allocated: '10', quantity_available: '50',
+          lot: 'L1', expiration_date: '2027-01-01', warehouse: 'Principal',
+          warehouse_id: 'warehouse-1', location_id: 'location-1', stock_status: 'available',
+          reservation_id: 'reservation-1', document_reference: 'PED:PED-000001|OP:operation-1',
+          operation_date: '2026-09-29', operation_key: 'operation-1',
+        }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [{
+          delivery_id: 'delivery-1', order_id: 'order-1', order_item_id: 'line-1',
+          inventory_movement_id: 'movement-1', allocated_quantity: '10',
+          lot: 'L1', expiration_date: '2027-01-01', warehouse: 'Principal',
+          warehouse_id: 'warehouse-1', location_id: 'location-1', stock_status: 'available',
+          reservation_id: 'reservation-1', document_reference: null,
+          operation_date: '2026-09-29', operation_key: 'operation-1',
+        }],
+        error: null,
+      })
+
+    await expect(listarMovimientosDisponibles('org-1', 'order-1', 'delivery-1')).resolves.toEqual([
+      expect.objectContaining({ inventoryMovementId: 'movement-1', cantidadFisica: 60, cantidadAsignada: 10, cantidadDisponible: 50, lote: 'L1' }),
+    ])
+    await expect(listarTrazabilidadEntrega('org-1', 'delivery-1')).resolves.toEqual([
+      expect.objectContaining({ entregaId: 'delivery-1', pedidoId: 'order-1', orderLineId: 'line-1', cantidadAsignada: 10, lote: 'L1', referenciaDocumento: null }),
+    ])
+    expect(supabaseMock.rpc).toHaveBeenNthCalledWith(1, 'list_distribution_inventory_movements', {
+      requested_organization_id: 'org-1',
+      requested_order_id: 'order-1',
+      requested_delivery_id: 'delivery-1',
+    })
+    expect(supabaseMock.rpc).toHaveBeenNthCalledWith(2, 'list_distribution_delivery_inventory_trace', {
+      requested_organization_id: 'org-1',
+      requested_delivery_id: 'delivery-1',
+    })
   })
 })

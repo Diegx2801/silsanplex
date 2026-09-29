@@ -70,6 +70,60 @@ interface LineaEntregaFila {
   quantity: number | string
 }
 
+interface TrazaEntregaFila {
+  delivery_id: string
+  order_id: string
+  order_item_id: string
+  inventory_movement_id: string
+  allocated_quantity: number | string
+  lot?: string | null
+  expiration_date?: string | null
+  warehouse?: string | null
+  warehouse_id?: string | null
+  location_id?: string | null
+  stock_status?: string | null
+  reservation_id?: string | null
+  document_reference?: string | null
+  operation_date?: string | null
+  operation_key?: string | null
+}
+
+export interface MovimientoInventarioDisponible {
+  inventoryMovementId: string
+  orderLineId: string
+  cantidadFisica: number
+  cantidadAsignada: number
+  cantidadDisponible: number
+  lote: string
+  fechaVencimiento: string | null
+  almacen: string
+  almacenId: string | null
+  ubicacionId: string | null
+  estadoStock: string | null
+  reservaId: string | null
+  referenciaDocumento: string | null
+  fechaOperacion: string | null
+  operationKey: string | null
+}
+
+export interface TrazaInventarioEntrega {
+  entregaId: string
+  pedidoId: string
+  orderLineId: string
+  inventoryMovementId: string
+  cantidadAsignada: number
+  lote: string
+  fechaVencimiento: string | null
+  almacen: string
+  almacenId: string | null
+  ubicacionId: string | null
+  estadoStock: string | null
+  reservaId: string | null
+  referenciaDocumento: string | null
+  fechaOperacion: string | null
+  operationKey: string | null
+}
+
 const columnas = 'id,lock_version,order_id,sale_id,sale_number,order_number,customer_name,issue_date,delivery_date,scheduled_date,actual_delivery_date,guide_number,transport_type,tracking_status,delivery_status,direction,numero_despacho,modalidad,transportista,conductor,vehiculo,placa,evidencia,incidencias,observations,quantity_reconciliation_required,order_items,created_at' as const
 
 export function prepararPayloadEntrega(
@@ -111,7 +165,14 @@ export function prepararPayloadEntrega(
     observations: datos.observaciones,
     items: lineas
       .filter((linea) => linea.tipoProducto === 'good' && linea.cantidad > 0)
-      .map((linea) => ({ order_line_id: linea.id, quantity: linea.cantidad })),
+      .map((linea) => ({
+        order_line_id: linea.id,
+        quantity: linea.cantidad,
+        movement_allocations: (linea.asignacionesMovimiento ?? []).map((asignacion) => ({
+          inventory_movement_id: asignacion.inventoryMovementId,
+          quantity: asignacion.quantity,
+        })),
+      })),
   }
 }
 
@@ -153,19 +214,53 @@ export function mapearEntrega(fila: EntregaFila): ProgramacionEntrega {
   })
 }
 
+function mapearTrazaEntrega(fila: TrazaEntregaFila): TrazaInventarioEntrega {
+  return {
+    entregaId: fila.delivery_id,
+    pedidoId: fila.order_id,
+    orderLineId: fila.order_item_id,
+    inventoryMovementId: fila.inventory_movement_id,
+    cantidadAsignada: Number(fila.allocated_quantity),
+    lote: fila.lot ?? '',
+    fechaVencimiento: fila.expiration_date ?? null,
+    almacen: fila.warehouse ?? '',
+    almacenId: fila.warehouse_id ?? null,
+    ubicacionId: fila.location_id ?? null,
+    estadoStock: fila.stock_status ?? null,
+    reservaId: fila.reservation_id ?? null,
+    referenciaDocumento: fila.document_reference ?? null,
+    fechaOperacion: fila.operation_date ?? null,
+    operationKey: fila.operation_key ?? null,
+  }
+}
+
 function enriquecerEntrega(
   entrega: ProgramacionEntrega,
   pedido: Awaited<ReturnType<typeof listarPedidosPersistentes>>[number] | undefined,
   venta: Awaited<ReturnType<typeof listarVentasPersistentes>>[number] | undefined,
   asignaciones: ReadonlyArray<{ orderLineId: string; quantity: number }>,
+  traza: ReadonlyArray<TrazaInventarioEntrega>,
 ) {
   if (!pedido) return entrega
 
   const lineasPedido = enriquecerLineasPedidoConSaldos(pedido.lineas, venta)
   const cantidadesAsignadas = new Map(asignaciones.map(({ orderLineId, quantity }) => [orderLineId, quantity]))
+  const trazaPorLinea = new Map<string, ProgramacionEntrega['lineas'][number]['asignacionesMovimiento']>()
+  for (const movimiento of traza) {
+    const asignacionesLinea = trazaPorLinea.get(movimiento.orderLineId) ?? []
+    asignacionesLinea.push({
+      inventoryMovementId: movimiento.inventoryMovementId,
+      quantity: movimiento.cantidadAsignada,
+    })
+    trazaPorLinea.set(movimiento.orderLineId, asignacionesLinea)
+  }
   const lineas = lineasPedido
     .filter((linea) => cantidadesAsignadas.has(linea.id))
-    .map((linea) => ({ ...linea, cantidad: cantidadesAsignadas.get(linea.id) ?? 0 }))
+    .map((linea) => ({
+      ...linea,
+      cantidad: cantidadesAsignadas.get(linea.id) ?? 0,
+      asignacionesMovimiento: trazaPorLinea.get(linea.id) ?? [],
+    }))
 
   return esquemaProgramacionEntrega.parse({
     ...entrega,
@@ -202,6 +297,14 @@ function mensajeError(error: { code?: string; message?: string }) {
   if (mensaje.includes('DISTRIBUTION_OUTCOME_DUPLICATE_LINE')) return 'Cada producto debe aparecer una sola vez en el resultado.'
   if (mensaje.includes('DISTRIBUTION_ALLOCATION_EXCEEDS_DISPATCHED')) return 'La cantidad supera el saldo despachado que todavía no está asignado a otros envíos.'
   if (mensaje.includes('DISTRIBUTION_ALLOCATION_LOCKED')) return 'Las cantidades de este envío ya no se pueden cambiar porque la ruta comenzó o tiene resultados registrados.'
+  if (mensaje.includes('DISTRIBUTION_MOVEMENT_ALLOCATIONS_REQUIRED') || mensaje.includes('DISTRIBUTION_DELIVERY_ITEM_ALLOCATIONS_INCOMPLETE')) return 'Selecciona movimientos y cantidades que completen exactamente cada línea del envío.'
+  if (mensaje.includes('DISTRIBUTION_MOVEMENT_ALLOCATION_INVALID')) return 'La asignación de movimiento no tiene un formato o cantidad válido.'
+  if (mensaje.includes('DISTRIBUTION_MOVEMENT_ALLOCATION_DUPLICATE')) return 'No repitas el mismo movimiento dentro de una línea.'
+  if (mensaje.includes('DISTRIBUTION_MOVEMENT_NOT_FOUND')) return 'Uno de los movimientos seleccionados ya no existe.'
+  if (mensaje.includes('DISTRIBUTION_MOVEMENT_NOT_ORDER_DISPATCH')) return 'Solo puedes asignar salidas físicas de despacho de pedidos.'
+  if (mensaje.includes('DISTRIBUTION_MOVEMENT_ORDER_LINE_MISMATCH')) return 'El movimiento seleccionado no corresponde a la línea del pedido.'
+  if (mensaje.includes('DISTRIBUTION_MOVEMENT_DISPATCH_NOT_FOUND')) return 'No se encontró el despacho físico estructurado para uno de los movimientos.'
+  if (mensaje.includes('DISTRIBUTION_MOVEMENT_ALLOCATION_EXCEEDS_QUANTITY')) return 'El movimiento seleccionado ya no tiene cantidad disponible suficiente.'
   if (mensaje.includes('DISTRIBUTION_ITEM_NOT_FOUND')) return 'Uno de los bienes ya no pertenece al pedido o no es un producto físico.'
   if (mensaje.includes('DISTRIBUTION_ITEMS_DUPLICATE_LINE')) return 'Cada producto debe aparecer una sola vez en la asignación del envío.'
   if (mensaje.includes('DISTRIBUTION_ITEM_QUANTITY_INVALID') || mensaje.includes('DISTRIBUTION_ITEMS_INVALID')) return 'Ingresa cantidades válidas para los bienes del envío.'
@@ -248,7 +351,7 @@ export async function listarEntregas(organizationId: string) {
   // despachos confirmados siguen reconstruyéndose desde sus módulos de origen.
   // Los eventos se leen por organización en consultas de conjunto, evitando
   // construir una URL PostgREST con listas de IDs potencialmente extensas.
-  const [pedidos, ventas, allocationsResponse, outcomesResponse] = await Promise.all([
+  const [pedidos, ventas, allocationsResponse, outcomesResponse, traceResponse] = await Promise.all([
     listarPedidosPersistentes(organizationId),
     listarVentasPersistentes(organizationId),
     supabase
@@ -261,15 +364,27 @@ export async function listarEntregas(organizationId: string) {
       .eq('organization_id', organizationId)
       .order('occurred_on', { ascending: true })
       .order('created_at', { ascending: true }),
+    supabase.rpc('list_distribution_delivery_inventory_trace', {
+      requested_organization_id: organizationId,
+      requested_delivery_id: null,
+    }),
   ])
   if (allocationsResponse.error) throw new Error(mensajeError(allocationsResponse.error))
   if (outcomesResponse.error) throw new Error(mensajeError(outcomesResponse.error))
+  if (traceResponse.error) throw new Error(mensajeError(traceResponse.error))
 
   const allocationsByDeliveryId = new Map<string, Array<{ orderLineId: string; quantity: number }>>()
   for (const allocation of (allocationsResponse.data ?? []) as LineaEntregaFila[]) {
     const lines = allocationsByDeliveryId.get(allocation.delivery_id) ?? []
     lines.push({ orderLineId: allocation.order_line_id, quantity: Number(allocation.quantity) })
     allocationsByDeliveryId.set(allocation.delivery_id, lines)
+  }
+  const trazaByDeliveryId = new Map<string, TrazaInventarioEntrega[]>()
+  for (const fila of (traceResponse.data ?? []) as TrazaEntregaFila[]) {
+    const traza = mapearTrazaEntrega(fila)
+    const movimientos = trazaByDeliveryId.get(traza.entregaId) ?? []
+    movimientos.push(traza)
+    trazaByDeliveryId.set(traza.entregaId, movimientos)
   }
   const outcomes = (outcomesResponse.data ?? []) as ResultadoFila[]
   const outcomeLinesResponse = outcomes.length
@@ -318,6 +433,7 @@ export async function listarEntregas(organizationId: string) {
       pedidosPorId.get(entrega.pedidoId),
       ventasPorPedidoId.get(entrega.pedidoId),
       allocationsByDeliveryId.get(entrega.id) ?? [],
+      trazaByDeliveryId.get(entrega.id) ?? [],
     )
     return esquemaProgramacionEntrega.parse({
       ...enriquecida,
@@ -332,6 +448,70 @@ export async function listarEntregas(organizationId: string) {
       }),
     })
   })
+}
+
+interface MovimientoDisponibleFila {
+  inventory_movement_id: string
+  order_item_id: string
+  quantity_physical: number | string
+  quantity_allocated: number | string
+  quantity_available: number | string
+  lot?: string | null
+  expiration_date?: string | null
+  warehouse?: string | null
+  warehouse_id?: string | null
+  location_id?: string | null
+  stock_status?: string | null
+  reservation_id?: string | null
+  document_reference?: string | null
+  operation_date?: string | null
+  operation_key?: string | null
+}
+
+function mapearMovimientoDisponible(fila: MovimientoDisponibleFila): MovimientoInventarioDisponible {
+  return {
+    inventoryMovementId: fila.inventory_movement_id,
+    orderLineId: fila.order_item_id,
+    cantidadFisica: Number(fila.quantity_physical),
+    cantidadAsignada: Number(fila.quantity_allocated),
+    cantidadDisponible: Number(fila.quantity_available),
+    lote: fila.lot ?? '',
+    fechaVencimiento: fila.expiration_date ?? null,
+    almacen: fila.warehouse ?? '',
+    almacenId: fila.warehouse_id ?? null,
+    ubicacionId: fila.location_id ?? null,
+    estadoStock: fila.stock_status ?? null,
+    reservaId: fila.reservation_id ?? null,
+    referenciaDocumento: fila.document_reference ?? null,
+    fechaOperacion: fila.operation_date ?? null,
+    operationKey: fila.operation_key ?? null,
+  }
+}
+
+export async function listarMovimientosDisponibles(
+  organizationId: string,
+  orderId: string,
+  deliveryId?: string,
+): Promise<MovimientoInventarioDisponible[]> {
+  const { data, error } = await supabase.rpc('list_distribution_inventory_movements', {
+    requested_organization_id: organizationId,
+    requested_order_id: orderId,
+    requested_delivery_id: deliveryId ?? null,
+  })
+  if (error) throw new Error(mensajeError(error))
+  return ((data ?? []) as MovimientoDisponibleFila[]).map(mapearMovimientoDisponible)
+}
+
+export async function listarTrazabilidadEntrega(
+  organizationId: string,
+  deliveryId?: string,
+): Promise<TrazaInventarioEntrega[]> {
+  const { data, error } = await supabase.rpc('list_distribution_delivery_inventory_trace', {
+    requested_organization_id: organizationId,
+    requested_delivery_id: deliveryId ?? null,
+  })
+  if (error) throw new Error(mensajeError(error))
+  return ((data ?? []) as TrazaEntregaFila[]).map(mapearTrazaEntrega)
 }
 
 export async function guardarEntrega(

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { ZONA_HORARIA_NEGOCIO } from '@/lib/fechas'
 import { useAuth } from '@/features/auth/useAuth'
 import { formatearFechaDistribucion } from '@/modulos/distribucion/servicios/formatoDistribucion'
-import { listarHistorialEstadosEntrega } from '@/modulos/distribucion/servicios/distribucionService'
+import { listarHistorialEstadosEntrega, listarTrazabilidadEntrega } from '@/modulos/distribucion/servicios/distribucionService'
 import { ETIQUETAS_CATEGORIA_NO_ENTREGA, obtenerResumenFechaEntrega, type ProgramacionEntrega } from '@/modulos/distribucion/modelo/programacionEntrega'
 
 const etiquetasEstado: Record<ProgramacionEntrega['estado'], string> = {
@@ -40,6 +40,11 @@ export function DialogoDetalleEntrega({ abierto, entrega, alCambiarApertura }: D
   const historialQuery = useQuery({
     queryKey: ['distribution-delivery-status-history', organizationId, entrega.id],
     queryFn: () => listarHistorialEstadosEntrega(organizationId, entrega.id),
+    enabled: abierto && Boolean(organizationId),
+  })
+  const trazaQuery = useQuery({
+    queryKey: ['distribution-delivery-inventory-trace', organizationId, entrega.id],
+    queryFn: () => listarTrazabilidadEntrega(organizationId, entrega.id),
     enabled: abierto && Boolean(organizationId),
   })
   const formatoFechaHora = new Intl.DateTimeFormat('es-PE', {
@@ -121,6 +126,24 @@ export function DialogoDetalleEntrega({ abierto, entrega, alCambiarApertura }: D
                   <tbody className="divide-y">{entrega.lineas.map((linea) => <tr key={linea.id}><td className="px-4 py-4"><p className="font-medium">{linea.productoDescripcion}</p><p className="mt-1 text-xs text-muted-foreground">{linea.productoCodigo} · {linea.unidadMedida || 'Sin unidad'}</p></td><td className="px-4 py-4 text-end font-mono tabular-nums">{linea.cantidad} {linea.unidadMedida}</td><td className="px-4 py-4 text-end font-mono tabular-nums">{linea.cantidadDespachada ?? linea.cantidad} {linea.unidadMedida}</td><td className="px-4 py-4 text-end font-mono tabular-nums">{entrega.requiereConciliacionCantidades ? 'Sin conciliar' : `${linea.cantidadEntregadaCliente ?? 0} ${linea.unidadMedida}`}</td><td className="px-4 py-4 text-end font-mono tabular-nums">{entrega.requiereConciliacionCantidades ? 'Sin conciliar' : `${linea.cantidadPendienteCliente ?? 0} ${linea.unidadMedida}`}</td></tr>)}</tbody>
                 </table>
               </div>
+            </section>
+
+            <section className="border-t px-5 py-6 sm:px-7" aria-labelledby="detalle-entrega-trazabilidad">
+              <div className="mb-4 border-b pb-3"><h2 id="detalle-entrega-trazabilidad" className="font-semibold">Trazabilidad física por entrega</h2><p className="mt-1 text-sm text-muted-foreground">La salida física pertenece a Ventas; aquí se muestra la asignación explícita de cada movimiento a esta entrega.</p></div>
+              {trazaQuery.isLoading ? <p role="status" className="border bg-muted/20 px-4 py-4 text-sm text-muted-foreground">Cargando lotes y movimientos…</p> : null}
+              {trazaQuery.isError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-3 border-s-4 border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive"><p>No se pudo cargar la trazabilidad física.</p><Button type="button" size="sm" variant="outline" onClick={() => void trazaQuery.refetch()}>Reintentar</Button></div> : null}
+              {!trazaQuery.isLoading && !trazaQuery.isError && !trazaQuery.data?.length ? <p className="border-s-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950">Sin trazabilidad de lote por entrega registrada.</p> : null}
+              {trazaQuery.data?.length ? (
+                <div className="overflow-x-auto border">
+                  <table className="w-full min-w-[64rem] border-collapse text-left text-sm">
+                    <thead><tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase"><th className="px-4 py-3 font-medium">Producto</th><th className="px-4 py-3 text-end font-medium">Cantidad</th><th className="px-4 py-3 font-medium">Lote / vencimiento</th><th className="px-4 py-3 font-medium">Almacén / ubicación</th><th className="px-4 py-3 font-medium">Referencia de despacho</th></tr></thead>
+                    <tbody className="divide-y">{trazaQuery.data.map((movimiento) => {
+                      const linea = entrega.lineas.find((item) => item.id === movimiento.orderLineId)
+                      return <tr key={movimiento.inventoryMovementId}><td className="px-4 py-4"><p className="font-medium">{linea?.productoDescripcion ?? 'Producto'}</p><p className="mt-1 text-xs text-muted-foreground">{linea?.productoCodigo ?? movimiento.orderLineId}</p></td><td className="px-4 py-4 text-end font-mono tabular-nums">{movimiento.cantidadAsignada} {linea?.unidadMedida ?? ''}</td><td className="px-4 py-4"><p>{movimiento.lote || 'Sin lote'}</p><p className="mt-1 text-xs text-muted-foreground">Vence: {movimiento.fechaVencimiento || 'Sin vencimiento'}</p></td><td className="px-4 py-4"><p>{movimiento.almacen || 'Almacén no informado'}</p><p className="mt-1 text-xs text-muted-foreground">{movimiento.ubicacionId || 'Ubicación no informada'}</p></td><td className="px-4 py-4 text-xs text-muted-foreground">{movimiento.referenciaDocumento || movimiento.operationKey || 'Referencia no disponible'}</td></tr>
+                    })}</tbody>
+                  </table>
+                </div>
+              ) : null}
             </section>
 
             <section className="border-t px-5 py-6 sm:px-7" aria-labelledby="detalle-entrega-eventos">

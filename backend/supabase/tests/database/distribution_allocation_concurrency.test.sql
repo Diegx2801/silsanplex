@@ -8,6 +8,10 @@ select plan(10);
 begin;
 drop schema if exists distribution_allocation_concurrency_test cascade;
 delete from public.distribution_delivery_outcome_lines where organization_id = 'd5111111-1111-4111-8111-111111111111';
+delete from public.distribution_delivery_inventory_allocations where organization_id = 'd5111111-1111-4111-8111-111111111111';
+alter table public.inventory_movements disable trigger inventory_movements_immutable;
+delete from public.inventory_movements where organization_id = 'd5111111-1111-4111-8111-111111111111';
+alter table public.inventory_movements enable trigger inventory_movements_immutable;
 delete from public.distribution_delivery_outcomes where organization_id = 'd5111111-1111-4111-8111-111111111111';
 delete from public.distribution_delivery_items where organization_id = 'd5111111-1111-4111-8111-111111111111';
 alter table public.distribution_command_operations disable trigger distribution_command_operations_immutable;
@@ -138,7 +142,7 @@ insert into public.sale_items (
 );
 insert into public.inventory_reservations (
   id, organization_id, product_id, warehouse_id, location_id, stock_status,
-  quantity, quantity_consumed, status, source_type, source_id,
+  lot, expiration_date, quantity, quantity_consumed, status, source_type, source_id,
   created_by, updated_by
 ) values (
   'd51b0000-0000-4000-8000-000000000041',
@@ -146,10 +150,74 @@ insert into public.inventory_reservations (
   'd51e0000-0000-4000-8000-000000000001',
   'd51f0000-0000-4000-8000-000000000001',
   'd51a0000-0000-4000-8000-000000000001',
-  'available', 100, 100, 'consumed', 'order-item',
+  'available', 'CONC-A', '2027-01-01', 100, 100, 'consumed', 'order-item',
   'd51b0000-0000-4000-8000-000000000011',
   'd51c0000-0000-4000-8000-000000000001', 'd51c0000-0000-4000-8000-000000000001'
 );
+insert into public.inventory_movements (
+  id, organization_id, product_id, product_code, product_description,
+  unit_of_measure, movement_type, quantity, warehouse, warehouse_id, location_id,
+  stock_status, unit_cost, lot, expiration_date, operation_date, reason,
+  source_type, created_by
+) values (
+  'd5200000-0000-4000-8000-000000000002',
+  'd5111111-1111-4111-8111-111111111111',
+  'd51e0000-0000-4000-8000-000000000001', 'DIST-CONC',
+  'Producto distribucion concurrente', 'UND', 'entrada', 100,
+  'Almacen concurrencia distribucion',
+  'd51f0000-0000-4000-8000-000000000001',
+  'd51a0000-0000-4000-8000-000000000001', 'available', 10,
+  'CONC-A', '2027-01-01', '2026-09-28',
+  'Stock inicial concurrencia D3', 'manual',
+  'd51c0000-0000-4000-8000-000000000001'
+);
+set local session_replication_role = replica;
+update public.inventory_reservations
+set quantity_consumed = 0,
+    status = 'active'
+where id = 'd51b0000-0000-4000-8000-000000000041';
+set local session_replication_role = origin;
+select set_config('silsanplex.order_dispatch_operation_key', 'd5200000-0000-4000-8000-000000000001', true);
+insert into public.inventory_movements (
+  id, organization_id, product_id, product_code, product_description,
+  unit_of_measure, movement_type, quantity, warehouse, warehouse_id, location_id,
+  stock_status, unit_cost, lot, expiration_date, operation_date, reason,
+  source_type, source_id, reservation_id, created_by
+) values (
+  'd5200000-0000-4000-8000-000000000001',
+  'd5111111-1111-4111-8111-111111111111',
+  'd51e0000-0000-4000-8000-000000000001', 'DIST-CONC',
+  'Producto distribucion concurrente', 'UND', 'salida', 100,
+  'Almacen concurrencia distribucion',
+  'd51f0000-0000-4000-8000-000000000001',
+  'd51a0000-0000-4000-8000-000000000001', 'available', 10,
+  'CONC-A', '2027-01-01', '2026-09-29',
+  'Despacho físico concurrencia D3', 'order-dispatch',
+  'd51b0000-0000-4000-8000-000000000011',
+  'd51b0000-0000-4000-8000-000000000041',
+  'd51c0000-0000-4000-8000-000000000001'
+);
+insert into public.audit_events (
+  organization_id, actor_user_id, action, entity_type, entity_id, metadata
+) values (
+  'd5111111-1111-4111-8111-111111111111',
+  'd51c0000-0000-4000-8000-000000000001', 'ORDER_DISPATCHED', 'order',
+  'd51b0000-0000-4000-8000-000000000001',
+  jsonb_build_object(
+    'operation_key', 'd5200000-0000-4000-8000-000000000001',
+    'movement_ids', jsonb_build_array('d5200000-0000-4000-8000-000000000001'),
+    'allocations', jsonb_build_array(jsonb_build_object(
+      'movement_id', 'd5200000-0000-4000-8000-000000000001',
+      'order_item_id', 'd51b0000-0000-4000-8000-000000000011',
+      'reservation_id', 'd51b0000-0000-4000-8000-000000000041',
+      'quantity', 100, 'lot', 'CONC-A', 'expiration_date', '2027-01-01'
+    ))
+  )
+);
+update public.inventory_reservations
+set quantity_consumed = quantity,
+    status = 'consumed'
+where id = 'd51b0000-0000-4000-8000-000000000041';
 commit;
 
 create schema distribution_allocation_concurrency_test;
@@ -192,7 +260,11 @@ begin
       'numero_despacho', requested_dispatch,
       'items', jsonb_build_array(jsonb_build_object(
         'id', 'd51b0000-0000-4000-8000-000000000011',
-        'cantidad', 70
+        'cantidad', 70,
+        'movement_allocations', jsonb_build_array(jsonb_build_object(
+          'inventory_movement_id', 'd5200000-0000-4000-8000-000000000001',
+          'quantity', 70
+        ))
       )),
       'operation_key', operation
     ));
@@ -273,6 +345,10 @@ select extensions.dblink_disconnect('distribution_allocation_worker_b');
 drop schema distribution_allocation_concurrency_test cascade;
 
 begin;
+delete from public.distribution_delivery_inventory_allocations where organization_id = 'd5111111-1111-4111-8111-111111111111';
+alter table public.inventory_movements disable trigger inventory_movements_immutable;
+delete from public.inventory_movements where organization_id = 'd5111111-1111-4111-8111-111111111111';
+alter table public.inventory_movements enable trigger inventory_movements_immutable;
 delete from public.distribution_delivery_items where organization_id = 'd5111111-1111-4111-8111-111111111111';
 alter table public.distribution_command_operations disable trigger distribution_command_operations_immutable;
 delete from public.distribution_command_operations where organization_id = 'd5111111-1111-4111-8111-111111111111';
