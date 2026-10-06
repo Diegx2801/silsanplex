@@ -23,6 +23,7 @@ export function useBucketsAjusteStock(
   return {
     buckets: query.data ?? bucketsVacios,
     cargando: query.isLoading,
+    consultando: query.isFetching,
     error: query.error instanceof Error ? query.error.message : '',
   }
 }

@@ -14,6 +14,18 @@ interface OpcionProductoFila {
   expiration_control: boolean
 }
 
+function adaptarOpcionProducto(fila: OpcionProductoFila): ProductoInventarioOpcion {
+  return {
+    id: fila.product_id,
+    codigo: fila.product_code,
+    descripcion: fila.product_description,
+    codigoBarras: fila.barcode ?? '',
+    unidadMedida: fila.unit_of_measure ?? '',
+    controlLote: Boolean(fila.batch_control),
+    controlVencimiento: Boolean(fila.expiration_control),
+  }
+}
+
 export function leerRespuestaReadInventario<T>(data: unknown): RespuestaReadInventario<T> {
   if (!data || typeof data !== 'object') {
     throw new Error('La respuesta de Inventario no tiene un formato válido')
@@ -50,14 +62,22 @@ export async function listarOpcionesProductoInventario(
   const respuesta = leerRespuestaReadInventario<OpcionProductoFila>(data)
   return {
     totalCount: respuesta.totalCount,
-    items: respuesta.items.map((fila) => ({
-      id: fila.product_id,
-      codigo: fila.product_code,
-      descripcion: fila.product_description,
-      codigoBarras: fila.barcode ?? '',
-      unidadMedida: fila.unit_of_measure ?? '',
-      controlLote: Boolean(fila.batch_control),
-      controlVencimiento: Boolean(fila.expiration_control),
-    })),
+    items: respuesta.items.map(adaptarOpcionProducto),
   }
+}
+
+export async function obtenerOpcionProductoInventarioPorId(
+  organizationId: string,
+  productoId: string,
+): Promise<ProductoInventarioOpcion | null> {
+  const { data, error } = await supabase.rpc('inventory_product_option_read_by_id', {
+    requested_organization_id: organizationId,
+    requested_product_id: productoId,
+  })
+
+  if (error) throw new Error('No se pudo preparar el producto para la operación de Inventario')
+
+  const respuesta = leerRespuestaReadInventario<OpcionProductoFila>(data)
+  const fila = respuesta.items.find((item) => item.product_id === productoId)
+  return fila ? adaptarOpcionProducto(fila) : null
 }

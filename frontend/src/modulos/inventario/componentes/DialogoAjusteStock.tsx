@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertTriangle, Check, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
@@ -24,6 +24,7 @@ import {
   type DatosFormularioAjusteStock,
   type DatosMovimientoInventario,
 } from '@/modulos/inventario/modelo/inventario'
+import type { ContextoAccionInventario } from '@/modulos/inventario/modelo/contextoAccionInventario'
 import type { ProductoInventarioOpcion } from '@/modulos/inventario/modelo/productoInventarioRead'
 
 const hoy = fechaActualPeru
@@ -34,6 +35,7 @@ interface DialogoAjusteStockProps {
   organizationId: string
   almacenes: readonly Almacen[]
   ubicaciones: readonly UbicacionAlmacen[]
+  contexto?: ContextoAccionInventario | null
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (datos: DatosMovimientoInventario) => Promise<string | undefined>
   alRestaurarFoco: () => void
@@ -114,11 +116,24 @@ export function DialogoAjusteStock({
   organizationId,
   almacenes,
   ubicaciones,
+  contexto = null,
   alCambiarApertura,
   alGuardar,
   alRestaurarFoco,
 }: DialogoAjusteStockProps) {
-  const [producto, setProducto] = useState<ProductoInventarioOpcion | null>(null)
+  const productoInicialId = contexto?.producto.id ?? ''
+  const posicionInicial = contexto?.posicion
+  const almacenInicialId = posicionInicial?.almacenId ?? (contexto ? '' : almacenes[0]?.id ?? '')
+  const bucketInicial = posicionInicial
+    ? claveBucketAjusteStock({
+        almacenId: posicionInicial.almacenId,
+        ubicacionId: posicionInicial.ubicacionId,
+        estadoStock: posicionInicial.estado,
+        lote: posicionInicial.lote,
+        fechaVencimiento: posicionInicial.fechaVencimiento,
+      })
+    : ''
+  const [producto, setProducto] = useState<ProductoInventarioOpcion | null>(contexto?.producto ?? null)
   const [confirmacion, setConfirmacion] = useState<ConfirmacionAjusteStock | null>(null)
   const [errorGuardado, setErrorGuardado] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -132,9 +147,9 @@ export function DialogoAjusteStock({
   } = useForm<DatosFormularioAjusteStock>({
     resolver: zodResolver(esquemaFormularioAjusteStock),
     defaultValues: {
-      productoId: '',
-      almacenId: almacenes[0]?.id ?? '',
-      bucketKey: '',
+      productoId: productoInicialId,
+      almacenId: almacenInicialId,
+      bucketKey: bucketInicial,
       cantidad: '',
       motivoAjuste: 'physical_count_difference',
       observacion: '',
@@ -145,7 +160,7 @@ export function DialogoAjusteStock({
   const almacenId = watch('almacenId')
   const bucketKey = watch('bucketKey')
   const cantidad = watch('cantidad')
-  const { buckets, cargando, error } = useBucketsAjusteStock(
+  const { buckets, cargando, consultando, error } = useBucketsAjusteStock(
     productoId,
     almacenId,
     organizationId,
@@ -189,8 +204,14 @@ export function DialogoAjusteStock({
     [bucketKey, bucketsVisibles],
   )
   const cantidadNumero = Number(cantidad)
+  const ubicacionAnterior = useRef({ productoId: productoInicialId, almacenId: almacenInicialId })
 
   useEffect(() => {
+    if (
+      ubicacionAnterior.current.productoId === productoId
+      && ubicacionAnterior.current.almacenId === almacenId
+    ) return
+    ubicacionAnterior.current = { productoId, almacenId }
     setValue('bucketKey', '')
     setValue('cantidad', '')
     setConfirmacion(null)
@@ -198,8 +219,10 @@ export function DialogoAjusteStock({
   }, [almacenId, productoId, setValue])
 
   useEffect(() => {
-    if (bucketKey && !bucketSeleccionado) setValue('bucketKey', '')
-  }, [bucketKey, bucketSeleccionado, setValue])
+    if (consultando || error || !bucketKey || bucketSeleccionado) return
+    setValue('bucketKey', '')
+    setValue('cantidad', '')
+  }, [bucketKey, bucketSeleccionado, consultando, error, setValue])
 
   const seleccionarProducto = (nextValue: string, opcion?: ProductoInventarioOpcion) => {
     setValue('productoId', nextValue, { shouldValidate: true })
@@ -212,7 +235,7 @@ export function DialogoAjusteStock({
 
   const prepararConfirmacion = (datos: DatosFormularioAjusteStock) => {
     if (!bucketSeleccionado) {
-      setError('bucketKey', { type: 'validate', message: 'Selecciona un bucket disponible' })
+      setError('bucketKey', { type: 'validate', message: 'Selecciona una ubicación y lote con stock para descontar' })
       return
     }
 
@@ -346,7 +369,9 @@ export function DialogoAjusteStock({
                   className="field-control"
                   {...register('almacenId')}
                 >
-                  {almacenes.length === 0 ? <option value="">No hay almacenes activos</option> : null}
+                  {almacenes.length === 0
+                    ? <option value="">No hay almacenes activos</option>
+                    : <option value="">Selecciona un almacén</option>}
                   {almacenes.map((almacen) => (
                     <option key={almacen.id} value={almacen.id}>{almacen.codigo} · {almacen.nombre}</option>
                   ))}
@@ -365,21 +390,25 @@ export function DialogoAjusteStock({
                   placeholder={
                     !productoId
                       ? 'Selecciona primero un producto'
+                      : !almacenId
+                        ? 'Selecciona un almacén para consultar stock'
                       : cargando
                         ? 'Consultando existencias…'
                         : bucketsVisibles.length
                           ? 'Busca por ubicación, lote o vencimiento'
                           : 'No hay stock físico en este almacén'
                   }
-                  helperText={error || !bucketsVisibles.length
+                  helperText={error || !almacenId || !bucketsVisibles.length
                     ? undefined
                     : 'Elige la ubicación, lote y condición exactos que vas a descontar.'}
                   error={errors.bucketKey?.message ?? (error ? 'No se pudieron consultar las existencias. Vuelve a intentarlo.' : undefined)}
                   required
-                  disabled={!productoId || cargando || bucketsVisibles.length === 0}
+                  disabled={!productoId || !almacenId || cargando || bucketsVisibles.length === 0}
                   noOptionsMessage={
                     !productoId
                       ? 'Selecciona primero un producto.'
+                      : !almacenId
+                        ? 'Selecciona un almacén para consultar las posiciones de stock.'
                       : cargando
                         ? 'Consultando existencias…'
                         : 'No hay stock físico en este almacén.'
@@ -387,7 +416,7 @@ export function DialogoAjusteStock({
                   noResultsMessage="No se encontraron ubicaciones o lotes con esos datos."
                   maxVisibleOptions={50}
                 />
-                {!error && productoId && !cargando && bucketsVisibles.length === 0 ? (
+                {!error && productoId && almacenId && !cargando && bucketsVisibles.length === 0 ? (
                   <p className="field-help">Selecciona otro almacén si el producto tiene stock en otra ubicación.</p>
                 ) : null}
               </div>

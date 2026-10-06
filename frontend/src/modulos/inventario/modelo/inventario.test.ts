@@ -5,6 +5,7 @@ import {
   calcularExistencias,
   calcularExistenciasDesdeResumen,
   calcularSaldoDisponible,
+  cantidadFisicaNoReservada,
   esquemaDatosMovimientoInventario,
   crearMovimientoInventario,
   obtenerVariacion,
@@ -59,6 +60,12 @@ function movimiento(
 }
 
 describe('inventario', () => {
+  it('calcula la cantidad física disponible para ajustes descontando reservas', () => {
+    expect(cantidadFisicaNoReservada(8, 3)).toBe(5)
+    expect(cantidadFisicaNoReservada(8, 8)).toBe(0)
+    expect(cantidadFisicaNoReservada(4, 7)).toBe(0)
+  })
+
   it('exige documento de sustento separado del motivo', () => {
     expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, documentoReferencia: '   ' }).success).toBe(false)
     expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, documentoReferencia: 'x'.repeat(121) }).success).toBe(false)

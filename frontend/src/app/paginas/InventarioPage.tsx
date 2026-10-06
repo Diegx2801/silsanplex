@@ -1,10 +1,12 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { ArrowUpFromLine, Boxes, PackageCheck, PackageX, Plus, Search } from 'lucide-react'
-import { type MouseEvent as ReactMouseEvent, useRef, useState } from 'react'
+import { type MouseEvent as ReactMouseEvent, useCallback, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
+import { AccionesFilaInventario } from '@/modulos/inventario/componentes/AccionesFilaInventario'
 import { DialogoAjusteStock } from '@/modulos/inventario/componentes/DialogoAjusteStock'
 import { DialogoMovimientoInventario } from '@/modulos/inventario/componentes/DialogoMovimientoInventario'
 import { EstadoListadoInventario } from '@/modulos/inventario/componentes/EstadoListadoInventario'
@@ -14,10 +16,19 @@ import { VistasInventario } from '@/modulos/inventario/componentes/VistasInventa
 import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import { useDebounceInventario } from '@/modulos/inventario/estado/useDebounceInventario'
 import { useInventario } from '@/modulos/inventario/estado/useInventario'
-import type { DatosMovimientoInventario, ExistenciaInventario, FiltroStockInventario, OrdenExistenciasInventario } from '@/modulos/inventario/modelo/inventario'
+import type { SaldoInventario } from '@/modulos/inventario/modelo/almacen'
+import type { ContextoAccionInventario } from '@/modulos/inventario/modelo/contextoAccionInventario'
+import { cantidadFisicaNoReservada, type DatosMovimientoInventario, type ExistenciaInventario, type FiltroStockInventario, type OrdenExistenciasInventario } from '@/modulos/inventario/modelo/inventario'
 import type { TamanioPaginaInventario } from '@/modulos/inventario/modelo/paginacionInventario'
+import { obtenerOpcionProductoInventarioPorId } from '@/modulos/inventario/servicios/productoInventarioReadService'
 
 const formatoCantidad = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 3 })
+type TipoDialogoInventario = 'ajuste' | 'movimiento'
+
+interface EstadoDialogoInventario {
+  tipo: TipoDialogoInventario
+  contexto: ContextoAccionInventario | null
+}
 
 function EstadoStock({ existencia }: { existencia: ExistenciaInventario }) {
   const tieneStock = existencia.stockAsignable > 0
@@ -39,21 +50,72 @@ export function InventarioPage() {
   const gestionAlmacenes = useAlmacenes()
   const almacenesActivos = gestionAlmacenes.almacenes.filter((almacen) => almacen.activo)
   const registro = useInventario({})
-  const [dialogoAbierto, setDialogoAbierto] = useState(false)
-  const [ajusteAbierto, setAjusteAbierto] = useState(false)
+  const queryClient = useQueryClient()
+  const [dialogo, setDialogo] = useState<EstadoDialogoInventario | null>(null)
+  const [preparandoAccion, setPreparandoAccion] = useState(false)
+  const [errorAccion, setErrorAccion] = useState('')
   const [mensaje, setMensaje] = useState('')
   const disparador = useRef<HTMLButtonElement | null>(null)
+  const encabezado = useRef<HTMLHeadingElement | null>(null)
+  const preparandoAccionRef = useRef(false)
 
-  const abrirMovimiento = (evento: ReactMouseEvent<HTMLButtonElement>) => {
+  const restaurarFoco = useCallback(() => {
+    if (
+      disparador.current?.isConnected
+      && !disparador.current.disabled
+      && disparador.current.getClientRects().length > 0
+    ) {
+      disparador.current.focus()
+      return
+    }
+    encabezado.current?.focus()
+  }, [])
+
+  const abrirDialogo = (tipo: TipoDialogoInventario, evento: ReactMouseEvent<HTMLButtonElement>) => {
     disparador.current = evento.currentTarget
+    setErrorAccion('')
     setMensaje('')
-    setDialogoAbierto(true)
+    setDialogo({ tipo, contexto: null })
   }
 
-  const abrirAjusteStock = (evento: ReactMouseEvent<HTMLButtonElement>) => {
+  const abrirDesdeExistencia = async (
+    tipo: TipoDialogoInventario,
+    fila: ExistenciaInventario | SaldoInventario,
+    evento: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    if (!organizationId || preparandoAccionRef.current) return
     disparador.current = evento.currentTarget
+    preparandoAccionRef.current = true
+    setPreparandoAccion(true)
+    setErrorAccion('')
     setMensaje('')
-    setAjusteAbierto(true)
+    try {
+      const producto = await queryClient.fetchQuery({
+        queryKey: ['inventory-product-option-by-id', organizationId, fila.productoId],
+        queryFn: () => obtenerOpcionProductoInventarioPorId(organizationId, fila.productoId),
+        staleTime: 30_000,
+      })
+      if (!producto) {
+        setErrorAccion('El producto ya no está disponible para operar. Verifica que siga activo e inténtalo de nuevo.')
+        return
+      }
+
+      const posicion = 'estado' in fila
+        ? {
+            almacenId: fila.almacenId,
+            ubicacionId: fila.ubicacionId,
+            estado: fila.estado,
+            lote: fila.lote,
+            fechaVencimiento: fila.fechaVencimiento,
+          }
+        : undefined
+      setDialogo({ tipo, contexto: { producto, posicion } })
+    } catch {
+      setErrorAccion('No se pudo preparar el producto. Inténtalo nuevamente.')
+    } finally {
+      preparandoAccionRef.current = false
+      setPreparandoAccion(false)
+    }
   }
 
   const guardarMovimiento = async (datos: DatosMovimientoInventario) => {
@@ -67,7 +129,7 @@ export function InventarioPage() {
       <header className="flex flex-col gap-5 border-b pb-7 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">Inventario</span>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Existencias y lotes</h1>
+          <h1 ref={encabezado} tabIndex={-1} className="mt-2 rounded-sm text-3xl font-semibold tracking-[-0.03em] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-4xl">Existencias y lotes</h1>
           <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">
             Consulta el stock físico, las reservas y la cantidad disponible por producto, almacén y lote.
           </p>
@@ -78,8 +140,8 @@ export function InventarioPage() {
               type="button"
               variant="outline"
               size="lg"
-              disabled={!organizationId || !almacenesActivos.length}
-              onClick={abrirAjusteStock}
+              disabled={!organizationId || !almacenesActivos.length || preparandoAccion}
+              onClick={(evento) => abrirDialogo('ajuste', evento)}
             >
               <ArrowUpFromLine aria-hidden="true" />
               Ajustar stock
@@ -87,8 +149,8 @@ export function InventarioPage() {
             <Button
               type="button"
               size="lg"
-              disabled={!organizationId || !almacenesActivos.length}
-              onClick={abrirMovimiento}
+              disabled={!organizationId || !almacenesActivos.length || preparandoAccion}
+              onClick={(evento) => abrirDialogo('movimiento', evento)}
             >
               <Plus aria-hidden="true" />
               Registrar movimiento
@@ -96,6 +158,16 @@ export function InventarioPage() {
           </div>
         ) : null}
       </header>
+      {preparandoAccion ? (
+        <p role="status" aria-live="polite" className="border bg-muted/35 px-4 py-3 text-sm text-muted-foreground">
+          Preparando el formulario con los datos del producto…
+        </p>
+      ) : null}
+      {errorAccion ? (
+        <p role="alert" className="border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {errorAccion}
+        </p>
+      ) : null}
       <p role="status" aria-live="polite" className="sr-only">{mensaje}</p>
       <VistasInventario etiqueta="Vistas de existencias" vista={vista} opciones={[
         { valor: 'productos', etiqueta: 'Por producto' },
@@ -105,44 +177,82 @@ export function InventarioPage() {
         El stock físico incluye todas las condiciones. El disponible excluye las reservas y los bienes en cuarentena, dañados o vencidos.
       </p>
       {vista === 'productos'
-        ? <ExistenciasPorProducto />
-        : <ExistenciasPorLote gestion={gestionAlmacenes} />}
-      {dialogoAbierto && puedeGestionar && almacenesActivos.length ? (
+        ? <ExistenciasPorProducto
+            puedeGestionar={puedeGestionar}
+            accionesDeshabilitadas={preparandoAccion || !almacenesActivos.length}
+            onAjustar={(fila, evento) => void abrirDesdeExistencia('ajuste', fila, evento)}
+            onMovimiento={(fila, evento) => void abrirDesdeExistencia('movimiento', fila, evento)}
+          />
+        : <ExistenciasPorLote
+            gestion={gestionAlmacenes}
+            puedeGestionar={puedeGestionar}
+            accionesDeshabilitadas={preparandoAccion || !almacenesActivos.length}
+            onAjustar={(fila, evento) => void abrirDesdeExistencia('ajuste', fila, evento)}
+            onMovimiento={(fila, evento) => void abrirDesdeExistencia('movimiento', fila, evento)}
+          />}
+      {dialogo?.tipo === 'movimiento' && puedeGestionar && almacenesActivos.length ? (
         <DialogoMovimientoInventario
-          abierto={dialogoAbierto}
+          abierto
           organizationId={organizationId}
           almacenes={almacenesActivos}
           ubicaciones={gestionAlmacenes.ubicaciones}
-          alCambiarApertura={setDialogoAbierto}
+          contexto={dialogo.contexto}
+          alCambiarApertura={(abierto) => { if (!abierto) setDialogo(null) }}
           alGuardar={guardarMovimiento}
-          alRestaurarFoco={() => disparador.current?.focus()}
+          alRestaurarFoco={restaurarFoco}
         />
       ) : null}
-      {ajusteAbierto && puedeGestionar && almacenesActivos.length ? (
+      {dialogo?.tipo === 'ajuste' && puedeGestionar && almacenesActivos.length ? (
         <DialogoAjusteStock
-          abierto={ajusteAbierto}
+          abierto
           organizationId={organizationId}
           almacenes={almacenesActivos}
           ubicaciones={gestionAlmacenes.ubicaciones}
-          alCambiarApertura={setAjusteAbierto}
+          contexto={dialogo.contexto}
+          alCambiarApertura={(abierto) => { if (!abierto) setDialogo(null) }}
           alGuardar={guardarMovimiento}
-          alRestaurarFoco={() => disparador.current?.focus()}
+          alRestaurarFoco={restaurarFoco}
         />
       ) : null}
     </div>
   )
 }
 
-function ExistenciasPorLote({ gestion }: { gestion: ReturnType<typeof useAlmacenes> }) {
+interface AccionesExistenciaProps {
+  puedeGestionar: boolean
+  accionesDeshabilitadas: boolean
+  onAjustar: (fila: ExistenciaInventario | SaldoInventario, evento: ReactMouseEvent<HTMLButtonElement>) => void
+  onMovimiento: (fila: ExistenciaInventario | SaldoInventario, evento: ReactMouseEvent<HTMLButtonElement>) => void
+}
+
+function ExistenciasPorLote({
+  gestion,
+  puedeGestionar,
+  accionesDeshabilitadas,
+  onAjustar,
+  onMovimiento,
+}: AccionesExistenciaProps & { gestion: ReturnType<typeof useAlmacenes> }) {
   return (
     <EstadoListadoInventario cargando={gestion.cargando} error={gestion.error} vacio={false}
       mensajeVacio="" alReintentar={() => void gestion.reintentar()}>
-      <PanelExistenciasLotes almacenes={gestion.almacenes} ubicaciones={gestion.ubicaciones} />
+      <PanelExistenciasLotes
+        almacenes={gestion.almacenes}
+        ubicaciones={gestion.ubicaciones}
+        puedeGestionar={puedeGestionar}
+        accionesDeshabilitadas={accionesDeshabilitadas}
+        onAjustar={onAjustar}
+        onMovimiento={onMovimiento}
+      />
     </EstadoListadoInventario>
   )
 }
 
-function ExistenciasPorProducto() {
+function ExistenciasPorProducto({
+  puedeGestionar,
+  accionesDeshabilitadas,
+  onAjustar,
+  onMovimiento,
+}: AccionesExistenciaProps) {
   const [busqueda, setBusqueda] = useState('')
   const busquedaDebounced = useDebounceInventario(busqueda)
   const [filtroStock, setFiltroStock] = useState<FiltroStockInventario>('todos')
@@ -255,7 +365,9 @@ function ExistenciasPorProducto() {
         >
           <>
             <div className="divide-y md:hidden">
-              {existencias.map((existencia) => (
+              {existencias.map((existencia) => {
+                const sinDisponibleParaAjuste = cantidadFisicaNoReservada(existencia.stockFisico, existencia.stockReservado) <= 0
+                return (
                 <article key={existencia.productoId} className="px-5 py-5">
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -290,11 +402,24 @@ function ExistenciasPorProducto() {
                       </dd>
                     </div>
                   </dl>
+                  {puedeGestionar ? (
+                    <div className="mt-4 border-t pt-4">
+                      <AccionesFilaInventario
+                        producto={existencia.productoDescripcion}
+                        ajusteDeshabilitado={accionesDeshabilitadas || sinDisponibleParaAjuste}
+                        ajusteSinDisponible={!accionesDeshabilitadas && sinDisponibleParaAjuste}
+                        movimientoDeshabilitado={accionesDeshabilitadas}
+                        onAjustar={(evento) => onAjustar(existencia, evento)}
+                        onMovimiento={(evento) => onMovimiento(existencia, evento)}
+                      />
+                    </div>
+                  ) : null}
                 </article>
-              ))}
+                )
+              })}
             </div>
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[52rem] border-collapse text-left text-sm">
+              <table className="w-full min-w-[66rem] border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
                     <th className="px-6 py-3 font-medium">Código</th>
@@ -305,10 +430,13 @@ function ExistenciasPorProducto() {
                     <th className="px-4 py-3 text-end font-medium">Almacenes</th>
                     <th className="px-4 py-3 text-end font-medium">Lotes</th>
                     <th className="px-6 py-3 font-medium">Estado</th>
+                    {puedeGestionar ? <th scope="col" className="px-5 py-3 text-end font-medium">Acciones</th> : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {existencias.map((existencia) => (
+                  {existencias.map((existencia) => {
+                    const sinDisponibleParaAjuste = cantidadFisicaNoReservada(existencia.stockFisico, existencia.stockReservado) <= 0
+                    return (
                     <tr key={existencia.productoId} className="hover:bg-muted/35">
                       <td className="px-6 py-4 font-mono text-xs">
                         {existencia.productoCodigo}
@@ -336,8 +464,21 @@ function ExistenciasPorProducto() {
                       <td className="px-6 py-4">
                         <EstadoStock existencia={existencia} />
                       </td>
+                      {puedeGestionar ? (
+                        <td className="px-5 py-4">
+                          <AccionesFilaInventario
+                            producto={existencia.productoDescripcion}
+                            ajusteDeshabilitado={accionesDeshabilitadas || sinDisponibleParaAjuste}
+                            ajusteSinDisponible={!accionesDeshabilitadas && sinDisponibleParaAjuste}
+                            movimientoDeshabilitado={accionesDeshabilitadas}
+                            onAjustar={(evento) => onAjustar(existencia, evento)}
+                            onMovimiento={(evento) => onMovimiento(existencia, evento)}
+                          />
+                        </td>
+                      ) : null}
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

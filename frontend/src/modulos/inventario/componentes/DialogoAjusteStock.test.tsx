@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
+import type { ContextoAccionInventario } from '@/modulos/inventario/modelo/contextoAccionInventario'
 import type { BucketAjusteStock } from '@/modulos/inventario/modelo/inventario'
 
 import { DialogoAjusteStock } from './DialogoAjusteStock'
@@ -84,7 +85,10 @@ const bucket: BucketAjusteStock = {
   costoPromedio: 12.5,
 }
 
-function renderDialog(alGuardar = vi.fn().mockResolvedValue(undefined)) {
+function renderDialog(
+  alGuardar = vi.fn().mockResolvedValue(undefined),
+  contexto: ContextoAccionInventario | null = null,
+) {
   const alCambiarApertura = vi.fn()
   render(
     <DialogoAjusteStock
@@ -92,6 +96,7 @@ function renderDialog(alGuardar = vi.fn().mockResolvedValue(undefined)) {
       organizationId="org-1"
       almacenes={[almacen]}
       ubicaciones={[ubicacion]}
+      contexto={contexto}
       alCambiarApertura={alCambiarApertura}
       alGuardar={alGuardar}
       alRestaurarFoco={vi.fn()}
@@ -112,7 +117,7 @@ function completarFormulario() {
 describe('DialogoAjusteStock', () => {
   beforeEach(() => {
     mocks.useBucketsAjusteStock.mockReset()
-    mocks.useBucketsAjusteStock.mockReturnValue({ buckets: [bucket], cargando: false, error: '' })
+    mocks.useBucketsAjusteStock.mockReturnValue({ buckets: [bucket], cargando: false, consultando: false, error: '' })
   })
 
   it('no selecciona un producto arbitrario y muestra el bucket exacto', () => {
@@ -217,6 +222,50 @@ describe('DialogoAjusteStock', () => {
       'placeholder',
       'Consultando existencias…',
     )
+  })
+
+  it('precarga el producto y el bucket exacto cuando se abre desde una posición', () => {
+    renderDialog(vi.fn(), {
+      producto: mocks.producto,
+      posicion: {
+        almacenId: almacen.id,
+        ubicacionId: ubicacion.id,
+        estado: 'available',
+        lote: 'LOTE-1',
+        fechaVencimiento: '2027-12-31',
+      },
+    })
+
+    expect(screen.getByLabelText('Producto')).toHaveValue(mocks.producto.id)
+    expect(screen.getByLabelText('Almacén *')).toHaveValue(almacen.id)
+    expect(screen.getByRole('combobox', { name: 'Ubicación y lote' })).toHaveValue('A-01 · Lote LOTE-1 · vence 31 dic. 2027 · Disponible')
+    expect(screen.getByText('Disponible para descontar')).toBeVisible()
+  })
+
+  it('conserva el bucket preseleccionado mientras actualiza datos en caché', () => {
+    mocks.useBucketsAjusteStock.mockReturnValue({ buckets: [bucket], cargando: false, consultando: true, error: '' })
+    renderDialog(vi.fn(), {
+      producto: mocks.producto,
+      posicion: {
+        almacenId: almacen.id,
+        ubicacionId: ubicacion.id,
+        estado: 'available',
+        lote: 'LOTE-1',
+        fechaVencimiento: '2027-12-31',
+      },
+    })
+
+    expect(screen.getByRole('combobox', { name: 'Ubicación y lote' })).toHaveValue('A-01 · Lote LOTE-1 · vence 31 dic. 2027 · Disponible')
+  })
+
+  it('deja pedir almacén cuando el contexto procede de un agregado por producto', () => {
+    renderDialog(vi.fn(), { producto: mocks.producto })
+
+    expect(screen.getByLabelText('Producto')).toHaveValue(mocks.producto.id)
+    expect(screen.getByLabelText('Almacén *')).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: 'Ubicación y lote' }))
+      .toHaveAttribute('placeholder', 'Selecciona un almacén para consultar stock')
+    expect(screen.getByRole('combobox', { name: 'Ubicación y lote' })).toBeDisabled()
   })
 
   it('explica cuándo el producto no tiene stock físico en el almacén', () => {

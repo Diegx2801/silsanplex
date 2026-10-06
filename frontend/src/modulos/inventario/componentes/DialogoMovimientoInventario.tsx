@@ -9,6 +9,7 @@ import { fechaActualPeru } from '@/lib/fechas'
 import { useCandidatosFefo } from '@/modulos/inventario/estado/useCandidatosFefo'
 import { SelectorProductoInventario } from '@/modulos/inventario/componentes/SelectorProductoInventario'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
+import type { ContextoAccionInventario } from '@/modulos/inventario/modelo/contextoAccionInventario'
 import {
   esquemaDatosMovimientoInventario,
   movimientoEsSalida,
@@ -24,6 +25,7 @@ interface DialogoMovimientoInventarioProps {
   organizationId: string
   almacenes: readonly Almacen[]
   ubicaciones: readonly UbicacionAlmacen[]
+  contexto?: ContextoAccionInventario | null
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (datos: DatosMovimientoInventario) => Promise<string | undefined>
   alRestaurarFoco: () => void
@@ -34,11 +36,16 @@ export function DialogoMovimientoInventario({
   organizationId,
   almacenes,
   ubicaciones,
+  contexto = null,
   alCambiarApertura,
   alGuardar,
   alRestaurarFoco,
 }: DialogoMovimientoInventarioProps) {
-  const [producto, setProducto] = useState<ProductoInventarioOpcion | null>(null)
+  const almacenInicialId = contexto?.posicion?.almacenId ?? (contexto ? '' : almacenes[0]?.id)
+  const almacenInicial = almacenes.find((item) => item.id === almacenInicialId)
+  const ubicacionInicialId = contexto?.posicion?.ubicacionId
+    ?? (contexto ? undefined : ubicaciones.find((item) => item.almacenId === almacenInicialId && item.activa)?.id)
+  const [producto, setProducto] = useState<ProductoInventarioOpcion | null>(contexto?.producto ?? null)
   const {
     register,
     handleSubmit,
@@ -49,16 +56,16 @@ export function DialogoMovimientoInventario({
   } = useForm<DatosMovimientoInventario>({
     resolver: zodResolver(esquemaDatosMovimientoInventario),
     defaultValues: {
-      productoId: '',
+      productoId: contexto?.producto.id ?? '',
       tipo: 'entrada',
       cantidad: '',
-      almacen: almacenes[0]?.nombre ?? 'Almacen principal',
-      almacenId: almacenes[0]?.id,
-      ubicacionId: ubicaciones.find((item) => item.almacenId === almacenes[0]?.id)?.id,
-      estadoStock: 'available',
+      almacen: almacenInicial?.nombre ?? '',
+      almacenId: almacenInicialId,
+      ubicacionId: ubicacionInicialId,
+      estadoStock: contexto?.posicion?.estado ?? 'available',
       costoUnitario: '0',
-      lote: '',
-      fechaVencimiento: '',
+      lote: contexto?.posicion?.lote ?? '',
+      fechaVencimiento: contexto?.posicion?.fechaVencimiento ?? '',
       fechaOperacion: hoy(),
       motivo: '',
       documentoReferencia: '',
@@ -92,6 +99,14 @@ export function DialogoMovimientoInventario({
   ])
 
   const guardar = async (datos: DatosMovimientoInventario) => {
+    if (!datos.almacenId) {
+      setError('almacenId', { message: 'Selecciona un almacén' })
+      return
+    }
+    if (!datos.ubicacionId) {
+      setError('ubicacionId', { message: 'Selecciona una ubicación física' })
+      return
+    }
     if (producto?.controlLote && !datos.lote.trim()) {
       setError('lote', { message: 'Este producto requiere ingresar el lote.' })
       return
@@ -204,6 +219,12 @@ export function DialogoMovimientoInventario({
                   onValueChange={(nextValue, opcion) => {
                     setValue('productoId', nextValue, { shouldValidate: true })
                     setProducto(opcion ?? null)
+                    if (nextValue !== productoId) {
+                      setValue('estadoStock', 'available')
+                      setValue('ubicacionId', ubicaciones.find((item) => item.almacenId === almacenId && item.activa)?.id)
+                      setValue('lote', '')
+                      setValue('fechaVencimiento', '')
+                    }
                   }}
                 />
               </div>
@@ -238,20 +259,25 @@ export function DialogoMovimientoInventario({
                 <select
                   id="almacen-movimiento"
                   className="field-control"
+                  aria-invalid={Boolean(errors.almacenId || errors.almacen)}
                   {...register('almacenId', {
                     onChange: (evento) => {
                       const seleccionado = almacenes.find((item) => item.id === evento.target.value)
                       setValue('almacen', seleccionado?.nombre ?? '')
                       setValue('ubicacionId', ubicaciones.find((item) => item.almacenId === evento.target.value && item.activa)?.id)
+                      setValue('estadoStock', 'available')
+                      setValue('lote', '')
+                      setValue('fechaVencimiento', '')
                     },
                   })}
                 >
+                  <option value="">Selecciona un almacén</option>
                   {almacenes.map((almacen) => (
                     <option key={almacen.id} value={almacen.id}>{almacen.codigo} · {almacen.nombre}</option>
                   ))}
                 </select>
-                {errors.almacen ? (
-                  <p className="field-error">{errors.almacen.message}</p>
+                {errors.almacenId || errors.almacen ? (
+                  <p className="field-error">Selecciona un almacén válido.</p>
                 ) : null}
               </div>
 
@@ -267,11 +293,18 @@ export function DialogoMovimientoInventario({
                 />
               </div> : <div>
                 <label htmlFor="ubicacion-movimiento" className="field-label">Ubicación física *</label>
-                <select id="ubicacion-movimiento" className="field-control" {...register('ubicacionId')}>
+                <select
+                  id="ubicacion-movimiento"
+                  className="field-control"
+                  aria-invalid={Boolean(errors.ubicacionId)}
+                  {...register('ubicacionId')}
+                >
+                  <option value="">Selecciona una ubicación</option>
                   {ubicaciones.filter((item) => item.almacenId === almacenId && item.activa).map((ubicacion) => (
                     <option key={ubicacion.id} value={ubicacion.id}>{ubicacion.codigo} · {ubicacion.nombre}</option>
                   ))}
                 </select>
+                {errors.ubicacionId ? <p className="field-error">Selecciona una ubicación física válida.</p> : null}
               </div>}
 
               <div>
@@ -370,7 +403,7 @@ export function DialogoMovimientoInventario({
                 {esSalida
                   ? usarFefo
                     ? candidatoFefo
-                      ? `FEFO iniciará por ${candidatoFefo.lote || 'stock sin lote'} · vence ${candidatoFefo.fechaVencimiento || 'sin fecha'} · ${cantidadAsignableFefo} asignables en ${candidatos.length} ${candidatos.length === 1 ? 'bucket' : 'buckets'}. Si hace falta, la salida se distribuirá automáticamente.`
+                      ? `La salida priorizará ${candidatoFefo.lote || 'el stock sin lote'} · vence ${candidatoFefo.fechaVencimiento || 'sin fecha'} · ${cantidadAsignableFefo} unidades disponibles entre ${candidatos.length} ${candidatos.length === 1 ? 'posición' : 'posiciones'}. Si hace falta, se distribuirá automáticamente.`
                       : cargandoFefo
                         ? 'Consultando el primer lote asignable según FEFO...'
                         : errorFefo || 'No existe stock sanitario asignable en este almacén.'

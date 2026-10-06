@@ -1,6 +1,6 @@
 begin;
 
-select plan(57);
+select plan(68);
 
 select is(
   to_regprocedure('inventory_internal.assert_inventory_read(uuid)') is not null,
@@ -16,6 +16,23 @@ select is(
   (select prosecdef from pg_catalog.pg_proc where oid = to_regprocedure('public.inventory_product_options(uuid,text,integer,integer)')),
   true,
   'las opciones de producto usan SECURITY DEFINER'
+);
+select is(
+  to_regprocedure('public.inventory_product_option_read_by_id(uuid,uuid)') is not null,
+  true,
+  'existe la lectura contextual de producto por identidad'
+);
+select is(
+  (select prosecdef from pg_catalog.pg_proc where oid = to_regprocedure('public.inventory_product_option_read_by_id(uuid,uuid)')),
+  true,
+  'la lectura contextual usa SECURITY DEFINER'
+);
+select is(
+  (select proconfig @> array['search_path=""']
+   from pg_catalog.pg_proc
+   where oid = to_regprocedure('public.inventory_product_option_read_by_id(uuid,uuid)')),
+  true,
+  'la lectura contextual fija search_path vacio'
 );
 select is(
   (select prosecdef from pg_catalog.pg_proc where oid = to_regprocedure('public.inventory_product_stock_summary_read(uuid,text,text,text,integer,integer)')),
@@ -52,14 +69,29 @@ select is(
   'authenticated puede ejecutar las opciones especializadas'
 );
 select is(
+  has_function_privilege('authenticated', 'public.inventory_product_option_read_by_id(uuid,uuid)', 'EXECUTE'),
+  true,
+  'authenticated puede ejecutar la lectura contextual autorizada'
+);
+select is(
   has_function_privilege('anon', 'public.inventory_product_options(uuid,text,integer,integer)', 'EXECUTE'),
   false,
   'anon no puede ejecutar las opciones especializadas'
 );
 select is(
+  has_function_privilege('anon', 'public.inventory_product_option_read_by_id(uuid,uuid)', 'EXECUTE'),
+  false,
+  'anon no puede leer opciones contextuales'
+);
+select is(
   has_function_privilege('service_role', 'public.inventory_product_options(uuid,text,integer,integer)', 'EXECUTE'),
   false,
   'service_role no recibe un grant adicional de la RPC'
+);
+select is(
+  has_function_privilege('service_role', 'public.inventory_product_option_read_by_id(uuid,uuid)', 'EXECUTE'),
+  false,
+  'service_role no recibe un grant adicional de la lectura contextual'
 );
 
 insert into public.organizations (id, name, slug)
@@ -246,6 +278,43 @@ select is(
    from jsonb_object_keys((public.inventory_product_options('d1a00000-0000-4000-8000-000000000001', 'P-A-STOCK', 50, 0) -> 'items' -> 0)) key),
   array['barcode','batch_control','expiration_control','product_code','product_description','product_id','unit_of_measure']::text[],
   'las opciones exponen solo el DTO minimo'
+);
+select is(
+  public.inventory_product_option_read_by_id(
+    'd1a00000-0000-4000-8000-000000000001',
+    'd1a40000-0000-4000-8000-000000000001'
+  ) -> 'items' -> 0 ->> 'product_code',
+  'P-A-STOCK',
+  'la lectura contextual devuelve el bien solicitado de la organizacion'
+);
+select is(
+  (public.inventory_product_option_read_by_id(
+    'd1a00000-0000-4000-8000-000000000001',
+    'd1a40000-0000-4000-8000-000000000001'
+  ) -> 'items' -> 0 ->> 'batch_control')::boolean,
+  false,
+  'la lectura contextual conserva la regla de lote del catalogo'
+);
+select is(
+  (public.inventory_product_option_read_by_id(
+    'd1a00000-0000-4000-8000-000000000001',
+    'd1a40000-0000-4000-8000-000000000001'
+  ) -> 'items' -> 0 ->> 'expiration_control')::boolean,
+  false,
+  'la lectura contextual conserva la regla de vencimiento del catalogo'
+);
+select is(
+  (public.inventory_product_option_read_by_id(
+    'd1a00000-0000-4000-8000-000000000001',
+    'd1a40000-0000-4000-8000-000000000002'
+  ) ->> 'total_count')::integer,
+  0,
+  'la lectura contextual no habilita productos inactivos'
+);
+select throws_ok(
+  $$select public.inventory_product_option_read_by_id('d1a00000-0000-4000-8000-000000000002', 'd1a40000-0000-4000-8000-000000000001')$$,
+  '42501', null,
+  'la lectura contextual bloquea consultar una organizacion ajena'
 );
 select is(
   (select (public.inventory_product_options('d1a00000-0000-4000-8000-000000000001', 'P-A-SERVICE', 50, 0) -> 'total_count')::integer),

@@ -92,7 +92,11 @@ export function cantidadDisponibleAjusteStock(bucket: Pick<
   BucketAjusteStock,
   'cantidadFisica' | 'cantidadReservada'
 >) {
-  return Math.max(bucket.cantidadFisica - bucket.cantidadReservada, 0)
+  return cantidadFisicaNoReservada(bucket.cantidadFisica, bucket.cantidadReservada)
+}
+
+export function cantidadFisicaNoReservada(cantidadFisica: number, cantidadReservada: number) {
+  return Math.max(cantidadFisica - cantidadReservada, 0)
 }
 
 export function crearMotivoAjusteStock(
