@@ -26,7 +26,8 @@ const rutasModulos = elementosNavegacion
       elemento.ruta !== '/ventas' &&
       elemento.ruta !== '/reparaciones' &&
       elemento.ruta !== '/distribucion' &&
-      elemento.ruta !== '/usuarios',
+      elemento.ruta !== '/usuarios' &&
+      elemento.ruta !== '/reportes',
   )
   .map((elemento) => ({
     path: elemento.ruta,
@@ -131,6 +132,20 @@ export const router = createBrowserRouter([
             Component: () => (
               <PermissionRoute permission={PERMISSIONS.INVENTORY_VIEW}>
                 <ControlStockPage />
+              </PermissionRoute>
+            ),
+          }
+        },
+      },
+      {
+        path: 'reportes',
+        lazy: async () => {
+          const { ReportesPage } = await import('@/app/paginas/ReportesPage')
+
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.INVENTORY_VIEW}>
+                <ReportesPage />
               </PermissionRoute>
             ),
           }

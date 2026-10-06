@@ -140,8 +140,9 @@ export const seccionesNavegacion: SeccionNavegacion[] = [
       {
         titulo: 'Reportes',
         ruta: '/reportes',
-        descripcion: 'Consultas operativas',
+        descripcion: 'Consultas operativas del inventario',
         icono: ChartNoAxesCombined,
+        permission: PERMISSIONS.INVENTORY_VIEW,
       },
       {
         titulo: 'Usuarios',
