@@ -18,7 +18,7 @@ import { useDebounceInventario } from '@/modulos/inventario/estado/useDebounceIn
 import { useInventario } from '@/modulos/inventario/estado/useInventario'
 import type { SaldoInventario } from '@/modulos/inventario/modelo/almacen'
 import type { ContextoAccionInventario } from '@/modulos/inventario/modelo/contextoAccionInventario'
-import { cantidadFisicaNoReservada, type DatosMovimientoInventario, type ExistenciaInventario, type FiltroStockInventario, type OrdenExistenciasInventario } from '@/modulos/inventario/modelo/inventario'
+import { cantidadFisicaNoReservada, tiposMovimientoEnExistencias, type DatosMovimientoInventario, type ExistenciaInventario, type FiltroStockInventario, type OrdenExistenciasInventario } from '@/modulos/inventario/modelo/inventario'
 import type { TamanioPaginaInventario } from '@/modulos/inventario/modelo/paginacionInventario'
 import { obtenerOpcionProductoInventarioPorId } from '@/modulos/inventario/servicios/productoInventarioReadService'
 
@@ -196,6 +196,7 @@ export function InventarioPage() {
           organizationId={organizationId}
           almacenes={almacenesActivos}
           ubicaciones={gestionAlmacenes.ubicaciones}
+          opcionesTipoMovimiento={tiposMovimientoEnExistencias}
           contexto={dialogo.contexto}
           alCambiarApertura={(abierto) => { if (!abierto) setDialogo(null) }}
           alGuardar={guardarMovimiento}

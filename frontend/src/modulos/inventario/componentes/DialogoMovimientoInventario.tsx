@@ -15,6 +15,7 @@ import {
   movimientoEsSalida,
   tiposMovimientoInventario,
   type DatosMovimientoInventario,
+  type TipoMovimientoInventario,
 } from '@/modulos/inventario/modelo/inventario'
 import type { ProductoInventarioOpcion } from '@/modulos/inventario/modelo/productoInventarioRead'
 
@@ -25,6 +26,7 @@ interface DialogoMovimientoInventarioProps {
   organizationId: string
   almacenes: readonly Almacen[]
   ubicaciones: readonly UbicacionAlmacen[]
+  opcionesTipoMovimiento?: readonly (typeof tiposMovimientoInventario)[number][]
   contexto?: ContextoAccionInventario | null
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (datos: DatosMovimientoInventario) => Promise<string | undefined>
@@ -36,6 +38,7 @@ export function DialogoMovimientoInventario({
   organizationId,
   almacenes,
   ubicaciones,
+  opcionesTipoMovimiento = tiposMovimientoInventario,
   contexto = null,
   alCambiarApertura,
   alGuardar,
@@ -73,6 +76,7 @@ export function DialogoMovimientoInventario({
   })
   const productoId = watch('productoId')
   const tipo = watch('tipo')
+  const tiposPermitidos = opcionesTipoMovimiento.map((opcion) => opcion.valor)
   const almacenId = watch('almacenId')
   const estadoStock = watch('estadoStock')
   const esSalida = movimientoEsSalida(tipo)
@@ -99,6 +103,10 @@ export function DialogoMovimientoInventario({
   ])
 
   const guardar = async (datos: DatosMovimientoInventario) => {
+    if (!tiposPermitidos.includes(datos.tipo as TipoMovimientoInventario)) {
+      setError('tipo', { message: 'Selecciona un tipo de movimiento disponible.' })
+      return
+    }
     if (!datos.almacenId) {
       setError('almacenId', { message: 'Selecciona un almacén' })
       return
@@ -153,8 +161,9 @@ export function DialogoMovimientoInventario({
                 Registrar movimiento
               </DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">
-                La existencia se actualizará desde este movimiento y el documento,
-                motivo y usuario quedarán registrados en el Kardex persistente.
+                {tiposPermitidos.includes('ajuste-negativo')
+                  ? 'La existencia se actualizará desde este movimiento y el documento, motivo y usuario quedarán registrados en el Kardex.'
+                  : 'Registra entradas, salidas o aumentos por ajuste. El motivo, la referencia y el usuario quedarán en el Kardex. Para descontar existencias por ajuste, usa «Ajustar stock».'}
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close asChild>
@@ -181,14 +190,16 @@ export function DialogoMovimientoInventario({
                 <select
                   id="tipo-movimiento"
                   className="field-control"
+                  aria-invalid={Boolean(errors.tipo)}
                   {...register('tipo')}
                 >
-                  {tiposMovimientoInventario.map((opcion) => (
+                  {opcionesTipoMovimiento.map((opcion) => (
                     <option key={opcion.valor} value={opcion.valor}>
                       {opcion.etiqueta}
                     </option>
                   ))}
                 </select>
+                {errors.tipo ? <p className="field-error">{errors.tipo.message}</p> : null}
               </div>
               <div>
                 <label htmlFor="fecha-operacion" className="field-label">
@@ -407,8 +418,12 @@ export function DialogoMovimientoInventario({
                       : cargandoFefo
                         ? 'Consultando el primer lote asignable según FEFO...'
                         : errorFefo || 'No existe stock sanitario asignable en este almacén.'
-                    : 'La salida se rechazará si supera la existencia disponible en el almacén y lote indicados.'
-                  : 'La entrada incrementará la existencia del producto en el almacén indicado.'}
+                    : tipo === 'ajuste-negativo'
+                      ? 'El descuento por ajuste se rechazará si supera la existencia disponible en el almacén y lote indicados.'
+                      : 'La salida se rechazará si supera la existencia disponible en el almacén y lote indicados.'
+                  : tipo === 'ajuste-positivo'
+                    ? 'El ajuste aumentará la existencia del producto en el almacén indicado.'
+                    : 'La entrada incrementará la existencia del producto en el almacén indicado.'}
               </p>
             </div>
           </form>

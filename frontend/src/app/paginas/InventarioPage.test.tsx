@@ -36,15 +36,17 @@ vi.mock('@/modulos/inventario/componentes/PanelExistenciasLotes', () => ({
   PanelExistenciasLotes: () => <div data-testid="panel-lotes" />,
 }))
 vi.mock('@/modulos/inventario/componentes/DialogoMovimientoInventario', () => ({
-  DialogoMovimientoInventario: ({ abierto, contexto }: {
+  DialogoMovimientoInventario: ({ abierto, contexto, opcionesTipoMovimiento }: {
     abierto: boolean
     contexto: { producto?: { id: string }; posicion?: { ubicacionId: string } } | null
+    opcionesTipoMovimiento?: readonly { valor: string }[]
   }) => abierto ? (
     <div
       role="dialog"
       aria-label="Movimiento mock"
       data-producto={contexto?.producto?.id ?? ''}
       data-ubicacion={contexto?.posicion?.ubicacionId ?? ''}
+      data-tipos={opcionesTipoMovimiento?.map((opcion) => opcion.valor).join(',') ?? 'todos'}
     />
   ) : null,
 }))
@@ -151,6 +153,19 @@ describe('InventarioPage paginada', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ajustar stock' }))
     expect(screen.getByRole('dialog', { name: 'Ajuste de stock mock' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Registrar movimiento' })).toBeEnabled()
+  })
+
+  it('separa el descuento por ajuste del registro de movimientos en Existencias', () => {
+    mocks.hasPermission.mockReturnValue(true)
+    mocks.almacenes = [{ id: 'warehouse-1', codigo: 'CENTRAL', nombre: 'Central', direccion: '', activo: true }]
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar movimiento' }))
+
+    expect(screen.getByRole('dialog', { name: 'Movimiento mock' })).toHaveAttribute(
+      'data-tipos',
+      'entrada,salida,ajuste-positivo',
+    )
   })
 
   it('centra el encabezado de acciones sobre el grupo de botones de cada fila', () => {

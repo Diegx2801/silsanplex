@@ -5,10 +5,14 @@ import type { EstadoStock } from './almacen'
 
 import type { Producto } from '@/modulos/productos/modelo/producto'
 
-export const tiposMovimientoInventario = [
+export const tiposMovimientoEnExistencias = [
   { valor: 'entrada', etiqueta: 'Entrada' },
   { valor: 'salida', etiqueta: 'Salida' },
   { valor: 'ajuste-positivo', etiqueta: 'Ajuste positivo' },
+] as const
+
+export const tiposMovimientoInventario = [
+  ...tiposMovimientoEnExistencias,
   { valor: 'ajuste-negativo', etiqueta: 'Ajuste negativo' },
 ] as const
 

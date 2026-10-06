@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
 import type { ContextoAccionInventario } from '@/modulos/inventario/modelo/contextoAccionInventario'
+import { tiposMovimientoEnExistencias } from '@/modulos/inventario/modelo/inventario'
 
 import { DialogoMovimientoInventario } from './DialogoMovimientoInventario'
 
@@ -82,13 +83,17 @@ const ubicacion: UbicacionAlmacen = {
   activa: true,
 }
 
-function renderDialog(contexto: ContextoAccionInventario | null) {
+function renderDialog(
+  contexto: ContextoAccionInventario | null,
+  opcionesTipoMovimiento?: typeof tiposMovimientoEnExistencias,
+) {
   render(
     <DialogoMovimientoInventario
       abierto
       organizationId="org-1"
       almacenes={[almacen]}
       ubicaciones={[ubicacion]}
+      opcionesTipoMovimiento={opcionesTipoMovimiento}
       contexto={contexto}
       alCambiarApertura={vi.fn()}
       alGuardar={vi.fn().mockResolvedValue(undefined)}
@@ -130,6 +135,33 @@ describe('DialogoMovimientoInventario contextual', () => {
     expect(screen.getByLabelText('Producto')).toHaveValue(mocks.producto.id)
     expect(screen.getByLabelText('Almacén *')).toHaveValue('')
     expect(screen.getByLabelText('Ubicación física *')).toHaveValue('')
+  })
+
+  it('en Existencias no permite registrar el descuento que ya tiene la acción Ajustar stock', () => {
+    renderDialog(null, tiposMovimientoEnExistencias)
+
+    const selectorTipo = screen.getByRole('combobox', { name: 'Tipo de movimiento *' })
+    expect(within(selectorTipo).getAllByRole('option').map((opcion) => opcion.textContent)).toEqual([
+      'Entrada',
+      'Salida',
+      'Ajuste positivo',
+    ])
+    expect(screen.getByText(/Para descontar existencias por ajuste, usa «Ajustar stock»/)).toBeVisible()
+  })
+
+  it('conserva los cuatro tipos en la vista general de movimientos e identifica el ajuste positivo', () => {
+    renderDialog(null)
+
+    const selectorTipo = screen.getByRole('combobox', { name: 'Tipo de movimiento *' })
+    expect(within(selectorTipo).getAllByRole('option').map((opcion) => opcion.textContent)).toEqual([
+      'Entrada',
+      'Salida',
+      'Ajuste positivo',
+      'Ajuste negativo',
+    ])
+
+    fireEvent.change(selectorTipo, { target: { value: 'ajuste-positivo' } })
+    expect(screen.getByText('El ajuste aumentará la existencia del producto en el almacén indicado.')).toBeVisible()
   })
 
   it('limpia lote y condición de la posición previa al cambiar el producto', () => {

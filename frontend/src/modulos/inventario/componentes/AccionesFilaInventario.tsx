@@ -34,7 +34,7 @@ export function AccionesFilaInventario({
         onClick={onAjustar}
       >
         <ArrowUpFromLine aria-hidden="true" />
-        Ajustar
+        Ajustar stock
       </Button>
       <Button
         type="button"
@@ -45,7 +45,7 @@ export function AccionesFilaInventario({
         onClick={onMovimiento}
       >
         <Plus aria-hidden="true" />
-        Movimiento
+        Registrar movimiento
       </Button>
     </div>
   )
