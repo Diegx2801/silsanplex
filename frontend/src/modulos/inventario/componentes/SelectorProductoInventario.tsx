@@ -9,6 +9,7 @@ interface Props {
   name: string
   etiqueta: string
   organizationId: string
+  requerido?: boolean
   deshabilitado?: boolean
   autoSeleccionarPrimeraOpcion?: boolean
   value?: string
@@ -21,6 +22,7 @@ export function SelectorProductoInventario({
   name,
   etiqueta,
   organizationId,
+  requerido = true,
   deshabilitado = false,
   autoSeleccionarPrimeraOpcion = true,
   value,
@@ -78,7 +80,7 @@ export function SelectorProductoInventario({
         value={seleccion}
         onChange={(evento) => cambiarSeleccion(evento.target.value)}
         className="field-control"
-        required
+        required={requerido}
         disabled={deshabilitado || sinOpciones}
       >
         {sinOpciones ? <option value="">{opcionesQuery.isLoading ? 'Consultando productos...' : 'No hay productos disponibles'}</option> : null}

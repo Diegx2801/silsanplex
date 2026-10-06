@@ -24,6 +24,7 @@ export const operationalAccessModules: readonly AccessModule[] = [
   { code: 'inventory', label: 'Inventario', description: 'Almacenes, ubicaciones y stock.', group: 'master', capabilities: [
     { code: 'inventory-view', label: 'Consultar', permissionCodes: [PERMISSIONS.INVENTORY_VIEW] },
     { code: 'inventory-manage', label: 'Administrar', permissionCodes: [PERMISSIONS.INVENTORY_MANAGE] },
+    { code: 'inventory-export', label: 'Exportar', permissionCodes: [PERMISSIONS.INVENTORY_EXPORT] },
   ] },
   { code: 'suppliers', label: 'Proveedores', description: 'Directorio de proveedores.', group: 'master', capabilities: [
     { code: 'suppliers-view', label: 'Consultar', permissionCodes: [PERMISSIONS.SUPPLIERS_VIEW] },
@@ -74,6 +75,7 @@ export const assignablePermissionCodes = [
 const permissionDependencies: Partial<Record<PermissionCode, readonly PermissionCode[]>> = {
   [PERMISSIONS.PRODUCTS_MANAGE]: [PERMISSIONS.PRODUCTS_VIEW],
   [PERMISSIONS.INVENTORY_MANAGE]: [PERMISSIONS.INVENTORY_VIEW],
+  [PERMISSIONS.INVENTORY_EXPORT]: [PERMISSIONS.INVENTORY_VIEW],
   [PERMISSIONS.SUPPLIERS_MANAGE]: [PERMISSIONS.SUPPLIERS_VIEW],
   [PERMISSIONS.PURCHASES_VIEW]: [PERMISSIONS.PRODUCTS_VIEW, PERMISSIONS.SUPPLIERS_VIEW, PERMISSIONS.INVENTORY_VIEW],
   [PERMISSIONS.PURCHASES_MANAGE]: [PERMISSIONS.PURCHASES_VIEW],

@@ -125,7 +125,8 @@ export function ReporteResumenMovimientos({ organizationId, almacenes }: Props) 
           mensajeVacio="No hay movimientos para el periodo y los filtros seleccionados."
           alReintentar={() => void reporte.refetch()}
         >
-          <div className={reporte.isFetching ? 'opacity-70' : undefined}>
+          <div aria-busy={reporte.isFetching} className={reporte.isFetching ? 'opacity-70' : undefined}>
+            {reporte.isFetching ? <p role="status" className="sr-only">Actualizando resumen de movimientos.</p> : null}
             <div className="overflow-x-auto">
               <table className="w-full min-w-[64rem] text-left text-sm">
                 <caption className="sr-only">
