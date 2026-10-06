@@ -10,13 +10,14 @@ export function useBucketsAjusteStock(
   productoId: string,
   almacenId: string,
   organizationIdOverride?: string,
+  habilitado = true,
 ) {
   const { access } = useAuth()
   const organizationId = organizationIdOverride ?? access?.organizationId ?? ''
   const query = useQuery({
     queryKey: ['inventory-adjustment-buckets', organizationId, productoId, almacenId],
     queryFn: () => listarBucketsAjusteStock(organizationId, productoId, almacenId),
-    enabled: Boolean(organizationId && productoId && almacenId),
+    enabled: Boolean(habilitado && organizationId && productoId && almacenId),
     staleTime: 5_000,
   })
 

@@ -47,7 +47,14 @@ function MovimientoFila({ movimiento }: { movimiento: MovimientoInventario }) {
             {movimiento.motivo} · {movimiento.almacen}
             {movimiento.lote ? ` · Lote ${movimiento.lote}` : ''}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Documento: {movimiento.documentoReferencia || 'Sin referencia registrada'}</p>
+          {movimiento.secuenciaLedger ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              N.º movimiento: MOV-{String(movimiento.secuenciaLedger).padStart(6, '0')}
+            </p>
+          ) : null}
+          {movimiento.documentoReferencia ? (
+            <p className="mt-1 text-xs text-muted-foreground">Documento externo: {movimiento.documentoReferencia}</p>
+          ) : null}
         </div>
       </div>
       <div className="flex items-center justify-between gap-4 lg:block lg:text-end">

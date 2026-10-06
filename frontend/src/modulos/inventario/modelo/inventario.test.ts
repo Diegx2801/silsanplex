@@ -7,6 +7,7 @@ import {
   calcularSaldoDisponible,
   cantidadFisicaNoReservada,
   esquemaDatosMovimientoInventario,
+  esquemaFormularioAjusteStock,
   crearMovimientoInventario,
   obtenerVariacion,
   resumirInventario,
@@ -29,6 +30,7 @@ const datosBase = {
   productoId: producto.id,
   tipo: 'entrada',
   cantidad: '10',
+  costoUnitario: '12.5',
   almacen: 'Almacén principal',
   lote: 'L-001',
   fechaVencimiento: '2027-12-31',
@@ -66,11 +68,41 @@ describe('inventario', () => {
     expect(cantidadFisicaNoReservada(4, 7)).toBe(0)
   })
 
-  it('exige documento de sustento separado del motivo', () => {
-    expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, documentoReferencia: '   ' }).success).toBe(false)
+  it('permite omitir el documento externo y normaliza su referencia cuando existe', () => {
+    expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, documentoReferencia: undefined }).success).toBe(true)
     expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, documentoReferencia: 'x'.repeat(121) }).success).toBe(false)
     expect(esquemaDatosMovimientoInventario.parse({ ...datosBase, documentoReferencia: ' ACTA-001 ' }).documentoReferencia).toBe('ACTA-001')
   })
+
+  it('exige costo para valorar las entradas manuales', () => {
+    expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, costoUnitario: '' }).success).toBe(false)
+    expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, costoUnitario: '12.5000' }).success).toBe(true)
+  })
+
+  it('limita los motivos del aumento de stock a diferencias positivas u otro', () => {
+    const ajuste = {
+      productoId: producto.id,
+      tipoAjuste: 'ajuste-positivo',
+      almacenId: 'almacen-1',
+      bucketKey: '',
+      ubicacionId: 'ubicacion-1',
+      estadoStock: 'available',
+      lote: 'LOTE-1',
+      fechaVencimiento: '2027-12-31',
+      costoUnitario: '12.5',
+      cantidad: '1',
+      documentoReferencia: '',
+      motivoAjuste: 'expired',
+      observacion: '',
+    } as const
+
+    expect(esquemaFormularioAjusteStock.safeParse(ajuste).success).toBe(false)
+    expect(esquemaFormularioAjusteStock.safeParse({
+      ...ajuste,
+      motivoAjuste: 'physical_count_difference',
+    }).success).toBe(true)
+  })
+
   it('convierte entradas y salidas en variaciones con signo', () => {
     expect(obtenerVariacion({ tipo: 'entrada', cantidad: 5 })).toBe(5)
     expect(obtenerVariacion({ tipo: 'ajuste-positivo', cantidad: 2 })).toBe(2)
@@ -195,4 +227,5 @@ describe('inventario', () => {
       fechaRegistro: '2026-08-19T16:00:00.000Z',
     })
   })
+
 })

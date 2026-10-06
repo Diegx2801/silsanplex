@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConsultaExistenciasInventario, DatosMovimientoInventario } from '@/modulos/inventario/modelo/inventario'
 import {
   listarAlmacenesAjusteStock,
+  buscarAlmacenesMovimientoInventario,
   listarBucketsAjusteStock,
   listarExistenciasInventario,
   listarMovimientosInventario,
@@ -270,6 +271,42 @@ describe('listarAlmacenesAjusteStock', () => {
   })
 })
 
+describe('buscarAlmacenesMovimientoInventario', () => {
+  beforeEach(() => rpc.mockReset())
+
+  it('busca hasta 50 almacenes activos para entradas sin cargar el catálogo completo', async () => {
+    rpc.mockResolvedValue({
+      data: { items: [{
+        warehouse_id: 'almacen-1',
+        warehouse_code: 'CENTRAL',
+        warehouse_name: 'Almacén central',
+        eligible_quantity: null,
+      }], total_count: 1 },
+      error: null,
+    })
+
+    await expect(buscarAlmacenesMovimientoInventario('org-1', 'producto-1', null, 'cent')).resolves.toEqual([
+      { id: 'almacen-1', codigo: 'CENTRAL', nombre: 'Almacén central', cantidadDisponible: 0 },
+    ])
+    expect(rpc).toHaveBeenCalledWith('inventory_movement_warehouses_read', {
+      requested_organization_id: 'org-1',
+      requested_product_id: 'producto-1',
+      requested_stock_status: null,
+      search_term: 'cent',
+      requested_limit: 50,
+      requested_offset: 0,
+    })
+  })
+
+  it('filtra los almacenes de salida por condición del stock', async () => {
+    rpc.mockResolvedValue({ data: { items: [], total_count: 0 }, error: null })
+    await buscarAlmacenesMovimientoInventario('org-1', 'producto-1', 'available', '')
+    expect(rpc).toHaveBeenCalledWith('inventory_movement_warehouses_read', expect.objectContaining({
+      requested_stock_status: 'available',
+    }))
+  })
+})
+
 describe('listarBucketsAjusteStock', () => {
   beforeEach(() => from.mockReset())
 
@@ -325,6 +362,7 @@ describe('listarBucketsAjusteStock', () => {
 describe('registrarMovimientoInventario', () => {
   const datos: DatosMovimientoInventario = {
     productoId: 'product-1', tipo: 'entrada', cantidad: '2', almacen: 'Principal',
+    costoUnitario: '12.5',
     lote: '', fechaVencimiento: '', fechaOperacion: '2026-09-26',
     motivo: 'Diferencia de conteo', documentoReferencia: 'ACTA-001',
   }
@@ -345,6 +383,23 @@ describe('registrarMovimientoInventario', () => {
   it('explica el rechazo del documento desde el servidor', async () => {
     rpc.mockResolvedValue({ error: { message: 'INVENTORY_DOCUMENT_REFERENCE_INVALID' } })
     await expect(registrarMovimientoInventario('org-1', datos)).rejects.toThrow('referencia del documento')
+  })
+
+  it('traduce la falta de costo y el exceso de stock FEFO', async () => {
+    rpc.mockResolvedValueOnce({ error: { message: 'INVENTORY_MOVEMENT_COST_REQUIRED' } })
+    await expect(registrarMovimientoInventario('org-1', datos)).rejects.toThrow('costo unitario')
+
+    rpc.mockResolvedValueOnce({ error: { message: 'INVENTORY_FEFO_INSUFFICIENT_STOCK' } })
+    await expect(registrarMovimientoInventario('org-1', { ...datos, tipo: 'salida' }))
+      .rejects.toThrow('stock asignable disponible según FEFO')
+  })
+
+  it('envía null cuando no hay documento externo', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await registrarMovimientoInventario('org-1', { ...datos, documentoReferencia: undefined })
+    expect(rpc).toHaveBeenCalledWith('record_inventory_movement', {
+      payload: expect.objectContaining({ document_reference: null }),
+    })
   })
 
   it('envía los ajustes negativos a la RPC canónica sin FEFO', async () => {
@@ -373,6 +428,26 @@ describe('registrarMovimientoInventario', () => {
         location_id: 'ubicacion-1',
         lot: 'LOTE-1',
         expiration_date: '2027-12-31',
+      }),
+    })
+  })
+
+  it('envía los ajustes positivos a la RPC serializada sin documento externo obligatorio', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await registrarMovimientoInventario('org-1', {
+      ...datos,
+      tipo: 'ajuste-positivo',
+      almacenId: 'almacen-1',
+      ubicacionId: 'ubicacion-1',
+      lote: 'LOTE-NUEVO',
+      fechaVencimiento: '2027-12-31',
+      documentoReferencia: undefined,
+    })
+    expect(rpc).toHaveBeenCalledWith('record_inventory_movement', {
+      payload: expect.objectContaining({
+        movement_type: 'ajuste-positivo',
+        unit_cost: '12.5',
+        document_reference: null,
       }),
     })
   })

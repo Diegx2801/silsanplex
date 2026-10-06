@@ -1,6 +1,6 @@
 begin;
 
-select plan(16);
+select plan(32);
 
 select is(
   to_regprocedure('public.inventory_adjustment_warehouses_read(uuid,uuid,text,integer,integer)') is not null,
@@ -13,6 +13,21 @@ select is(
   'la lectura de almacenes usa SECURITY DEFINER'
 );
 select is(
+  to_regprocedure('public.inventory_movement_warehouses_read(uuid,uuid,text,text,integer,integer)') is not null,
+  true,
+  'existe la búsqueda paginada de almacenes para movimientos'
+);
+select is(
+  (select prosecdef from pg_catalog.pg_proc where oid = to_regprocedure('public.inventory_movement_warehouses_read(uuid,uuid,text,text,integer,integer)')),
+  true,
+  'la búsqueda de almacenes para movimientos usa SECURITY DEFINER'
+);
+select is(
+  (select proconfig @> array['search_path=""'] from pg_catalog.pg_proc where oid = to_regprocedure('public.inventory_movement_warehouses_read(uuid,uuid,text,text,integer,integer)')),
+  true,
+  'la búsqueda de almacenes para movimientos fija search_path vacio'
+);
+select is(
   (select proconfig @> array['search_path=""'] from pg_catalog.pg_proc where oid = to_regprocedure('public.inventory_adjustment_warehouses_read(uuid,uuid,text,integer,integer)')),
   true,
   'la lectura de almacenes fija search_path vacio'
@@ -20,6 +35,9 @@ select is(
 select is(has_function_privilege('authenticated', 'public.inventory_adjustment_warehouses_read(uuid,uuid,text,integer,integer)', 'EXECUTE'), true, 'authenticated puede consultar almacenes para ajuste');
 select is(has_function_privilege('anon', 'public.inventory_adjustment_warehouses_read(uuid,uuid,text,integer,integer)', 'EXECUTE'), false, 'anon no puede consultar almacenes para ajuste');
 select is(has_function_privilege('service_role', 'public.inventory_adjustment_warehouses_read(uuid,uuid,text,integer,integer)', 'EXECUTE'), false, 'service_role no recibe un grant adicional');
+select is(has_function_privilege('authenticated', 'public.inventory_movement_warehouses_read(uuid,uuid,text,text,integer,integer)', 'EXECUTE'), true, 'authenticated puede buscar almacenes para movimientos');
+select is(has_function_privilege('anon', 'public.inventory_movement_warehouses_read(uuid,uuid,text,text,integer,integer)', 'EXECUTE'), false, 'anon no puede buscar almacenes para movimientos');
+select is(has_function_privilege('service_role', 'public.inventory_movement_warehouses_read(uuid,uuid,text,text,integer,integer)', 'EXECUTE'), false, 'service_role no recibe un grant adicional para movimientos');
 
 insert into public.organizations (id, name, slug)
 values
@@ -150,6 +168,68 @@ select throws_ok(
   $$select public.inventory_adjustment_warehouses_read('a1400000-0000-4000-8000-000000000001', 'a1440000-0000-4000-8000-000000000001', repeat('x', 101))$$,
   '22023', 'INVENTORY_READ_FILTER_INVALID',
   'la lectura limita el tamaño del texto de búsqueda'
+);
+select is(
+  jsonb_array_length(public.inventory_movement_warehouses_read(
+    'a1400000-0000-4000-8000-000000000001', 'a1440000-0000-4000-8000-000000000001', null, '', 50, 0
+  )->'items'),
+  4,
+  'las entradas solo ofrecen almacenes activos con una ubicación activa'
+);
+select is(
+  jsonb_array_length(public.inventory_movement_warehouses_read(
+    'a1400000-0000-4000-8000-000000000001', 'a1440000-0000-4000-8000-000000000001', 'available', '', 50, 0
+  )->'items'),
+  2,
+  'las salidas disponibles excluyen stock vencido, reservado y almacenes sin stock asignable'
+);
+select is(
+  (public.inventory_movement_warehouses_read(
+    'a1400000-0000-4000-8000-000000000001', 'a1440000-0000-4000-8000-000000000001', 'available', 'principal', 50, 0
+  )->'items'->0->>'eligible_quantity')::numeric,
+  8::numeric,
+  'la búsqueda devuelve el saldo asignable del producto en el almacén'
+);
+select is(
+  (public.inventory_movement_warehouses_read(
+    'a1400000-0000-4000-8000-000000000001', 'a1440000-0000-4000-8000-000000000001', 'available', 'A14-SEC', 50, 0
+  )->'items'->0->>'warehouse_code'),
+  'A14-SEC',
+  'la búsqueda por código restringe el almacén según producto y condición'
+);
+select is(
+  jsonb_array_length(public.inventory_movement_warehouses_read(
+    'a1400000-0000-4000-8000-000000000001', 'a1440000-0000-4000-8000-000000000001', 'quarantine', '', 50, 0
+  )->'items'),
+  1,
+  'las salidas en cuarentena solo ofrecen almacenes con stock no reservado'
+);
+select is(
+  jsonb_array_length(public.inventory_movement_warehouses_read(
+    'a1400000-0000-4000-8000-000000000001', 'a1440000-0000-4000-8000-000000000001', 'damaged', '', 50, 0
+  )->'items'),
+  1,
+  'las salidas de producto dañado solo ofrecen almacenes con stock no reservado'
+);
+select throws_ok(
+  $$select public.inventory_movement_warehouses_read('a1400000-0000-4000-8000-000000000002', 'a1440000-0000-4000-8000-000000000001', null, '', 50, 0)$$,
+  '42501', 'INVENTORY_READ_FORBIDDEN',
+  'la búsqueda de movimientos bloquea una organizacion ajena'
+);
+select throws_ok(
+  $$select public.inventory_movement_warehouses_read('a1400000-0000-4000-8000-000000000001', 'a1440000-0000-4000-8000-000000000001', 'unknown', '', 50, 0)$$,
+  '22023', 'INVENTORY_READ_FILTER_INVALID',
+  'la búsqueda de movimientos valida las condiciones de stock'
+);
+select throws_ok(
+  $$select public.inventory_movement_warehouses_read('a1400000-0000-4000-8000-000000000001', 'a1440000-0000-4000-8000-000000000001', null, '', 51, 0)$$,
+  '22023', 'INVENTORY_READ_FILTER_INVALID',
+  'la búsqueda de movimientos limita la cantidad por página'
+);
+select throws_ok(
+  $$select public.inventory_movement_warehouses_read('a1400000-0000-4000-8000-000000000001', 'a1440000-0000-4000-8000-000000000001', null, repeat('x', 101), 50, 0)$$,
+  '22023', 'INVENTORY_READ_FILTER_INVALID',
+  'la búsqueda de movimientos limita el texto de búsqueda'
 );
 
 reset role;

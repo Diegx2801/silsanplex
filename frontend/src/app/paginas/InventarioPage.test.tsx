@@ -164,7 +164,7 @@ describe('InventarioPage paginada', () => {
 
     expect(screen.getByRole('dialog', { name: 'Movimiento mock' })).toHaveAttribute(
       'data-tipos',
-      'entrada,salida,ajuste-positivo',
+      'entrada,salida',
     )
   })
 

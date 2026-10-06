@@ -1,6 +1,6 @@
 begin;
 
-select plan(43);
+select plan(51);
 
 select has_view('public', 'inventory_fefo_candidates', 'existe la disponibilidad ordenada por FEFO');
 select has_function(
@@ -425,16 +425,93 @@ select is(
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
 
+select lives_ok($$
+  select public.record_inventory_movement('{"organization_id":"a1000000-0000-4000-8000-000000000001",
+    "product_id":"a3000000-0000-4000-8000-000000000001",
+    "warehouse_id":"a4000000-0000-4000-8000-000000000001",
+    "location_id":"a5000000-0000-4000-8000-000000000001",
+    "movement_type":"entrada","quantity":"1","unit_cost":"9",
+    "stock_status":"available","lot":"LOTE-SIN-REFERENCIA","expiration_date":"2099-12-01",
+    "operation_date":"2026-08-29","reason":"Entrada sin documento externo"
+  }'::jsonb)
+$$, 'manual entry accepts an omitted external document reference');
+select is(
+  (select document_reference from public.inventory_movements where reason = 'Entrada sin documento externo'),
+  null::text,
+  'manual movement keeps the external document empty when none was supplied'
+);
+select lives_ok($$
+  select public.record_inventory_fefo_outbound('{"organization_id":"a1000000-0000-4000-8000-000000000001",
+    "product_id":"a3000000-0000-4000-8000-000000000001",
+    "warehouse_id":"a4000000-0000-4000-8000-000000000001",
+    "quantity":"1","operation_date":"2026-08-29",
+    "reason":"Salida FEFO sin referencia","document_reference":"   "
+  }'::jsonb)
+$$, 'FEFO accepts an empty external document reference');
+select is(
+  (select document_reference from public.inventory_movements where reason = 'Salida FEFO sin referencia'),
+  null::text,
+  'FEFO normalizes a blank external document reference to null'
+);
 select throws_ok($$
-  select public.record_inventory_movement('{"organization_id":"a1000000-0000-4000-8000-000000000001"}'::jsonb)
-$$, '22023', 'INVENTORY_DOCUMENT_REFERENCE_INVALID', 'manual entry requires a document');
+  select public.record_inventory_movement('{"organization_id":"a1000000-0000-4000-8000-000000000001",
+    "product_id":"a3000000-0000-4000-8000-000000000001",
+    "warehouse_id":"a4000000-0000-4000-8000-000000000001",
+    "location_id":"a5000000-0000-4000-8000-000000000001",
+    "movement_type":"entrada","quantity":"1",
+    "stock_status":"available","lot":"LOTE-ENTRADA-SIN-COSTO","expiration_date":"2099-12-03",
+    "operation_date":"2026-08-29","reason":"Entrada sin costo"
+  }'::jsonb)
+$$, '22023', 'INVENTORY_MOVEMENT_COST_REQUIRED', 'manual entry rejects a missing unit cost server-side');
 select throws_ok($$
-  select public.record_inventory_fefo_outbound('{"organization_id":"a1000000-0000-4000-8000-000000000001","document_reference":"   "}'::jsonb)
-$$, '22023', 'INVENTORY_DOCUMENT_REFERENCE_INVALID', 'FEFO rejects blank document references');
+  select public.record_inventory_movement('{"organization_id":"a1000000-0000-4000-8000-000000000001",
+    "product_id":"a3000000-0000-4000-8000-000000000001",
+    "warehouse_id":"a4000000-0000-4000-8000-000000000001",
+    "location_id":"a5000000-0000-4000-8000-000000000001",
+    "movement_type":"entrada","quantity":"1","unit_cost":"-1",
+    "stock_status":"available","lot":"LOTE-ENTRADA-COSTO-NEGATIVO","expiration_date":"2099-12-04",
+    "operation_date":"2026-08-29","reason":"Entrada con costo inválido"
+  }'::jsonb)
+$$, '22023', 'INVENTORY_MOVEMENT_COST_REQUIRED', 'manual entry rejects a negative unit cost server-side');
+select throws_ok($$
+  select public.record_inventory_movement('{"organization_id":"a1000000-0000-4000-8000-000000000001",
+    "product_id":"a3000000-0000-4000-8000-000000000001",
+    "warehouse_id":"a4000000-0000-4000-8000-000000000001",
+    "location_id":"a5000000-0000-4000-8000-000000000001",
+    "movement_type":"ajuste-positivo","quantity":"1","unit_cost":"NaN",
+    "stock_status":"available","lot":"LOTE-AJUSTE-COSTO-NO-FINITO","expiration_date":"2099-12-05",
+    "operation_date":"2026-08-29","reason":"Ajuste con costo inválido"
+  }'::jsonb)
+$$, '22023', 'INVENTORY_ADJUSTMENT_COST_REQUIRED', 'a new positive-adjustment position rejects a non-finite unit cost');
 select throws_ok($$
   select public.record_inventory_movement(jsonb_build_object(
     'organization_id','a1000000-0000-4000-8000-000000000001', 'document_reference', repeat('X', 121)))
 $$, '22023', 'INVENTORY_DOCUMENT_REFERENCE_INVALID', 'manual document length is validated server-side');
+select throws_ok($$
+  select public.record_inventory_movement('{"organization_id":"a1000000-0000-4000-8000-000000000001",
+    "product_id":"a3000000-0000-4000-8000-000000000001",
+    "warehouse_id":"a4000000-0000-4000-8000-000000000001",
+    "location_id":"a5000000-0000-4000-8000-000000000001",
+    "movement_type":"ajuste-positivo","quantity":"1",
+    "stock_status":"available","lot":"LOTE-AJUSTE-SIN-COSTO","expiration_date":"2099-12-02",
+    "operation_date":"2026-08-29","reason":"Ajuste sin costo"
+  }'::jsonb)
+$$, '22023', 'INVENTORY_ADJUSTMENT_COST_REQUIRED', 'a new positive-adjustment position requires unit cost');
+select lives_ok($$
+  select public.record_inventory_movement('{"organization_id":"a1000000-0000-4000-8000-000000000001",
+    "product_id":"a3000000-0000-4000-8000-000000000001",
+    "warehouse_id":"a4000000-0000-4000-8000-000000000001",
+    "location_id":"a5000000-0000-4000-8000-000000000001",
+    "movement_type":"ajuste-positivo","quantity":"1",
+    "stock_status":"available","lot":"LOTE-ULTIMO","expiration_date":"2099-11-01",
+    "operation_date":"2026-08-29","reason":"Ajuste hereda costo promedio"
+  }'::jsonb)
+$$, 'a positive adjustment to an existing position inherits its average unit cost');
+select results_eq(
+  $$select unit_cost from public.inventory_movements where reason = 'Ajuste hereda costo promedio'$$,
+  $$values (25.0000::numeric)$$,
+  'a positive adjustment does not replace the existing position valuation with zero'
+);
 select ok(exists (
   select 1 from public.inventory_movements where organization_id = 'a1000000-0000-4000-8000-000000000001'
   and document_reference = 'TEST-FIXTURE' and source_type = 'fefo-outbound'

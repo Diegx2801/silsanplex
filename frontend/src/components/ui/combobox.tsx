@@ -15,6 +15,7 @@ export interface ComboboxOption {
   keywords?: readonly string[]
   secondaryText?: string
   disabled?: boolean
+  customValue?: string
 }
 
 export interface ComboboxProps {
@@ -22,7 +23,7 @@ export interface ComboboxProps {
   label: string
   value: string
   options: readonly ComboboxOption[]
-  onChange: (value: string) => void
+  onChange: (value: string, option?: ComboboxOption) => void
   onBlur?: FocusEventHandler<HTMLInputElement>
   placeholder?: string
   helperText?: string
@@ -41,6 +42,7 @@ export interface ComboboxProps {
   minSearchLength?: number
   debounceMs?: number
   loadingMessage?: string
+  allowCustomValue?: boolean
 }
 
 function normalizar(texto: string) {
@@ -70,6 +72,7 @@ export function Combobox({
   minSearchLength = 2,
   debounceMs = 220,
   loadingMessage = 'Buscando opciones…',
+  allowCustomValue = false,
 }: ComboboxProps) {
   const listboxId = `${id}-listbox`
   const helperId = `${id}-helper`
@@ -86,8 +89,14 @@ export function Combobox({
   const [opcionesRemotas, setOpcionesRemotas] = useState<readonly ComboboxOption[]>([])
   const [cargando, setCargando] = useState(false)
   const [errorCarga, setErrorCarga] = useState(false)
+  const [seleccionPersonalizada, setSeleccionPersonalizada] = useState<ComboboxOption | null>(null)
   const seleccion = options.find((option) => option.value === value)
     ?? opcionesRemotas.find((option) => option.value === value)
+    ?? (seleccionPersonalizada?.value === value
+      ? seleccionPersonalizada
+      : allowCustomValue && value
+        ? { value, label: value }
+        : undefined)
 
   const opcionesFiltradas = useMemo(() => {
     if (loadOptions) return opcionesRemotas.slice(0, maxVisibleOptions)
@@ -102,6 +111,22 @@ export function Combobox({
 
     return coincidencias.slice(0, maxVisibleOptions)
   }, [busqueda, loadOptions, maxVisibleOptions, opcionesRemotas, options])
+
+  const opcionesVisibles = useMemo(() => {
+    if (!allowCustomValue || loadOptions) return opcionesFiltradas
+    const termino = busqueda.trim()
+    if (!termino) return opcionesFiltradas
+    const yaExiste = opcionesFiltradas.some((option) =>
+      normalizar(option.label) === normalizar(termino)
+      || normalizar(option.value) === normalizar(termino),
+    )
+    return yaExiste
+      ? opcionesFiltradas
+      : [
+          ...opcionesFiltradas,
+          { value: `__custom__${termino}`, label: `Usar «${termino}»`, customValue: termino },
+        ]
+  }, [allowCustomValue, busqueda, loadOptions, opcionesFiltradas])
 
   useEffect(() => {
     loadOptionsRef.current = loadOptions
@@ -146,27 +171,34 @@ export function Combobox({
       return
     }
     setIndiceActivo((actual) => {
-      if (actual >= 0 && actual < opcionesFiltradas.length && !opcionesFiltradas[actual]?.disabled) {
+      if (actual >= 0 && actual < opcionesVisibles.length && !opcionesVisibles[actual]?.disabled) {
         return actual
       }
       return -1
     })
-  }, [abierto, opcionesFiltradas])
+  }, [abierto, opcionesVisibles])
 
   const seleccionar = (option: ComboboxOption) => {
     if (option.disabled) return
-    onChange(option.value)
+    if (option.customValue !== undefined) {
+      const custom = { value: option.customValue, label: option.customValue }
+      setSeleccionPersonalizada(custom)
+      onChange(option.customValue)
+    } else {
+      setSeleccionPersonalizada(null)
+      onChange(option.value, option)
+    }
     setBusqueda('')
     setAbierto(false)
     setIndiceActivo(-1)
   }
 
   const moverIndice = (direccion: 1 | -1) => {
-    if (!opcionesFiltradas.length) return
-    const inicio = indiceActivo < 0 ? (direccion === 1 ? -1 : opcionesFiltradas.length) : indiceActivo
-    for (let paso = 1; paso <= opcionesFiltradas.length; paso += 1) {
-      const indice = (inicio + direccion * paso + opcionesFiltradas.length) % opcionesFiltradas.length
-      if (!opcionesFiltradas[indice]?.disabled) {
+    if (!opcionesVisibles.length) return
+    const inicio = indiceActivo < 0 ? (direccion === 1 ? -1 : opcionesVisibles.length) : indiceActivo
+    for (let paso = 1; paso <= opcionesVisibles.length; paso += 1) {
+      const indice = (inicio + direccion * paso + opcionesVisibles.length) % opcionesVisibles.length
+      if (!opcionesVisibles[indice]?.disabled) {
         setIndiceActivo(indice)
         return
       }
@@ -188,12 +220,13 @@ export function Combobox({
     }
     if (evento.key === 'Enter' && abierto && indiceActivo >= 0) {
       evento.preventDefault()
-      const option = opcionesFiltradas[indiceActivo]
+      const option = opcionesVisibles[indiceActivo]
       if (option) seleccionar(option)
       return
     }
     if ((evento.key === 'Backspace' || evento.key === 'Delete') && value && !busqueda) {
       evento.preventDefault()
+      setSeleccionPersonalizada(null)
       onChange('')
       setAbierto(true)
       setIndiceActivo(-1)
@@ -236,7 +269,7 @@ export function Combobox({
           aria-autocomplete="list"
           aria-expanded={abierto}
           aria-controls={
-            abierto && !cargando && !errorCarga && opcionesFiltradas.length > 0
+            abierto && !cargando && !errorCarga && opcionesVisibles.length > 0
               ? listboxId
               : undefined
           }
@@ -266,7 +299,10 @@ export function Combobox({
             setBusqueda(siguiente)
             setAbierto(true)
             setIndiceActivo(-1)
-            if (value && siguiente !== seleccion?.label) onChange('')
+            if (value && siguiente !== seleccion?.label) {
+              setSeleccionPersonalizada(null)
+              onChange('')
+            }
           }}
           onKeyDown={controlarTeclado}
         />
@@ -317,7 +353,7 @@ export function Combobox({
             <p className="px-3 py-2 text-sm text-muted-foreground" role="status">
               Escribe al menos {minSearchLength} caracteres para buscar.
             </p>
-          ) : !opcionesFiltradas.length ? (
+          ) : !opcionesVisibles.length ? (
             <p className="px-3 py-2 text-sm text-muted-foreground" role="status">
               {loadOptions || options.length ? noResultsMessage : noOptionsMessage}
             </p>
@@ -329,7 +365,7 @@ export function Combobox({
               className="max-h-64 overflow-y-auto p-1 pe-2"
               style={{ scrollbarGutter: 'stable' }}
             >
-              {opcionesFiltradas.map((option, indice) => (
+              {opcionesVisibles.map((option, indice) => (
                 <div
                   key={option.value}
                   id={`${reactId}-${listboxId}-${indice}`}

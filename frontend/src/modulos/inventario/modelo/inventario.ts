@@ -8,11 +8,11 @@ import type { Producto } from '@/modulos/productos/modelo/producto'
 export const tiposMovimientoEnExistencias = [
   { valor: 'entrada', etiqueta: 'Entrada' },
   { valor: 'salida', etiqueta: 'Salida' },
-  { valor: 'ajuste-positivo', etiqueta: 'Ajuste positivo' },
 ] as const
 
 export const tiposMovimientoInventario = [
   ...tiposMovimientoEnExistencias,
+  { valor: 'ajuste-positivo', etiqueta: 'Ajuste positivo' },
   { valor: 'ajuste-negativo', etiqueta: 'Ajuste negativo' },
 ] as const
 
@@ -28,6 +28,13 @@ export const motivosAjusteStock = [
 ] as const
 
 export type MotivoAjusteStock = (typeof motivosAjusteStock)[number]['valor']
+const motivosAjustePositivoValores: readonly MotivoAjusteStock[] = [
+  'physical_count_difference',
+  'other',
+]
+export const motivosAjustePositivoStock = motivosAjusteStock.filter(({ valor }) =>
+  motivosAjustePositivoValores.includes(valor),
+)
 
 export interface BucketAjusteStock {
   productoId: string
@@ -55,11 +62,24 @@ export interface AlmacenAjusteStockOpcion {
   cantidadDescontable: number
 }
 
+export interface AlmacenInventarioOpcion {
+  id: string
+  codigo: string
+  nombre: string
+  cantidadDisponible: number
+}
+
 export const esquemaFormularioAjusteStock = z
   .object({
     productoId: z.string().min(1, 'Selecciona un producto'),
+    tipoAjuste: z.enum(['ajuste-positivo', 'ajuste-negativo']),
     almacenId: z.string().min(1, 'Selecciona un almacén'),
-    bucketKey: z.string().min(1, 'Selecciona la ubicación y el lote que vas a descontar'),
+    bucketKey: z.string(),
+    ubicacionId: z.string(),
+    estadoStock: z.enum(['available', 'quarantine', 'damaged']),
+    lote: z.string().trim().max(60, 'Máximo 60 caracteres'),
+    fechaVencimiento: z.string(),
+    costoUnitario: z.string(),
     cantidad: z
       .string()
       .trim()
@@ -67,7 +87,7 @@ export const esquemaFormularioAjusteStock = z
         (valor) => /^\d+(\.\d{1,3})?$/.test(valor) && Number(valor) > 0,
         'Ingresa una cantidad mayor a cero con hasta 3 decimales',
       ),
-    documentoReferencia: z.string().trim().min(1, 'Ingresa una referencia para el ajuste').max(120, 'Máximo 120 caracteres'),
+    documentoReferencia: z.string().trim().max(120, 'Máximo 120 caracteres'),
     motivoAjuste: z.enum(
       motivosAjusteStock.map((motivo) => motivo.valor) as [MotivoAjusteStock, ...MotivoAjusteStock[]],
       { message: 'Selecciona un motivo' },
@@ -75,6 +95,27 @@ export const esquemaFormularioAjusteStock = z
     observacion: z.string().trim().max(120, 'Máximo 120 caracteres'),
   })
   .superRefine((datos, contexto) => {
+    if (datos.tipoAjuste === 'ajuste-negativo' && !datos.bucketKey) {
+      contexto.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['bucketKey'],
+        message: 'Selecciona la posición de stock que vas a descontar',
+      })
+    }
+    if (datos.tipoAjuste === 'ajuste-positivo' && !datos.ubicacionId) {
+      contexto.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ubicacionId'],
+        message: 'Selecciona la ubicación donde se encontró el stock',
+      })
+    }
+    if (datos.tipoAjuste === 'ajuste-positivo' && !motivosAjustePositivoValores.includes(datos.motivoAjuste)) {
+      contexto.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['motivoAjuste'],
+        message: 'Selecciona un motivo válido para aumentar el stock',
+      })
+    }
     if (datos.motivoAjuste === 'other' && datos.observacion.length < 3) {
       contexto.addIssue({
         code: z.ZodIssueCode.custom,
@@ -141,12 +182,22 @@ export const esquemaDatosMovimientoInventario = z.object({
   costoUnitario: z.string().optional(),
   fechaVencimiento: z.string(),
   fechaOperacion: z.string().min(1, 'Selecciona la fecha de operación'),
-  documentoReferencia: z.string().trim().min(1, 'Ingresa una referencia para el movimiento').max(120, 'Máximo 120 caracteres'),
+  documentoReferencia: z.string().trim().max(120, 'Máximo 120 caracteres').optional(),
   motivo: z
     .string()
     .trim()
     .min(3, 'Describe el motivo del movimiento')
     .max(180, 'Máximo 180 caracteres'),
+}).superRefine((datos, contexto) => {
+  if (datos.tipo !== 'entrada') return
+  const costo = datos.costoUnitario?.trim() ?? ''
+  if (!/^\d+(\.\d{1,4})?$/.test(costo) || !Number.isFinite(Number(costo)) || Number(costo) < 0) {
+    contexto.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['costoUnitario'],
+      message: 'Ingresa el costo unitario para valorar la entrada',
+    })
+  }
 })
 
 export type DatosMovimientoInventario = z.infer<
@@ -174,6 +225,7 @@ export const esquemaMovimientoInventario = z.object({
   fechaRegistro: z.string().datetime(),
   motivo: z.string().min(1),
   documentoReferencia: z.string().optional(),
+  secuenciaLedger: z.number().int().positive().optional(),
   creadoPor: z.string().optional(),
   fuenteTipo: z.string().optional(),
   fuenteId: z.string().optional(),

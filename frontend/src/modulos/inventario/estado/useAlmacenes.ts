@@ -43,6 +43,9 @@ export function useAlmacenes() {
       queryClient.invalidateQueries({ queryKey }),
       queryClient.invalidateQueries({ queryKey: ['inventory', organizationId] }),
       queryClient.invalidateQueries({ queryKey: ['inventory-fefo', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory-movement-warehouses', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory-adjustment-warehouses', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory-adjustment-buckets', organizationId] }),
     ])
   }
   const ejecutar = async (operacion: () => Promise<void>) => {

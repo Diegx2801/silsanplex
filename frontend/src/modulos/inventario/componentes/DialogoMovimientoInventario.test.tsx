@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
@@ -9,6 +10,8 @@ import { DialogoMovimientoInventario } from './DialogoMovimientoInventario'
 
 const mocks = vi.hoisted(() => ({
   useCandidatosFefo: vi.fn(),
+  useBucketsAjusteStock: vi.fn(),
+  buscarAlmacenesMovimientoInventario: vi.fn(),
   producto: {
     id: 'producto-1',
     codigo: 'SKU-001',
@@ -31,6 +34,14 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/modulos/inventario/estado/useCandidatosFefo', () => ({
   useCandidatosFefo: mocks.useCandidatosFefo,
+}))
+
+vi.mock('@/modulos/inventario/estado/useBucketsAjusteStock', () => ({
+  useBucketsAjusteStock: mocks.useBucketsAjusteStock,
+}))
+
+vi.mock('@/modulos/inventario/servicios/inventarioService', () => ({
+  buscarAlmacenesMovimientoInventario: mocks.buscarAlmacenesMovimientoInventario,
 }))
 
 vi.mock('@/modulos/inventario/componentes/SelectorProductoInventario', () => ({
@@ -67,7 +78,7 @@ vi.mock('@/modulos/inventario/componentes/SelectorProductoInventario', () => ({
 }))
 
 const almacen: Almacen = {
-  id: 'almacen-1',
+  id: 'a4000000-0000-4000-8000-000000000001',
   codigo: 'CENTRAL',
   nombre: 'Almacén central',
   direccion: '',
@@ -75,7 +86,7 @@ const almacen: Almacen = {
 }
 
 const ubicacion: UbicacionAlmacen = {
-  id: 'ubicacion-1',
+  id: 'a5000000-0000-4000-8000-000000000001',
   almacenId: almacen.id,
   codigo: 'A-01',
   nombre: 'Anaquel A',
@@ -87,24 +98,29 @@ function renderDialog(
   contexto: ContextoAccionInventario | null,
   opcionesTipoMovimiento?: typeof tiposMovimientoEnExistencias,
 ) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
-    <DialogoMovimientoInventario
-      abierto
-      organizationId="org-1"
-      almacenes={[almacen]}
-      ubicaciones={[ubicacion]}
-      opcionesTipoMovimiento={opcionesTipoMovimiento}
-      contexto={contexto}
-      alCambiarApertura={vi.fn()}
-      alGuardar={vi.fn().mockResolvedValue(undefined)}
-      alRestaurarFoco={vi.fn()}
-    />,
+    <QueryClientProvider client={queryClient}>
+      <DialogoMovimientoInventario
+        abierto
+        organizationId="org-1"
+        almacenes={[almacen]}
+        ubicaciones={[ubicacion]}
+        opcionesTipoMovimiento={opcionesTipoMovimiento}
+        contexto={contexto}
+        alCambiarApertura={vi.fn()}
+        alGuardar={vi.fn().mockResolvedValue(undefined)}
+        alRestaurarFoco={vi.fn()}
+      />
+    </QueryClientProvider>,
   )
 }
 
 describe('DialogoMovimientoInventario contextual', () => {
   beforeEach(() => {
     mocks.useCandidatosFefo.mockReset().mockReturnValue({ candidatos: [], cargando: false, error: '' })
+    mocks.useBucketsAjusteStock.mockReset().mockReturnValue({ buckets: [], cargando: false, error: '' })
+    mocks.buscarAlmacenesMovimientoInventario.mockReset().mockResolvedValue([])
   })
 
   it('precarga producto, almacén, ubicación, condición y lote de la fila exacta', () => {
@@ -120,13 +136,13 @@ describe('DialogoMovimientoInventario contextual', () => {
     })
 
     expect(screen.getByLabelText('Producto')).toHaveValue(mocks.producto.id)
-    expect(screen.getByLabelText('Almacén *')).toHaveValue(almacen.id)
-    expect(screen.getByLabelText('Ubicación física *')).toHaveValue(ubicacion.id)
+    expect(screen.getByRole('combobox', { name: /Almacén/ })).toHaveValue(`${almacen.codigo} · ${almacen.nombre}`)
+    expect(screen.getByRole('combobox', { name: /Ubicación física/ })).toHaveValue(`${ubicacion.codigo} · ${ubicacion.nombre}`)
     expect(screen.getByLabelText('Condición del stock *')).toHaveValue('quarantine')
-    expect(screen.getByLabelText('Lote *')).toHaveValue('LOTE-1')
+    expect(screen.getByRole('combobox', { name: /Lote del fabricante/ })).toHaveValue('LOTE-1')
     expect(screen.getByLabelText('Fecha de vencimiento *')).toHaveValue('2027-12-31')
-    expect(screen.getByLabelText('Referencia del documento *')).toBeVisible()
-    expect(screen.getByText(/Solo se guarda la referencia; no se adjunta un archivo/)).toBeVisible()
+    expect(screen.getByLabelText('Documento externo (opcional)')).toBeVisible()
+    expect(screen.getByText(/Si existe un documento, registra su número/)).toBeVisible()
   })
 
   it('no elige almacén ni posición arbitrarios desde la vista agregada', () => {
@@ -137,6 +153,66 @@ describe('DialogoMovimientoInventario contextual', () => {
     expect(screen.getByLabelText('Ubicación física *')).toHaveValue('')
   })
 
+  it('no preselecciona el primer almacén al abrir el movimiento sin contexto', () => {
+    renderDialog(null)
+
+    expect(screen.getByLabelText('Producto')).toHaveValue('')
+    expect(screen.getByLabelText('Almacén *')).toHaveValue('')
+    expect(screen.getByLabelText('Almacén *')).toBeDisabled()
+  })
+
+  it('pide la condición antes del almacén y no muestra saldo FEFO antes de seleccionarlo', () => {
+    renderDialog({ producto: mocks.producto })
+
+    const condicion = screen.getByLabelText('Condición del stock *')
+    const selectorAlmacen = screen.getByLabelText('Almacén *')
+    expect(condicion.compareDocumentPosition(selectorAlmacen) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Tipo de movimiento *'), { target: { value: 'salida' } })
+
+    expect(screen.getByText('Selecciona un almacén para consultar el stock disponible.')).toBeVisible()
+    expect(screen.queryByText(/0 unidades disponibles en 0 posiciones/)).not.toBeInTheDocument()
+  })
+
+  it('detiene la salida si la cantidad supera el total disponible según FEFO', async () => {
+    mocks.buscarAlmacenesMovimientoInventario.mockResolvedValue([{
+      id: almacen.id,
+      codigo: almacen.codigo,
+      nombre: almacen.nombre,
+      cantidadDisponible: 5,
+    }])
+    mocks.useCandidatosFefo.mockReturnValue({
+      candidatos: [{
+        productoId: mocks.producto.id,
+        almacenId: almacen.id,
+        ubicacionId: ubicacion.id,
+        ubicacionCodigo: ubicacion.codigo,
+        ubicacionNombre: ubicacion.nombre,
+        lote: 'LOTE-1',
+        fechaVencimiento: '2027-12-31',
+        cantidadAsignable: 5,
+        costoPromedio: 12,
+        ordenFefo: 1,
+      }],
+      cargando: false,
+      error: '',
+    })
+    renderDialog({ producto: mocks.producto })
+
+    fireEvent.change(screen.getByLabelText('Tipo de movimiento *'), { target: { value: 'salida' } })
+    const comboAlmacen = screen.getByLabelText('Almacén *')
+    fireEvent.focus(comboAlmacen)
+    fireEvent.change(comboAlmacen, { target: { value: 'CENT' } })
+    fireEvent.click(await screen.findByRole('option', { name: /CENTRAL · Almacén central/ }))
+    expect(screen.getByLabelText('Cantidad *')).toHaveAttribute('type', 'number')
+    expect(screen.getByLabelText('Cantidad *')).toHaveAttribute('max', '5')
+    fireEvent.change(screen.getByLabelText('Cantidad *'), { target: { value: '6' } })
+    fireEvent.change(screen.getByLabelText('Motivo del movimiento *'), { target: { value: 'Venta' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar movimiento' }))
+
+    expect(await screen.findByText(/La cantidad supera el disponible según FEFO \(5 Caja\)/)).toBeVisible()
+  })
+
   it('en Existencias no permite registrar el descuento que ya tiene la acción Ajustar stock', () => {
     renderDialog(null, tiposMovimientoEnExistencias)
 
@@ -144,24 +220,18 @@ describe('DialogoMovimientoInventario contextual', () => {
     expect(within(selectorTipo).getAllByRole('option').map((opcion) => opcion.textContent)).toEqual([
       'Entrada',
       'Salida',
-      'Ajuste positivo',
     ])
-    expect(screen.getByText(/Para descontar existencias por ajuste, usa «Ajustar stock»/)).toBeVisible()
+    expect(screen.getByText(/Para corregir diferencias del inventario, usa «Ajustar stock»/)).toBeVisible()
   })
 
-  it('conserva los cuatro tipos en la vista general de movimientos e identifica el ajuste positivo', () => {
+  it('limita el registro manual a entradas y salidas', () => {
     renderDialog(null)
 
     const selectorTipo = screen.getByRole('combobox', { name: 'Tipo de movimiento *' })
     expect(within(selectorTipo).getAllByRole('option').map((opcion) => opcion.textContent)).toEqual([
       'Entrada',
       'Salida',
-      'Ajuste positivo',
-      'Ajuste negativo',
     ])
-
-    fireEvent.change(selectorTipo, { target: { value: 'ajuste-positivo' } })
-    expect(screen.getByText('El ajuste aumentará la existencia del producto en el almacén indicado.')).toBeVisible()
   })
 
   it('limpia lote y condición de la posición previa al cambiar el producto', () => {
@@ -178,7 +248,7 @@ describe('DialogoMovimientoInventario contextual', () => {
 
     fireEvent.change(screen.getByLabelText('Producto'), { target: { value: mocks.otroProducto.id } })
 
-    expect(screen.getByLabelText('Lote')).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: /Lote del fabricante/ })).toHaveValue('')
     expect(screen.getByLabelText('Fecha de vencimiento')).toHaveValue('')
     expect(screen.getByLabelText('Condición del stock *')).toHaveValue('available')
   })

@@ -210,7 +210,10 @@ export function PanelMovimientosAlmacen(props: Props) {
                         <p>{movimiento.productoDescripcion}</p>
                       </td>
                       <td className="px-4 py-4">
-                        <p className="font-mono text-xs">{movimiento.documentoReferencia || 'Sin referencia registrada'}</p>
+                        <p className="font-mono text-xs">N.º movimiento: MOV-{String(movimiento.secuenciaLedger).padStart(6, '0')}</p>
+                        {movimiento.documentoReferencia ? (
+                          <p className="mt-1 text-xs">Documento externo: {movimiento.documentoReferencia}</p>
+                        ) : null}
                         {movimiento.motivo}
                         <p className="text-xs text-muted-foreground">
                           {movimiento.almacen} · {movimiento.lote || 'Sin lote'}
