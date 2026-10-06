@@ -200,14 +200,12 @@ export function DialogoMovimientoInventario({
                   organizationId={organizationId}
                   value={productoId}
                   selectedOption={producto}
+                  error={errors.productoId?.message}
                   onValueChange={(nextValue, opcion) => {
                     setValue('productoId', nextValue, { shouldValidate: true })
                     setProducto(opcion ?? null)
                   }}
                 />
-                {errors.productoId ? (
-                  <p className="field-error">{errors.productoId.message}</p>
-                ) : null}
               </div>
 
               <div>

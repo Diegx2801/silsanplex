@@ -48,7 +48,7 @@ export const esquemaFormularioAjusteStock = z
   .object({
     productoId: z.string().min(1, 'Selecciona un producto'),
     almacenId: z.string().min(1, 'Selecciona un almacén'),
-    bucketKey: z.string().min(1, 'Selecciona el bucket exacto que vas a descontar'),
+    bucketKey: z.string().min(1, 'Selecciona la ubicación y el lote que vas a descontar'),
     cantidad: z
       .string()
       .trim()

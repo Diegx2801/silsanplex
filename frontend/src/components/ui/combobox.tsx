@@ -51,13 +51,6 @@ function normalizar(texto: string) {
     .trim()
 }
 
-function primerIndiceSeleccionable(opciones: readonly ComboboxOption[], desde = 0) {
-  for (let indice = desde; indice < opciones.length; indice += 1) {
-    if (!opciones[indice]?.disabled) return indice
-  }
-  return -1
-}
-
 export function Combobox({
   id,
   label,
@@ -156,7 +149,7 @@ export function Combobox({
       if (actual >= 0 && actual < opcionesFiltradas.length && !opcionesFiltradas[actual]?.disabled) {
         return actual
       }
-      return primerIndiceSeleccionable(opcionesFiltradas)
+      return -1
     })
   }, [abierto, opcionesFiltradas])
 
@@ -242,7 +235,11 @@ export function Combobox({
           aria-haspopup="listbox"
           aria-autocomplete="list"
           aria-expanded={abierto}
-          aria-controls={abierto ? listboxId : undefined}
+          aria-controls={
+            abierto && !cargando && !errorCarga && opcionesFiltradas.length > 0
+              ? listboxId
+              : undefined
+          }
           aria-required={required || undefined}
           aria-activedescendant={
             abierto && indiceActivo >= 0 ? `${reactId}-${listboxId}-${indiceActivo}` : undefined
@@ -278,11 +275,7 @@ export function Combobox({
 
       {abierto ? (
         <div
-          id={listboxId}
-          role="listbox"
-          aria-label={label}
-          className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-md border bg-background p-1 pe-2 shadow-xl"
-          style={{ scrollbarGutter: 'stable' }}
+          className="absolute inset-x-0 top-full z-30 mt-1 rounded-md border bg-background shadow-xl"
           onPointerDown={() => {
             interactuandoListaRef.current = true
           }}
@@ -291,8 +284,10 @@ export function Combobox({
             // cerrar la lista antes de que el navegador pueda desplazarla.
             const objetivo = evento.target as HTMLElement
             if (!objetivo.closest('[role="option"]')) {
-              const rectangulo = evento.currentTarget.getBoundingClientRect()
-              const anchoBarra = evento.currentTarget.offsetWidth - evento.currentTarget.clientWidth
+              const lista = objetivo.closest('[role="listbox"]')
+              const superficie = lista instanceof HTMLElement ? lista : evento.currentTarget
+              const rectangulo = superficie.getBoundingClientRect()
+              const anchoBarra = superficie.offsetWidth - superficie.clientWidth
               const estaEnBarra = anchoBarra > 0 && evento.clientX >= rectangulo.right - anchoBarra
               if (!estaEnBarra) {
                 evento.preventDefault()
@@ -327,35 +322,48 @@ export function Combobox({
               {loadOptions || options.length ? noResultsMessage : noOptionsMessage}
             </p>
           ) : (
-            opcionesFiltradas.map((option, indice) => (
-              <button
-                key={option.value}
-                id={`${reactId}-${listboxId}-${indice}`}
-                type="button"
-                role="option"
-                aria-selected={option.value === value}
-                aria-disabled={option.disabled || undefined}
-                disabled={option.disabled}
-                className={`block w-full rounded-sm px-3 py-2 text-start text-sm disabled:cursor-not-allowed disabled:opacity-50 ${
-                  indice === indiceActivo ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
-                }`}
-                onMouseDown={(evento) => evento.preventDefault()}
-                onClick={() => seleccionar(option)}
-              >
-                <span className="block truncate font-medium">{option.label}</span>
-                {option.secondaryText ? (
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                    {option.secondaryText}
-                  </span>
-                ) : null}
-              </button>
-            ))
+            <div
+              id={listboxId}
+              role="listbox"
+              aria-label={label}
+              className="max-h-64 overflow-y-auto p-1 pe-2"
+              style={{ scrollbarGutter: 'stable' }}
+            >
+              {opcionesFiltradas.map((option, indice) => (
+                <div
+                  key={option.value}
+                  id={`${reactId}-${listboxId}-${indice}`}
+                  role="option"
+                  aria-selected={option.value === value}
+                  aria-disabled={option.disabled || undefined}
+                  className={`block rounded-sm px-3 py-2 text-start text-sm ${
+                    option.disabled
+                      ? 'cursor-not-allowed opacity-50'
+                      : indice === indiceActivo
+                        ? 'bg-accent text-accent-foreground'
+                        : 'cursor-pointer hover:bg-muted'
+                  }`}
+                  onMouseDown={(evento) => evento.preventDefault()}
+                  onMouseMove={() => {
+                    if (!option.disabled) setIndiceActivo(indice)
+                  }}
+                  onClick={() => seleccionar(option)}
+                >
+                  <span className="block truncate font-medium">{option.label}</span>
+                  {option.secondaryText ? (
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                      {option.secondaryText}
+                    </span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           )}
         </div>
       ) : null}
 
       {helperText ? <p id={helperId} className="mt-1 text-xs text-muted-foreground">{helperText}</p> : null}
-      {error ? <p id={errorId} className="field-error">{error}</p> : null}
+      {error ? <p id={errorId} className="field-error" role="alert">{error}</p> : null}
     </div>
   )
 }

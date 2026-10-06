@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertTriangle, Check, Minus, X } from 'lucide-react'
+import { AlertTriangle, Check, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import { fechaActualPeru, formatearFechaCalendarioPeru } from '@/lib/fechas'
 import { SelectorProductoInventario } from '@/modulos/inventario/componentes/SelectorProductoInventario'
 import { useBucketsAjusteStock } from '@/modulos/inventario/estado/useBucketsAjusteStock'
@@ -161,6 +162,28 @@ export function DialogoAjusteStock({
     () => buckets.filter((bucket) => ubicacionesActivas.has(bucket.ubicacionId)),
     [buckets, ubicacionesActivas],
   )
+  const opcionesBuckets = useMemo<ComboboxOption[]>(
+    () => bucketsVisibles.map((bucket) => {
+      const descontable = cantidadDisponibleAjusteStock(bucket)
+      return {
+        value: claveBucketAjusteStock(bucket),
+        label: descripcionBucket(bucket),
+        secondaryText: [
+          `${formatoCantidad.format(descontable)} ${bucket.unidadMedida || 'unidades'} descontables`,
+          `${formatoCantidad.format(bucket.cantidadFisica)} físico`,
+          `${formatoCantidad.format(bucket.cantidadReservada)} reservado`,
+        ].join(' · '),
+        keywords: [
+          bucket.ubicacionNombre,
+          bucket.almacenCodigo,
+          bucket.lote,
+          bucket.fechaVencimiento,
+          etiquetasEstadoStock[bucket.estadoStock],
+        ],
+      }
+    }),
+    [bucketsVisibles],
+  )
   const bucketSeleccionado = useMemo(
     () => bucketsVisibles.find((bucket) => claveBucketAjusteStock(bucket) === bucketKey) ?? null,
     [bucketKey, bucketsVisibles],
@@ -260,7 +283,7 @@ export function DialogoAjusteStock({
                 Ajustar stock
               </DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">
-                Descontar stock de un bucket exacto. El movimiento quedará registrado en el Kardex persistente.
+                Registra una disminución de stock para una ubicación y lote específicos. El cambio quedará en el historial de movimientos.
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close asChild>
@@ -310,10 +333,10 @@ export function DialogoAjusteStock({
                   organizationId={organizationId}
                   value={productoId}
                   selectedOption={producto}
+                  error={errors.productoId?.message}
                   autoSeleccionarPrimeraOpcion={false}
                   onValueChange={seleccionarProducto}
                 />
-                {errors.productoId ? <p className="field-error">{errors.productoId.message}</p> : null}
               </div>
 
               <div>
@@ -332,30 +355,38 @@ export function DialogoAjusteStock({
               </div>
 
               <div>
-                <label htmlFor="bucket-ajuste-stock" className="field-label">Bucket exacto *</label>
-                <select
+                <input type="hidden" {...register('bucketKey')} />
+                <Combobox
                   id="bucket-ajuste-stock"
-                  className="field-control"
-                  disabled={!productoId || cargando || bucketsVisibles.length === 0}
-                  {...register('bucketKey')}
-                >
-                  <option value="">
-                    {!productoId
+                  label="Ubicación y lote"
+                  value={bucketKey}
+                  options={opcionesBuckets}
+                  onChange={(valor) => setValue('bucketKey', valor, { shouldValidate: true, shouldDirty: true })}
+                  placeholder={
+                    !productoId
                       ? 'Selecciona primero un producto'
                       : cargando
-                        ? 'Consultando stock del almacén...'
+                        ? 'Consultando existencias…'
                         : bucketsVisibles.length
-                          ? 'Selecciona ubicación, lote y vencimiento'
-                          : 'No hay stock físico en este almacén'}
-                  </option>
-                  {bucketsVisibles.map((bucket) => (
-                    <option key={claveBucketAjusteStock(bucket)} value={claveBucketAjusteStock(bucket)}>
-                      {descripcionBucket(bucket)} · {formatoCantidad.format(bucket.cantidadFisica)} disponibles
-                    </option>
-                  ))}
-                </select>
-                {errors.bucketKey ? <p className="field-error">{errors.bucketKey.message}</p> : null}
-                {error ? <p role="alert" className="field-error">{error}</p> : null}
+                          ? 'Busca por ubicación, lote o vencimiento'
+                          : 'No hay stock físico en este almacén'
+                  }
+                  helperText={error || !bucketsVisibles.length
+                    ? undefined
+                    : 'Elige la ubicación, lote y condición exactos que vas a descontar.'}
+                  error={errors.bucketKey?.message ?? (error ? 'No se pudieron consultar las existencias. Vuelve a intentarlo.' : undefined)}
+                  required
+                  disabled={!productoId || cargando || bucketsVisibles.length === 0}
+                  noOptionsMessage={
+                    !productoId
+                      ? 'Selecciona primero un producto.'
+                      : cargando
+                        ? 'Consultando existencias…'
+                        : 'No hay stock físico en este almacén.'
+                  }
+                  noResultsMessage="No se encontraron ubicaciones o lotes con esos datos."
+                  maxVisibleOptions={50}
+                />
                 {!error && productoId && !cargando && bucketsVisibles.length === 0 ? (
                   <p className="field-help">Selecciona otro almacén si el producto tiene stock en otra ubicación.</p>
                 ) : null}
@@ -426,12 +457,6 @@ export function DialogoAjusteStock({
                 {errors.observacion ? <p className="field-error">{errors.observacion.message}</p> : null}
               </div>
 
-              <div className="flex items-start gap-3 border border-[#d9c7a3] bg-[#fbf6e9] px-4 py-3 text-sm leading-6 text-[#6b4b12]">
-                <Minus aria-hidden="true" className="mt-1 size-4 shrink-0" />
-                <p>
-                  Solo se descontará del bucket seleccionado. El backend volverá a validar el stock y las reservas al confirmar.
-                </p>
-              </div>
             </form>
           )}
 

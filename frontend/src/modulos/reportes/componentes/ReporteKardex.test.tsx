@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -8,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   useOpcionesProductoInventario: vi.fn(),
   hasPermission: vi.fn(),
   listarKardexReporte: vi.fn(),
+  listarOpcionesProductoInventario: vi.fn(),
   descargarKardex: vi.fn(),
 }))
 
@@ -15,6 +17,7 @@ vi.mock('@/modulos/reportes/estado/useReporteKardex', () => ({ useReporteKardex:
 vi.mock('@/modulos/inventario/estado/useOpcionesProductoInventario', () => ({ useOpcionesProductoInventario: mocks.useOpcionesProductoInventario }))
 vi.mock('@/features/auth/useAuth', () => ({ useAuth: () => ({ hasPermission: mocks.hasPermission }) }))
 vi.mock('@/modulos/reportes/servicios/kardexReporteService', () => ({ listarKardexReporte: mocks.listarKardexReporte }))
+vi.mock('@/modulos/inventario/servicios/productoInventarioReadService', () => ({ listarOpcionesProductoInventario: mocks.listarOpcionesProductoInventario }))
 vi.mock('@/modulos/reportes/servicios/exportarKardex', () => ({ descargarKardex: mocks.descargarKardex }))
 
 const opcion = {
@@ -32,6 +35,19 @@ const movimiento = {
 }
 
 describe('ReporteKardex', () => {
+  const renderReporte = () => render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <ReporteKardex organizationId="org-1" almacenes={[]} />
+    </QueryClientProvider>,
+  )
+
+  const seleccionarProducto = async () => {
+    const combo = screen.getByRole('combobox', { name: 'Producto' })
+    fireEvent.focus(combo)
+    const opcionProducto = await screen.findByRole('option', { name: /SKU-01 · Producto uno/ })
+    fireEvent.click(opcionProducto)
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.hasPermission.mockReturnValue(true)
@@ -43,14 +59,15 @@ describe('ReporteKardex', () => {
       isLoading: false, isFetching: false, error: null, refetch: vi.fn(),
     })
     mocks.listarKardexReporte.mockResolvedValue({ elementos: [movimiento], total: 1 })
+    mocks.listarOpcionesProductoInventario.mockResolvedValue({ items: [opcion], totalCount: 1 })
   })
 
-  it('requiere elegir producto y presenta trazabilidad y saldos por movimiento', () => {
-    render(<ReporteKardex organizationId="org-1" almacenes={[]} />)
+  it('requiere elegir producto y presenta trazabilidad y saldos por movimiento', async () => {
+    renderReporte()
     expect(screen.getByRole('heading', { name: 'Kardex detallado' })).toBeVisible()
     expect(screen.getByRole('status')).toHaveTextContent('Selecciona un producto')
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Producto' }), { target: { value: 'product-1' } })
+    await seleccionarProducto()
     expect(screen.getByText('GUIA-01')).toBeVisible()
     expect(screen.getByText('Despacho confirmado')).toBeVisible()
     expect(screen.getByText('Almacenero')).toBeVisible()
@@ -60,10 +77,10 @@ describe('ReporteKardex', () => {
   })
 
   it('exporta el resultado completo solo con el permiso independiente de exportación', async () => {
-    render(<ReporteKardex organizationId="org-1" almacenes={[]} />)
+    renderReporte()
     const boton = screen.getByRole('button', { name: 'Exportar Excel' })
     expect(boton).toBeDisabled()
-    fireEvent.change(screen.getByRole('combobox', { name: 'Producto' }), { target: { value: 'product-1' } })
+    await seleccionarProducto()
     fireEvent.click(boton)
 
     await waitFor(() => expect(mocks.descargarKardex).toHaveBeenCalledWith([movimiento], expect.objectContaining({
@@ -75,7 +92,7 @@ describe('ReporteKardex', () => {
 
   it('oculta la descarga a quien solo puede consultar', () => {
     mocks.hasPermission.mockReturnValue(false)
-    render(<ReporteKardex organizationId="org-1" almacenes={[]} />)
+    renderReporte()
     expect(screen.queryByRole('button', { name: 'Exportar Excel' })).not.toBeInTheDocument()
   })
 })

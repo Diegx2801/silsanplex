@@ -54,6 +54,7 @@ describe('Combobox', () => {
     fireEvent.change(input, { target: { value: '750000000002' } })
 
     expect(screen.getByRole('option', { name: /IBU-400/ })).toBeVisible()
+    expect(screen.getByRole('option', { name: /IBU-400/ }).tagName).not.toBe('BUTTON')
     expect(screen.queryByRole('option', { name: /PARA-500/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('option', { name: /IBU-400/ }))
@@ -76,7 +77,7 @@ describe('Combobox', () => {
     const input = screen.getByRole('combobox', { name: 'Producto' })
     fireEvent.focus(input)
     fireEvent.change(input, { target: { value: 'amoxicilina' } })
-    expect(screen.getByRole('option', { name: /AMO-500/ })).toBeDisabled()
+    expect(screen.getByRole('option', { name: /AMO-500/ })).toHaveAttribute('aria-disabled', 'true')
 
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(onChange).not.toHaveBeenCalled()
@@ -85,6 +86,47 @@ describe('Combobox', () => {
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(onChange).toHaveBeenCalledWith('producto-2')
+  })
+
+  it('activa la primera coincidencia con la primera flecha hacia abajo', () => {
+    const onChange = vi.fn()
+    render(
+      <Combobox
+        id="producto-primera-opcion"
+        label="Producto"
+        value=""
+        options={opciones}
+        onChange={onChange}
+      />,
+    )
+
+    const input = screen.getByRole('combobox', { name: 'Producto' })
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: 'producto' } })
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(onChange).toHaveBeenCalledWith('producto-1')
+  })
+
+  it('mantiene mensajes de carga fuera de la lista de opciones', async () => {
+    const buscar = vi.fn(() => new Promise<ComboboxOption[]>(() => undefined))
+    render(
+      <Combobox
+        id="producto-cargando"
+        label="Producto"
+        value=""
+        options={[]}
+        onChange={vi.fn()}
+        loadOptions={buscar}
+        debounceMs={0}
+      />,
+    )
+
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Producto' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Buscando opciones')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
 
   it('permite limpiar con teclado una opción ya seleccionada', async () => {

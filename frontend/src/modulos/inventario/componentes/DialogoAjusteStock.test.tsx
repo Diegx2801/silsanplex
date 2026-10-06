@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
-import { claveBucketAjusteStock, type BucketAjusteStock } from '@/modulos/inventario/modelo/inventario'
+import type { BucketAjusteStock } from '@/modulos/inventario/modelo/inventario'
 
 import { DialogoAjusteStock } from './DialogoAjusteStock'
 
@@ -102,9 +102,9 @@ function renderDialog(alGuardar = vi.fn().mockResolvedValue(undefined)) {
 
 function completarFormulario() {
   fireEvent.change(screen.getByLabelText('Producto'), { target: { value: mocks.producto.id } })
-  fireEvent.change(screen.getByLabelText(/Bucket exacto/), {
-    target: { value: claveBucketAjusteStock(bucket) },
-  })
+  const comboBucket = screen.getByRole('combobox', { name: 'Ubicación y lote' })
+  fireEvent.focus(comboBucket)
+  fireEvent.click(screen.getByRole('option', { name: /A-01.*LOTE-1/ }))
   fireEvent.change(screen.getByLabelText(/Cantidad a descontar/), { target: { value: '2' } })
   fireEvent.change(screen.getByLabelText(/Documento de sustento/), { target: { value: 'ACTA-001' } })
 }
@@ -120,11 +120,13 @@ describe('DialogoAjusteStock', () => {
 
     expect(screen.getByLabelText('Producto')).toHaveValue('')
     fireEvent.change(screen.getByLabelText('Producto'), { target: { value: mocks.producto.id } })
-    fireEvent.change(screen.getByLabelText(/Bucket exacto/), {
-      target: { value: claveBucketAjusteStock(bucket) },
-    })
+    const comboBucket = screen.getByRole('combobox', { name: 'Ubicación y lote' })
+    fireEvent.focus(comboBucket)
+    expect(screen.getByText(/5 UND descontables/)).toBeVisible()
+    fireEvent.click(screen.getByRole('option', { name: /A-01.*LOTE-1/ }))
 
-    expect(screen.getByRole('option', { name: /A-01.*LOTE-1/ })).toBeVisible()
+    expect(screen.queryByText(/bucket seleccionado/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/backend/i)).not.toBeInTheDocument()
     expect(screen.getByText('Stock físico')).toBeVisible()
     expect(screen.getByText('Stock reservado')).toBeVisible()
     expect(screen.getByText('5')).toBeVisible()
@@ -135,7 +137,7 @@ describe('DialogoAjusteStock', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Revisar descuento' }))
 
     expect(await screen.findByText('Selecciona un producto')).toBeVisible()
-    expect(screen.getByText('Selecciona el bucket exacto que vas a descontar')).toBeVisible()
+    expect(screen.getByText('Selecciona la ubicación y el lote que vas a descontar')).toBeVisible()
     expect(screen.getByText('Ingresa una cantidad mayor a cero con hasta 3 decimales')).toBeVisible()
     expect(screen.getByText('Ingresa el documento de sustento')).toBeVisible()
   })
@@ -210,8 +212,22 @@ describe('DialogoAjusteStock', () => {
     renderDialog()
     fireEvent.change(screen.getByLabelText('Producto'), { target: { value: mocks.producto.id } })
 
-    expect(screen.getByLabelText(/Bucket exacto/)).toBeDisabled()
-    expect(screen.getByRole('option', { name: 'Consultando stock del almacén...' })).toBeVisible()
+    expect(screen.getByRole('combobox', { name: 'Ubicación y lote' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Ubicación y lote' })).toHaveAttribute(
+      'placeholder',
+      'Consultando existencias…',
+    )
+  })
+
+  it('explica cuándo el producto no tiene stock físico en el almacén', () => {
+    mocks.useBucketsAjusteStock.mockReturnValue({ buckets: [], cargando: false, error: '' })
+    renderDialog()
+    fireEvent.change(screen.getByLabelText('Producto'), { target: { value: mocks.producto.id } })
+
+    const comboBucket = screen.getByRole('combobox', { name: 'Ubicación y lote' })
+    expect(comboBucket).toBeDisabled()
+    expect(comboBucket).toHaveAttribute('placeholder', 'No hay stock físico en este almacén')
+    expect(screen.getByText('Selecciona otro almacén si el producto tiene stock en otra ubicación.')).toBeVisible()
   })
 
   it('evita el doble envío mientras registra el movimiento', async () => {
