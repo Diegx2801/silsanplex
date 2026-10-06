@@ -120,6 +120,8 @@ describe('DialogoMovimientoInventario contextual', () => {
     expect(screen.getByLabelText('Condición del stock *')).toHaveValue('quarantine')
     expect(screen.getByLabelText('Lote *')).toHaveValue('LOTE-1')
     expect(screen.getByLabelText('Fecha de vencimiento *')).toHaveValue('2027-12-31')
+    expect(screen.getByLabelText('Referencia del documento *')).toBeVisible()
+    expect(screen.getByText(/Solo se guarda la referencia; no se adjunta un archivo/)).toBeVisible()
   })
 
   it('no elige almacén ni posición arbitrarios desde la vista agregada', () => {

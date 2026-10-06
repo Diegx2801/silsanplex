@@ -102,7 +102,7 @@ export function PanelMovimientosAlmacen(props: Props) {
                   }))
                 }
                 className="field-control"
-                placeholder="Producto o código"
+                placeholder="Producto, lote o referencia"
               />
             </label>
             <label className="field-label">

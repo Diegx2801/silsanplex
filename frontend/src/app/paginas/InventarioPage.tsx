@@ -430,7 +430,7 @@ function ExistenciasPorProducto({
                     <th className="px-4 py-3 text-end font-medium">Almacenes</th>
                     <th className="px-4 py-3 text-end font-medium">Lotes</th>
                     <th className="px-6 py-3 font-medium">Estado</th>
-                    {puedeGestionar ? <th scope="col" className="px-5 py-3 text-end font-medium">Acciones</th> : null}
+                    {puedeGestionar ? <th scope="col" className="px-5 py-3 text-center font-medium">Acciones</th> : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -466,8 +466,9 @@ function ExistenciasPorProducto({
                       </td>
                       {puedeGestionar ? (
                         <td className="px-5 py-4">
-                          <AccionesFilaInventario
-                            producto={existencia.productoDescripcion}
+                        <AccionesFilaInventario
+                          producto={existencia.productoDescripcion}
+                          centrado
                             ajusteDeshabilitado={accionesDeshabilitadas || sinDisponibleParaAjuste}
                             ajusteSinDisponible={!accionesDeshabilitadas && sinDisponibleParaAjuste}
                             movimientoDeshabilitado={accionesDeshabilitadas}

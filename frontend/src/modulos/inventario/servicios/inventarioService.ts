@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type {
+  AlmacenAjusteStockOpcion,
   BucketAjusteStock,
   CandidatoFefo,
   ConsultaExistenciasInventario,
@@ -91,7 +92,7 @@ function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
 }
 
 function mensajeError(error: { code?: string; message?: string }) {
-  if (error.message?.includes('INVENTORY_DOCUMENT_REFERENCE_INVALID')) return 'Ingresa un documento de sustento de hasta 120 caracteres'
+  if (error.message?.includes('INVENTORY_DOCUMENT_REFERENCE_INVALID')) return 'Ingresa una referencia del documento de hasta 120 caracteres'
   if (error.message?.includes('INVENTORY_REASON_INVALID')) return 'Describe el motivo del movimiento con entre 3 y 180 caracteres'
   if (error.message?.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no generan stock ni movimientos de inventario'
   if (error.message?.includes('INVENTORY_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock disponible'
@@ -122,7 +123,7 @@ export async function listarMovimientosInventario(
 
   if (busqueda) {
     query = query.or(
-      `product_code.ilike.%${busqueda}%,product_description.ilike.%${busqueda}%,lot.ilike.%${busqueda}%`,
+      `product_code.ilike.%${busqueda}%,product_description.ilike.%${busqueda}%,lot.ilike.%${busqueda}%,document_reference.ilike.%${busqueda}%`,
     )
   }
   if (consulta.almacenId) query = query.eq('warehouse_id', consulta.almacenId)
@@ -296,6 +297,40 @@ export async function listarBucketsAjusteStock(
     cantidadReservada: Number(fila.reserved_quantity),
     costoPromedio: Number(fila.average_cost),
   }))
+}
+
+interface AlmacenAjusteStockFila {
+  warehouse_id: string
+  warehouse_code: string
+  warehouse_name: string
+  adjustable_quantity: number
+}
+
+export async function listarAlmacenesAjusteStock(
+  organizationId: string,
+  productId: string,
+  busqueda: string,
+) {
+  const { data, error } = await supabase.rpc('inventory_adjustment_warehouses_read', {
+    requested_organization_id: organizationId,
+    requested_product_id: productId,
+    search_term: normalizarBusquedaInventario(busqueda),
+    requested_limit: 50,
+    requested_offset: 0,
+  })
+
+  if (error) throw new Error('No se pudieron consultar los almacenes con stock para ajustar')
+
+  const respuesta = leerRespuestaReadInventario<AlmacenAjusteStockFila>(data)
+  return {
+    totalCount: respuesta.totalCount,
+    items: respuesta.items.map((fila): AlmacenAjusteStockOpcion => ({
+      id: fila.warehouse_id,
+      codigo: fila.warehouse_code,
+      nombre: fila.warehouse_name,
+      cantidadDescontable: Number(fila.adjustable_quantity),
+    })),
+  }
 }
 
 export async function registrarMovimientoInventario(organizationId: string, datos: DatosMovimientoInventario) {

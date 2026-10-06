@@ -92,6 +92,16 @@ describe('listados paginados de almacén', () => {
     expect(query.range).toHaveBeenCalledWith(50, 99)
   })
 
+  it('permite buscar referencias registradas en el Kardex', async () => {
+    const query = crearQuery()
+    await listarKardex('org-1', {
+      ...base, busqueda: 'AJ-2026-001', fechaDesde: '', fechaHasta: '', orden: 'fecha-desc',
+    })
+    expect(query.or).toHaveBeenCalledWith(
+      'product_code.ilike.%AJ-2026-001%,product_description.ilike.%AJ-2026-001%,lot.ilike.%AJ-2026-001%,document_reference.ilike.%AJ-2026-001%',
+    )
+  })
+
   it('pagina y filtra transferencias por cualquiera de sus almacenes', async () => {
     const query = crearQuery()
     await listarTransferencias('org-1', {

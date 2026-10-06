@@ -1,7 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
@@ -26,6 +27,7 @@ import {
 } from '@/modulos/inventario/modelo/inventario'
 import type { ContextoAccionInventario } from '@/modulos/inventario/modelo/contextoAccionInventario'
 import type { ProductoInventarioOpcion } from '@/modulos/inventario/modelo/productoInventarioRead'
+import { listarAlmacenesAjusteStock } from '@/modulos/inventario/servicios/inventarioService'
 
 const hoy = fechaActualPeru
 const formatoCantidad = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 3 })
@@ -121,9 +123,10 @@ export function DialogoAjusteStock({
   alGuardar,
   alRestaurarFoco,
 }: DialogoAjusteStockProps) {
+  const queryClient = useQueryClient()
   const productoInicialId = contexto?.producto.id ?? ''
   const posicionInicial = contexto?.posicion
-  const almacenInicialId = posicionInicial?.almacenId ?? (contexto ? '' : almacenes[0]?.id ?? '')
+  const almacenInicialId = posicionInicial?.almacenId ?? ''
   const bucketInicial = posicionInicial
     ? claveBucketAjusteStock({
         almacenId: posicionInicial.almacenId,
@@ -165,6 +168,29 @@ export function DialogoAjusteStock({
     almacenId,
     organizationId,
   )
+  const almacenSeleccionado = useMemo(
+    () => almacenes.find((almacen) => almacen.id === almacenId && almacen.activo),
+    [almacenId, almacenes],
+  )
+  const opcionesAlmacenSeleccionado = useMemo<ComboboxOption[]>(
+    () => almacenSeleccionado
+      ? [{ value: almacenSeleccionado.id, label: `${almacenSeleccionado.codigo} · ${almacenSeleccionado.nombre}` }]
+      : [],
+    [almacenSeleccionado],
+  )
+  const cargarAlmacenesAjuste = useCallback(async (busqueda: string): Promise<ComboboxOption[]> => {
+    const respuesta = await queryClient.fetchQuery({
+      queryKey: ['inventory-adjustment-warehouses', organizationId, productoId, busqueda],
+      queryFn: () => listarAlmacenesAjusteStock(organizationId, productoId, busqueda),
+      staleTime: 5_000,
+    })
+    return respuesta.items.map((almacen) => ({
+      value: almacen.id,
+      label: `${almacen.codigo} · ${almacen.nombre}`,
+      secondaryText: `Stock no reservado: ${formatoCantidad.format(almacen.cantidadDescontable)} ${producto?.unidadMedida || 'unidades'}`,
+      keywords: [almacen.codigo, almacen.nombre],
+    }))
+  }, [organizationId, producto?.unidadMedida, productoId, queryClient])
   const ubicacionesActivas = useMemo(
     () => new Set(
       ubicaciones
@@ -173,9 +199,13 @@ export function DialogoAjusteStock({
     ),
     [almacenId, ubicaciones],
   )
-  const bucketsVisibles = useMemo(
+  const bucketsActivos = useMemo(
     () => buckets.filter((bucket) => ubicacionesActivas.has(bucket.ubicacionId)),
     [buckets, ubicacionesActivas],
+  )
+  const bucketsVisibles = useMemo(
+    () => bucketsActivos.filter((bucket) => cantidadDisponibleAjusteStock(bucket) > 0),
+    [bucketsActivos],
   )
   const opcionesBuckets = useMemo<ComboboxOption[]>(
     () => bucketsVisibles.map((bucket) => {
@@ -226,6 +256,7 @@ export function DialogoAjusteStock({
 
   const seleccionarProducto = (nextValue: string, opcion?: ProductoInventarioOpcion) => {
     setValue('productoId', nextValue, { shouldValidate: true })
+    setValue('almacenId', '', { shouldDirty: true })
     setProducto(opcion ?? null)
     setValue('bucketKey', '')
     setValue('cantidad', '')
@@ -362,22 +393,31 @@ export function DialogoAjusteStock({
                 />
               </div>
 
-              <div>
-                <label htmlFor="almacen-ajuste-stock" className="field-label">Almacén *</label>
-                <select
-                  id="almacen-ajuste-stock"
-                  className="field-control"
-                  {...register('almacenId')}
-                >
-                  {almacenes.length === 0
-                    ? <option value="">No hay almacenes activos</option>
-                    : <option value="">Selecciona un almacén</option>}
-                  {almacenes.map((almacen) => (
-                    <option key={almacen.id} value={almacen.id}>{almacen.codigo} · {almacen.nombre}</option>
-                  ))}
-                </select>
-                {errors.almacenId ? <p className="field-error">{errors.almacenId.message}</p> : null}
-              </div>
+              <input type="hidden" {...register('almacenId')} />
+              <Combobox
+                key={`${organizationId}:${productoId}`}
+                id="almacen-ajuste-stock"
+                label="Almacén"
+                value={almacenId}
+                options={opcionesAlmacenSeleccionado}
+                onChange={(valor) => {
+                  setValue('almacenId', valor, { shouldValidate: true, shouldDirty: true })
+                  setValue('bucketKey', '', { shouldDirty: true })
+                  setValue('cantidad', '', { shouldDirty: true })
+                  setConfirmacion(null)
+                  setErrorGuardado('')
+                }}
+                loadOptions={cargarAlmacenesAjuste}
+                placeholder={productoId ? 'Buscar por código o nombre' : 'Selecciona primero un producto'}
+                helperText="Solo se muestran almacenes activos con stock no reservado; incluye unidades vencidas, dañadas o en cuarentena. Busca por código o nombre."
+                error={errors.almacenId?.message}
+                required
+                disabled={!productoId}
+                minSearchLength={1}
+                noOptionsMessage="Selecciona primero un producto."
+                noResultsMessage="No hay almacenes con stock no reservado que coincidan."
+                loadingMessage="Buscando almacenes con stock…"
+              />
 
               <div>
                 <input type="hidden" {...register('bucketKey')} />
@@ -396,7 +436,9 @@ export function DialogoAjusteStock({
                         ? 'Consultando existencias…'
                         : bucketsVisibles.length
                           ? 'Busca por ubicación, lote o vencimiento'
-                          : 'No hay stock físico en este almacén'
+                          : bucketsActivos.length
+                            ? 'Todo el stock está reservado'
+                            : 'No hay stock físico en este almacén'
                   }
                   helperText={error || !almacenId || !bucketsVisibles.length
                     ? undefined
@@ -411,13 +453,19 @@ export function DialogoAjusteStock({
                         ? 'Selecciona un almacén para consultar las posiciones de stock.'
                       : cargando
                         ? 'Consultando existencias…'
-                        : 'No hay stock físico en este almacén.'
+                        : bucketsActivos.length
+                          ? 'Todo el stock físico está reservado; no hay unidades para descontar.'
+                          : 'No hay stock físico en ubicaciones activas de este almacén.'
                   }
                   noResultsMessage="No se encontraron ubicaciones o lotes con esos datos."
                   maxVisibleOptions={50}
                 />
                 {!error && productoId && almacenId && !cargando && bucketsVisibles.length === 0 ? (
-                  <p className="field-help">Selecciona otro almacén si el producto tiene stock en otra ubicación.</p>
+                  <p className="field-help">
+                    {bucketsActivos.length
+                      ? 'Todo el stock de este almacén está reservado.'
+                      : 'Busca otro almacén si el producto tiene stock en otra ubicación.'}
+                  </p>
                 ) : null}
               </div>
 
@@ -426,17 +474,17 @@ export function DialogoAjusteStock({
               ) : null}
 
               <div>
-                <label htmlFor="documento-ajuste-stock" className="field-label">Documento de sustento *</label>
+                <label htmlFor="documento-ajuste-stock" className="field-label">Referencia del ajuste *</label>
                 <input
                   id="documento-ajuste-stock"
                   autoComplete="off"
                   maxLength={120}
-                  placeholder="Ej. Acta de ajuste AJ-2026-001"
+                  placeholder="Ej. AJ-2026-001"
                   className="field-control"
                   aria-invalid={Boolean(errors.documentoReferencia)}
                   {...register('documentoReferencia')}
                 />
-                <p className="field-help">Referencia al acta, conteo físico u otra autorización del ajuste.</p>
+                <p className="field-help">Ingresa el número de acta de conteo o autorización relacionada. No se adjunta un archivo.</p>
                 {errors.documentoReferencia ? <p className="field-error">{errors.documentoReferencia.message}</p> : null}
               </div>
 

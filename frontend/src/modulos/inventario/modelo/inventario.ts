@@ -44,6 +44,13 @@ export interface BucketAjusteStock {
   costoPromedio: number
 }
 
+export interface AlmacenAjusteStockOpcion {
+  id: string
+  codigo: string
+  nombre: string
+  cantidadDescontable: number
+}
+
 export const esquemaFormularioAjusteStock = z
   .object({
     productoId: z.string().min(1, 'Selecciona un producto'),
@@ -56,7 +63,7 @@ export const esquemaFormularioAjusteStock = z
         (valor) => /^\d+(\.\d{1,3})?$/.test(valor) && Number(valor) > 0,
         'Ingresa una cantidad mayor a cero con hasta 3 decimales',
       ),
-    documentoReferencia: z.string().trim().min(1, 'Ingresa el documento de sustento').max(120, 'Máximo 120 caracteres'),
+    documentoReferencia: z.string().trim().min(1, 'Ingresa una referencia para el ajuste').max(120, 'Máximo 120 caracteres'),
     motivoAjuste: z.enum(
       motivosAjusteStock.map((motivo) => motivo.valor) as [MotivoAjusteStock, ...MotivoAjusteStock[]],
       { message: 'Selecciona un motivo' },
@@ -130,7 +137,7 @@ export const esquemaDatosMovimientoInventario = z.object({
   costoUnitario: z.string().optional(),
   fechaVencimiento: z.string(),
   fechaOperacion: z.string().min(1, 'Selecciona la fecha de operación'),
-  documentoReferencia: z.string().trim().min(1, 'Ingresa el documento de sustento').max(120, 'Máximo 120 caracteres'),
+  documentoReferencia: z.string().trim().min(1, 'Ingresa una referencia para el movimiento').max(120, 'Máximo 120 caracteres'),
   motivo: z
     .string()
     .trim()

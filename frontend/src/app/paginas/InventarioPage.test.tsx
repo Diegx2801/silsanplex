@@ -153,6 +153,15 @@ describe('InventarioPage paginada', () => {
     expect(screen.getByRole('button', { name: 'Registrar movimiento' })).toBeEnabled()
   })
 
+  it('centra el encabezado de acciones sobre el grupo de botones de cada fila', () => {
+    mocks.hasPermission.mockReturnValue(true)
+    renderPage()
+
+    expect(screen.getByRole('columnheader', { name: 'Acciones' })).toHaveClass('text-center')
+    const botonesAjuste = screen.getAllByRole('button', { name: 'Ajustar stock de Producto uno' })
+    expect(botonesAjuste[1]?.parentElement).toHaveClass('justify-center')
+  })
+
   it('abre un ajuste desde la fila por producto con el producto precargado', async () => {
     mocks.hasPermission.mockReturnValue(true)
     mocks.almacenes = [{ id: 'warehouse-1', codigo: 'CENTRAL', nombre: 'Central', direccion: '', activo: true }]

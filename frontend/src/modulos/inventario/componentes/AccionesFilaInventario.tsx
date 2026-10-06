@@ -8,6 +8,7 @@ interface Props {
   ajusteDeshabilitado?: boolean
   ajusteSinDisponible?: boolean
   movimientoDeshabilitado?: boolean
+  centrado?: boolean
   onAjustar: (evento: MouseEvent<HTMLButtonElement>) => void
   onMovimiento: (evento: MouseEvent<HTMLButtonElement>) => void
 }
@@ -17,11 +18,12 @@ export function AccionesFilaInventario({
   ajusteDeshabilitado = false,
   ajusteSinDisponible = false,
   movimientoDeshabilitado = false,
+  centrado = false,
   onAjustar,
   onMovimiento,
 }: Props) {
   return (
-    <div className="flex min-w-max flex-wrap items-center gap-2">
+    <div className={`flex min-w-max flex-wrap items-center gap-2 ${centrado ? 'justify-center' : ''}`}>
       <Button
         type="button"
         variant="outline"

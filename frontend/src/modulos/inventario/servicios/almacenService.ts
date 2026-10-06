@@ -111,10 +111,16 @@ const columnasVencimiento =
 const columnasKardex =
   'id,product_id,product_code,product_description,warehouse,warehouse_id,stock_status,lot,operation_date,created_at,reason,document_reference,unit_cost,inbound_quantity,outbound_quantity,inbound_value,outbound_value,running_quantity,running_value,ledger_sequence' as const
 
-function aplicarBusqueda<T extends { or: (filtro: string) => T }>(query: T, busqueda: string) {
+function aplicarBusqueda<T extends { or: (filtro: string) => T }>(
+  query: T,
+  busqueda: string,
+  incluirReferencia = false,
+) {
   const termino = normalizarBusquedaInventario(busqueda)
   return termino
-    ? query.or(`product_code.ilike.%${termino}%,product_description.ilike.%${termino}%`)
+    ? query.or(incluirReferencia
+      ? `product_code.ilike.%${termino}%,product_description.ilike.%${termino}%,lot.ilike.%${termino}%,document_reference.ilike.%${termino}%`
+      : `product_code.ilike.%${termino}%,product_description.ilike.%${termino}%`)
     : query
 }
 
@@ -240,6 +246,7 @@ export async function listarKardex(
   let query = aplicarBusqueda(
     supabase.from('inventory_kardex').select(columnasKardex, { count: 'exact' }).eq('organization_id', organizationId),
     consulta.busqueda,
+    true,
   )
   if (consulta.almacenId) query = query.eq('warehouse_id', consulta.almacenId)
   if (consulta.fechaDesde) query = query.gte('operation_date', consulta.fechaDesde)

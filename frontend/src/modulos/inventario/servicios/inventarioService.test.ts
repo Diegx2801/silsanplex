@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ConsultaExistenciasInventario, DatosMovimientoInventario } from '@/modulos/inventario/modelo/inventario'
 import {
+  listarAlmacenesAjusteStock,
   listarBucketsAjusteStock,
   listarExistenciasInventario,
   listarMovimientosInventario,
@@ -219,11 +220,53 @@ describe('listarMovimientosInventario', () => {
     })
     expect(query.eq).toHaveBeenCalledWith('warehouse_id', 'almacen-1')
     expect(query.eq).toHaveBeenCalledWith('movement_type', 'salida')
+    expect(query.or).toHaveBeenCalledWith(
+      'product_code.ilike.%LOTE-1%,product_description.ilike.%LOTE-1%,lot.ilike.%LOTE-1%,document_reference.ilike.%LOTE-1%',
+    )
     expect(query.gte).toHaveBeenCalledWith('operation_date', '2026-01-01')
     expect(query.lte).toHaveBeenCalledWith('operation_date', '2026-12-31')
     expect(query.order).toHaveBeenNthCalledWith(1, 'operation_date', { ascending: false })
     expect(query.range).toHaveBeenCalledWith(300, 399)
     expect(resultado.total).toBe(1_250)
+  })
+})
+
+describe('listarAlmacenesAjusteStock', () => {
+  beforeEach(() => rpc.mockReset())
+
+  it('consulta candidatos autorizados por producto y normaliza su cantidad', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        items: [{
+          warehouse_id: 'almacen-1',
+          warehouse_code: 'CENTRAL',
+          warehouse_name: 'Almacén central',
+          adjustable_quantity: '12.500',
+        }],
+        total_count: 1,
+      },
+      error: null,
+    })
+
+    await expect(listarAlmacenesAjusteStock('org-1', 'producto-1', '  CENTRAL ')).resolves.toEqual({
+      totalCount: 1,
+      items: [{ id: 'almacen-1', codigo: 'CENTRAL', nombre: 'Almacén central', cantidadDescontable: 12.5 }],
+    })
+    expect(rpc).toHaveBeenCalledWith('inventory_adjustment_warehouses_read', {
+      requested_organization_id: 'org-1',
+      requested_product_id: 'producto-1',
+      search_term: 'CENTRAL',
+      requested_limit: 50,
+      requested_offset: 0,
+    })
+  })
+
+  it('falla cerrado si no se pueden consultar los almacenes candidatos', async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: '42501', message: 'forbidden' } })
+
+    await expect(listarAlmacenesAjusteStock('org-1', 'producto-1', '')).rejects.toThrow(
+      'No se pudieron consultar los almacenes con stock para ajustar',
+    )
   })
 })
 
@@ -301,7 +344,7 @@ describe('registrarMovimientoInventario', () => {
 
   it('explica el rechazo del documento desde el servidor', async () => {
     rpc.mockResolvedValue({ error: { message: 'INVENTORY_DOCUMENT_REFERENCE_INVALID' } })
-    await expect(registrarMovimientoInventario('org-1', datos)).rejects.toThrow('documento de sustento')
+    await expect(registrarMovimientoInventario('org-1', datos)).rejects.toThrow('referencia del documento')
   })
 
   it('envía los ajustes negativos a la RPC canónica sin FEFO', async () => {

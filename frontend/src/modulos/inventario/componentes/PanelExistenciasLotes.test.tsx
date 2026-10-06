@@ -56,6 +56,23 @@ describe('PanelExistenciasLotes acciones contextuales', () => {
     expect(onMovimiento).toHaveBeenCalledWith(saldo, expect.anything())
   })
 
+  it('alinea la columna Acciones con los botones de la tabla de lotes', () => {
+    render(
+      <PanelExistenciasLotes
+        almacenes={[almacen]}
+        ubicaciones={[ubicacion]}
+        puedeGestionar
+        accionesDeshabilitadas={false}
+        onAjustar={vi.fn()}
+        onMovimiento={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('columnheader', { name: 'Acciones' })).toHaveClass('text-center')
+    const botonesAjuste = screen.getAllByRole('button', { name: 'Ajustar stock de Producto uno' })
+    expect(botonesAjuste[1]?.parentElement).toHaveClass('justify-center')
+  })
+
   it('permite ajustar stock no asignable si queda cantidad física sin reservar', () => {
     mocks.useListadosAlmacen.mockReturnValue({
       stock: {

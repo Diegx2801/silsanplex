@@ -288,7 +288,7 @@ export function PanelExistenciasLotes({
                     Disponible para asignar
                   </th>
                   <th className="px-5 py-3 text-end">Valor</th>
-                  {puedeGestionar ? <th scope="col" className="px-5 py-3 text-end">Acciones</th> : null}
+                  {puedeGestionar ? <th scope="col" className="px-5 py-3 text-center">Acciones</th> : null}
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -343,6 +343,7 @@ export function PanelExistenciasLotes({
                       <td className="px-5 py-4">
                         <AccionesFilaInventario
                           producto={saldo.productoDescripcion}
+                          centrado
                           ajusteDeshabilitado={accionesDeshabilitadas || !esPosicionActiva || sinDisponibleParaAjuste}
                           ajusteSinDisponible={!accionesDeshabilitadas && esPosicionActiva && sinDisponibleParaAjuste}
                           movimientoDeshabilitado={accionesDeshabilitadas || !esPosicionActiva}

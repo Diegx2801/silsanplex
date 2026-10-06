@@ -372,17 +372,17 @@ export function DialogoMovimientoInventario({
                 ) : null}
               </div>
               <div className="sm:col-span-2">
-                <label htmlFor="documento-movimiento" className="field-label">Documento de sustento *</label>
+                <label htmlFor="documento-movimiento" className="field-label">Referencia del documento *</label>
                 <input
                   id="documento-movimiento"
                   className="field-control"
-                  placeholder="Ej. Acta de ajuste AJ-2026-001"
+                  placeholder="Ej. FACT-2026-001 o GUÍA-2026-001"
                   maxLength={120}
                   aria-invalid={Boolean(errors.documentoReferencia)}
                   aria-describedby="documento-movimiento-ayuda"
                   {...register('documentoReferencia')}
                 />
-                <p id="documento-movimiento-ayuda" className="field-help">Indica el número o referencia del documento que autoriza este movimiento.</p>
+                <p id="documento-movimiento-ayuda" className="field-help">Registra el número de factura, guía, acta u otro respaldo. Solo se guarda la referencia; no se adjunta un archivo.</p>
                 {errors.documentoReferencia ? <p className="field-error">{errors.documentoReferencia.message}</p> : null}
               </div>
             </div>
