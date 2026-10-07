@@ -17,7 +17,9 @@ import {
   esquemaDatosMovimientoInventario,
   cantidadDisponibleAjusteStock,
   claveBucketAjusteStock,
+  crearDescripcionMotivoMovimiento,
   movimientoEsSalida,
+  motivosMovimientoManual,
   tiposMovimientoEnExistencias,
   tiposMovimientoInventario,
   type DatosMovimientoInventario,
@@ -81,6 +83,7 @@ export function DialogoMovimientoInventario({
       fechaVencimiento: contexto?.posicion?.fechaVencimiento ?? '',
       fechaOperacion: hoy(),
       motivo: '',
+      detalleMotivo: '',
       documentoReferencia: '',
       costoUnitario: '',
       unidadEntradaId: contexto?.producto.unidadBaseId,
@@ -89,6 +92,7 @@ export function DialogoMovimientoInventario({
   })
   const productoId = watch('productoId')
   const tipo = watch('tipo')
+  const motivo = watch('motivo')
   const tiposPermitidos = opcionesTipoMovimiento.map((opcion) => opcion.valor)
   const almacenId = watch('almacenId')
   const estadoStock = watch('estadoStock')
@@ -264,7 +268,9 @@ export function DialogoMovimientoInventario({
       return
     }
 
-    const error = await alGuardar(datos)
+    const { detalleMotivo, ...datosMovimiento } = datos
+    const motivoRegistrado = crearDescripcionMotivoMovimiento(datos.motivo, detalleMotivo)
+    const error = await alGuardar({ ...datosMovimiento, motivo: motivoRegistrado })
     if (error) {
       setError(
         error.includes('unidad seleccionada') || error.includes('equivalencia')
@@ -345,7 +351,10 @@ export function DialogoMovimientoInventario({
                       setValue('fechaVencimiento', '')
                       setValue('costoUnitario', '')
                       setValue('cantidad', '')
+                      setValue('motivo', '')
+                      setValue('detalleMotivo', '')
                       setValue('documentoReferencia', '')
+                      clearErrors(['motivo', 'detalleMotivo'])
                     },
                   })}
                 >
@@ -629,18 +638,49 @@ export function DialogoMovimientoInventario({
                 <label htmlFor="motivo-movimiento" className="field-label">
                   Motivo del movimiento *
                 </label>
-                <textarea
+                <select
                   id="motivo-movimiento"
-                  rows={3}
-                  placeholder={esSalida
-                    ? 'Ej. Uso interno, entrega de muestra o baja autorizada'
-                    : 'Ej. Saldo inicial autorizado, donación o recepción de muestras'}
-                  className="field-control py-2"
+                  className="field-control"
                   aria-invalid={Boolean(errors.motivo)}
-                  {...register('motivo')}
-                />
+                  {...register('motivo', {
+                    onChange: (evento) => {
+                      if (evento.target.value !== 'Otro') {
+                        setValue('detalleMotivo', '', { shouldDirty: true })
+                      }
+                      clearErrors(['motivo', 'detalleMotivo'])
+                    },
+                  })}
+                >
+                  <option value="">Selecciona un motivo</option>
+                  {(tipo === 'entrada' || tipo === 'salida' ? motivosMovimientoManual[tipo] : []).map((opcion) => (
+                    <option key={opcion} value={opcion}>{opcion}</option>
+                  ))}
+                </select>
                 {errors.motivo ? (
                   <p className="field-error">{errors.motivo.message}</p>
+                ) : (
+                  <p className="field-help">Selecciona la causa principal de esta entrada o salida.</p>
+                )}
+                {motivo === 'Otro' ? (
+                  <div className="mt-3">
+                    <label htmlFor="detalle-motivo-movimiento" className="field-label">
+                      Detalle del motivo *
+                    </label>
+                    <textarea
+                      id="detalle-motivo-movimiento"
+                      rows={2}
+                      maxLength={120}
+                      placeholder="Describe brevemente la operación"
+                      className="field-control py-2"
+                      aria-invalid={Boolean(errors.detalleMotivo)}
+                      {...register('detalleMotivo')}
+                    />
+                    {errors.detalleMotivo ? (
+                      <p className="field-error">{errors.detalleMotivo.message}</p>
+                    ) : (
+                      <p className="field-help">Máximo 120 caracteres. Este detalle también quedará en el Kardex.</p>
+                    )}
+                  </div>
                 ) : null}
               </div>
               <div className="sm:col-span-2">

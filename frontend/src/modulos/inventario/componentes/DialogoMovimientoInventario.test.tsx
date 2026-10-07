@@ -216,7 +216,7 @@ describe('DialogoMovimientoInventario contextual', () => {
     expect(screen.getByLabelText('Cantidad *')).toHaveAttribute('type', 'number')
     expect(screen.getByLabelText('Cantidad *')).toHaveAttribute('max', '5')
     fireEvent.change(screen.getByLabelText('Cantidad *'), { target: { value: '6' } })
-    fireEvent.change(screen.getByLabelText('Motivo del movimiento *'), { target: { value: 'Venta' } })
+    fireEvent.change(screen.getByLabelText('Motivo del movimiento *'), { target: { value: 'Consumo interno' } })
     fireEvent.click(screen.getByRole('button', { name: 'Registrar movimiento' }))
 
     expect(await screen.findByText(/La cantidad supera el disponible según FEFO \(5 Caja\)/)).toBeVisible()
@@ -257,7 +257,7 @@ describe('DialogoMovimientoInventario contextual', () => {
     })
     expect(screen.getByLabelText('Cantidad *')).toHaveAttribute('max', '0.416')
     fireEvent.change(screen.getByLabelText('Cantidad *'), { target: { value: '0.5' } })
-    fireEvent.change(screen.getByLabelText('Motivo del movimiento *'), { target: { value: 'Uso interno' } })
+    fireEvent.change(screen.getByLabelText('Motivo del movimiento *'), { target: { value: 'Consumo interno' } })
     fireEvent.click(screen.getByRole('button', { name: 'Registrar movimiento' }))
 
     expect(await screen.findByText(/La cantidad supera el disponible según FEFO \(5 Caja\)/)).toBeVisible()
@@ -281,6 +281,33 @@ describe('DialogoMovimientoInventario contextual', () => {
     expect(within(selectorTipo).getAllByRole('option').map((opcion) => opcion.textContent)).toEqual([
       'Entrada',
       'Salida',
+    ])
+  })
+
+  it('ofrece motivos según la dirección y pide detalle para Otro', () => {
+    renderDialog({ producto: mocks.producto })
+
+    const motivo = screen.getByLabelText('Motivo del movimiento *')
+    expect(within(motivo).getAllByRole('option').map((opcion) => opcion.textContent)).toEqual([
+      'Selecciona un motivo',
+      'Saldo inicial autorizado',
+      'Donación',
+      'Recepción de muestras',
+      'Otro',
+    ])
+
+    fireEvent.change(motivo, { target: { value: 'Otro' } })
+    expect(screen.getByLabelText('Detalle del motivo *')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText('Tipo de movimiento *'), { target: { value: 'salida' } })
+    expect(screen.getByLabelText('Motivo del movimiento *')).toHaveValue('')
+    expect(screen.queryByLabelText('Detalle del motivo *')).not.toBeInTheDocument()
+    expect(within(screen.getByLabelText('Motivo del movimiento *')).getAllByRole('option').map((opcion) => opcion.textContent)).toEqual([
+      'Selecciona un motivo',
+      'Consumo interno',
+      'Entrega de muestras',
+      'Uso en control de calidad',
+      'Otro',
     ])
   })
 

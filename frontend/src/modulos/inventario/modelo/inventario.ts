@@ -16,6 +16,11 @@ export const tiposMovimientoInventario = [
   { valor: 'ajuste-negativo', etiqueta: 'Ajuste negativo' },
 ] as const
 
+export const motivosMovimientoManual = {
+  entrada: ['Saldo inicial autorizado', 'Donación', 'Recepción de muestras', 'Otro'],
+  salida: ['Consumo interno', 'Entrega de muestras', 'Uso en control de calidad', 'Otro'],
+} as const
+
 export const motivosAjusteStock = [
   { valor: 'expired', etiqueta: 'Producto vencido' },
   { valor: 'damaged', etiqueta: 'Producto deteriorado' },
@@ -159,6 +164,11 @@ export function crearMotivoAjusteStock(
   return `Ajuste de stock: ${etiqueta}${detalle ? ` — ${detalle}` : ''}`
 }
 
+export function crearDescripcionMotivoMovimiento(motivo: string, detalle?: string) {
+  const detalleLimpio = detalle?.trim() ?? ''
+  return motivo === 'Otro' && detalleLimpio ? `Otro: ${detalleLimpio}` : motivo
+}
+
 export const esquemaDatosMovimientoInventario = z.object({
   productoId: z.string().min(1, 'Selecciona un producto'),
   tipo: z.enum(['entrada', 'salida', 'ajuste-positivo', 'ajuste-negativo']),
@@ -184,12 +194,30 @@ export const esquemaDatosMovimientoInventario = z.object({
   fechaVencimiento: z.string(),
   fechaOperacion: z.string().min(1, 'Selecciona la fecha de operación'),
   documentoReferencia: z.string().trim().max(120, 'Máximo 120 caracteres').optional(),
+  detalleMotivo: z.string().trim().max(120, 'Máximo 120 caracteres').optional(),
   motivo: z
     .string()
     .trim()
-    .min(3, 'Describe el motivo del movimiento')
+    .min(1, 'Selecciona un motivo')
     .max(180, 'Máximo 180 caracteres'),
 }).superRefine((datos, contexto) => {
+  if (datos.tipo === 'entrada' || datos.tipo === 'salida') {
+    const motivosDisponibles = motivosMovimientoManual[datos.tipo]
+    if (datos.motivo && !motivosDisponibles.some((motivo) => motivo === datos.motivo)) {
+      contexto.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['motivo'],
+        message: `Selecciona un motivo válido para la ${datos.tipo}`,
+      })
+    }
+    if (datos.motivo === 'Otro' && !datos.detalleMotivo?.trim()) {
+      contexto.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['detalleMotivo'],
+        message: 'Describe brevemente el motivo del movimiento',
+      })
+    }
+  }
   if (datos.tipo !== 'entrada') return
   const costo = datos.costoUnitario?.trim() ?? ''
   if (!/^\d+(\.\d{1,4})?$/.test(costo) || !Number.isFinite(Number(costo)) || Number(costo) < 0) {

@@ -6,6 +6,7 @@ import {
   calcularExistenciasDesdeResumen,
   calcularSaldoDisponible,
   cantidadFisicaNoReservada,
+  crearDescripcionMotivoMovimiento,
   crearMotivoAjusteStock,
   esquemaDatosMovimientoInventario,
   esquemaFormularioAjusteStock,
@@ -36,7 +37,7 @@ const datosBase = {
   lote: 'L-001',
   fechaVencimiento: '2027-12-31',
   fechaOperacion: '2026-08-19',
-  motivo: 'Recepción de mercadería',
+  motivo: 'Donación',
   documentoReferencia: 'ACTA-001',
 } satisfies DatosMovimientoInventario
 
@@ -78,6 +79,18 @@ describe('inventario', () => {
   it('exige costo para valorar las entradas manuales', () => {
     expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, costoUnitario: '' }).success).toBe(false)
     expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, costoUnitario: '12.5000' }).success).toBe(true)
+  })
+
+  it('valida motivos por dirección y exige detalle cuando se selecciona otro', () => {
+    expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, motivo: 'Consumo interno' }).success).toBe(false)
+    expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, tipo: 'salida', motivo: 'Consumo interno' }).success).toBe(true)
+    expect(esquemaDatosMovimientoInventario.safeParse({ ...datosBase, motivo: 'Otro' }).success).toBe(false)
+    expect(esquemaDatosMovimientoInventario.safeParse({
+      ...datosBase,
+      motivo: 'Otro',
+      detalleMotivo: 'Ajuste autorizado por gerencia',
+    }).success).toBe(true)
+    expect(crearDescripcionMotivoMovimiento('Otro', '  Entrega extraordinaria  ')).toBe('Otro: Entrega extraordinaria')
   })
 
   it('limita los motivos del aumento de stock a diferencias positivas u otro', () => {

@@ -366,7 +366,7 @@ describe('registrarMovimientoInventario', () => {
     lote: '', fechaVencimiento: '', fechaOperacion: '2026-09-26',
     unidadEntradaId: 'a6000000-0000-4000-8000-000000000001',
     factorConversionEsperado: 1,
-    motivo: 'Diferencia de conteo', documentoReferencia: 'ACTA-001',
+    motivo: 'Donación', documentoReferencia: 'ACTA-001',
   }
 
   beforeEach(() => rpc.mockReset())
@@ -379,7 +379,7 @@ describe('registrarMovimientoInventario', () => {
     await registrarMovimientoInventario('org-1', { ...datos, tipo })
     expect(rpc).toHaveBeenCalledWith(nombreRpc, {
       payload: expect.objectContaining({
-        reason: 'Diferencia de conteo',
+        reason: 'Donación',
         document_reference: 'ACTA-001',
         input_unit_id: datos.unidadEntradaId,
         expected_conversion_factor: 1,
