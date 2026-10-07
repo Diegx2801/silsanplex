@@ -117,6 +117,7 @@ function mapearCompra(fila: CompraFila): Compra {
 }
 
 function mensajeError(error: { code?: string; message?: string }) {
+  if (error.message?.includes('INVENTORY_BASE_UNIT_MISMATCH')) return 'La unidad del pedido ya no coincide con la unidad base del producto. Revisa las unidades y cantidades del pedido antes de recibirlo.'
   const mensaje = error.message ?? ''
   if (mensaje.includes('PURCHASE_RECEIPT_INSPECTION_QUANTITY_INVALID')) return 'La cantidad inspeccionada debe coincidir con la recibida y conservar aceptación más rechazo'
   if (mensaje.includes('PURCHASE_RECEIPT_INSPECTION_REASONS_TOTAL_MISMATCH')) return 'La suma de los motivos debe coincidir con la cantidad rechazada'

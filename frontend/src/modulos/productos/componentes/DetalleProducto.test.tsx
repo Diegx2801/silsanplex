@@ -2,11 +2,18 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const detalleMock = vi.hoisted(() => ({
+  baseEditable: true,
+  baseComprobando: false,
+  baseError: false,
   archivos: [] as Array<Record<string, unknown>>,
   versiones: [] as Array<Record<string, unknown>>,
   organizarImagenes: vi.fn(),
   retirarArchivo: vi.fn(),
   subirArchivo: vi.fn(),
+}))
+
+vi.mock('@/modulos/productos/estado/useUnidadBaseProducto', () => ({
+  useUnidadBaseProducto: () => ({ editable: detalleMock.baseEditable, comprobando: detalleMock.baseComprobando, error: detalleMock.baseError, actualizar: vi.fn() }),
 }))
 
 vi.mock('@/modulos/productos/estado/useProductoDetalle', () => ({
@@ -67,6 +74,9 @@ const producto = {
 } satisfies Producto
 
 beforeEach(() => {
+  detalleMock.baseEditable = true
+  detalleMock.baseComprobando = false
+  detalleMock.baseError = false
   detalleMock.archivos = []
   detalleMock.versiones = []
   detalleMock.organizarImagenes.mockReset()
@@ -191,7 +201,7 @@ describe('DialogoProducto', () => {
       />,
     )
 
-    const campo = screen.getByRole('textbox', { name: 'Precio mínimo final (S/)' })
+    const campo = screen.getByRole('textbox', { name: /Precio mínimo final por .+ \(S\/\)/ })
     expect(campo).toHaveValue(productoEditado?.precioMinimo ?? '')
     expect(screen.getByText('Incluye IGV cuando corresponda. Déjalo vacío para no establecer mínimo.')).toBeInTheDocument()
   })
@@ -221,6 +231,36 @@ describe('DialogoProducto', () => {
       controlVencimiento: false,
       serialControl: false,
     })
+  })
+
+  it('agrupa la base y sus alternativas y muestra la conversión sin interpretar la presentación', async () => {
+    const caja = { id: '22222222-2222-4222-8222-222222222222', codigo: 'CJA', nombre: 'Caja' }
+    const alGuardar = vi.fn().mockResolvedValue({})
+    render(<DialogoProducto abierto producto={{ ...producto, unidadMedida: 'Unidad' }} unidadesMedida={[...unidades, caja]} alCambiarApertura={vi.fn()} alGuardar={alGuardar} alRestaurarFoco={vi.fn()} />)
+    expect(screen.queryByText('1 Caja = 20 × Unidad')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar unidad alternativa' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Unidad alternativa *' }), { target: { value: caja.id } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Cantidad de Unidad *' }), { target: { value: '20' } })
+    expect(screen.getByText('1 Caja = 20 × Unidad')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Precio de venta final por Unidad (S/)' })).toHaveValue('12.50')
+    expect(screen.getByRole('combobox', { name: 'Unidad base *' }).closest('section')).toBe(screen.getByRole('combobox', { name: 'Unidad alternativa *' }).closest('section'))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledOnce())
+    expect(alGuardar.mock.calls[0]?.[0]).toMatchObject({ unidadBaseId: unidades[0].id, unidadMedida: 'Unidad', unidadesAlternativas: [{ unidadId: caja.id, equivalencia: '20' }] })
+  })
+
+  it.each(['historial', 'comprobando', 'error'] as const)('conserva la unidad base al guardar otros campos con estado %s', async (estado) => {
+    detalleMock.baseEditable = false
+    detalleMock.baseComprobando = estado === 'comprobando'
+    detalleMock.baseError = estado === 'error'
+    const alGuardar = vi.fn().mockResolvedValue({})
+    render(<DialogoProducto abierto producto={producto} unidadesMedida={unidades} alCambiarApertura={vi.fn()} alGuardar={alGuardar} alRestaurarFoco={vi.fn()} />)
+    expect(screen.queryByRole('combobox', { name: 'Unidad base *' })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Unidad base *' })).toHaveAttribute('readonly')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nombre o descripción *' }), { target: { value: 'Paracetamol actualizado' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledOnce())
+    expect(alGuardar.mock.calls[0]?.[0]).toMatchObject({ unidadBaseId: producto.unidadBaseId, descripcion: 'Paracetamol actualizado' })
   })
 })
 

@@ -103,6 +103,15 @@ const comparadorOpciones = new Intl.Collator('es-PE', {
 const textoONulo = (valor: string) => valor.trim() || null
 const numeroONulo = (valor: string) => (valor ? Number(valor) : null)
 
+export async function consultarUnidadBaseEditable(organizationId: string, productoId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('product_base_unit_editable', {
+    requested_organization_id: organizationId,
+    requested_product_id: productoId,
+  })
+  if (error || typeof data !== 'boolean') throw new Error('No se pudo comprobar si la unidad base puede cambiarse')
+  return data
+}
+
 type ContextoError =
   | 'consultar'
   | 'crear'
@@ -158,6 +167,9 @@ function mapearProducto(fila: ProductoFila): Producto {
 }
 
 function mensajeError(error: PostgrestError, contexto: ContextoError) {
+  if (error.message === 'PRODUCT_BASE_UNIT_CHANGE_INVENTORY_CONFLICT') {
+    return 'La unidad base no puede cambiarse porque el producto ya tiene historial de inventario o reservas activas. Conserva la unidad original.'
+  }
   if (error.code === '23505') return 'Ya existe un producto con este código o código de barras'
   if (
     error.code === 'P0001' &&

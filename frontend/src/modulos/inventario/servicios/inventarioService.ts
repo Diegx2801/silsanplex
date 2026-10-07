@@ -95,6 +95,7 @@ function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
 }
 
 function mensajeError(error: { code?: string; message?: string }) {
+  if (error.message?.includes('INVENTORY_BASE_UNIT_MISMATCH')) return 'La unidad base del producto cambió. Actualiza el producto y vuelve a revisar la cantidad antes de registrar el movimiento.'
   if (error.message?.includes('INVENTORY_INPUT_UNIT_INVALID')) return 'La unidad seleccionada ya no está disponible para este producto. Vuelve a elegirla.'
   if (error.message?.includes('INVENTORY_INPUT_UNIT_STALE')) return 'La equivalencia de esta unidad cambió. Actualiza la selección del producto e inténtalo nuevamente.'
   if (error.message?.includes('INVENTORY_QUANTITY_CONVERSION_INVALID')) return 'La cantidad no puede convertirse exactamente a la unidad base. Ajusta la cantidad o usa otra unidad.'
