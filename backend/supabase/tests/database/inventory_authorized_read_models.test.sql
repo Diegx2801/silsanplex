@@ -276,8 +276,8 @@ select ok(
 select is(
   (select array_agg(key order by key)
    from jsonb_object_keys((public.inventory_product_options('d1a00000-0000-4000-8000-000000000001', 'P-A-STOCK', 50, 0) -> 'items' -> 0)) key),
-  array['barcode','batch_control','expiration_control','product_code','product_description','product_id','unit_of_measure']::text[],
-  'las opciones exponen solo el DTO minimo'
+  array['alternative_units','barcode','base_unit_id','batch_control','expiration_control','product_code','product_description','product_id','unit_of_measure']::text[],
+  'las opciones exponen el DTO de producto y sus unidades de captura activas'
 );
 select is(
   public.inventory_product_option_read_by_id(

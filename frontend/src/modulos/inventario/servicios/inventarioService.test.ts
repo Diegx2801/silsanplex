@@ -364,6 +364,8 @@ describe('registrarMovimientoInventario', () => {
     productoId: 'product-1', tipo: 'entrada', cantidad: '2', almacen: 'Principal',
     costoUnitario: '12.5',
     lote: '', fechaVencimiento: '', fechaOperacion: '2026-09-26',
+    unidadEntradaId: 'a6000000-0000-4000-8000-000000000001',
+    factorConversionEsperado: 1,
     motivo: 'Diferencia de conteo', documentoReferencia: 'ACTA-001',
   }
 
@@ -376,7 +378,12 @@ describe('registrarMovimientoInventario', () => {
     rpc.mockResolvedValue({ error: null })
     await registrarMovimientoInventario('org-1', { ...datos, tipo })
     expect(rpc).toHaveBeenCalledWith(nombreRpc, {
-      payload: expect.objectContaining({ reason: 'Diferencia de conteo', document_reference: 'ACTA-001' }),
+      payload: expect.objectContaining({
+        reason: 'Diferencia de conteo',
+        document_reference: 'ACTA-001',
+        input_unit_id: datos.unidadEntradaId,
+        expected_conversion_factor: 1,
+      }),
     })
   })
 
@@ -392,6 +399,20 @@ describe('registrarMovimientoInventario', () => {
     rpc.mockResolvedValueOnce({ error: { message: 'INVENTORY_FEFO_INSUFFICIENT_STOCK' } })
     await expect(registrarMovimientoInventario('org-1', { ...datos, tipo: 'salida' }))
       .rejects.toThrow('stock asignable disponible según FEFO')
+  })
+
+  it('explica errores de unidad y conversión con instrucciones recuperables', async () => {
+    rpc.mockResolvedValueOnce({ error: { message: 'INVENTORY_INPUT_UNIT_INVALID' } })
+    await expect(registrarMovimientoInventario('org-1', datos))
+      .rejects.toThrow('La unidad seleccionada ya no está disponible para este producto')
+
+    rpc.mockResolvedValueOnce({ error: { message: 'INVENTORY_QUANTITY_CONVERSION_INVALID' } })
+    await expect(registrarMovimientoInventario('org-1', datos))
+      .rejects.toThrow('La cantidad no puede convertirse exactamente a la unidad base')
+
+    rpc.mockResolvedValueOnce({ error: { message: 'INVENTORY_INPUT_UNIT_STALE' } })
+    await expect(registrarMovimientoInventario('org-1', datos))
+      .rejects.toThrow('La equivalencia de esta unidad cambió')
   })
 
   it('envía null cuando no hay documento externo', async () => {
@@ -416,8 +437,7 @@ describe('registrarMovimientoInventario', () => {
       lote: 'LOTE-1',
       fechaVencimiento: '2027-12-31',
       fechaOperacion: '2026-09-27',
-      motivo: 'Ajuste manual [damaged] Producto deteriorado — Envase roto',
-      documentoReferencia: 'ACTA-001',
+      motivo: 'Ajuste de stock: Producto deteriorado — Envase roto',
     })
 
     expect(rpc).toHaveBeenCalledWith('record_inventory_movement', {
@@ -466,7 +486,7 @@ describe('registrarMovimientoInventario', () => {
       lote: '',
       fechaVencimiento: '',
       fechaOperacion: '2026-09-27',
-      motivo: 'Ajuste manual [lost] Pérdida',
+      motivo: 'Ajuste de stock: Pérdida',
       documentoReferencia: 'ACTA-002',
     })).rejects.toThrow('La ubicación seleccionada ya no está activa')
   })

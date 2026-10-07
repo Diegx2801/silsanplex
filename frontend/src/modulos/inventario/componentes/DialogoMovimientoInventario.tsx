@@ -65,6 +65,7 @@ export function DialogoMovimientoInventario({
     watch,
     setValue,
     setError,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<DatosMovimientoInventario>({
     resolver: zodResolver(esquemaDatosMovimientoInventario),
@@ -82,6 +83,8 @@ export function DialogoMovimientoInventario({
       motivo: '',
       documentoReferencia: '',
       costoUnitario: '',
+      unidadEntradaId: contexto?.producto.unidadBaseId,
+      factorConversionEsperado: 1,
     },
   })
   const productoId = watch('productoId')
@@ -92,6 +95,11 @@ export function DialogoMovimientoInventario({
   const lote = watch('lote')
   const ubicacionId = watch('ubicacionId')
   const fechaVencimiento = watch('fechaVencimiento')
+  const unidadEntradaId = watch('unidadEntradaId')
+  const unidadEntrada = producto?.unidadesEntrada?.find((unidad) => unidad.id === unidadEntradaId)
+    ?? producto?.unidadesEntrada?.[0]
+  const factorConversion = unidadEntrada?.factorConversion ?? 1
+  const unidadCaptura = unidadEntrada?.nombre || producto?.unidadMedida || 'unidades'
   const esSalida = movimientoEsSalida(tipo)
   const usarFefo = tipo === 'salida' && estadoStock === 'available'
   const requiereBucketExacto = tipo === 'salida' && estadoStock !== 'available'
@@ -225,9 +233,17 @@ export function DialogoMovimientoInventario({
       setError('almacenId', { message: 'No hay stock disponible de este producto en el almacén seleccionado' })
       return
     }
-    if (usarFefo && Number(datos.cantidad) > cantidadAsignableFefo) {
+    const cantidadEnUnidadBase = Number(datos.cantidad) * factorConversion
+    if (usarFefo && cantidadEnUnidadBase > cantidadAsignableFefo) {
       setError('cantidad', {
         message: `La cantidad supera el disponible según FEFO (${cantidadAsignableFefo} ${producto?.unidadMedida || 'unidades'})`,
+      })
+      return
+    }
+    if (requiereBucketExacto && bucketSalidaSeleccionado
+      && cantidadEnUnidadBase > cantidadDisponibleAjusteStock(bucketSalidaSeleccionado)) {
+      setError('cantidad', {
+        message: `La cantidad supera el disponible en esta posición (${cantidadDisponibleAjusteStock(bucketSalidaSeleccionado)} ${producto?.unidadMedida || 'unidades'})`,
       })
       return
     }
@@ -251,7 +267,9 @@ export function DialogoMovimientoInventario({
     const error = await alGuardar(datos)
     if (error) {
       setError(
-        error.includes('documento')
+        error.includes('unidad seleccionada') || error.includes('equivalencia')
+          ? 'unidadEntradaId'
+          : error.includes('documento')
           ? 'documentoReferencia'
           : error.includes('costo')
             ? 'costoUnitario'
@@ -378,6 +396,9 @@ export function DialogoMovimientoInventario({
                       setValue('fechaVencimiento', '')
                       setValue('costoUnitario', '')
                       setValue('cantidad', '')
+                      setValue('unidadEntradaId', opcion?.unidadBaseId)
+                      setValue('factorConversionEsperado', opcion?.unidadesEntrada?.find((unidad) => unidad.id === opcion.unidadBaseId)?.factorConversion ?? 1)
+                      clearErrors('unidadEntradaId')
                     }
                   }}
                 />
@@ -417,7 +438,11 @@ export function DialogoMovimientoInventario({
                   inputMode="decimal"
                   min="0.001"
                   step="0.001"
-                  max={usarFefo && candidatoFefo ? cantidadAsignableFefo : undefined}
+                  max={usarFefo && candidatoFefo
+                    ? Math.floor((cantidadAsignableFefo / factorConversion) * 1000) / 1000
+                    : requiereBucketExacto && bucketSalidaSeleccionado
+                      ? Math.floor((cantidadDisponibleAjusteStock(bucketSalidaSeleccionado) / factorConversion) * 1000) / 1000
+                      : undefined}
                   autoComplete="off"
                   placeholder="0"
                   className="field-control"
@@ -428,10 +453,35 @@ export function DialogoMovimientoInventario({
                   <p className="field-error">{errors.cantidad.message}</p>
                 ) : (
                   <p className="field-help">
-                    {producto?.unidadMedida || 'Unidades'} · máximo 3 decimales
+                    {unidadCaptura} · máximo 3 decimales
                   </p>
                 )}
               </div>
+              {(producto?.unidadesEntrada?.length ?? 0) > 1 ? (
+                <div>
+                  <label htmlFor="unidad-movimiento" className="field-label">Unidad de medida *</label>
+                  <select
+                    id="unidad-movimiento"
+                    className="field-control"
+                    value={unidadEntradaId ?? producto?.unidadBaseId ?? ''}
+                    aria-invalid={Boolean(errors.unidadEntradaId)}
+                    onChange={(evento) => {
+                      const unidad = producto?.unidadesEntrada?.find((opcion) => opcion.id === evento.target.value)
+                      setValue('unidadEntradaId', evento.target.value || undefined, { shouldDirty: true })
+                      setValue('factorConversionEsperado', unidad?.factorConversion ?? 1, { shouldDirty: true })
+                      clearErrors('unidadEntradaId')
+                    }}
+                  >
+                    {producto?.unidadesEntrada?.map((unidad) => (
+                      <option key={unidad.id} value={unidad.id}>{unidad.nombre}</option>
+                    ))}
+                  </select>
+                  {unidadEntrada && unidadEntrada.factorConversion !== 1 ? (
+                    <p className="field-help">1 {unidadEntrada.nombre} equivale a {unidadEntrada.factorConversion} {producto?.unidadMedida}.</p>
+                  ) : null}
+                  {errors.unidadEntradaId ? <p className="field-error">{errors.unidadEntradaId.message}</p> : null}
+                </div>
+              ) : null}
               <div>
                 <input type="hidden" {...register('almacen')} />
                 <input type="hidden" {...register('almacenId')} />
@@ -532,7 +582,7 @@ export function DialogoMovimientoInventario({
                 <label htmlFor="costo-movimiento" className="field-label">Costo unitario *</label>
                 <input id="costo-movimiento" type="number" min="0" step="0.0001" placeholder="0.0000" className="field-control" aria-invalid={Boolean(errors.costoUnitario)} {...register('costoUnitario')} />
                 {errors.costoUnitario ? <p className="field-error">{errors.costoUnitario.message}</p> : (
-                  <p className="field-help">Costo por unidad necesario para mantener la valorización del inventario.</p>
+                  <p className="field-help">Ingresa el costo por {unidadCaptura}; se convertirá a {producto?.unidadMedida || 'la unidad base'} para valorar el stock.</p>
                 )}
               </div> : null}
 
@@ -582,7 +632,9 @@ export function DialogoMovimientoInventario({
                 <textarea
                   id="motivo-movimiento"
                   rows={3}
-                  placeholder="Ej. Diferencia confirmada en conteo físico"
+                  placeholder={esSalida
+                    ? 'Ej. Uso interno, entrega de muestra o baja autorizada'
+                    : 'Ej. Saldo inicial autorizado, donación o recepción de muestras'}
                   className="field-control py-2"
                   aria-invalid={Boolean(errors.motivo)}
                   {...register('motivo')}
@@ -592,17 +644,17 @@ export function DialogoMovimientoInventario({
                 ) : null}
               </div>
               <div className="sm:col-span-2">
-                <label htmlFor="documento-movimiento" className="field-label">Documento externo (opcional)</label>
+                <label htmlFor="documento-movimiento" className="field-label">Documento de origen (opcional)</label>
                 <input
                   id="documento-movimiento"
                   className="field-control"
-                  placeholder="Ej. factura o guía de remisión"
+                  placeholder={esSalida ? 'Ej. vale o autorización' : 'Ej. factura o guía de remisión'}
                   maxLength={120}
                   aria-invalid={Boolean(errors.documentoReferencia)}
                   aria-describedby="documento-movimiento-ayuda"
                   {...register('documentoReferencia')}
                 />
-                <p id="documento-movimiento-ayuda" className="field-help">Si existe un documento, registra su número. El sistema genera el número de movimiento automáticamente.</p>
+                <p id="documento-movimiento-ayuda" className="field-help">Opcional. Registra el número del respaldo si existe; el sistema asigna el folio del movimiento.</p>
                 {errors.documentoReferencia ? <p className="field-error">{errors.documentoReferencia.message}</p> : null}
               </div>
             </div>
@@ -631,10 +683,10 @@ export function DialogoMovimientoInventario({
                           : errorFefo
                             ? errorFefo
                             : candidatoFefo
-                              ? `${cantidadAsignableFefo} unidades disponibles en ${candidatos.length} ${candidatos.length === 1 ? 'posición' : 'posiciones'}. El sistema usará primero el lote que vence antes.`
+                              ? `${cantidadAsignableFefo} ${producto?.unidadMedida || 'unidades'} disponibles en ${candidatos.length} ${candidatos.length === 1 ? 'posición' : 'posiciones'}. El sistema asignará primero el lote con vencimiento más próximo (FEFO).`
                               : 'No hay stock disponible en el almacén seleccionado.'
                     : `${bucketsSalida.length} posiciones tienen stock ${estadoStock === 'damaged' ? 'dañado' : 'en cuarentena'} no reservado.`
-                  : 'La entrada sumará unidades al stock del almacén y posición indicados.'}
+                  : `La entrada sumará stock en ${producto?.unidadMedida || 'la unidad base'} al almacén y posición indicados.`}
               </p>
             </div>
           </form>

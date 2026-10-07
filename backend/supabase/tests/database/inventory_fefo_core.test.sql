@@ -1,6 +1,6 @@
 begin;
 
-select plan(51);
+select plan(60);
 
 select has_view('public', 'inventory_fefo_candidates', 'existe la disponibilidad ordenada por FEFO');
 select has_function(
@@ -485,7 +485,9 @@ select throws_ok($$
 $$, '22023', 'INVENTORY_ADJUSTMENT_COST_REQUIRED', 'a new positive-adjustment position rejects a non-finite unit cost');
 select throws_ok($$
   select public.record_inventory_movement(jsonb_build_object(
-    'organization_id','a1000000-0000-4000-8000-000000000001', 'document_reference', repeat('X', 121)))
+    'organization_id','a1000000-0000-4000-8000-000000000001',
+    'product_id','a3000000-0000-4000-8000-000000000001',
+    'quantity','1', 'document_reference', repeat('X', 121)))
 $$, '22023', 'INVENTORY_DOCUMENT_REFERENCE_INVALID', 'manual document length is validated server-side');
 select throws_ok($$
   select public.record_inventory_movement('{"organization_id":"a1000000-0000-4000-8000-000000000001",
@@ -524,6 +526,108 @@ select ok(exists (
   select 1 from public.inventory_kardex where organization_id = 'a1000000-0000-4000-8000-000000000001'
   and document_reference = 'TEST-FIXTURE' and reason = 'Ingreso FEFO primero'
 ), 'Kardex preserves the supporting document alongside the reason');
+
+reset role;
+insert into public.product_unit_conversions (
+  organization_id, product_id, unit_id, conversion_factor, created_by, updated_by
+)
+select
+  'a1000000-0000-4000-8000-000000000001',
+  'a3000000-0000-4000-8000-000000000001',
+  unit.id,
+  case unit.code when 'BOX' then 12 else 2.123456 end,
+  'a2000000-0000-4000-8000-000000000001',
+  'a2000000-0000-4000-8000-000000000001'
+from public.measurement_units unit
+where unit.organization_id = 'a1000000-0000-4000-8000-000000000001'
+  and unit.code in ('BOX', 'PACK');
+set local role authenticated;
+
+select lives_ok($$
+  select public.record_inventory_movement(jsonb_build_object(
+    'organization_id', 'a1000000-0000-4000-8000-000000000001',
+    'product_id', 'a3000000-0000-4000-8000-000000000001',
+    'warehouse_id', 'a4000000-0000-4000-8000-000000000001',
+    'location_id', 'a5000000-0000-4000-8000-000000000001',
+    'movement_type', 'entrada', 'quantity', '0.5', 'unit_cost', '24',
+    'input_unit_id', (select id from public.measurement_units
+      where organization_id = 'a1000000-0000-4000-8000-000000000001' and code = 'BOX'),
+    'stock_status', 'available', 'lot', 'LOTE-CAJA', 'expiration_date', '2099-12-06',
+    'operation_date', '2026-08-29', 'reason', 'Entrada capturada en cajas'
+  ))
+$$, 'converts alternate-unit receipts to the base unit and snapshots the entered unit');
+select results_eq(
+  $$select quantity, unit_cost from public.inventory_movements where reason = 'Entrada capturada en cajas'$$,
+  $$values (6.000::numeric, 2.0000::numeric)$$,
+  'the stock ledger stores base quantity and base-unit cost'
+);
+select results_eq(
+  $$select entered_quantity, entered_unit_of_measure, unit_conversion_factor
+    from public.inventory_movements where reason = 'Entrada capturada en cajas'$$,
+  $$values (0.5::numeric, 'Caja'::text, 12.000000::numeric)$$,
+  'the ledger preserves the quantity and conversion used by the operator'
+);
+select lives_ok($$
+  select public.record_inventory_fefo_outbound(jsonb_build_object(
+    'organization_id', 'a1000000-0000-4000-8000-000000000001',
+    'product_id', 'a3000000-0000-4000-8000-000000000001',
+    'warehouse_id', 'a4000000-0000-4000-8000-000000000001',
+    'quantity', '0.5',
+    'input_unit_id', (select id from public.measurement_units
+      where organization_id = 'a1000000-0000-4000-8000-000000000001' and code = 'BOX'),
+    'operation_date', '2026-08-29', 'reason', 'Salida FEFO capturada en cajas'
+  ))
+$$, 'converts alternate-unit FEFO issues before allocating stock');
+select results_eq(
+  $$select sum(quantity) from public.inventory_movements where reason = 'Salida FEFO capturada en cajas'$$,
+  $$values (6.000::numeric)$$,
+  'FEFO allocates the base-unit equivalent of the entered quantity'
+);
+select results_eq(
+  $$select sum(entered_quantity), min(unit_conversion_factor)
+    from public.inventory_movements where reason = 'Salida FEFO capturada en cajas'$$,
+  $$values (0.5::numeric, 12.000000::numeric)$$,
+  'split FEFO rows retain a reconcilable entered-unit snapshot'
+);
+select throws_ok($$
+  select public.record_inventory_movement(jsonb_build_object(
+    'organization_id', 'a1000000-0000-4000-8000-000000000001',
+    'product_id', 'a3000000-0000-4000-8000-000000000001',
+    'warehouse_id', 'a4000000-0000-4000-8000-000000000001',
+    'location_id', 'a5000000-0000-4000-8000-000000000001',
+    'movement_type', 'entrada', 'quantity', '0.001', 'unit_cost', '24',
+    'input_unit_id', (select id from public.measurement_units
+      where organization_id = 'a1000000-0000-4000-8000-000000000001' and code = 'PACK'),
+    'stock_status', 'available', 'lot', 'LOTE-CONVERSION-NO-EXACTA', 'expiration_date', '2099-12-07',
+    'operation_date', '2026-08-29', 'reason', 'Conversion fuera de precision'
+  ))
+$$, '22023', 'INVENTORY_QUANTITY_CONVERSION_INVALID', 'rejects conversions that cannot be represented by base stock precision');
+select throws_ok($$
+  select public.record_inventory_movement(jsonb_build_object(
+    'organization_id', 'a1000000-0000-4000-8000-000000000001',
+    'product_id', 'a3000000-0000-4000-8000-000000000001',
+    'warehouse_id', 'a4000000-0000-4000-8000-000000000001',
+    'location_id', 'a5000000-0000-4000-8000-000000000001',
+    'movement_type', 'entrada', 'quantity', '1', 'unit_cost', '24',
+    'input_unit_id', (select id from public.measurement_units
+      where organization_id = 'a1000000-0000-4000-8000-000000000001' and code = 'BOX'),
+    'expected_conversion_factor', 10,
+    'stock_status', 'available', 'lot', 'LOTE-FACTOR-ANTIGUO', 'expiration_date', '2099-12-08',
+    'operation_date', '2026-08-29', 'reason', 'Equivalencia cambió durante el registro'
+  ))
+$$, 'P0001', 'INVENTORY_INPUT_UNIT_STALE', 'rejects a stale unit conversion shown by the form');
+select throws_ok($$
+  select public.record_inventory_fefo_outbound(jsonb_build_object(
+    'organization_id', 'a1000000-0000-4000-8000-000000000001',
+    'product_id', 'a3000000-0000-4000-8000-000000000001',
+    'warehouse_id', 'a4000000-0000-4000-8000-000000000001',
+    'quantity', '1',
+    'input_unit_id', (select id from public.measurement_units
+      where organization_id = 'a1000000-0000-4000-8000-000000000001' and code = 'BOX'),
+    'expected_conversion_factor', 10,
+    'operation_date', '2026-08-29', 'reason', 'Equivalencia FEFO desactualizada'
+  ))
+$$, 'P0001', 'INVENTORY_INPUT_UNIT_STALE', 'rejects stale unit conversion before a FEFO allocation');
 
 select * from finish();
 rollback;

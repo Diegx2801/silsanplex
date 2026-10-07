@@ -175,9 +175,10 @@ export function DialogoAjusteStock({
       fechaVencimiento: posicionInicial?.fechaVencimiento ?? '',
       costoUnitario: '',
       cantidad: '',
+      unidadEntradaId: contexto?.producto.unidadBaseId,
+      factorConversionEsperado: 1,
       motivoAjuste: 'physical_count_difference',
       observacion: '',
-      documentoReferencia: '',
     },
   })
 
@@ -190,6 +191,7 @@ export function DialogoAjusteStock({
   const lote = watch('lote')
   const fechaVencimiento = watch('fechaVencimiento')
   const cantidad = watch('cantidad')
+  const unidadEntradaId = watch('unidadEntradaId')
   const { buckets, cargando, consultando, error } = useBucketsAjusteStock(
     productoId,
     almacenId,
@@ -272,7 +274,10 @@ export function DialogoAjusteStock({
     () => bucketsVisibles.find((bucket) => claveBucketAjusteStock(bucket) === bucketKey) ?? null,
     [bucketKey, bucketsVisibles],
   )
-  const cantidadNumero = Number(cantidad)
+  const unidadEntrada = producto?.unidadesEntrada?.find((unidad) => unidad.id === unidadEntradaId)
+    ?? producto?.unidadesEntrada?.[0]
+  const factorConversion = unidadEntrada?.factorConversion ?? 1
+  const cantidadNumero = Number(cantidad) * factorConversion
   const tipoAjusteAnterior = useRef(tipoAjuste)
   const ubicacionesVisibles = useMemo(
     () => ubicaciones.filter((item) => item.activa && item.almacenId === almacenId),
@@ -357,6 +362,8 @@ export function DialogoAjusteStock({
   const seleccionarProducto = (nextValue: string, opcion?: ProductoInventarioOpcion) => {
     setValue('productoId', nextValue, { shouldValidate: true })
     setValue('almacenId', '', { shouldDirty: true })
+    setValue('unidadEntradaId', opcion?.unidadBaseId, { shouldDirty: true })
+    setValue('factorConversionEsperado', opcion?.unidadesEntrada?.find((unidad) => unidad.id === opcion.unidadBaseId)?.factorConversion ?? 1, { shouldDirty: true })
     setProducto(opcion ?? null)
     setValue('bucketKey', '')
     setValue('cantidad', '')
@@ -366,7 +373,9 @@ export function DialogoAjusteStock({
   }
 
   const prepararConfirmacion = (datos: DatosFormularioAjusteStock) => {
-    const cantidadSolicitada = Number(datos.cantidad)
+    const unidadSeleccionada = producto?.unidadesEntrada?.find((unidad) => unidad.id === datos.unidadEntradaId)
+      ?? producto?.unidadesEntrada?.[0]
+    const cantidadSolicitada = Number(datos.cantidad) * (unidadSeleccionada?.factorConversion ?? 1)
     if (datos.tipoAjuste === 'ajuste-negativo') {
       if (!bucketSeleccionado) {
         setError('bucketKey', { type: 'validate', message: 'Selecciona una posición de stock para descontar' })
@@ -432,7 +441,8 @@ export function DialogoAjusteStock({
         lote: bucket?.lote ?? datos.lote,
         fechaVencimiento: bucket?.fechaVencimiento ?? datos.fechaVencimiento,
         fechaOperacion: hoy(),
-        documentoReferencia: datos.documentoReferencia || undefined,
+        unidadEntradaId: datos.unidadEntradaId || producto?.unidadBaseId,
+        factorConversionEsperado: datos.factorConversionEsperado ?? unidadEntrada?.factorConversion ?? 1,
         motivo: crearMotivoAjusteStock(datos.motivoAjuste, datos.observacion),
       })
     } catch {
@@ -447,7 +457,10 @@ export function DialogoAjusteStock({
     alCambiarApertura(false)
   }
 
-  const cantidadConfirmada = confirmacion ? Number(confirmacion.datos.cantidad) : 0
+  const unidadConfirmada = producto?.unidadesEntrada?.find((unidad) => unidad.id === confirmacion?.datos.unidadEntradaId)
+  const cantidadConfirmada = confirmacion
+    ? Number(confirmacion.datos.cantidad) * (unidadConfirmada?.factorConversion ?? 1)
+    : 0
 
   return (
     <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
@@ -503,7 +516,8 @@ export function DialogoAjusteStock({
                 />
               ) : null}
               <p className="text-sm leading-6 text-muted-foreground">
-                El ajuste se registrará con su motivo. Si adjuntas una referencia externa, también aparecerá en el historial.
+                El stock se actualizará en la unidad base; el historial conservará la cantidad y unidad ingresadas,
+                {' '}el motivo y el usuario responsable.
               </p>
               {errorGuardado ? (
                 <p role="alert" className="field-error border border-destructive/30 bg-destructive/5 px-4 py-3">
@@ -734,28 +748,15 @@ export function DialogoAjusteStock({
               ) : null}
 
               <div>
-                <label htmlFor="documento-ajuste-stock" className="field-label">Documento externo (opcional)</label>
-                <input
-                  id="documento-ajuste-stock"
-                  autoComplete="off"
-                  maxLength={120}
-                  placeholder="Ej. acta o autorización"
-                  className="field-control"
-                  aria-invalid={Boolean(errors.documentoReferencia)}
-                  {...register('documentoReferencia')}
-                />
-                <p className="field-help">Si existe un acta o autorización, registra su número. El sistema asigna el número de movimiento automáticamente.</p>
-                {errors.documentoReferencia ? <p className="field-error">{errors.documentoReferencia.message}</p> : null}
-              </div>
-
-              <div>
                 <label htmlFor="cantidad-ajuste-stock" className="field-label">Cantidad a {tipoAjuste === 'ajuste-positivo' ? 'aumentar' : 'descontar'} *</label>
                 <input
                   id="cantidad-ajuste-stock"
                   inputMode="decimal"
                   autoComplete="off"
                   placeholder="0"
-                  max={tipoAjuste === 'ajuste-negativo' && bucketSeleccionado ? cantidadDisponibleAjusteStock(bucketSeleccionado) : undefined}
+                  max={tipoAjuste === 'ajuste-negativo' && bucketSeleccionado
+                    ? Math.floor((cantidadDisponibleAjusteStock(bucketSeleccionado) / factorConversion) * 1000) / 1000
+                    : undefined}
                   className="field-control"
                   aria-invalid={Boolean(errors.cantidad)}
                   {...register('cantidad')}
@@ -763,9 +764,31 @@ export function DialogoAjusteStock({
                 {errors.cantidad ? (
                   <p className="field-error">{errors.cantidad.message}</p>
                 ) : (
-                  <p className="field-help">{producto?.unidadMedida || 'Unidades'} · máximo 3 decimales</p>
+                  <p className="field-help">{unidadEntrada?.nombre || producto?.unidadMedida || 'Unidades'} · máximo 3 decimales</p>
                 )}
               </div>
+              {(producto?.unidadesEntrada?.length ?? 0) > 1 ? (
+                <div>
+                  <label htmlFor="unidad-ajuste-stock" className="field-label">Unidad de medida *</label>
+                  <select
+                    id="unidad-ajuste-stock"
+                    className="field-control"
+                    value={unidadEntradaId ?? producto?.unidadBaseId ?? ''}
+                    onChange={(evento) => {
+                      const unidad = producto?.unidadesEntrada?.find((opcion) => opcion.id === evento.target.value)
+                      setValue('unidadEntradaId', evento.target.value || undefined, { shouldDirty: true })
+                      setValue('factorConversionEsperado', unidad?.factorConversion ?? 1, { shouldDirty: true })
+                    }}
+                  >
+                    {producto?.unidadesEntrada?.map((unidad) => (
+                      <option key={unidad.id} value={unidad.id}>{unidad.nombre}</option>
+                    ))}
+                  </select>
+                  {unidadEntrada && unidadEntrada.factorConversion !== 1 ? (
+                    <p className="field-help">1 {unidadEntrada.nombre} equivale a {unidadEntrada.factorConversion} {producto?.unidadMedida}.</p>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div>
                 <label htmlFor="motivo-ajuste-stock" className="field-label">Motivo del ajuste *</label>
@@ -786,6 +809,7 @@ export function DialogoAjusteStock({
                 <textarea
                   id="observacion-ajuste-stock"
                   rows={3}
+                  maxLength={120}
                   placeholder="Agrega un detalle útil para la trazabilidad"
                   className="field-control py-2"
                   aria-invalid={Boolean(errors.observacion)}

@@ -95,6 +95,10 @@ function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
 }
 
 function mensajeError(error: { code?: string; message?: string }) {
+  if (error.message?.includes('INVENTORY_INPUT_UNIT_INVALID')) return 'La unidad seleccionada ya no está disponible para este producto. Vuelve a elegirla.'
+  if (error.message?.includes('INVENTORY_INPUT_UNIT_STALE')) return 'La equivalencia de esta unidad cambió. Actualiza la selección del producto e inténtalo nuevamente.'
+  if (error.message?.includes('INVENTORY_QUANTITY_CONVERSION_INVALID')) return 'La cantidad no puede convertirse exactamente a la unidad base. Ajusta la cantidad o usa otra unidad.'
+  if (error.message?.includes('INVENTORY_QUANTITY_INVALID')) return 'Ingresa una cantidad válida mayor a cero.'
   if (error.message?.includes('INVENTORY_DOCUMENT_REFERENCE_INVALID')) return 'Ingresa una referencia del documento de hasta 120 caracteres'
   if (error.message?.includes('INVENTORY_ADJUSTMENT_COST_REQUIRED')) return 'Ingresa el costo unitario para valorar la nueva posición'
   if (error.message?.includes('INVENTORY_MOVEMENT_COST_REQUIRED')) return 'Ingresa el costo unitario para valorar la entrada'
@@ -382,6 +386,8 @@ export async function registrarMovimientoInventario(organizationId: string, dato
       product_id: datos.productoId,
       movement_type: datos.tipo,
       quantity: datos.cantidad,
+      input_unit_id: datos.unidadEntradaId || null,
+      expected_conversion_factor: datos.factorConversionEsperado ?? null,
       warehouse: datos.almacen,
       warehouse_id: datos.almacenId,
       location_id: datos.ubicacionId,

@@ -22,8 +22,6 @@ export const motivosAjusteStock = [
   { valor: 'broken', etiqueta: 'Rotura' },
   { valor: 'lost', etiqueta: 'Pérdida' },
   { valor: 'physical_count_difference', etiqueta: 'Diferencia de inventario físico' },
-  { valor: 'sample', etiqueta: 'Muestra' },
-  { valor: 'internal_use', etiqueta: 'Uso interno' },
   { valor: 'other', etiqueta: 'Otro' },
 ] as const
 
@@ -80,6 +78,8 @@ export const esquemaFormularioAjusteStock = z
     lote: z.string().trim().max(60, 'Máximo 60 caracteres'),
     fechaVencimiento: z.string(),
     costoUnitario: z.string(),
+    unidadEntradaId: z.string().uuid().or(z.literal('')).optional(),
+    factorConversionEsperado: z.number().positive().optional(),
     cantidad: z
       .string()
       .trim()
@@ -87,7 +87,6 @@ export const esquemaFormularioAjusteStock = z
         (valor) => /^\d+(\.\d{1,3})?$/.test(valor) && Number(valor) > 0,
         'Ingresa una cantidad mayor a cero con hasta 3 decimales',
       ),
-    documentoReferencia: z.string().trim().max(120, 'Máximo 120 caracteres'),
     motivoAjuste: z.enum(
       motivosAjusteStock.map((motivo) => motivo.valor) as [MotivoAjusteStock, ...MotivoAjusteStock[]],
       { message: 'Selecciona un motivo' },
@@ -157,7 +156,7 @@ export function crearMotivoAjusteStock(
 ) {
   const etiqueta = motivosAjusteStock.find((item) => item.valor === motivo)?.etiqueta ?? 'Otro'
   const detalle = observacion.trim()
-  return `Ajuste manual [${motivo}] ${etiqueta}${detalle ? ` — ${detalle}` : ''}`
+  return `Ajuste de stock: ${etiqueta}${detalle ? ` — ${detalle}` : ''}`
 }
 
 export const esquemaDatosMovimientoInventario = z.object({
@@ -180,6 +179,8 @@ export const esquemaDatosMovimientoInventario = z.object({
   ubicacionId: z.string().uuid().optional(),
   estadoStock: z.enum(['available', 'quarantine', 'damaged']).optional(),
   costoUnitario: z.string().optional(),
+  unidadEntradaId: z.string().uuid().or(z.literal('')).optional(),
+  factorConversionEsperado: z.number().positive().optional(),
   fechaVencimiento: z.string(),
   fechaOperacion: z.string().min(1, 'Selecciona la fecha de operación'),
   documentoReferencia: z.string().trim().max(120, 'Máximo 120 caracteres').optional(),

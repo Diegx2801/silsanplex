@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import type {
   ProductoInventarioOpcion,
   RespuestaReadInventario,
+  UnidadInventarioDisponible,
 } from '@/modulos/inventario/modelo/productoInventarioRead'
 
 interface OpcionProductoFila {
@@ -10,17 +11,40 @@ interface OpcionProductoFila {
   product_description: string
   barcode: string | null
   unit_of_measure: string | null
+  base_unit_id?: string | null
+  alternative_units?: unknown
   batch_control: boolean
   expiration_control: boolean
 }
 
 function adaptarOpcionProducto(fila: OpcionProductoFila): ProductoInventarioOpcion {
+  const unidadesAlternativas = Array.isArray(fila.alternative_units)
+    ? fila.alternative_units.flatMap((unidad): UnidadInventarioDisponible[] => {
+      if (!unidad || typeof unidad !== 'object') return []
+      const registro = unidad as Record<string, unknown>
+      const id = typeof registro.unit_id === 'string' ? registro.unit_id : ''
+      const nombre = typeof registro.unit_name === 'string' ? registro.unit_name : ''
+      const factorConversion = Number(registro.conversion_factor)
+      return id && nombre && Number.isFinite(factorConversion) && factorConversion > 0
+        ? [{ id, nombre, factorConversion }]
+        : []
+    })
+    : []
+  const unidadBaseId = fila.base_unit_id ?? undefined
+
   return {
     id: fila.product_id,
     codigo: fila.product_code,
     descripcion: fila.product_description,
     codigoBarras: fila.barcode ?? '',
     unidadMedida: fila.unit_of_measure ?? '',
+    unidadBaseId,
+    unidadesEntrada: unidadBaseId
+      ? [
+        { id: unidadBaseId, nombre: fila.unit_of_measure ?? '', factorConversion: 1 },
+        ...unidadesAlternativas.filter((unidad) => unidad.id !== unidadBaseId),
+      ].filter((unidad) => unidad.nombre)
+      : [],
     controlLote: Boolean(fila.batch_control),
     controlVencimiento: Boolean(fila.expiration_control),
   }

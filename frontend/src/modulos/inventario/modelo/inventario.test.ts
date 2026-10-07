@@ -6,6 +6,7 @@ import {
   calcularExistenciasDesdeResumen,
   calcularSaldoDisponible,
   cantidadFisicaNoReservada,
+  crearMotivoAjusteStock,
   esquemaDatosMovimientoInventario,
   esquemaFormularioAjusteStock,
   crearMovimientoInventario,
@@ -91,7 +92,6 @@ describe('inventario', () => {
       fechaVencimiento: '2027-12-31',
       costoUnitario: '12.5',
       cantidad: '1',
-      documentoReferencia: '',
       motivoAjuste: 'expired',
       observacion: '',
     } as const
@@ -101,6 +101,17 @@ describe('inventario', () => {
       ...ajuste,
       motivoAjuste: 'physical_count_difference',
     }).success).toBe(true)
+    expect(esquemaFormularioAjusteStock.safeParse({
+      ...ajuste,
+      motivoAjuste: 'internal_use',
+    }).success).toBe(false)
+  })
+
+  it('guarda el motivo del ajuste en lenguaje claro dentro del límite del Kardex', () => {
+    const motivo = crearMotivoAjusteStock('physical_count_difference', 'x'.repeat(120))
+    expect(motivo).toContain('Diferencia de inventario físico')
+    expect(motivo).not.toContain('physical_count_difference')
+    expect(motivo.length).toBeLessThanOrEqual(180)
   })
 
   it('convierte entradas y salidas en variaciones con signo', () => {

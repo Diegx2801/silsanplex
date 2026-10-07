@@ -18,6 +18,11 @@ const mocks = vi.hoisted(() => ({
     descripcion: 'Producto de prueba',
     codigoBarras: 'SKU-001-BAR',
     unidadMedida: 'UND',
+    unidadBaseId: 'a6000000-0000-4000-8000-000000000001',
+    unidadesEntrada: [
+      { id: 'a6000000-0000-4000-8000-000000000001', nombre: 'UND', factorConversion: 1 },
+      { id: 'a6000000-0000-4000-8000-000000000002', nombre: 'Caja', factorConversion: 12 },
+    ],
     controlLote: true,
     controlVencimiento: true,
   },
@@ -153,7 +158,6 @@ async function completarFormulario() {
   fireEvent.focus(comboBucket)
   fireEvent.click(screen.getByRole('option', { name: /A-01.*LOTE-1/ }))
   fireEvent.change(screen.getByLabelText(/Cantidad a descontar/), { target: { value: '2' } })
-  fireEvent.change(screen.getByLabelText(/Documento externo/), { target: { value: 'ACTA-001' } })
 }
 
 describe('DialogoAjusteStock', () => {
@@ -191,6 +195,7 @@ describe('DialogoAjusteStock', () => {
 
   it('valida producto, posición y cantidad antes de revisar sin exigir documento externo', async () => {
     renderDialog()
+    expect(screen.queryByLabelText(/Documento de origen/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
 
     expect(await screen.findByText('Selecciona un producto')).toBeVisible()
@@ -228,10 +233,29 @@ describe('DialogoAjusteStock', () => {
       estadoStock: 'available',
       lote: 'LOTE-1',
       fechaVencimiento: '2027-12-31',
-      documentoReferencia: 'ACTA-001',
-      motivo: 'Ajuste manual [damaged] Producto deteriorado — Envase roto',
+      motivo: 'Ajuste de stock: Producto deteriorado — Envase roto',
     })))
     expect(alCambiarApertura).toHaveBeenCalledWith(false)
+  })
+
+  it('convierte la unidad elegida a la unidad base antes de mostrar el efecto del ajuste', async () => {
+    const { alGuardar } = renderDialog()
+    await completarFormulario()
+    fireEvent.change(screen.getByLabelText('Unidad de medida *'), {
+      target: { value: 'a6000000-0000-4000-8000-000000000002' },
+    })
+    fireEvent.change(screen.getByLabelText(/Cantidad a descontar/), { target: { value: '0.4' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
+
+    expect(await screen.findByText(/Se descontarán/)).toBeVisible()
+    expect(screen.getByText(/4.8 UND/)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar ajuste' }))
+
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(expect.objectContaining({
+      cantidad: '0.4',
+      unidadEntradaId: 'a6000000-0000-4000-8000-000000000002',
+      factorConversionEsperado: 12,
+    })))
   })
 
   it('registra un aumento positivo con lote nuevo, costo requerido y sin referencia externa', async () => {
@@ -253,7 +277,6 @@ describe('DialogoAjusteStock', () => {
       lote: 'LOTE-NUEVO',
       fechaVencimiento: '2028-06-30',
       costoUnitario: '7.25',
-      documentoReferencia: undefined,
     })))
   })
 
