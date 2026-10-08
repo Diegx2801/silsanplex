@@ -161,6 +161,7 @@ export function DialogoAjusteStock({
     watch,
     setValue,
     setError,
+    trigger,
     formState: { errors },
   } = useForm<DatosFormularioAjusteStock>({
     resolver: zodResolver(esquemaFormularioAjusteStock),
@@ -192,6 +193,12 @@ export function DialogoAjusteStock({
   const fechaVencimiento = watch('fechaVencimiento')
   const cantidad = watch('cantidad')
   const unidadEntradaId = watch('unidadEntradaId')
+  const motivoAjuste = watch('motivoAjuste')
+  const requiereDetalleMotivo = motivoAjuste === 'other'
+
+  useEffect(() => {
+    if (!requiereDetalleMotivo) void trigger('observacion')
+  }, [requiereDetalleMotivo, trigger])
   const { buckets, cargando, consultando, error } = useBucketsAjusteStock(
     productoId,
     almacenId,
@@ -805,17 +812,27 @@ export function DialogoAjusteStock({
               </div>
 
               <div>
-                <label htmlFor="observacion-ajuste-stock" className="field-label">Observación (opcional)</label>
+                <label htmlFor="observacion-ajuste-stock" className="field-label">
+                  {requiereDetalleMotivo ? 'Describe el motivo *' : 'Observación (opcional)'}
+                </label>
                 <textarea
                   id="observacion-ajuste-stock"
                   rows={3}
                   maxLength={120}
-                  placeholder="Agrega un detalle útil para la trazabilidad"
+                  placeholder={requiereDetalleMotivo ? 'Explica el motivo del ajuste' : 'Agrega un detalle útil para la trazabilidad'}
                   className="field-control py-2"
+                  aria-required={requiereDetalleMotivo}
                   aria-invalid={Boolean(errors.observacion)}
+                  aria-describedby={errors.observacion
+                    ? 'observacion-ajuste-stock-error'
+                    : requiereDetalleMotivo ? 'observacion-ajuste-stock-ayuda' : undefined}
                   {...register('observacion')}
                 />
-                {errors.observacion ? <p className="field-error">{errors.observacion.message}</p> : null}
+                {errors.observacion ? (
+                  <p id="observacion-ajuste-stock-error" role="alert" className="field-error">{errors.observacion.message}</p>
+                ) : requiereDetalleMotivo ? (
+                  <p id="observacion-ajuste-stock-ayuda" className="field-help">Obligatorio al elegir «Otro»: entre 3 y 120 caracteres.</p>
+                ) : null}
               </div>
 
             </form>

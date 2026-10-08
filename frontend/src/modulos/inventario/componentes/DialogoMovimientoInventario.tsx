@@ -599,7 +599,7 @@ export function DialogoMovimientoInventario({
                 <input type="hidden" {...register('lote')} />
                 <Combobox
                   id="lote-movimiento"
-                  label={`Lote del fabricante${producto?.controlLote ? ' *' : ''}`}
+                  label="Lote del fabricante"
                   value={lote}
                   options={opcionesLote}
                   allowCustomValue

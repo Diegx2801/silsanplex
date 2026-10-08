@@ -149,6 +149,8 @@ describe('DialogoMovimientoInventario contextual', () => {
     expect(screen.getByRole('combobox', { name: /Ubicación física/ })).toHaveValue(`${ubicacion.codigo} · ${ubicacion.nombre}`)
     expect(screen.getByLabelText('Condición del stock *')).toHaveValue('quarantine')
     expect(screen.getByRole('combobox', { name: /Lote del fabricante/ })).toHaveValue('LOTE-1')
+    expect(screen.getByLabelText('Lote del fabricante *')).toBeRequired()
+    expect(screen.queryByText('Lote del fabricante * *')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Fecha de vencimiento *')).toHaveValue('2027-12-31')
     expect(screen.getByLabelText('Documento de origen (opcional)')).toBeVisible()
     expect(screen.getByText(/Registra el número del respaldo si existe/)).toBeVisible()

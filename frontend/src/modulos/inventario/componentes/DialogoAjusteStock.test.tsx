@@ -206,11 +206,57 @@ describe('DialogoAjusteStock', () => {
 
   it('exige observación cuando el motivo es Otro', async () => {
     renderDialog()
+    expect(screen.getByLabelText('Observación (opcional)')).not.toBeRequired()
     await completarFormulario()
     fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'other' } })
+    expect(screen.getByLabelText('Describe el motivo *')).toBeRequired()
+    expect(screen.getByText('Obligatorio al elegir «Otro»: entre 3 y 120 caracteres.')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
 
     expect(await screen.findByText('Describe el motivo cuando selecciones "Otro"')).toBeVisible()
+  })
+
+  it('retira el error de Otro al volver a un motivo definido y permite omitir la observación', async () => {
+    renderDialog()
+    await completarFormulario()
+    fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'other' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
+    expect(await screen.findByText('Describe el motivo cuando selecciones "Otro"')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'physical_count_difference' } })
+    const observacion = screen.getByLabelText('Observación (opcional)')
+    expect(observacion).not.toBeRequired()
+    await waitFor(() => expect(observacion).toHaveAttribute('aria-invalid', 'false'))
+    expect(screen.queryByText('Describe el motivo cuando selecciones "Otro"')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
+    expect(await screen.findByRole('button', { name: 'Confirmar ajuste' })).toBeVisible()
+  })
+
+  it('conserva el detalle escrito y su límite de longitud al cambiar de motivo', async () => {
+    renderDialog()
+    await completarFormulario()
+    fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'other' } })
+    fireEvent.change(screen.getByLabelText('Describe el motivo *'), { target: { value: 'x'.repeat(121) } })
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
+    expect(await screen.findByText('Máximo 120 caracteres')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'physical_count_difference' } })
+    expect(screen.getByLabelText('Observación (opcional)')).toHaveValue('x'.repeat(121))
+    expect(await screen.findByText('Máximo 120 caracteres')).toBeVisible()
+  })
+
+  it('restaura la observación opcional y retira su error al cambiar el tipo de ajuste', async () => {
+    renderDialog()
+    await completarFormulario()
+    fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'other' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
+    expect(await screen.findByText('Describe el motivo cuando selecciones "Otro"')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText('Tipo de ajuste *'), { target: { value: 'ajuste-positivo' } })
+    const observacion = screen.getByLabelText('Observación (opcional)')
+    expect(observacion).not.toBeRequired()
+    await waitFor(() => expect(observacion).toHaveAttribute('aria-invalid', 'false'))
+    expect(screen.queryByText('Describe el motivo cuando selecciones "Otro"')).not.toBeInTheDocument()
   })
 
   it('muestra el resumen y envía el ajuste negativo con motivo y bucket', async () => {
