@@ -182,11 +182,11 @@ export const esquemaDatosMovimientoInventario = z.object({
   almacen: z
     .string()
     .trim()
-    .min(2, 'Ingresa el almacén')
+    .min(2, 'Selecciona un almacén')
     .max(80, 'Máximo 80 caracteres'),
   lote: z.string().trim().max(60, 'Máximo 60 caracteres'),
-  almacenId: z.string().uuid().optional(),
-  ubicacionId: z.string().uuid().optional(),
+  almacenId: z.string().uuid('Selecciona un almacén').optional(),
+  ubicacionId: z.string().uuid('Selecciona una ubicación física').optional(),
   estadoStock: z.enum(['available', 'quarantine', 'damaged']).optional(),
   costoUnitario: z.string().optional(),
   unidadEntradaId: z.string().uuid().or(z.literal('')).optional(),
@@ -242,6 +242,9 @@ export const esquemaMovimientoInventario = z.object({
   unidadMedida: z.string(),
   tipo: z.enum(['entrada', 'salida', 'ajuste-positivo', 'ajuste-negativo']),
   cantidad: z.number().positive(),
+  cantidadCapturada: z.number().positive().optional(),
+  unidadCapturada: z.string().optional(),
+  factorConversion: z.number().positive().optional(),
   almacen: z.string().min(1),
   lote: z.string(),
   almacenId: z.string().optional(),

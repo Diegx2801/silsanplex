@@ -92,6 +92,19 @@ describe('listados paginados de almacén', () => {
     expect(query.range).toHaveBeenCalledWith(50, 99)
   })
 
+  it('lee la captura histórica en Kardex sin convertir el saldo base', async () => {
+    const query = crearQuery([{
+      unit_of_measure: 'Unidad', entered_quantity: '10', entered_unit_of_measure: 'Caja', unit_conversion_factor: '20',
+      inbound_quantity: '200', outbound_quantity: '0', running_quantity: '200', running_value: '1000',
+    }])
+    const resultado = await listarKardex('org-1', { ...base, fechaDesde: '', fechaHasta: '', orden: 'fecha-desc' })
+    expect(query.select.mock.calls[0][0]).toContain('entered_quantity,entered_unit_of_measure,unit_conversion_factor')
+    expect(resultado.elementos[0]).toMatchObject({
+      cantidadCapturada: 10, unidadCapturada: 'Caja', factorConversion: 20, unidadMedida: 'Unidad',
+      cantidadEntrada: 200, cantidadSalida: 0, saldoCantidad: 200, saldoValor: 1000,
+    })
+  })
+
   it('permite buscar referencias registradas en el Kardex', async () => {
     const query = crearQuery()
     await listarKardex('org-1', {

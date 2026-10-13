@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -106,6 +106,7 @@ const ubicacion: UbicacionAlmacen = {
 function renderDialog(
   contexto: ContextoAccionInventario | null,
   opcionesTipoMovimiento?: typeof tiposMovimientoEnExistencias,
+  alGuardar = vi.fn().mockResolvedValue(undefined),
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
@@ -118,11 +119,12 @@ function renderDialog(
         opcionesTipoMovimiento={opcionesTipoMovimiento}
         contexto={contexto}
         alCambiarApertura={vi.fn()}
-        alGuardar={vi.fn().mockResolvedValue(undefined)}
+        alGuardar={alGuardar}
         alRestaurarFoco={vi.fn()}
       />
     </QueryClientProvider>,
   )
+  return { alGuardar }
 }
 
 describe('DialogoMovimientoInventario contextual', () => {
@@ -152,8 +154,8 @@ describe('DialogoMovimientoInventario contextual', () => {
     expect(screen.getByLabelText('Lote del fabricante *')).toBeRequired()
     expect(screen.queryByText('Lote del fabricante * *')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Fecha de vencimiento *')).toHaveValue('2027-12-31')
-    expect(screen.getByLabelText('Documento de origen (opcional)')).toBeVisible()
-    expect(screen.getByText(/Registra el número del respaldo si existe/)).toBeVisible()
+    expect(screen.queryByLabelText(/Documento de origen/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Registra el número del respaldo si existe/)).not.toBeInTheDocument()
   })
 
   it('no elige almacén ni posición arbitrarios desde la vista agregada', () => {
@@ -221,7 +223,7 @@ describe('DialogoMovimientoInventario contextual', () => {
     fireEvent.change(screen.getByLabelText('Motivo del movimiento *'), { target: { value: 'Consumo interno' } })
     fireEvent.click(screen.getByRole('button', { name: 'Registrar movimiento' }))
 
-    expect(await screen.findByText(/La cantidad supera el disponible según FEFO \(5 Caja\)/)).toBeVisible()
+    expect(within(await screen.findByRole('alert')).getByText(/La cantidad supera el disponible según FEFO \(5 Caja\)/)).toBeVisible()
   })
 
   it('valida las salidas en unidad base aunque el usuario capture en una unidad alternativa', async () => {
@@ -262,7 +264,7 @@ describe('DialogoMovimientoInventario contextual', () => {
     fireEvent.change(screen.getByLabelText('Motivo del movimiento *'), { target: { value: 'Consumo interno' } })
     fireEvent.click(screen.getByRole('button', { name: 'Registrar movimiento' }))
 
-    expect(await screen.findByText(/La cantidad supera el disponible según FEFO \(5 Caja\)/)).toBeVisible()
+    expect(within(await screen.findByRole('alert')).getByText(/La cantidad supera el disponible según FEFO \(5 Caja\)/)).toBeVisible()
   })
 
   it('en Existencias no permite registrar el descuento que ya tiene la acción Ajustar stock', () => {
@@ -330,5 +332,102 @@ describe('DialogoMovimientoInventario contextual', () => {
     expect(screen.getByRole('combobox', { name: /Lote del fabricante/ })).toHaveValue('')
     expect(screen.getByLabelText('Fecha de vencimiento')).toHaveValue('')
     expect(screen.getByLabelText('Condición del stock *')).toHaveValue('available')
+  })
+
+  it.each(['entrada', 'salida'] as const)('envía una %s válida sin referencia manual', async (tipo) => {
+    mocks.buscarAlmacenesMovimientoInventario.mockResolvedValue([{
+      id: almacen.id, codigo: almacen.codigo, nombre: almacen.nombre, cantidadDisponible: 5,
+    }])
+    mocks.useCandidatosFefo.mockReturnValue({
+      candidatos: [{
+        productoId: mocks.producto.id, almacenId: almacen.id, ubicacionId: ubicacion.id,
+        ubicacionCodigo: ubicacion.codigo, ubicacionNombre: ubicacion.nombre,
+        lote: 'LOTE-1', fechaVencimiento: '2027-12-31', cantidadAsignable: 5,
+        costoPromedio: 12, ordenFefo: 1,
+      }],
+      cargando: false, error: '',
+    })
+    const { alGuardar } = renderDialog({
+      producto: mocks.producto,
+      posicion: {
+        almacenId: almacen.id, ubicacionId: ubicacion.id, estado: 'available',
+        lote: 'LOTE-1', fechaVencimiento: '2027-12-31',
+      },
+    })
+    if (tipo === 'salida') {
+      fireEvent.change(screen.getByLabelText('Tipo de movimiento *'), { target: { value: tipo } })
+      const comboAlmacen = screen.getByLabelText('Almacén *')
+      fireEvent.focus(comboAlmacen)
+      fireEvent.change(comboAlmacen, { target: { value: 'CENT' } })
+      fireEvent.click(await screen.findByRole('option', { name: /CENTRAL · Almacén central/ }))
+    } else {
+      fireEvent.change(screen.getByLabelText('Costo unitario *'), { target: { value: '12' } })
+    }
+    expect(screen.queryByLabelText(/Documento de origen/)).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Cantidad *'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Motivo del movimiento *'), {
+      target: { value: tipo === 'salida' ? 'Consumo interno' : 'Donación' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar movimiento' }))
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledOnce())
+    expect(alGuardar.mock.calls[0][0]).toMatchObject({
+      tipo, cantidad: '1', ubicacionId: ubicacion.id, lote: 'LOTE-1', fechaVencimiento: '2027-12-31',
+    })
+    expect(alGuardar.mock.calls[0][0]).not.toHaveProperty('documentoReferencia')
+  })
+
+  it('muestra el rechazo del servidor aunque corresponda a un campo oculto', async () => {
+    const alGuardar = vi.fn().mockResolvedValue('No se pudo validar el documento del movimiento')
+    renderDialog({
+      producto: mocks.producto,
+      posicion: {
+        almacenId: almacen.id, ubicacionId: ubicacion.id, estado: 'available',
+        lote: 'LOTE-1', fechaVencimiento: '2027-12-31',
+      },
+    }, undefined, alGuardar)
+    fireEvent.change(screen.getByLabelText('Cantidad *'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Costo unitario *'), { target: { value: '12' } })
+    fireEvent.change(screen.getByLabelText('Motivo del movimiento *'), { target: { value: 'Donación' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar movimiento' }))
+    expect(within(await screen.findByRole('alert')).getByText('No se pudo validar el documento del movimiento')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Registrar movimiento' })).toBeEnabled()
+  })
+
+  it('hace visible una excepción inesperada y recupera el botón', async () => {
+    renderDialog({
+      producto: mocks.producto,
+      posicion: {
+        almacenId: almacen.id, ubicacionId: ubicacion.id, estado: 'available',
+        lote: 'LOTE-1', fechaVencimiento: '2027-12-31',
+      },
+    }, undefined, vi.fn().mockRejectedValue(new Error('Network error')))
+    fireEvent.change(screen.getByLabelText('Cantidad *'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Costo unitario *'), { target: { value: '12' } })
+    fireEvent.change(screen.getByLabelText('Motivo del movimiento *'), { target: { value: 'Donación' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar movimiento' }))
+    expect(within(await screen.findByRole('alert')).getByText(/Revisa el Kardex antes de volver a intentarlo/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Registrar movimiento' })).toBeEnabled()
+  })
+
+  it('indica que está registrando y bloquea envíos repetidos', async () => {
+    let completar!: (valor: undefined) => void
+    const pendiente = new Promise<undefined>((resolve) => { completar = resolve })
+    const alGuardar = vi.fn().mockReturnValue(pendiente)
+    renderDialog({
+      producto: mocks.producto,
+      posicion: {
+        almacenId: almacen.id, ubicacionId: ubicacion.id, estado: 'available',
+        lote: 'LOTE-1', fechaVencimiento: '2027-12-31',
+      },
+    }, undefined, alGuardar)
+    fireEvent.change(screen.getByLabelText('Cantidad *'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Costo unitario *'), { target: { value: '12' } })
+    fireEvent.change(screen.getByLabelText('Motivo del movimiento *'), { target: { value: 'Donación' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar movimiento' }))
+    const boton = await screen.findByRole('button', { name: 'Registrando movimiento…' })
+    expect(boton).toBeDisabled()
+    fireEvent.click(boton)
+    expect(alGuardar).toHaveBeenCalledOnce()
+    await act(async () => { completar(undefined); await pendiente })
   })
 })

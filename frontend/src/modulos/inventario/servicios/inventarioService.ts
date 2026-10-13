@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { leerCapturaUnidadMovimiento } from '../modelo/capturaUnidadMovimiento'
 import type {
   AlmacenAjusteStockOpcion,
   AlmacenInventarioOpcion,
@@ -21,6 +22,9 @@ import {
 import { leerRespuestaReadInventario } from '@/modulos/inventario/servicios/productoInventarioReadService'
 
 interface MovimientoFila {
+  entered_quantity?: number | string | null
+  entered_unit_of_measure?: string | null
+  unit_conversion_factor?: number | string | null
   id: string
   product_id: string
   product_code: string
@@ -46,7 +50,7 @@ interface MovimientoFila {
 }
 
 const columnasMovimiento =
-  'id,product_id,product_code,product_description,unit_of_measure,movement_type,quantity,warehouse,warehouse_id,location_id,stock_status,unit_cost,lot,expiration_date,operation_date,created_at,reason,document_reference,created_by,source_type,source_id,ledger_sequence' as const
+  'id,product_id,product_code,product_description,unit_of_measure,movement_type,quantity,warehouse,warehouse_id,location_id,stock_status,unit_cost,lot,expiration_date,operation_date,created_at,reason,document_reference,created_by,source_type,source_id,ledger_sequence,entered_quantity,entered_unit_of_measure,unit_conversion_factor' as const
 
 interface ExistenciaFila {
   product_id: string
@@ -69,6 +73,7 @@ interface ExistenciaFila {
 
 function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
   return {
+    ...leerCapturaUnidadMovimiento(fila),
     id: fila.id,
     productoId: fila.product_id,
     productoCodigo: fila.product_code,

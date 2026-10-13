@@ -84,7 +84,6 @@ export function DialogoMovimientoInventario({
       fechaOperacion: hoy(),
       motivo: '',
       detalleMotivo: '',
-      documentoReferencia: '',
       costoUnitario: '',
       unidadEntradaId: contexto?.producto.unidadBaseId,
       factorConversionEsperado: 1,
@@ -105,6 +104,10 @@ export function DialogoMovimientoInventario({
   const factorConversion = unidadEntrada?.factorConversion ?? 1
   const unidadCaptura = unidadEntrada?.nombre || producto?.unidadMedida || 'unidades'
   const esSalida = movimientoEsSalida(tipo)
+  const mensajesError = [...new Set(Object.entries(errors).flatMap(([campo, error]) => {
+    const mensaje = campo === 'root' ? errors.root?.server?.message : error?.message
+    return typeof mensaje === 'string' ? [mensaje] : []
+  }))]
   const usarFefo = tipo === 'salida' && estadoStock === 'available'
   const requiereBucketExacto = tipo === 'salida' && estadoStock !== 'available'
   const almacenesElegiblesStatus = esSalida ? estadoStock ?? 'available' : null
@@ -237,6 +240,19 @@ export function DialogoMovimientoInventario({
       setError('almacenId', { message: 'No hay stock disponible de este producto en el almacén seleccionado' })
       return
     }
+    if (usarFefo && candidatoFefo) {
+      if (candidatoFefo.productoId !== datos.productoId || candidatoFefo.almacenId !== datos.almacenId) {
+        setError('almacenId', { message: 'Espera la consulta del stock del producto y almacén seleccionados.' })
+        return
+      }
+      // FEFO is derived state: do not rely on hidden form values cleared by warehouse changes.
+      datos = {
+        ...datos,
+        ubicacionId: candidatoFefo.ubicacionId,
+        lote: candidatoFefo.lote,
+        fechaVencimiento: candidatoFefo.fechaVencimiento,
+      }
+    }
     const cantidadEnUnidadBase = Number(datos.cantidad) * factorConversion
     if (usarFefo && cantidadEnUnidadBase > cantidadAsignableFefo) {
       setError('cantidad', {
@@ -269,14 +285,21 @@ export function DialogoMovimientoInventario({
     }
 
     const { detalleMotivo, ...datosMovimiento } = datos
+    delete datosMovimiento.documentoReferencia
     const motivoRegistrado = crearDescripcionMotivoMovimiento(datos.motivo, detalleMotivo)
-    const error = await alGuardar({ ...datosMovimiento, motivo: motivoRegistrado })
+    let error: string | undefined
+    try {
+      error = await alGuardar({ ...datosMovimiento, motivo: motivoRegistrado })
+    } catch {
+      setError('root.server', { message: 'No se pudo confirmar el movimiento. Revisa el Kardex antes de volver a intentarlo.' })
+      return
+    }
     if (error) {
       setError(
         error.includes('unidad seleccionada') || error.includes('equivalencia')
           ? 'unidadEntradaId'
           : error.includes('documento')
-          ? 'documentoReferencia'
+          ? 'root.server'
           : error.includes('costo')
             ? 'costoUnitario'
           : error.includes('motivo')
@@ -353,7 +376,6 @@ export function DialogoMovimientoInventario({
                       setValue('cantidad', '')
                       setValue('motivo', '')
                       setValue('detalleMotivo', '')
-                      setValue('documentoReferencia', '')
                       clearErrors(['motivo', 'detalleMotivo'])
                     },
                   })}
@@ -683,20 +705,6 @@ export function DialogoMovimientoInventario({
                   </div>
                 ) : null}
               </div>
-              <div className="sm:col-span-2">
-                <label htmlFor="documento-movimiento" className="field-label">Documento de origen (opcional)</label>
-                <input
-                  id="documento-movimiento"
-                  className="field-control"
-                  placeholder={esSalida ? 'Ej. vale o autorización' : 'Ej. factura o guía de remisión'}
-                  maxLength={120}
-                  aria-invalid={Boolean(errors.documentoReferencia)}
-                  aria-describedby="documento-movimiento-ayuda"
-                  {...register('documentoReferencia')}
-                />
-                <p id="documento-movimiento-ayuda" className="field-help">Opcional. Registra el número del respaldo si existe; el sistema asigna el folio del movimiento.</p>
-                {errors.documentoReferencia ? <p className="field-error">{errors.documentoReferencia.message}</p> : null}
-              </div>
             </div>
 
             <div
@@ -729,6 +737,14 @@ export function DialogoMovimientoInventario({
                   : `La entrada sumará stock en ${producto?.unidadMedida || 'la unidad base'} al almacén y posición indicados.`}
               </p>
             </div>
+            {mensajesError.length ? (
+              <div role="alert" className="mt-4 text-sm text-destructive">
+                <p className="font-medium">No se registró el movimiento. Revisa lo siguiente:</p>
+                <ul className="mt-1 list-disc space-y-1 ps-5">
+                  {mensajesError.map((mensaje) => <li key={mensaje}>{mensaje}</li>)}
+                </ul>
+              </div>
+            ) : null}
           </form>
 
           <footer className="flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
@@ -745,7 +761,7 @@ export function DialogoMovimientoInventario({
                 cargandoFefo || (!candidatoFefo && !errorFefo)
               ))}
             >
-              Registrar movimiento
+              {isSubmitting ? 'Registrando movimiento…' : 'Registrar movimiento'}
             </Button>
           </footer>
         </DialogPrimitive.Content>

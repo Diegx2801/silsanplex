@@ -1,6 +1,7 @@
 import { ArrowLeftRight } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { CantidadMovimiento } from './CantidadMovimiento'
 import { SelectorProductoInventario } from './SelectorProductoInventario'
 import {
   useResultadoOperacionAlmacen,
@@ -220,16 +221,18 @@ export function PanelMovimientosAlmacen(props: Props) {
                         </p>
                       </td>
                       <td className="px-4 py-4 text-end font-mono">
-                        {movimiento.cantidadEntrada || '—'}
+                        {movimiento.cantidadEntrada ? <CantidadMovimiento {...movimiento} cantidad={movimiento.cantidadEntrada} /> : '—'}
                       </td>
                       <td className="px-4 py-4 text-end font-mono">
-                        {movimiento.cantidadSalida || '—'}
+                        {movimiento.cantidadSalida ? <CantidadMovimiento {...movimiento} cantidad={movimiento.cantidadSalida} /> : '—'}
                       </td>
                       <td className="px-4 py-4 text-end font-mono">
                         {formatoMoneda.format(movimiento.costoUnitario)}
+                        {movimiento.unidadMedida ? <p className="mt-1 font-sans text-xs text-muted-foreground">por {movimiento.unidadMedida}</p> : null}
                       </td>
                       <td className="px-4 py-4 text-end font-mono font-semibold">
                         {formatoCantidad.format(movimiento.saldoCantidad)}
+                        {movimiento.unidadMedida ? <span className="ms-1 font-sans text-xs font-normal text-muted-foreground">{movimiento.unidadMedida}</span> : null}
                       </td>
                       <td className="px-5 py-4 text-end font-mono">
                         {formatoMoneda.format(movimiento.saldoValor)}

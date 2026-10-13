@@ -2,6 +2,7 @@ import { ArrowDownToLine, ArrowUpFromLine, Plus } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { Button } from '@/components/ui/button'
+import { CantidadMovimiento } from '@/modulos/inventario/componentes/CantidadMovimiento'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
 import { DialogoMovimientoInventario } from '@/modulos/inventario/componentes/DialogoMovimientoInventario'
@@ -15,7 +16,6 @@ import { useInventario } from '@/modulos/inventario/estado/useInventario'
 import { movimientoEsSalida, tiposMovimientoInventario, type DatosMovimientoInventario, type MovimientoInventario } from '@/modulos/inventario/modelo/inventario'
 import type { TamanioPaginaInventario } from '@/modulos/inventario/modelo/paginacionInventario'
 
-const formatoCantidad = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 3 })
 const formatoFecha = new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })
 function etiquetaTipo(tipo: MovimientoInventario['tipo']) {
   return tiposMovimientoInventario.find((item) => item.valor === tipo)!.etiqueta
@@ -58,17 +58,13 @@ function MovimientoFila({ movimiento }: { movimiento: MovimientoInventario }) {
         </div>
       </div>
       <div className="flex items-center justify-between gap-4 lg:block lg:text-end">
-        <p
+        <CantidadMovimiento
+          {...movimiento}
+          signo={esSalida ? '−' : '+'}
           className={`font-mono text-sm font-semibold tabular-nums ${
             esSalida ? 'text-[#79520d]' : 'text-primary'
           }`}
-        >
-          {esSalida ? '−' : '+'}
-          {formatoCantidad.format(movimiento.cantidad)}{' '}
-          <span className="font-sans text-xs font-normal text-muted-foreground">
-            {movimiento.unidadMedida || 'unid.'}
-          </span>
-        </p>
+        />
         <p className="mt-1 text-xs text-muted-foreground">
           {etiquetaTipo(movimiento.tipo)} ·{' '}
           {formatoFecha.format(new Date(`${movimiento.fechaOperacion}T12:00:00`))}
@@ -102,7 +98,7 @@ export function MovimientosInventarioPage() {
         <div>
           <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">Inventario</span>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Movimientos y Kardex</h1>
-          <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">Consulta entradas, salidas y transferencias; registra operaciones manuales con su documento y motivo.</p>
+          <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">Consulta entradas, salidas y transferencias; registra operaciones manuales con su motivo y trazabilidad.</p>
         </div>
         {puedeGestionar ? <Button ref={disparador} size="lg" disabled={!gestionAlmacenes.almacenes.some((a) => a.activo)} onClick={() => setDialogoAbierto(true)}>
           <Plus aria-hidden="true" />Registrar movimiento

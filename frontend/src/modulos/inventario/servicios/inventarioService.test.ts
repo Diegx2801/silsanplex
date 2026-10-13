@@ -207,6 +207,20 @@ describe('listarExistenciasInventario', () => {
 describe('listarMovimientosInventario', () => {
   beforeEach(() => from.mockReset())
 
+  it('conserva la unidad original y su equivalencia histórica al leer el movimiento', async () => {
+    const query = crearQuery({ data: [{
+      id: 'mov-1', unit_of_measure: 'Unidad', quantity: '200',
+      entered_quantity: '10.000000000', entered_unit_of_measure: 'Caja', unit_conversion_factor: '20.000000',
+    }], error: null, count: 1 })
+    const resultado = await listarMovimientosInventario('org-1', {
+      pagina: 1, tamanioPagina: 25, busqueda: '', almacenId: '', tipo: '', fechaDesde: '', fechaHasta: '', orden: 'fecha-desc',
+    })
+    expect(query.select.mock.calls[0][0]).toContain('entered_quantity,entered_unit_of_measure,unit_conversion_factor')
+    expect(resultado.elementos[0]).toMatchObject({
+      cantidad: 200, unidadMedida: 'Unidad', cantidadCapturada: 10, unidadCapturada: 'Caja', factorConversion: 20,
+    })
+  })
+
   it('pagina, filtra y ordena movimientos completamente en Supabase', async () => {
     const query = crearQuery({ data: [], error: null, count: 1_250 })
     const resultado = await listarMovimientosInventario('org-1', {

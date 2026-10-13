@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import type { ConsultaPaginadaInventario } from './paginacionInventario'
+import type { CapturaUnidadMovimiento } from './capturaUnidadMovimiento'
 
 export type EstadoStock = 'available' | 'quarantine' | 'damaged'
 
@@ -59,12 +60,13 @@ export interface AlertaInventario extends SaldoInventario {
   estadoVencimiento: 'expired' | 'urgent' | 'upcoming' | null
 }
 
-export interface MovimientoKardex {
+export interface MovimientoKardex extends CapturaUnidadMovimiento {
   id: string
   secuenciaLedger: number
   productoId: string
   productoCodigo: string
   productoDescripcion: string
+  unidadMedida?: string
   almacen: string
   estado: EstadoStock
   lote: string

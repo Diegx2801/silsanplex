@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { leerCapturaUnidadMovimiento } from '../modelo/capturaUnidadMovimiento'
 import type {
   AlertaInventario,
   Almacen,
@@ -109,7 +110,7 @@ export async function buscarAlmacenesDisponibles(
 const columnasVencimiento =
   'product_id,product_code,product_description,unit_of_measure,warehouse_id,warehouse_code,warehouse_name,location_id,location_code,location_name,stock_status,lot,expiration_date,physical_quantity,inventory_value,average_cost,expiration_alert_days,days_until_expiration,expiration_state' as const
 const columnasKardex =
-  'id,product_id,product_code,product_description,warehouse,warehouse_id,stock_status,lot,operation_date,created_at,reason,document_reference,unit_cost,inbound_quantity,outbound_quantity,inbound_value,outbound_value,running_quantity,running_value,ledger_sequence' as const
+  'id,product_id,product_code,product_description,unit_of_measure,warehouse,warehouse_id,stock_status,lot,operation_date,created_at,reason,document_reference,unit_cost,inbound_quantity,outbound_quantity,inbound_value,outbound_value,running_quantity,running_value,ledger_sequence,entered_quantity,entered_unit_of_measure,unit_conversion_factor' as const
 
 function aplicarBusqueda<T extends { or: (filtro: string) => T }>(
   query: T,
@@ -259,6 +260,8 @@ export async function listarKardex(
   if (error) throw new Error(errorAlmacen(error))
   const elementos = (data ?? []).map((fila) => ({
       id: fila.id,
+      ...leerCapturaUnidadMovimiento(fila),
+      unidadMedida: fila.unit_of_measure ?? '',
       productoId: fila.product_id,
       productoCodigo: fila.product_code,
       productoDescripcion: fila.product_description,
