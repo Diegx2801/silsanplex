@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { RotateCcw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { CantidadMovimiento } from './CantidadMovimiento'
 import { ImporteMovimiento } from './ImporteMovimiento'
 import { FormularioTransferencia } from './FormularioTransferencia'
@@ -12,6 +14,7 @@ import {
   type Almacen,
   type UbicacionAlmacen,
   type DatosTransferencia,
+  type ConsultaTransferencias,
 } from '../modelo/almacen'
 
 interface Props {
@@ -29,6 +32,15 @@ const formatoMoneda = new Intl.NumberFormat('es-PE', {
   style: 'currency',
   currency: 'PEN',
 })
+const consultaTransferenciasInicial: ConsultaTransferencias = {
+  pagina: 1,
+  tamanioPagina: 25,
+  busqueda: '',
+  almacenId: '',
+  fechaDesde: '',
+  fechaHasta: '',
+  orden: 'fecha-desc',
+}
 
 export function PanelMovimientosAlmacen(props: Props) {
   const { almacenes, vista } = props
@@ -41,15 +53,15 @@ export function PanelMovimientosAlmacen(props: Props) {
     fechaHasta: '',
     orden: 'fecha-desc' as const,
   })
-  const [transferenciasConsulta, setTransferenciasConsulta] = useState({
-    pagina: 1,
-    tamanioPagina: 25 as TamanioPaginaInventario,
-    busqueda: '',
-    almacenId: '',
-    fechaDesde: '',
-    fechaHasta: '',
-    orden: 'fecha-desc' as const,
-  })
+  const [transferenciasConsulta, setTransferenciasConsulta] = useState(
+    consultaTransferenciasInicial,
+  )
+  const filtrosTransferenciaActivos = Object.entries(
+    consultaTransferenciasInicial,
+  ).some(
+    ([clave, valor]) =>
+      transferenciasConsulta[clave as keyof ConsultaTransferencias] !== valor,
+  )
 
   const kardexBusqueda = useDebounceInventario(kardexConsulta.busqueda)
   const transferenciasBusqueda = useDebounceInventario(
@@ -61,7 +73,9 @@ export function PanelMovimientosAlmacen(props: Props) {
       : {
           transferencias: {
             ...transferenciasConsulta,
-            busqueda: transferenciasBusqueda,
+            busqueda: transferenciasConsulta.busqueda
+              ? transferenciasBusqueda
+              : '',
           },
         },
   )
@@ -267,70 +281,87 @@ export function PanelMovimientosAlmacen(props: Props) {
             aria-labelledby="transferencias-title"
             className="ledger-sheet"
           >
-            <div className="grid gap-4 border-b px-5 py-5 sm:px-6 xl:grid-cols-[minmax(16rem,1fr)_14rem_12rem_12rem] xl:items-end">
-              <div>
-                <h2 id="transferencias-title" className="text-lg font-semibold">
-                  Historial de transferencias
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {listados.transferencias.data?.total ?? 0} transferencias
-                  persistentes.
-                </p>
+            <div className="border-b px-5 py-5 sm:px-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2
+                    id="transferencias-title"
+                    className="text-lg font-semibold"
+                  >
+                    Historial de transferencias
+                  </h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {listados.transferencias.data?.total ?? 0} transferencias
+                    persistentes.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={!filtrosTransferenciaActivos}
+                  onClick={() =>
+                    setTransferenciasConsulta(consultaTransferenciasInicial)
+                  }
+                >
+                  <RotateCcw aria-hidden="true" /> Limpiar filtros
+                </Button>
               </div>
-              <label className="field-label">
-                Buscar
-                <input
-                  type="search"
-                  value={transferenciasConsulta.busqueda}
-                  onChange={(e) =>
-                    setTransferenciasConsulta((actual) => ({
-                      ...actual,
-                      busqueda: e.target.value,
-                      pagina: 1,
-                    }))
-                  }
-                  className="field-control"
-                  placeholder="Referencia o nota"
-                />
-              </label>
-              <label className="field-label">
-                Almacén
-                <select
-                  value={transferenciasConsulta.almacenId}
-                  onChange={(e) =>
-                    setTransferenciasConsulta((actual) => ({
-                      ...actual,
-                      almacenId: e.target.value,
-                      pagina: 1,
-                    }))
-                  }
-                  className="field-control"
-                >
-                  <option value="">Todos</option>
-                  {almacenes.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.nombre}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-label">
-                Orden
-                <select
-                  value={transferenciasConsulta.orden}
-                  onChange={(e) =>
-                    setTransferenciasConsulta((actual) => ({
-                      ...actual,
-                      orden: e.target.value as typeof actual.orden,
-                      pagina: 1,
-                    }))
-                  }
-                  className="field-control"
-                >
-                  <option value="fecha-desc">Más reciente</option>
-                  <option value="fecha-asc">Más antigua</option>
-                </select>
-              </label>
+              <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_12rem_12rem] lg:items-end">
+                <label className="field-label">
+                  Buscar
+                  <input
+                    type="search"
+                    value={transferenciasConsulta.busqueda}
+                    onChange={(e) =>
+                      setTransferenciasConsulta((actual) => ({
+                        ...actual,
+                        busqueda: e.target.value,
+                        pagina: 1,
+                      }))
+                    }
+                    className="field-control"
+                    placeholder="Referencia o nota"
+                  />
+                </label>
+                <label className="field-label">
+                  Almacén
+                  <select
+                    value={transferenciasConsulta.almacenId}
+                    onChange={(e) =>
+                      setTransferenciasConsulta((actual) => ({
+                        ...actual,
+                        almacenId: e.target.value,
+                        pagina: 1,
+                      }))
+                    }
+                    className="field-control"
+                  >
+                    <option value="">Todos</option>
+                    {almacenes.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-label">
+                  Orden
+                  <select
+                    value={transferenciasConsulta.orden}
+                    onChange={(e) =>
+                      setTransferenciasConsulta((actual) => ({
+                        ...actual,
+                        orden: e.target.value as typeof actual.orden,
+                        pagina: 1,
+                      }))
+                    }
+                    className="field-control"
+                  >
+                    <option value="fecha-desc">Más reciente</option>
+                    <option value="fecha-asc">Más antigua</option>
+                  </select>
+                </label>
+              </div>
             </div>
             <div className="grid gap-4 border-b bg-muted/20 px-5 py-4 sm:px-6 sm:grid-cols-2">
               <label className="field-label">

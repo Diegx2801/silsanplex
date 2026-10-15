@@ -64,7 +64,6 @@ export function FormularioTransferencia({
   const [ubicacionDestinoId, setUbicacionDestinoId] = useState('')
   const [cantidad, setCantidad] = useState('')
   const [unidadId, setUnidadId] = useState('')
-  const [notas, setNotas] = useState('')
   const [revision, setRevision] = useState<Revision | null>(null)
   const [error, setError] = useState('')
   const [exito, setExito] = useState('')
@@ -172,7 +171,6 @@ export function FormularioTransferencia({
       lote: bucket?.lote ?? '',
       fechaVencimiento: bucket?.fechaVencimiento ?? '',
       estado: bucket?.estadoStock ?? 'available',
-      notas,
     })
     if (!resultado.success) {
       setError(
@@ -249,7 +247,6 @@ export function FormularioTransferencia({
       setRevision(null)
       setCantidad('')
       setBucketKey('')
-      setNotas('')
       ultimoIntento.current = null
     } catch {
       setError(
@@ -329,12 +326,6 @@ export function FormularioTransferencia({
                   : 'Transferencia entre almacenes'}
               </dd>
             </div>
-            {revision.datos.notas ? (
-              <div className="sm:col-span-2">
-                <dt className="text-muted-foreground">Observación</dt>
-                <dd className="mt-1 break-words">{revision.datos.notas}</dd>
-              </div>
-            ) : null}
           </dl>
           <p className="text-sm text-muted-foreground">
             Se conservarán el lote, el vencimiento, la condición y el costo del
@@ -549,18 +540,6 @@ export function FormularioTransferencia({
                 </p>
               </div>
             ) : null}
-            <div className="sm:col-span-2">
-              <label className="field-label" htmlFor="transferencia-notas">
-                Observación (opcional)
-              </label>
-              <input
-                id="transferencia-notas"
-                className="field-control"
-                maxLength={240}
-                value={notas}
-                onChange={(e) => setNotas(e.target.value)}
-              />
-            </div>
           </div>
           {error ? (
             <p role="alert" className="field-error mt-4">

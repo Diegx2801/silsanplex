@@ -159,6 +159,7 @@ beforeEach(() => {
 describe('FormularioTransferencia', () => {
   it('no pide referencia, lote, vencimiento ni condición manuales', () => {
     montar()
+    expect(screen.queryByLabelText(/Observación|Notas/)).not.toBeInTheDocument()
     expect(
       screen.queryByLabelText(/Referencia|Vencimiento|Condición/),
     ).not.toBeInTheDocument()
@@ -185,6 +186,7 @@ describe('FormularioTransferencia', () => {
       screen.getByRole('button', { name: 'Revisar transferencia' }),
     )
     expect(guardar).not.toHaveBeenCalled()
+    expect(screen.queryByText('Observación')).not.toBeInTheDocument()
     expect(
       screen.getByText('Reubicación dentro del mismo almacén'),
     ).toBeVisible()
@@ -193,6 +195,7 @@ describe('FormularioTransferencia', () => {
       screen.getByRole('button', { name: 'Confirmar transferencia' }),
     )
     await waitFor(() => expect(guardar).toHaveBeenCalledTimes(1))
+    expect(guardar.mock.calls[0][0]).not.toHaveProperty('notas')
     expect(guardar.mock.calls[0][0]).toMatchObject({
       almacenOrigenId: almacen.id,
       almacenDestinoId: almacen.id,

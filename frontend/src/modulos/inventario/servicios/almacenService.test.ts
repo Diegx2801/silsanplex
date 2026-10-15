@@ -38,7 +38,7 @@ describe('transferencia de posición exacta', () => {
     productoId: 'producto-1', almacenOrigenId: 'almacen-1', ubicacionOrigenId: 'anaquel-1',
     almacenDestinoId: 'almacen-1', ubicacionDestinoId: 'anaquel-2', cantidad: '2',
     lote: 'LOTE-ESPECIFICO', fechaVencimiento: '2029-01-01', estado: 'available' as const,
-    notas: 'Reubicación autorizada', unidadEntradaId: 'caja-1', factorConversionEsperado: 20,
+    unidadEntradaId: 'caja-1', factorConversionEsperado: 20,
   }
 
   beforeEach(() => { rpc.mockReset() })
@@ -53,7 +53,6 @@ describe('transferencia de posición exacta', () => {
       destination_warehouse_id: 'almacen-1', destination_location_id: 'anaquel-2',
       quantity: '2', input_unit_id: 'caja-1', expected_conversion_factor: 20,
       lot: 'LOTE-ESPECIFICO', expiration_date: '2029-01-01', stock_status: 'available',
-      notes: 'Reubicación autorizada',
     } })
   })
 
@@ -68,6 +67,7 @@ describe('transferencia de posición exacta', () => {
       expiration_date: null, source_location_id: 'anaquel-1',
     }) })
     expect(rpc.mock.calls[0][1].payload).not.toHaveProperty('reference')
+    expect(rpc.mock.calls[0][1].payload).not.toHaveProperty('notes')
   })
 
   it.each([
@@ -82,7 +82,7 @@ describe('transferencia de posición exacta', () => {
     ['INVENTORY_QUANTITY_CONVERSION_INVALID', '3 decimales'],
     ['TRANSFER_UNIT_COST_INVALID', 'valorización'],
     ['TRANSFER_OPERATION_KEY_REQUIRED', 'identificar el intento'],
-    ['TRANSFER_DETAILS_INVALID', 'lote y las notas'],
+    ['TRANSFER_DETAILS_INVALID', 'datos de la transferencia'],
     ['INVENTORY_STATUS_INVALID', 'condición de stock válida'],
   ])('explica %s sin ocultar el fallo', async (message, texto) => {
     rpc.mockResolvedValue({ data: null, error: { message } })

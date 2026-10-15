@@ -20,7 +20,7 @@ vi.mock('@/modulos/inventario/servicios/almacenService', () => servicios)
 const datos = {
   productoId: 'producto-1', almacenOrigenId: 'almacen-1', ubicacionOrigenId: 'anaquel-1',
   almacenDestinoId: 'almacen-1', ubicacionDestinoId: 'anaquel-2', cantidad: '2',
-  lote: 'L-01', fechaVencimiento: '', estado: 'available' as const, notas: '',
+  lote: 'L-01', fechaVencimiento: '', estado: 'available' as const,
 }
 
 function preparar() {

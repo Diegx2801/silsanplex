@@ -172,7 +172,6 @@ export const esquemaTransferencia = z.object({
   lote: z.string().trim().max(60),
   fechaVencimiento: z.string(),
   estado: z.enum(['available', 'quarantine', 'damaged']),
-  notas: z.string().trim().max(240),
 }).refine((datos) => datos.almacenOrigenId !== datos.almacenDestinoId
   || datos.ubicacionOrigenId !== datos.ubicacionDestinoId, {
   message: 'Selecciona una ubicación de destino diferente a la de origen',

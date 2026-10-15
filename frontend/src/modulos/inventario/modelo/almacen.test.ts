@@ -19,7 +19,7 @@ describe('modelo de almacenes', () => {
     const resultado = esquemaTransferencia.safeParse({
       almacenOrigenId: id(1), ubicacionOrigenId: id(2), almacenDestinoId: id(1),
       ubicacionDestinoId: id(3), productoId: id(4), cantidad: '2', lote: '', fechaVencimiento: '',
-      estado: 'available', notas: '',
+      estado: 'available',
     })
     expect(resultado.success).toBe(true)
   })
@@ -27,8 +27,12 @@ describe('modelo de almacenes', () => {
   const transferencia = {
     almacenOrigenId: id(1), ubicacionOrigenId: id(2), almacenDestinoId: id(3),
     ubicacionDestinoId: id(4), productoId: id(5), cantidad: '2', lote: 'L-01',
-    fechaVencimiento: '2029-01-01', estado: 'available', notas: '',
+    fechaVencimiento: '2029-01-01', estado: 'available',
   }
+
+  it('no incorpora observaciones al contrato de nuevas transferencias', () => {
+    expect(esquemaTransferencia.parse({ ...transferencia, notas: 'Dato anterior' })).not.toHaveProperty('notas')
+  })
 
   it('impide transferir a la misma posición de origen', () => {
     const resultado = esquemaTransferencia.safeParse({

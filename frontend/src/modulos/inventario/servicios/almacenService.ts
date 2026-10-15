@@ -38,7 +38,7 @@ function errorAlmacen(error: { code?: string; message?: string }) {
   if (mensaje.includes('TRANSFER_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock no reservado de la posición seleccionada.'
   if (mensaje.includes('TRANSFER_OPERATION_CONFLICT')) return 'El intento anterior corresponde a otros datos. Actualiza el formulario antes de volver a confirmar.'
   if (mensaje.includes('TRANSFER_OPERATION_KEY_REQUIRED')) return 'No se pudo identificar el intento de transferencia. Recarga el formulario antes de confirmar.'
-  if (mensaje.includes('TRANSFER_DETAILS_INVALID')) return 'Revisa el lote y las notas de la transferencia.'
+  if (mensaje.includes('TRANSFER_DETAILS_INVALID')) return 'Revisa los datos de la transferencia.'
   if (mensaje.includes('INVENTORY_STATUS_INVALID')) return 'Selecciona una condición de stock válida.'
   if (mensaje.includes('TRANSFER_UNIT_COST_INVALID')) return 'No se pudo verificar el costo de la posición de origen. Revisa su valorización antes de transferir.'
   if (mensaje.includes('INVENTORY_PRODUCT_UNAVAILABLE')) return 'El producto ya no está disponible para transferencias.'
@@ -528,7 +528,6 @@ export async function transferirInventario(
     lot: datos.lote,
     expiration_date: datos.fechaVencimiento || null,
     stock_status: datos.estado,
-    notes: datos.notas,
   } })
   if (error) throw new Error(errorAlmacen(error))
 }
