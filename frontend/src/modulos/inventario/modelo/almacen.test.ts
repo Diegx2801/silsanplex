@@ -15,13 +15,41 @@ describe('modelo de almacenes', () => {
     expect(resultado.codigo).toBe('CENTRAL-1')
   })
 
-  it('impide transferir al mismo almacen', () => {
+  it('permite reubicar entre ubicaciones diferentes del mismo almacén sin referencia manual', () => {
     const resultado = esquemaTransferencia.safeParse({
-      referencia: 'TR-001', almacenOrigenId: id(1), ubicacionOrigenId: id(2), almacenDestinoId: id(1),
+      almacenOrigenId: id(1), ubicacionOrigenId: id(2), almacenDestinoId: id(1),
       ubicacionDestinoId: id(3), productoId: id(4), cantidad: '2', lote: '', fechaVencimiento: '',
       estado: 'available', notas: '',
     })
+    expect(resultado.success).toBe(true)
+  })
+
+  const transferencia = {
+    almacenOrigenId: id(1), ubicacionOrigenId: id(2), almacenDestinoId: id(3),
+    ubicacionDestinoId: id(4), productoId: id(5), cantidad: '2', lote: 'L-01',
+    fechaVencimiento: '2029-01-01', estado: 'available', notas: '',
+  }
+
+  it('impide transferir a la misma posición de origen', () => {
+    const resultado = esquemaTransferencia.safeParse({
+      ...transferencia, almacenDestinoId: id(1), ubicacionDestinoId: id(2),
+    })
     expect(resultado.success).toBe(false)
+    if (!resultado.success) expect(resultado.error.issues[0].path).toEqual(['ubicacionDestinoId'])
+  })
+
+  it('admite unidad alternativa y equivalencia para validar en el servidor', () => {
+    expect(esquemaTransferencia.parse({
+      ...transferencia, unidadEntradaId: id(6), factorConversionEsperado: 20,
+    })).toMatchObject({ unidadEntradaId: id(6), factorConversionEsperado: 20 })
+  })
+
+  it.each(['0', '-1', '2.1234', '1e3', ''])('rechaza cantidades de transferencia inválidas: %s', (cantidad) => {
+    expect(esquemaTransferencia.safeParse({ ...transferencia, cantidad }).success).toBe(false)
+  })
+
+  it.each([0, -1, Infinity, NaN])('rechaza equivalencias inválidas: %s', (factorConversionEsperado) => {
+    expect(esquemaTransferencia.safeParse({ ...transferencia, factorConversionEsperado }).success).toBe(false)
   })
 
   it('impide reclasificar al mismo estado', () => {

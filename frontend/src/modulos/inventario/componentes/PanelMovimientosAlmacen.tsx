@@ -1,13 +1,7 @@
-import { ArrowLeftRight } from 'lucide-react'
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { useState } from 'react'
 import { CantidadMovimiento } from './CantidadMovimiento'
-import { SelectorProductoInventario } from './SelectorProductoInventario'
-import {
-  useResultadoOperacionAlmacen,
-  valorFormulario as valor,
-} from '../estado/useResultadoOperacionAlmacen'
-import { MensajeOperacionAlmacen } from './MensajeOperacionAlmacen'
+import { ImporteMovimiento } from './ImporteMovimiento'
+import { FormularioTransferencia } from './FormularioTransferencia'
 import { EstadoListadoInventario } from './EstadoListadoInventario'
 import { PaginacionInventario } from './PaginacionInventario'
 import { useDebounceInventario } from '../estado/useDebounceInventario'
@@ -15,7 +9,6 @@ import { useListadosAlmacen } from '../estado/useListadosAlmacen'
 import type { TamanioPaginaInventario } from '../modelo/paginacionInventario'
 
 import {
-  esquemaTransferencia,
   type Almacen,
   type UbicacionAlmacen,
   type DatosTransferencia,
@@ -26,7 +19,7 @@ interface Props {
   almacenes: Almacen[]
   ubicaciones: UbicacionAlmacen[]
   puedeGestionar: boolean
-  transferir: (datos: DatosTransferencia) => Promise<string | undefined>
+  transferir: (datos: DatosTransferencia, operationKey?: string) => Promise<string | undefined>
   vista: 'kardex' | 'transferencias'
 }
 const formatoCantidad = new Intl.NumberFormat('es-PE', {
@@ -76,6 +69,9 @@ export function PanelMovimientosAlmacen(props: Props) {
   const transferencias = listados.transferencias.data?.elementos ?? []
   const nombreAlmacen = (id: string) =>
     almacenes.find((item) => item.id === id)?.nombre ?? 'Almacén'
+  const nombreUbicacion = (id?: string) => id
+    ? props.ubicaciones.find((u) => u.id === id)?.nombre ?? 'Ubicación no disponible'
+    : 'Varias ubicaciones'
   return (
     <div className="space-y-6">
       {vista === 'kardex' ? (
@@ -193,7 +189,7 @@ export function PanelMovimientosAlmacen(props: Props) {
                     <th className="px-4 py-3">Documento y motivo</th>
                     <th className="px-4 py-3 text-end">Entrada</th>
                     <th className="px-4 py-3 text-end">Salida</th>
-                    <th className="px-4 py-3 text-end">Costo</th>
+                    <th className="px-4 py-3 text-end">Importe</th>
                     <th className="px-4 py-3 text-end">Saldo</th>
                     <th className="px-5 py-3 text-end">Valor saldo</th>
                   </tr>
@@ -227,8 +223,7 @@ export function PanelMovimientosAlmacen(props: Props) {
                         {movimiento.cantidadSalida ? <CantidadMovimiento {...movimiento} cantidad={movimiento.cantidadSalida} /> : '—'}
                       </td>
                       <td className="px-4 py-4 text-end font-mono">
-                        {formatoMoneda.format(movimiento.costoUnitario)}
-                        {movimiento.unidadMedida ? <p className="mt-1 font-sans text-xs text-muted-foreground">por {movimiento.unidadMedida}</p> : null}
+                        <ImporteMovimiento {...movimiento} />
                       </td>
                       <td className="px-4 py-4 text-end font-mono font-semibold">
                         {formatoCantidad.format(movimiento.saldoCantidad)}
@@ -390,6 +385,10 @@ export function PanelMovimientosAlmacen(props: Props) {
                         {nombreAlmacen(transferencia.almacenOrigenId)} →{' '}
                         {nombreAlmacen(transferencia.almacenDestinoId)}
                       </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {nombreUbicacion(transferencia.ubicacionOrigenId)} →{' '}
+                        {nombreUbicacion(transferencia.ubicacionDestinoId)}
+                      </p>
                     </div>
                     <time className="text-xs text-muted-foreground">
                       {new Date(
@@ -424,246 +423,6 @@ export function PanelMovimientosAlmacen(props: Props) {
           </section>
         </>
       )}
-    </div>
-  )
-}
-
-function FormularioTransferencia(props: Omit<Props, 'vista'>) {
-  const { organizationId, almacenes } = props
-  const almacenesActivos = useMemo(
-    () => almacenes.filter((almacen) => almacen.activo),
-    [almacenes],
-  )
-  const [origenId, setOrigenId] = useState(almacenesActivos[0]?.id ?? '')
-  const [destinoId, setDestinoId] = useState(almacenesActivos[1]?.id ?? '')
-  const { mensaje, guardando, resolver } = useResultadoOperacionAlmacen()
-  const ubicacionesOrigen = useMemo(
-    () =>
-      props.ubicaciones.filter(
-        (item) => item.almacenId === origenId && item.activa,
-      ),
-    [origenId, props.ubicaciones],
-  )
-  const ubicacionesDestino = useMemo(
-    () =>
-      props.ubicaciones.filter(
-        (item) => item.almacenId === destinoId && item.activa,
-      ),
-    [destinoId, props.ubicaciones],
-  )
-
-  useEffect(() => {
-    if (!almacenesActivos.some((almacen) => almacen.id === origenId))
-      setOrigenId(almacenesActivos[0]?.id ?? '')
-    if (
-      !almacenesActivos.some((almacen) => almacen.id === destinoId) ||
-      destinoId === origenId
-    ) {
-      setDestinoId(
-        almacenesActivos.find(
-          (almacen) => almacen.id !== (origenId || almacenesActivos[0]?.id),
-        )?.id ?? '',
-      )
-    }
-  }, [almacenesActivos, destinoId, origenId])
-
-  const guardarTransferencia = (evento: FormEvent<HTMLFormElement>) => {
-    evento.preventDefault()
-    const datos = new FormData(evento.currentTarget)
-    const entrada = {
-      referencia: valor(datos, 'referencia'),
-      almacenOrigenId: origenId,
-      ubicacionOrigenId: valor(datos, 'ubicacionOrigenId'),
-      almacenDestinoId: destinoId,
-      ubicacionDestinoId: valor(datos, 'ubicacionDestinoId'),
-      productoId: valor(datos, 'productoId'),
-      cantidad: valor(datos, 'cantidad'),
-      lote: valor(datos, 'lote'),
-      fechaVencimiento: valor(datos, 'fechaVencimiento'),
-      estado: valor(datos, 'estado'),
-      notas: valor(datos, 'notas'),
-    }
-    void resolver(
-      esquemaTransferencia.safeParse(entrada),
-      props.transferir,
-      'Transferencia completada y trazada en el kardex.',
-    )
-  }
-
-  return (
-    <div className="space-y-3">
-      <MensajeOperacionAlmacen texto={mensaje} />
-      <form className="ledger-sheet p-5 sm:p-6" onSubmit={guardarTransferencia}>
-        <h3 className="flex items-center gap-2 font-semibold">
-          <ArrowLeftRight className="size-5 text-primary" />
-          Transferencia entre almacenes
-        </h3>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="field-label" htmlFor="transferencia-referencia">
-              Referencia
-            </label>
-            <input
-              id="transferencia-referencia"
-              name="referencia"
-              required
-              className="field-control"
-              placeholder="TR-0001"
-            />
-          </div>
-          <SelectorProductoInventario
-            id="transferencia-producto"
-            name="productoId"
-            etiqueta="Producto"
-            organizationId={organizationId}
-          />
-          <div>
-            <label className="field-label" htmlFor="almacen-origen">
-              Almacén origen
-            </label>
-            <select
-              id="almacen-origen"
-              className="field-control"
-              value={origenId}
-              onChange={(e) => setOrigenId(e.target.value)}
-            >
-              {almacenes
-                .filter((a) => a.activo)
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.nombre}
-                  </option>
-                ))}
-            </select>
-          </div>
-          <div>
-            <label className="field-label" htmlFor="ubicacion-origen">
-              Ubicación origen
-            </label>
-            <select
-              id="ubicacion-origen"
-              name="ubicacionOrigenId"
-              className="field-control"
-            >
-              {ubicacionesOrigen.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.codigo} · {u.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="field-label" htmlFor="almacen-destino">
-              Almacén destino
-            </label>
-            <select
-              id="almacen-destino"
-              className="field-control"
-              value={destinoId}
-              onChange={(e) => setDestinoId(e.target.value)}
-            >
-              {almacenes
-                .filter((a) => a.activo)
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.nombre}
-                  </option>
-                ))}
-            </select>
-          </div>
-          <div>
-            <label className="field-label" htmlFor="ubicacion-destino">
-              Ubicación destino
-            </label>
-            <select
-              id="ubicacion-destino"
-              name="ubicacionDestinoId"
-              className="field-control"
-            >
-              {ubicacionesDestino.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.codigo} · {u.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="field-label" htmlFor="transferencia-cantidad">
-              Cantidad
-            </label>
-            <input
-              id="transferencia-cantidad"
-              name="cantidad"
-              required
-              inputMode="decimal"
-              className="field-control"
-            />
-          </div>
-          <div>
-            <label className="field-label" htmlFor="transferencia-lote">
-              Lote
-            </label>
-            <input
-              id="transferencia-lote"
-              name="lote"
-              className="field-control"
-            />
-          </div>
-          <div>
-            <label className="field-label" htmlFor="transferencia-vencimiento">
-              Vencimiento
-            </label>
-            <input
-              id="transferencia-vencimiento"
-              name="fechaVencimiento"
-              type="date"
-              className="field-control"
-            />
-          </div>
-          <div>
-            <label className="field-label" htmlFor="transferencia-estado">
-              Condición
-            </label>
-            <select
-              id="transferencia-estado"
-              name="estado"
-              className="field-control"
-            >
-              <option value="available">Disponible</option>
-              <option value="quarantine">Cuarentena</option>
-              <option value="damaged">Dañado</option>
-            </select>
-          </div>
-          <div className="sm:col-span-2">
-            <label className="field-label" htmlFor="transferencia-notas">
-              Notas
-            </label>
-            <input
-              id="transferencia-notas"
-              name="notas"
-              className="field-control"
-            />
-          </div>
-        </div>
-        <Button
-          className="mt-5"
-          type="submit"
-          disabled={
-            guardando ||
-            almacenesActivos.length < 2 ||
-            !ubicacionesOrigen.length ||
-            !ubicacionesDestino.length
-          }
-        >
-          Confirmar transferencia
-        </Button>
-        {almacenesActivos.length < 2 ? (
-          <p className="mt-3 text-sm text-muted-foreground">
-            Crea un segundo almacén y su ubicación para habilitar
-            transferencias.
-          </p>
-        ) : null}
-      </form>
     </div>
   )
 }

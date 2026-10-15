@@ -88,6 +88,8 @@ export interface TransferenciaAlmacen {
   referencia: string
   almacenOrigenId: string
   almacenDestinoId: string
+  ubicacionOrigenId?: string
+  ubicacionDestinoId?: string
   fechaTransferencia: string
   notas: string
 }
@@ -158,20 +160,23 @@ export const esquemaUbicacion = z.object({
 })
 
 export const esquemaTransferencia = z.object({
-  referencia: z.string().trim().min(2).max(40),
-  almacenOrigenId: z.string().uuid(),
-  ubicacionOrigenId: z.string().uuid(),
-  almacenDestinoId: z.string().uuid(),
-  ubicacionDestinoId: z.string().uuid(),
-  productoId: z.string().uuid(),
+  referencia: z.string().trim().max(40).optional(),
+  almacenOrigenId: z.string().uuid('Selecciona un almacén de origen'),
+  ubicacionOrigenId: z.string().uuid('Selecciona una posición de origen'),
+  almacenDestinoId: z.string().uuid('Selecciona un almacén de destino'),
+  ubicacionDestinoId: z.string().uuid('Selecciona una ubicación de destino'),
+  productoId: z.string().uuid('Selecciona un producto'),
   cantidad: cantidadPositiva,
+  unidadEntradaId: z.string().uuid('Selecciona una unidad válida').or(z.literal('')).optional(),
+  factorConversionEsperado: z.number().finite().positive().optional(),
   lote: z.string().trim().max(60),
   fechaVencimiento: z.string(),
   estado: z.enum(['available', 'quarantine', 'damaged']),
   notas: z.string().trim().max(240),
-}).refine((datos) => datos.almacenOrigenId !== datos.almacenDestinoId, {
-  message: 'El origen y destino deben ser diferentes',
-  path: ['almacenDestinoId'],
+}).refine((datos) => datos.almacenOrigenId !== datos.almacenDestinoId
+  || datos.ubicacionOrigenId !== datos.ubicacionDestinoId, {
+  message: 'Selecciona una ubicación de destino diferente a la de origen',
+  path: ['ubicacionDestinoId'],
 })
 
 export const esquemaReclasificacion = z.object({

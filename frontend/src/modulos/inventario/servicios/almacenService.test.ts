@@ -13,6 +13,7 @@ import {
   listarTransferencias,
   listarVencimientos,
   obtenerConfiguracionAlertasStock,
+  transferirInventario,
 } from './almacenService'
 
 const { from, rpc } = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
@@ -31,6 +32,63 @@ function crearQuery(data: Record<string, unknown>[] = [], count = data.length) {
 }
 
 const base = { pagina: 2, tamanioPagina: 50 as const, busqueda: '', almacenId: '' }
+
+describe('transferencia de posición exacta', () => {
+  const datos = {
+    productoId: 'producto-1', almacenOrigenId: 'almacen-1', ubicacionOrigenId: 'anaquel-1',
+    almacenDestinoId: 'almacen-1', ubicacionDestinoId: 'anaquel-2', cantidad: '2',
+    lote: 'LOTE-ESPECIFICO', fechaVencimiento: '2029-01-01', estado: 'available' as const,
+    notas: 'Reubicación autorizada', unidadEntradaId: 'caja-1', factorConversionEsperado: 20,
+  }
+
+  beforeEach(() => { rpc.mockReset() })
+
+  it('envía posición, cantidad capturada y UUID de reintento sin FEFO ni conversión en cliente', async () => {
+    rpc.mockResolvedValue({ data: 'transferencia-1', error: null })
+    await transferirInventario('org-1', datos, 'operacion-estable')
+    expect(rpc).toHaveBeenCalledOnce()
+    expect(rpc).toHaveBeenCalledWith('transfer_inventory_position', { payload: {
+      organization_id: 'org-1', operation_key: 'operacion-estable', product_id: 'producto-1',
+      source_warehouse_id: 'almacen-1', source_location_id: 'anaquel-1',
+      destination_warehouse_id: 'almacen-1', destination_location_id: 'anaquel-2',
+      quantity: '2', input_unit_id: 'caja-1', expected_conversion_factor: 20,
+      lot: 'LOTE-ESPECIFICO', expiration_date: '2029-01-01', stock_status: 'available',
+      notes: 'Reubicación autorizada',
+    } })
+  })
+
+  it('conserva el contrato exacto también para cuarentena sin vencimiento ni unidad alternativa', async () => {
+    rpc.mockResolvedValue({ data: 'transferencia-1', error: null })
+    await transferirInventario('org-1', {
+      ...datos, referencia: 'LEGACY-IGNORADO', estado: 'quarantine', fechaVencimiento: '',
+      unidadEntradaId: '', factorConversionEsperado: undefined,
+    }, 'operacion-estable')
+    expect(rpc).toHaveBeenCalledWith('transfer_inventory_position', { payload: expect.objectContaining({
+      stock_status: 'quarantine', input_unit_id: null, expected_conversion_factor: null,
+      expiration_date: null, source_location_id: 'anaquel-1',
+    }) })
+    expect(rpc.mock.calls[0][1].payload).not.toHaveProperty('reference')
+  })
+
+  it.each([
+    ['TRANSFER_INSUFFICIENT_STOCK', 'stock no reservado'],
+    ['TRANSFER_POSITION_MUST_DIFFER', 'destino diferente'],
+    ['TRANSFER_SOURCE_POSITION_UNAVAILABLE', 'posición de origen'],
+    ['TRANSFER_OPERATION_CONFLICT', 'intento anterior'],
+    ['TRANSFER_WAREHOUSE_UNAVAILABLE', 'ya no está activo'],
+    ['TRANSFER_LOCATION_UNAVAILABLE', 'ya no está activa'],
+    ['INVENTORY_INPUT_UNIT_STALE', 'equivalencia de la unidad cambió'],
+    ['INVENTORY_INPUT_UNIT_INVALID', 'unidad de medida configurada'],
+    ['INVENTORY_QUANTITY_CONVERSION_INVALID', '3 decimales'],
+    ['TRANSFER_UNIT_COST_INVALID', 'valorización'],
+    ['TRANSFER_OPERATION_KEY_REQUIRED', 'identificar el intento'],
+    ['TRANSFER_DETAILS_INVALID', 'lote y las notas'],
+    ['INVENTORY_STATUS_INVALID', 'condición de stock válida'],
+  ])('explica %s sin ocultar el fallo', async (message, texto) => {
+    rpc.mockResolvedValue({ data: null, error: { message } })
+    await expect(transferirInventario('org-1', datos, 'operacion-estable')).rejects.toThrow(texto)
+  })
+})
 
 describe('listados paginados de almacén', () => {
   beforeEach(() => {
@@ -124,6 +182,27 @@ describe('listados paginados de almacén', () => {
       'source_warehouse_id.eq.almacen-1,destination_warehouse_id.eq.almacen-1',
     )
     expect(query.range).toHaveBeenCalledWith(50, 99)
+  })
+
+  it('expone las ubicaciones únicas para distinguir reubicaciones dentro del mismo almacén', async () => {
+    crearQuery([{
+      id: 'transferencia-1', source_warehouse_id: 'almacen-1', destination_warehouse_id: 'almacen-1',
+      warehouse_transfer_items: [{ source_location_id: 'anaquel-1', destination_location_id: 'anaquel-2' }],
+    }])
+    const resultado = await listarTransferencias('org-1', { ...base, fechaDesde: '', fechaHasta: '', orden: 'fecha-desc' })
+    expect(resultado.elementos[0]).toMatchObject({ ubicacionOrigenId: 'anaquel-1', ubicacionDestinoId: 'anaquel-2' })
+  })
+
+  it('no presenta un único origen falso para transferencias históricas con varias posiciones', async () => {
+    crearQuery([{
+      warehouse_transfer_items: [
+        { source_location_id: 'anaquel-1', destination_location_id: 'anaquel-3' },
+        { source_location_id: 'anaquel-2', destination_location_id: 'anaquel-3' },
+      ],
+    }])
+    const resultado = await listarTransferencias('org-1', { ...base, fechaDesde: '', fechaHasta: '', orden: 'fecha-desc' })
+    expect(resultado.elementos[0].ubicacionOrigenId).toBeUndefined()
+    expect(resultado.elementos[0].ubicacionDestinoId).toBe('anaquel-3')
   })
 })
 
