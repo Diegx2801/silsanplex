@@ -64,6 +64,22 @@ describe('modelo de almacenes', () => {
     expect(resultado.success).toBe(false)
   })
 
+  it('admite unidad alternativa en reclasificación y conserva la cantidad capturada', () => {
+    expect(esquemaReclasificacion.parse({
+      productoId: id(1), almacenId: id(2), ubicacionId: id(3), estadoOrigen: 'available',
+      estadoDestino: 'quarantine', cantidad: '2', lote: 'L-01', fechaVencimiento: '', motivo: 'Inspección',
+      unidadEntradaId: id(4), factorConversionEsperado: 20,
+    })).toMatchObject({ cantidad: '2', unidadEntradaId: id(4), factorConversionEsperado: 20 })
+  })
+
+  it.each([0, -1, Infinity, NaN])('rechaza equivalencia de reclasificación inválida: %s', (factorConversionEsperado) => {
+    expect(esquemaReclasificacion.safeParse({
+      productoId: id(1), almacenId: id(2), ubicacionId: id(3), estadoOrigen: 'available',
+      estadoDestino: 'quarantine', cantidad: '2', lote: 'L-01', fechaVencimiento: '', motivo: 'Inspección',
+      factorConversionEsperado,
+    }).success).toBe(false)
+  })
+
   it('acepta stock mínimo cero para alertar cuando se agote', () => {
     expect(esquemaConfiguracionAlertasStock.safeParse({
       productoId: id(1), almacenId: id(2), ubicacionId: id(3),

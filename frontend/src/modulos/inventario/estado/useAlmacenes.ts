@@ -82,7 +82,10 @@ export function useAlmacenes() {
     mutationFn: ({ datos, operationKey }: { datos: DatosTransferencia; operationKey?: string }) =>
       transferirInventario(organizationId, datos, operationKey),
   })
-  const reclasificacionMutation = useMutation({ mutationFn: (datos: DatosReclasificacion) => reclasificarInventario(organizationId, datos) })
+  const reclasificacionMutation = useMutation({
+    mutationFn: ({ datos, operationKey }: { datos: DatosReclasificacion; operationKey?: string }) =>
+      reclasificarInventario(organizationId, datos, operationKey),
+  })
 
   return {
     ...(query.data ?? vacio),
@@ -98,7 +101,7 @@ export function useAlmacenes() {
     cambiarEstadoUbicacion: (ubicacion: UbicacionAlmacen) =>
       ejecutar(() => estadoUbicacionMutation.mutateAsync(ubicacion)),
     transferir: (datos: DatosTransferencia, operationKey?: string) => ejecutar(() => transferenciaMutation.mutateAsync({ datos, operationKey })),
-    reclasificar: (datos: DatosReclasificacion) => ejecutar(() => reclasificacionMutation.mutateAsync(datos)),
+    reclasificar: (datos: DatosReclasificacion, operationKey?: string) => ejecutar(() => reclasificacionMutation.mutateAsync({ datos, operationKey })),
     configurar: (datos: Parameters<typeof configurarAlertas>[2]) => ejecutar(() => configurarAlertas(organizationId, userId, datos)),
   }
 }

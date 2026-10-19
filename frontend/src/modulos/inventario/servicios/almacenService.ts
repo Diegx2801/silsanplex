@@ -30,6 +30,10 @@ function errorAlmacen(error: { code?: string; message?: string }) {
   if (mensaje.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no pueden transferirse ni administrarse como inventario.'
   if (mensaje.includes('INVENTORY_FEFO_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock asignable disponible según FEFO.'
   if (mensaje.includes('INVENTORY_INSUFFICIENT_STOCK')) return 'La operación supera el stock disponible del lote y ubicación seleccionados.'
+  if (mensaje.includes('INVENTORY_RESERVED_STOCK')) return 'La cantidad afectaría unidades reservadas. Reduce la cantidad al stock no reservado de la posición.'
+  if (mensaje.includes('RECLASSIFICATION_OPERATION_CONFLICT')) return 'El intento anterior corresponde a otros datos. Revisa la reclasificación antes de confirmar nuevamente.'
+  if (mensaje.includes('RECLASSIFICATION_REASON_INVALID')) return 'Describe el motivo de la reclasificación con entre 3 y 180 caracteres.'
+  if (mensaje.includes('RECLASSIFICATION_UNIT_COST_INVALID')) return 'No se pudo verificar el costo de la posición. Revisa su valorización antes de cambiar la condición.'
   if (mensaje.includes('INVENTORY_MAXIMUM_STOCK_EXCEEDED')) return 'La operación superaría el stock máximo configurado para el producto.'
   if (mensaje.includes('TRANSFER_POSITION_MUST_DIFFER')) return 'Selecciona una ubicación de destino diferente a la de origen.'
   if (mensaje.includes('TRANSFER_WAREHOUSE_UNAVAILABLE')) return 'Uno de los almacenes ya no está activo. Actualiza la selección.'
@@ -41,8 +45,9 @@ function errorAlmacen(error: { code?: string; message?: string }) {
   if (mensaje.includes('TRANSFER_DETAILS_INVALID')) return 'Revisa los datos de la transferencia.'
   if (mensaje.includes('INVENTORY_STATUS_INVALID')) return 'Selecciona una condición de stock válida.'
   if (mensaje.includes('TRANSFER_UNIT_COST_INVALID')) return 'No se pudo verificar el costo de la posición de origen. Revisa su valorización antes de transferir.'
-  if (mensaje.includes('INVENTORY_PRODUCT_UNAVAILABLE')) return 'El producto ya no está disponible para transferencias.'
-  if (mensaje.includes('INVENTORY_POSITION_UNIT_CONFLICT')) return 'Una posición conserva stock con una unidad base anterior. Es necesario conciliar ese saldo antes de transferir; no se convertirá automáticamente.'
+  if (mensaje.includes('INVENTORY_PRODUCT_UNAVAILABLE')) return 'El producto ya no está disponible para esta operación.'
+  if (mensaje.includes('INVENTORY_WAREHOUSE_UNAVAILABLE')) return 'El almacén ya no está activo. Vuelve a seleccionar una posición disponible.'
+  if (mensaje.includes('INVENTORY_POSITION_UNIT_CONFLICT')) return 'Una posición conserva stock con una unidad base anterior. Es necesario conciliar ese saldo antes de continuar; no se convertirá automáticamente.'
   if (mensaje.includes('INVENTORY_INPUT_UNIT_STALE')) return 'La equivalencia de la unidad cambió. Vuelve a seleccionar la unidad y revisa la cantidad.'
   if (mensaje.includes('INVENTORY_INPUT_UNIT_INVALID')) return 'Selecciona una unidad de medida configurada para este producto.'
   if (mensaje.includes('INVENTORY_QUANTITY_INVALID') || mensaje.includes('INVENTORY_QUANTITY_CONVERSION_INVALID')) return 'Revisa la cantidad y su equivalencia: debe ser mayor a cero y admitir hasta 3 decimales en la unidad base.'
@@ -532,15 +537,22 @@ export async function transferirInventario(
   if (error) throw new Error(errorAlmacen(error))
 }
 
-export async function reclasificarInventario(organizationId: string, datos: DatosReclasificacion) {
+export async function reclasificarInventario(
+  organizationId: string,
+  datos: DatosReclasificacion,
+  operationKey: string = crypto.randomUUID(),
+) {
   const { error } = await supabase.rpc('reclassify_inventory', { payload: {
     organization_id: organizationId,
+    operation_key: operationKey,
     product_id: datos.productoId,
     warehouse_id: datos.almacenId,
     location_id: datos.ubicacionId,
     source_status: datos.estadoOrigen,
     destination_status: datos.estadoDestino,
     quantity: datos.cantidad,
+    input_unit_id: datos.unidadEntradaId || null,
+    expected_conversion_factor: datos.factorConversionEsperado ?? null,
     lot: datos.lote,
     expiration_date: datos.fechaVencimiento,
     reason: datos.motivo,

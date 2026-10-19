@@ -13,6 +13,7 @@ import {
   listarTransferencias,
   listarVencimientos,
   obtenerConfiguracionAlertasStock,
+  reclasificarInventario,
   transferirInventario,
 } from './almacenService'
 
@@ -32,6 +33,38 @@ function crearQuery(data: Record<string, unknown>[] = [], count = data.length) {
 }
 
 const base = { pagina: 2, tamanioPagina: 50 as const, busqueda: '', almacenId: '' }
+
+describe('reclasificación de posición exacta', () => {
+  const datos = {
+    productoId: 'producto-1', almacenId: 'almacen-1', ubicacionId: 'anaquel-1',
+    estadoOrigen: 'available' as const, estadoDestino: 'quarantine' as const,
+    cantidad: '2', lote: 'LOTE-EXACTO', fechaVencimiento: '2029-01-01', motivo: 'Inspección',
+    unidadEntradaId: 'caja-1', factorConversionEsperado: 20,
+  }
+
+  beforeEach(() => rpc.mockReset())
+
+  it('envía posición, unidad capturada y clave estable sin convertir cantidades en cliente', async () => {
+    rpc.mockResolvedValue({ data: 'operacion-1', error: null })
+    await reclasificarInventario('org-1', datos, 'intento-estable')
+    expect(rpc).toHaveBeenCalledWith('reclassify_inventory', { payload: {
+      organization_id: 'org-1', operation_key: 'intento-estable', product_id: 'producto-1',
+      warehouse_id: 'almacen-1', location_id: 'anaquel-1', source_status: 'available',
+      destination_status: 'quarantine', quantity: '2', input_unit_id: 'caja-1',
+      expected_conversion_factor: 20, lot: 'LOTE-EXACTO', expiration_date: '2029-01-01', reason: 'Inspección',
+    } })
+  })
+
+  it.each([
+    ['INVENTORY_RESERVED_STOCK', 'unidades reservadas'],
+    ['RECLASSIFICATION_OPERATION_CONFLICT', 'intento anterior'],
+    ['RECLASSIFICATION_REASON_INVALID', 'entre 3 y 180 caracteres'],
+    ['RECLASSIFICATION_UNIT_COST_INVALID', 'valorización'],
+  ])('explica %s sin un error genérico', async (message, esperado) => {
+    rpc.mockResolvedValue({ error: { message } })
+    await expect(reclasificarInventario('org-1', datos, 'intento-estable')).rejects.toThrow(esperado)
+  })
+})
 
 describe('transferencia de posición exacta', () => {
   const datos = {

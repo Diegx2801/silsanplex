@@ -65,4 +65,25 @@ describe('useAlmacenes: transferencias y reubicaciones', () => {
     expect(servicios.transferirInventario).toHaveBeenNthCalledWith(1, 'org-1', datos, 'intento-estable')
     expect(servicios.transferirInventario).toHaveBeenNthCalledWith(2, 'org-1', datos, 'intento-estable')
   })
+
+  it('propaga la misma clave de reclasificación y actualiza alertas, Kardex y posiciones tras el éxito', async () => {
+    const reclasificacion = {
+      productoId: 'producto-1', almacenId: 'almacen-1', ubicacionId: 'anaquel-1',
+      cantidad: '2', estadoOrigen: 'available' as const, estadoDestino: 'quarantine' as const,
+      lote: 'L-01', fechaVencimiento: '', motivo: 'Inspección pendiente',
+    }
+    servicios.reclasificarInventario.mockRejectedValueOnce(new Error('La conexión se interrumpió.'))
+      .mockResolvedValue(undefined)
+    const { result, invalidar } = preparar()
+    await waitFor(() => expect(result.current.cargando).toBe(false))
+    await act(async () => {
+      expect(await result.current.reclasificar(reclasificacion, 'cambio-estable')).toBe('La conexión se interrumpió.')
+    })
+    expect(invalidar).not.toHaveBeenCalled()
+    await act(async () => { expect(await result.current.reclasificar(reclasificacion, 'cambio-estable')).toBeUndefined() })
+    expect(servicios.reclasificarInventario).toHaveBeenNthCalledWith(1, 'org-1', reclasificacion, 'cambio-estable')
+    expect(servicios.reclasificarInventario).toHaveBeenNthCalledWith(2, 'org-1', reclasificacion, 'cambio-estable')
+    expect(invalidar).toHaveBeenCalledWith({ queryKey: ['warehouse-management', 'org-1'] })
+    expect(invalidar).toHaveBeenCalledWith({ queryKey: ['inventory-adjustment-buckets', 'org-1'] })
+  })
 })

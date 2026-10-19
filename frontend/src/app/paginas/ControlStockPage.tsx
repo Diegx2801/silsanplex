@@ -12,7 +12,7 @@ export function ControlStockPage() {
       <header className="border-b pb-7">
         <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">Inventario</span>
         <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Control de stock</h1>
-        <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">Revisa alertas, vencimientos y condiciones de almacenamiento.</p>
+        <p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">Revisa mínimos y vencimientos. Cambia la condición del stock sin alterar la cantidad física total.</p>
       </header>
       <EstadoListadoInventario cargando={gestion.cargando} error={gestion.error} vacio={false} mensajeVacio="" alReintentar={() => void gestion.reintentar()}>
         <PanelControlStock organizationId={access?.organizationId ?? ''} almacenes={gestion.almacenes} ubicaciones={gestion.ubicaciones}
