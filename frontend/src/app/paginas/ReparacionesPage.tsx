@@ -1,11 +1,8 @@
 import {
   ClipboardList,
-  Clock3,
   LoaderCircle,
-  PackageCheck,
   Plus,
   SearchCheck,
-  Wrench,
 } from 'lucide-react'
 import {
   type MouseEvent as ReactMouseEvent,
@@ -78,32 +75,37 @@ function ResumenReparaciones({
   abiertas,
   esperandoAprobacion,
   listasParaEntrega,
+  cargando,
+  error,
+  alReintentar,
 }: {
   total: number
   abiertas: number
   esperandoAprobacion: number
   listasParaEntrega: number
+  cargando: boolean
+  error: unknown
+  alReintentar: () => void
 }) {
   const metricas = [
-    { etiqueta: 'Total registradas', valor: total, icono: ClipboardList },
-    { etiqueta: 'Órdenes abiertas', valor: abiertas, icono: Wrench },
-    { etiqueta: 'Esperando aprobación', valor: esperandoAprobacion, icono: Clock3 },
-    { etiqueta: 'Listas para entrega', valor: listasParaEntrega, icono: PackageCheck },
+    { etiqueta: 'Registradas', valor: total },
+    { etiqueta: 'Abiertas', valor: abiertas },
+    { etiqueta: 'Esperando aprobación', valor: esperandoAprobacion },
+    { etiqueta: 'Listas para entrega', valor: listasParaEntrega },
   ] as const
 
   return (
-    <section aria-label="Resumen de reparaciones" className="ledger-sheet">
-      <div className="grid sm:grid-cols-2 xl:grid-cols-4">
-        {metricas.map((metrica) => {
-          const Icono = metrica.icono
-          return (
-            <article key={metrica.etiqueta} className="border-b px-5 py-5 last:border-b-0 sm:border-e sm:[&:nth-child(2)]:border-e-0 xl:border-b-0 xl:[&:nth-child(2)]:border-e xl:last:border-e-0">
-              <div className="flex items-center justify-between gap-3"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">{metrica.etiqueta}</p><Icono aria-hidden="true" className="size-4 text-primary" /></div>
-              <p className="mt-3 font-mono text-2xl font-semibold tabular-nums">{metrica.valor}</p>
-            </article>
-          )
-        })}
-      </div>
+    <section aria-label="Resumen de reparaciones" className="border-b pb-4" aria-busy={cargando}>
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-4">
+        {metricas.map((metrica) => (
+          <div key={metrica.etiqueta}>
+            <dt className="text-xs text-muted-foreground">{metrica.etiqueta}</dt>
+            <dd className="mt-1 font-mono text-lg font-semibold tabular-nums">{cargando || error ? '—' : metrica.valor}</dd>
+          </div>
+        ))}
+      </dl>
+      {cargando ? <p role="status" className="sr-only">Consultando resumen de reparaciones…</p> : null}
+      {error ? <div role="alert" className="mt-3 flex flex-wrap items-center gap-3 text-sm"><p>No se pudo cargar el resumen.</p><Button variant="outline" type="button" onClick={alReintentar}>Reintentar resumen</Button></div> : null}
     </section>
   )
 }
@@ -131,7 +133,7 @@ function TarjetaReparacion({
         <div><dt className="text-xs text-muted-foreground">Recibida</dt><dd className="mt-1">{fechaHora(reparacion.recibidaEn)}</dd></div>
         <div><dt className="text-xs text-muted-foreground">Entrega estimada</dt><dd className="mt-1">{fechaDia(reparacion.fechaEntregaEstimada)}</dd></div>
       </dl>
-      <Button type="button" variant="secondary" size="lg" className="mt-5 w-full" onClick={alVer}>Ver detalle y flujo</Button>
+      <Button type="button" variant="secondary" size="lg" className="mt-5 w-full" onClick={alVer}>Ver reparación</Button>
     </article>
   )
 }
@@ -187,9 +189,9 @@ export function ReparacionesPage() {
   const filtrosVisuales: ConsultaReparaciones = { ...consulta, busqueda }
   const operaciones = useReparaciones({ consulta, pagina, tamanioPagina })
   const opciones = useReparacionOpciones({
-    cargarClientes: puedeCrear || puedeEditar,
-    cargarProductos: puedeCrear || puedeUsarPartes || puedeEditar,
-    cargarAlmacenes: puedeUsarPartes,
+    cargarClientes: formularioAbierto && (puedeCrear || puedeEditar),
+    cargarProductos: (formularioAbierto && (puedeCrear || puedeEditar)) || Boolean(reparacionId),
+    cargarAlmacenes: Boolean(reparacionId) && puedeUsarPartes,
     clienteIdActual: reparacionEnEdicion?.clienteId ?? datosCreacionPendiente?.clienteId,
     productoIdActual: reparacionEnEdicion?.productoId ?? datosCreacionPendiente?.productoId,
   })
@@ -259,13 +261,13 @@ export function ReparacionesPage() {
   const mensajeError = operaciones.error instanceof Error ? operaciones.error.message : 'No se pudo cargar el registro de reparaciones.'
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       <header className="flex flex-col gap-5 border-b pb-7 sm:flex-row sm:items-end sm:justify-between">
-        <div><span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">Servicio técnico</span><h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Gestión de Reparaciones</h1><p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">Controla el ingreso del equipo, diagnóstico, cotización, repuestos, pruebas y entrega con trazabilidad por organización.</p></div>
+        <div><h1 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Reparaciones</h1><p className="mt-3 max-w-[68ch] text-base leading-7 text-muted-foreground">Registra equipos recibidos y sigue su diagnóstico, reparación y entrega.</p></div>
         {puedeCrear ? <Button type="button" size="lg" onClick={abrirRegistro}><Plus aria-hidden="true" /> Registrar reparación</Button> : null}
       </header>
 
-      <ResumenReparaciones {...operaciones.resumen} />
+      <ResumenReparaciones {...operaciones.resumen} cargando={operaciones.cargandoResumen} error={operaciones.errorResumen} alReintentar={() => void operaciones.reintentar()} />
 
       <p role="status" aria-live="polite" className={mensaje ? 'border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-primary' : 'sr-only'}>{mensaje}</p>
 
@@ -285,7 +287,7 @@ export function ReparacionesPage() {
         ) : operaciones.error ? (
           <div role="alert" className="flex min-h-64 flex-col items-center justify-center gap-3 px-5 py-14 text-center"><SearchCheck aria-hidden="true" className="size-8 text-destructive" /><p className="font-medium">No se pudo cargar el registro</p><p className="max-w-md text-sm leading-6 text-muted-foreground">{mensajeError}</p><Button type="button" variant="outline" onClick={() => void operaciones.reintentar()}>Reintentar</Button></div>
         ) : !operaciones.reparaciones.length ? (
-          <div className="flex min-h-64 flex-col items-center justify-center px-5 py-14 text-center"><ClipboardList aria-hidden="true" className="size-8 text-primary" /><p className="mt-4 font-semibold">{operaciones.totalFiltrado ? 'No hay coincidencias' : 'Aún no hay reparaciones registradas'}</p><p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">{operaciones.totalFiltrado ? 'Prueba con otra búsqueda o cambia los filtros de estado y prioridad.' : 'Registra la primera orden para iniciar su seguimiento operativo.'}</p>{!operaciones.totalFiltrado && puedeCrear ? <Button type="button" className="mt-5" onClick={abrirRegistro}><Plus aria-hidden="true" /> Registrar reparación</Button> : null}</div>
+          <div className="flex min-h-48 flex-col items-center justify-center px-5 py-10 text-center"><ClipboardList aria-hidden="true" className="size-8 text-primary" /><p className="mt-4 font-semibold">{cantidadFiltrosActivos ? 'No hay coincidencias' : 'Aún no hay reparaciones registradas'}</p><p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">{cantidadFiltrosActivos ? 'Prueba con otra búsqueda o limpia los filtros para ver todas las órdenes.' : 'Registra la primera orden para iniciar su seguimiento operativo.'}</p>{cantidadFiltrosActivos ? <Button type="button" variant="outline" className="mt-5" onClick={limpiarFiltros}>Ver todas las reparaciones</Button> : puedeCrear ? <Button type="button" className="mt-5" onClick={abrirRegistro}><Plus aria-hidden="true" /> Registrar reparación</Button> : null}</div>
         ) : (
           <>
             <div className="divide-y md:hidden">{operaciones.reparaciones.map((item) => <TarjetaReparacion key={item.id} reparacion={item} alVer={(evento) => abrirDetalle(item, evento)} />)}</div>
@@ -333,13 +335,14 @@ export function ReparacionesPage() {
         alAprobarCotizacion={(repairId, cotizacionId: string, datos: DatosObservacionReparacion, lockVersion) => operaciones.aprobarCotizacion(repairId, cotizacionId, datos, lockVersion)}
         alRechazarCotizacion={(repairId, cotizacionId: string, datos: DatosObservacionReparacion, lockVersion) => operaciones.rechazarCotizacion(repairId, cotizacionId, datos, lockVersion)}
         alReservarParte={(repairId, datos: DatosReservaParte, operationKey, lockVersion) => operaciones.reservarParte(repairId, datos, operationKey, lockVersion)}
-        alConsumirParte={(parteId: string, datos, operationKey, lockVersion) => operaciones.consumirParte(parteId, datos, operationKey, lockVersion)}
+        alConsumirParte={(parteId: string, datos, operationKey, lockVersion) => operaciones.consumirParte(reparacionId, parteId, datos, operationKey, lockVersion)}
         alCancelarParte={(parteId: string, datos: DatosObservacionReparacion, lockVersion) => operaciones.cancelarParte(parteId, datos, lockVersion)}
         alRegistrarPrueba={(repairId, datos: DatosPrueba, lockVersion) => operaciones.registrarPrueba(repairId, datos, lockVersion)}
         alEntregar={(repairId, datos: DatosObservacionReparacion, lockVersion) => operaciones.entregar(repairId, datos, lockVersion)}
         alCancelar={(repairId, datos: DatosObservacionReparacion, lockVersion) => operaciones.cancelar(repairId, datos, lockVersion)}
         recuperarCotizacionPendiente={operaciones.recuperarCotizacionPendiente}
         recuperarReservaPartePendiente={operaciones.recuperarReservaPartePendiente}
+        recuperarConsumoPartePendiente={operaciones.recuperarConsumoPartePendiente}
       /> : null}
     </div>
   )

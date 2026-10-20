@@ -2,9 +2,11 @@ import { z } from 'zod'
 
 import {
   esquemaDatosCotizacion,
+  esquemaDatosConsumoParte,
   esquemaDatosReparacion,
   esquemaDatosReservaParte,
   type DatosCotizacion,
+  type DatosConsumoParte,
   type DatosReparacion,
   type DatosReservaParte,
 } from '../modelo/reparacion'
@@ -25,6 +27,10 @@ const esquemaReservaPendiente = z.object({
   datos: esquemaDatosReservaParte,
   expectedLockVersion: z.number().int().nonnegative(),
 })
+const esquemaConsumoPendiente = z.object({
+  datos: esquemaDatosConsumoParte,
+  expectedLockVersion: z.number().int().nonnegative(),
+})
 
 export interface CotizacionPendiente {
   datos: DatosCotizacion
@@ -36,6 +42,12 @@ export interface CotizacionPendiente {
 
 export interface ReservaPartePendiente {
   datos: DatosReservaParte
+  expectedLockVersion: number
+  clave: string
+}
+
+export interface ConsumoPartePendiente {
+  datos: DatosConsumoParte
   expectedLockVersion: number
   clave: string
 }
@@ -193,5 +205,25 @@ export function reservarParteConReintentoPersistente(
     esquemaReservaPendiente,
     (pendiente) => pendiente.datos,
     enviar,
+  )
+}
+
+export function leerConsumoPartePendiente(ambito: string): ConsumoPartePendiente | null {
+  return leerComandoPendiente(
+    ambito,
+    esquemaConsumoPendiente,
+    'No se pudo recuperar el consumo pendiente. No se enviará otro consumo.',
+  )
+}
+
+export function consumirParteConReintentoPersistente(
+  ambito: string,
+  intencion: Omit<ConsumoPartePendiente, 'clave'>,
+  clave: string,
+  enviar: (intencion: Omit<ConsumoPartePendiente, 'clave'>, clave: string) => Promise<unknown>,
+) {
+  return ejecutarComandoConReintentoPersistente(
+    ambito, intencion, clave, esquemaConsumoPendiente,
+    (pendiente) => pendiente.datos, enviar,
   )
 }

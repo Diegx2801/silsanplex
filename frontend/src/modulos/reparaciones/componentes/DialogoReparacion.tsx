@@ -80,9 +80,10 @@ function CampoArea({ etiqueta, error, ayuda, id, ...props }: CampoAreaProps) {
         id={controlId}
         className="field-control min-h-24 resize-y py-2"
         aria-invalid={Boolean(error)}
+        aria-describedby={error || ayuda ? `${controlId}-ayuda` : undefined}
         {...props}
       />
-      {error ? <p className="field-error">{error}</p> : ayuda ? <p className="field-help">{ayuda}</p> : null}
+      {error ? <p id={`${controlId}-ayuda`} className="field-error">{error}</p> : ayuda ? <p id={`${controlId}-ayuda`} className="field-help">{ayuda}</p> : null}
     </div>
   )
 }
@@ -154,6 +155,7 @@ export function DialogoReparacion({
   alRestaurarFoco,
 }: DialogoReparacionProps) {
   const [mensaje, setMensaje] = useState('')
+  const [datosAdicionalesAbiertos, setDatosAdicionalesAbiertos] = useState(false)
   const [productoSeleccionadoExplicitamente, setProductoSeleccionadoExplicitamente] = useState(false)
   const [productoRemoto, setProductoRemoto] = useState<OpcionProductoReparacion | null>(null)
   const operacionCreacion = useRef<{ firma: string; clave: string } | null>(null)
@@ -171,6 +173,8 @@ export function DialogoReparacion({
   })
   const productoId = watch('productoId')
   const numeroSerie = watch('numeroSerie')
+  const esGarantia = watch('esGarantia')
+  const referenciaGarantia = watch('referenciaGarantia')
   const productosDisponibles = productoActual && !productos.some((item) => item.id === productoActual.id)
     ? [productoActual, ...productos] : productos
   const producto = productoRemoto?.id === productoId
@@ -218,6 +222,13 @@ export function DialogoReparacion({
     setProductoRemoto(null)
     setProductoSeleccionadoExplicitamente(false)
   }, [abierto, reparacion?.id])
+
+  useEffect(() => {
+    if (errors.prioridad || errors.fechaEstimadaEntrega || errors.notas
+      || errors.referenciaCliente || errors.referenciaGarantia || errors.esGarantia) {
+      setDatosAdicionalesAbiertos(true)
+    }
+  }, [errors])
 
   const guardar = async (datos: DatosReparacion) => {
     if (identidadEditable && !productoEsConocido) {
@@ -299,6 +310,7 @@ export function DialogoReparacion({
             className="min-h-0 flex-1 overflow-y-auto"
             onSubmit={handleSubmit(guardar)}
           >
+            <input type="hidden" {...register('documentoVentaId')} />
             <section aria-labelledby="reparacion-identificacion" className="px-5 py-6 sm:px-7">
               <div className="mb-5 border-b pb-3">
                 <h2 id="reparacion-identificacion" className="font-semibold">Identificación del servicio</h2>
@@ -386,11 +398,31 @@ export function DialogoReparacion({
               )}
             </section>
 
-            <section aria-labelledby="reparacion-recepcion" className="border-t px-5 py-6 sm:px-7">
-              <div className="mb-5">
-                <h2 id="reparacion-recepcion" className="font-semibold">Recepción y prioridad</h2>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">La fecha de recepción la asigna el servidor; la fecha estimada sí puede ajustarse.</p>
-              </div>
+            <section aria-label="Problema reportado" className="border-t px-5 py-6 sm:px-7">
+              <CampoArea
+                etiqueta="Problema reportado *"
+                rows={4}
+                placeholder="Describe la falla, síntoma o motivo de ingreso"
+                error={errors.problema?.message}
+                {...register('problema')}
+              />
+              <p className="mt-3 text-sm text-muted-foreground">
+                {reparacion
+                  ? 'La fecha de recepción y el código se conservan. Puedes revisar los datos adicionales a continuación.'
+                  : 'El código y la fecha de recepción se asignan automáticamente. La prioridad inicial es Normal.'}
+              </p>
+            </section>
+
+            <details
+              className="border-t px-5 py-5 sm:px-7"
+              open={datosAdicionalesAbiertos}
+              onToggle={(evento) => setDatosAdicionalesAbiertos(evento.currentTarget.open)}
+            >
+              <summary className="cursor-pointer rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                Datos adicionales de recepción
+              </summary>
+              <p className="mt-2 text-sm text-muted-foreground">Accesorios, fecha estimada, prioridad y atención en garantía, cuando correspondan.</p>
+              <div className="mt-5">
               <div className="grid gap-5 sm:grid-cols-2">
                 <div>
                   <label htmlFor="reparacion-prioridad" className="field-label">Prioridad *</label>
@@ -407,28 +439,12 @@ export function DialogoReparacion({
                   {...register('fechaEstimadaEntrega')}
                 />
                 <CampoArea
-                  etiqueta="Problema reportado *"
-                  rows={5}
-                  placeholder="Describe la falla, síntoma o motivo de ingreso"
-                  error={errors.problema?.message}
-                  {...register('problema')}
-                />
-                <CampoArea
                   etiqueta="Notas de recepción"
-                  rows={5}
+                  rows={3}
                   placeholder="Accesorios recibidos, condición física u observaciones"
                   error={errors.notas?.message}
                   {...register('notas')}
                 />
-              </div>
-            </section>
-
-            <section aria-labelledby="reparacion-comercial" className="border-t px-5 py-6 sm:px-7">
-              <div className="mb-5">
-                <h2 id="reparacion-comercial" className="font-semibold">Referencias comerciales y garantía</h2>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">Estos datos quedan asociados a la orden para facilitar la comunicación con el cliente.</p>
-              </div>
-              <div className="grid gap-5 sm:grid-cols-2">
                 <CampoTexto
                   etiqueta="Referencia del cliente"
                   autoComplete="off"
@@ -436,31 +452,26 @@ export function DialogoReparacion({
                   error={errors.referenciaCliente?.message}
                   {...register('referenciaCliente')}
                 />
-                <CampoTexto
-                  etiqueta="ID de documento de venta"
-                  autoComplete="off"
-                  placeholder="UUID opcional"
-                  ayuda="Solo si la orden proviene de una venta registrada."
-                  error={errors.documentoVentaId?.message}
-                  {...register('documentoVentaId')}
-                />
-                <CampoTexto
-                  etiqueta="Referencia de garantía"
-                  autoComplete="off"
-                  placeholder="N.º de garantía o autorización"
-                  error={errors.referenciaGarantia?.message}
-                  {...register('referenciaGarantia')}
-                />
                 <div className="sm:col-span-2">
                   <OpcionBinaria
                     etiqueta="Atención en garantía"
-                    descripcion="Inicia la orden en estado de garantía para distinguirla del flujo comercial regular."
+                    descripcion="Marca esta opción si el equipo ingresa para una atención cubierta por garantía."
                     disabled={Boolean(reparacion)}
                     {...register('esGarantia')}
                   />
                 </div>
+                {esGarantia || (reparacion && referenciaGarantia) ? (
+                  <CampoTexto
+                    etiqueta="Referencia de garantía"
+                    autoComplete="off"
+                    placeholder="N.º de garantía o autorización"
+                    error={errors.referenciaGarantia?.message}
+                    {...register('referenciaGarantia')}
+                  />
+                ) : <input type="hidden" {...register('referenciaGarantia')} />}
               </div>
-            </section>
+              </div>
+            </details>
 
           </form>
 

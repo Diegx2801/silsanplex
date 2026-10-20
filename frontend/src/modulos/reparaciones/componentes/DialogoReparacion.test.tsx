@@ -82,6 +82,38 @@ function renderizarDialogo(
 }
 
 describe('DialogoReparacion', () => {
+  it('prioriza los datos esenciales y deja la recepción adicional plegada', () => {
+    renderizarDialogo(null, true)
+
+    expect(screen.getByLabelText('Problema reportado *')).toBeVisible()
+    expect(screen.getByText('Datos adicionales de recepción').closest('details')).not.toHaveAttribute('open')
+    expect(screen.queryByLabelText('ID de documento de venta')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Referencia de garantía')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Prioridad *')).toHaveValue('normal')
+
+    fireEvent.click(screen.getByLabelText(/^Atención en garantía/))
+    expect(screen.getByLabelText('Referencia de garantía')).toBeInTheDocument()
+  })
+
+  it('conserva documentos y referencias históricas aunque no estén en la recepción esencial', async () => {
+    const documentoVentaId = '00000000-0000-4000-8000-000000000055'
+    const alGuardar = renderizarDialogo({
+      ...reparacion,
+      documentoVentaId,
+      referenciaGarantia: 'GAR-2026-01',
+      notas: 'Incluye cargador y estuche',
+    }, false)
+
+    expect(screen.queryByLabelText('ID de documento de venta')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Referencia de garantía')).toHaveValue('GAR-2026-01')
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(
+      expect.objectContaining({ documentoVentaId, referenciaGarantia: 'GAR-2026-01', notas: 'Incluye cargador y estuche' }),
+      'repair-1', false, undefined,
+    ))
+  })
+
   it('permite editar la identidad durante la creación', () => {
     renderizarDialogo(null, true)
 

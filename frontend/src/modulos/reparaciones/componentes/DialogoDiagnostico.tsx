@@ -97,11 +97,12 @@ export function DialogoDiagnostico({
               <textarea id="diagnostico-solucion" rows={4} className="field-control min-h-24 resize-y py-2" placeholder="Trabajo o repuesto recomendado" aria-invalid={Boolean(errors.solucionRecomendada)} {...register('solucionRecomendada')} />
               {errors.solucionRecomendada ? <p className="field-error">{errors.solucionRecomendada.message}</p> : null}
             </div>
-            <div className="sm:col-span-2">
-              <label htmlFor="diagnostico-notas" className="field-label">Notas</label>
+            <details className="border-t pt-4 sm:col-span-2" open={Boolean(errors.notas) || undefined}>
+              <summary className="cursor-pointer rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Detalle adicional del diagnóstico</summary>
+              <label htmlFor="diagnostico-notas" className="field-label mt-4">Información complementaria</label>
               <textarea id="diagnostico-notas" rows={3} className="field-control resize-y py-2" placeholder="Observaciones internas" aria-invalid={Boolean(errors.notas)} {...register('notas')} />
               {errors.notas ? <p className="field-error">{errors.notas.message}</p> : null}
-            </div>
+            </details>
             <input type="hidden" {...register('tecnicoId')} />
           </form>
           {mensaje ? <p role="alert" className="border-t bg-destructive/10 px-5 py-3 text-sm text-destructive sm:px-7">{mensaje}</p> : null}

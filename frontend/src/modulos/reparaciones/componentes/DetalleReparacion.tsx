@@ -21,6 +21,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
 import type {
+  ConsumoPartePendiente,
   CotizacionPendiente,
   ReservaPartePendiente,
 } from '@/modulos/reparaciones/estado/creacionPendiente'
@@ -177,6 +178,7 @@ interface DetalleReparacionProps {
   alCancelar: (reparacionId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
   recuperarCotizacionPendiente?: (reparacionId: string, esRevision: boolean) => CotizacionPendiente | null
   recuperarReservaPartePendiente?: (reparacionId: string) => ReservaPartePendiente | null
+  recuperarConsumoPartePendiente?: (reparacionId: string, parteId: string) => ConsumoPartePendiente | null
 }
 
 type TipoDialogoActivo =
@@ -200,6 +202,7 @@ interface ContextoAccion {
   cotizacion: CotizacionReparacion | null
   cotizacionPendiente?: CotizacionPendiente | null
   reservaPendiente?: ReservaPartePendiente | null
+  consumoPendiente?: ConsumoPartePendiente | null
   parte?: ParteReparacion
 }
 
@@ -261,11 +264,24 @@ export function DetalleReparacion({
   alCancelar,
   recuperarCotizacionPendiente = () => null,
   recuperarReservaPartePendiente = () => null,
+  recuperarConsumoPartePendiente = () => null,
 }: DetalleReparacionProps) {
   const [accion, setAccion] = useState<ContextoAccion | null>(null)
   const [mensaje, setMensaje] = useState('')
   const [almacenesHistoricos, setAlmacenesHistoricos] = useState<Almacen[]>([])
   const [ubicacionesHistoricas, setUbicacionesHistoricas] = useState<UbicacionAlmacen[]>([])
+  const [productosHistoricos, setProductosHistoricos] = useState<OpcionProductoReparacion[]>([])
+  const productosDisponibles = [...productos, ...productosHistoricos.filter((item) => !productos.some((producto) => producto.id === item.id))]
+
+  useEffect(() => {
+    if (!detalle || !resolverProducto) { setProductosHistoricos([]); return }
+    let vigente = true
+    const ids = [...new Set(detalle.partes.map((parte) => parte.productoId))]
+    void Promise.all(ids.map((id) => resolverProducto(id))).then((opciones) => {
+      if (vigente) setProductosHistoricos(opciones.filter((item): item is OpcionProductoReparacion => Boolean(item)))
+    }).catch(() => { if (vigente) setProductosHistoricos([]) })
+    return () => { vigente = false }
+  }, [detalle, resolverProducto])
   const almacenesDisponibles = [...almacenesHistoricos,
     ...almacenes.filter((item) => !almacenesHistoricos.some((historico) => historico.id === item.id))]
   const ubicacionesDisponibles = [...ubicacionesHistoricas,
@@ -345,10 +361,15 @@ export function DetalleReparacion({
       return
     }
     if (!detalle) return
-    setAccion({
-      ...crearContextoAccion(tipo, detalle),
-      parte: { ...parte, consumos: parte.consumos.map((consumo) => ({ ...consumo })) },
-    })
+    try {
+      setAccion({
+        ...crearContextoAccion(tipo, detalle),
+        consumoPendiente: tipo === 'consumo' ? recuperarConsumoPartePendiente(detalle.reparacion.id, parte.id) : null,
+        parte: { ...parte, consumos: parte.consumos.map((consumo) => ({ ...consumo })) },
+      })
+    } catch {
+      setMensaje('No se pudo recuperar el consumo pendiente. No se enviará otro consumo hasta recuperar los datos de esta pestaña.')
+    }
   }
 
   return (
@@ -378,7 +399,7 @@ export function DetalleReparacion({
           ) : (
             <DetalleContenido
               detalle={detalle}
-              productos={productos}
+              productos={productosDisponibles}
               almacenes={almacenesDisponibles}
               ubicaciones={ubicacionesDisponibles}
               cargarLineasCotizacion={cargarLineasCotizacion}
@@ -484,6 +505,8 @@ export function DetalleReparacion({
               <DialogoConsumoParte
                 abierto={accion.tipo === 'consumo'}
                 parte={accion.parte}
+                unidadMedida={productosDisponibles.find((producto) => producto.id === accion.parte!.productoId)?.unidadMedida ?? ''}
+                operacionPendiente={accion.consumoPendiente}
                 alCambiarApertura={cerrarDialogo}
                 alGuardar={(datos, operationKey) => ejecutar(() => alConsumirParte(accion.parte!.id, datos, operationKey, accion.reparacion.lockVersion), 'Consumo registrado.')}
               />
@@ -696,6 +719,51 @@ function DetalleContenido({
     && !['testing', 'ready_for_delivery'].includes(reparacion.estado)
   const puedeRegistrarPrueba = puedeActuarComoTecnico && reparacion.estado === 'testing'
   const puedeEntregarAhora = puedeEntregar && reparacion.estado === 'ready_for_delivery'
+  const pruebasVigentes = detalle.pruebas.filter((prueba) => detalle.cicloPruebasActual > 0 && prueba.ciclo === detalle.cicloPruebasActual)
+  const requisitosEntrega = [
+    ...(!reparacion.tecnicoAsignadoId ? ['Asignar un técnico responsable.'] : []),
+    ...(!pruebasVigentes.some((prueba) => prueba.aprobada) ? ['Registrar una prueba aprobada en el ciclo vigente.'] : []),
+    ...(pruebasVigentes.some((prueba) => !prueba.aprobada) ? ['Resolver las pruebas fallidas del ciclo vigente; volver a reparación e iniciar un nuevo ciclo.'] : []),
+    ...(detalle.partes.some((parte) => parte.estado === 'reserved' && parte.cantidadConsumida < parte.cantidadSolicitada)
+      ? ['Consumir o cancelar los saldos reservados; volver a reparación para resolverlos.'] : []),
+  ]
+  const guias: Record<EstadoReparacion, string> = {
+    received: 'Asigna al responsable e inicia el diagnóstico del equipo.',
+    diagnosis: reparacion.diagnosticoRegistrado
+      ? 'Revisa el diagnóstico. Prepara una cotización si corresponde o continúa con la reparación.'
+      : 'Registra el diagnóstico antes de decidir el trabajo y el presupuesto.',
+    quote_pending: 'Prepara y envía la cotización para solicitar la aprobación del cliente.',
+    waiting_customer_approval: 'Registra la decisión del cliente sobre la cotización vigente antes de continuar.',
+    quote_approved: 'La cotización está aprobada. Continúa con el trabajo técnico y los repuestos necesarios.',
+    in_repair: 'Registra el trabajo realizado y resuelve los repuestos reservados antes de preparar la entrega.',
+    awaiting_parts: 'Resuelve los repuestos pendientes y vuelve a reparación cuando puedas continuar el trabajo.',
+    testing: requisitosEntrega.length ? 'Completa estos requisitos antes de marcar la orden como lista para entrega.' : 'Las pruebas del ciclo vigente están aprobadas. Puedes revisar el cambio a lista para entrega.',
+    ready_for_delivery: requisitosEntrega.length ? 'Revisa los requisitos pendientes antes de registrar la entrega.' : 'Registra la entrega del equipo al cliente para cerrar la orden.',
+    delivered: 'La orden está entregada. Puedes consultar el trabajo realizado, el presupuesto y el historial.',
+    cancelled: 'La orden está cancelada. Su información y trazabilidad se conservan para consulta.',
+    rejected: 'El presupuesto fue rechazado. Puedes consultar el motivo o preparar una revisión si corresponde.',
+    warranty: 'Revisa la atención en garantía y continúa con el diagnóstico o la reparación según corresponda.',
+  }
+  let siguienteAccion: { tipo: TipoDialogoActivo; etiqueta: string } | null = null
+  if (!estadoEsTerminal(reparacion.estado) && !reparacion.tecnicoAsignadoId && puedeAsignar) {
+    siguienteAccion = { tipo: 'asignacion', etiqueta: 'Asignar responsable' }
+  } else if (puedeRegistrarDiagnostico && !reparacion.diagnosticoRegistrado) {
+    siguienteAccion = { tipo: 'diagnostico', etiqueta: 'Completar diagnóstico' }
+  } else if (puedeAprobar) {
+    siguienteAccion = { tipo: 'aprobar', etiqueta: 'Registrar aprobación' }
+  } else if (puedeRevisar) {
+    siguienteAccion = { tipo: 'cotizacion', etiqueta: 'Preparar revisión' }
+  } else if (reparacion.estado === 'quote_pending' && puedeCotizar) {
+    siguienteAccion = { tipo: 'cotizacion', etiqueta: 'Preparar presupuesto' }
+  } else if (puedeRegistrarSolucion && reparacion.estado === 'in_repair' && !reparacion.solucionAplicadaRegistrada) {
+    siguienteAccion = { tipo: 'solucion', etiqueta: 'Completar trabajo realizado' }
+  } else if (puedeRegistrarPrueba && !pruebasVigentes.length) {
+    siguienteAccion = { tipo: 'prueba', etiqueta: 'Completar pruebas' }
+  } else if (puedeEntregarAhora && !requisitosEntrega.length) {
+    siguienteAccion = { tipo: 'entregar', etiqueta: 'Registrar entrega' }
+  } else if (transiciones.length) {
+    siguienteAccion = { tipo: 'estado', etiqueta: 'Revisar siguiente estado' }
+  }
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -710,18 +778,43 @@ function DetalleContenido({
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
           {editable ? <Button type="button" variant="outline" onClick={alEditar}><Pencil aria-hidden="true" /> Editar</Button> : null}
-          {puedeAsignar && !estadoEsTerminal(reparacion.estado) ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('asignacion')}><UserRound aria-hidden="true" /> {reparacion.tecnicoAsignadoId ? 'Reasignar técnico' : 'Asignar técnico'}</Button> : null}
-          {transiciones.length ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('estado')}><Wrench aria-hidden="true" /> Cambiar estado</Button> : null}
+          {puedeAsignar && !estadoEsTerminal(reparacion.estado) && siguienteAccion?.tipo !== 'asignacion' ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('asignacion')}><UserRound aria-hidden="true" /> {reparacion.tecnicoAsignadoId ? 'Reasignar técnico' : 'Asignar técnico'}</Button> : null}
+          {transiciones.length && siguienteAccion?.tipo !== 'estado' ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('estado')}><Wrench aria-hidden="true" /> Cambiar estado</Button> : null}
           {puedeCancelar ? <Button type="button" variant="destructive" onClick={() => alAbrirDialogo('cancelar')}><Ban aria-hidden="true" /> Cancelar</Button> : null}
-          {puedeEntregarAhora ? <Button type="button" onClick={() => alAbrirDialogo('entregar')}><Send aria-hidden="true" /> Entregar</Button> : null}
+          {puedeEntregarAhora && siguienteAccion?.tipo !== 'entregar' ? <Button type="button" disabled={Boolean(requisitosEntrega.length)} onClick={() => alAbrirDialogo('entregar')}><Send aria-hidden="true" /> Entregar</Button> : null}
           {puedeAprobar ? <>
-            <Button type="button" onClick={() => alAbrirDialogo('aprobar')}><CheckCircle2 aria-hidden="true" /> Aprobar cotización</Button>
+            {siguienteAccion?.tipo !== 'aprobar' ? <Button type="button" onClick={() => alAbrirDialogo('aprobar')}><CheckCircle2 aria-hidden="true" /> Aprobar cotización</Button> : null}
             <Button type="button" variant="destructive" onClick={() => alAbrirDialogo('rechazar')}><Ban aria-hidden="true" /> Rechazar cotización</Button>
           </> : null}
         </div>
       </header>
 
-      <section aria-labelledby="reparacion-resumen" className="border-b px-5 py-6 sm:px-7">
+      <section aria-labelledby="reparacion-siguiente-paso" className="border-b bg-muted/25 px-5 py-4 sm:px-7">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 basis-64">
+            <h2 id="reparacion-siguiente-paso" className="font-semibold">{estadoEsTerminal(reparacion.estado) && reparacion.estado !== 'rejected' ? 'Orden cerrada' : 'Siguiente paso'}</h2>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">{guias[reparacion.estado]}</p>
+          </div>
+          {siguienteAccion ? <Button type="button" onClick={() => alAbrirDialogo(siguienteAccion.tipo)}>{siguienteAccion.etiqueta}</Button> : null}
+        </div>
+        {['testing', 'ready_for_delivery'].includes(reparacion.estado) && requisitosEntrega.length ? <ul aria-label="Requisitos pendientes para entregar" className="mt-3 list-disc space-y-1 ps-5 text-sm leading-6">{requisitosEntrega.map((requisito) => <li key={requisito}>{requisito}</li>)}</ul> : null}
+      </section>
+      <nav aria-label="Secciones de la reparación" className="flex flex-wrap gap-x-5 gap-y-2 border-b px-5 py-3 text-sm sm:px-7">
+        {[
+          ['reparacion-seccion-resumen', 'Resumen'],
+          ['reparacion-seccion-tecnica', 'Trabajo técnico'],
+          ['reparacion-seccion-presupuesto', 'Presupuesto'],
+          ['reparacion-seccion-historial', 'Historial'],
+        ].map(([id, etiqueta]) => <a key={id} href={`#${id}`} className="rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={(evento) => {
+          evento.preventDefault()
+          const destino = document.getElementById(id)
+          if (destino instanceof HTMLDetailsElement) destino.open = true
+          destino?.focus({ preventScroll: true })
+          destino?.scrollIntoView?.({ block: 'start' })
+        }}>{etiqueta}</a>)}
+      </nav>
+
+      <section id="reparacion-seccion-resumen" tabIndex={-1} aria-labelledby="reparacion-resumen" className="border-b px-5 py-6 outline-none sm:px-7">
         <h2 id="reparacion-resumen" className="flex items-center gap-2 font-semibold"><FileText aria-hidden="true" className="size-4 text-primary" /> Resumen de la orden</h2>
         <dl className="mt-4 grid sm:grid-cols-2 sm:gap-x-6">
           <Dato etiqueta="Cliente" valor={<span>{reparacion.clienteNombreSnapshot}<span className="mt-1 block text-xs text-muted-foreground">{reparacion.clienteDocumentoSnapshot}</span></span>} />
@@ -731,13 +824,13 @@ function DetalleContenido({
           <Dato etiqueta="Recepción" valor={<time dateTime={reparacion.recibidaEn}>{formatoFecha.format(new Date(reparacion.recibidaEn))}</time>} />
           <Dato etiqueta="Entrega estimada" valor={reparacion.fechaEntregaEstimada ? <time dateTime={reparacion.fechaEntregaEstimada}>{formatoFechaDia.format(new Date(`${reparacion.fechaEntregaEstimada}T12:00:00`))}</time> : 'Sin fecha'} />
           <Dato etiqueta="Técnico asignado" valor={reparacion.tecnicoAsignadoId ? abreviarId(reparacion.tecnicoAsignadoId) : 'Pendiente de asignación'} />
-          <Dato etiqueta="Referencia del cliente" valor={mostrar(reparacion.referenciaCliente)} />
+          {reparacion.referenciaCliente ? <Dato etiqueta="Referencia del cliente" valor={reparacion.referenciaCliente} /> : null}
         </dl>
         <div className="mt-3 border-t pt-4"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Problema reportado</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{reparacion.problema}</p></div>
         {reparacion.notas ? <div className="mt-4 border-t pt-4"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Notas de recepción</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{reparacion.notas}</p></div> : null}
       </section>
 
-      <section aria-labelledby="reparacion-diagnosticos" className="border-b px-5 py-6 sm:px-7">
+      <section id="reparacion-seccion-tecnica" tabIndex={-1} aria-labelledby="reparacion-diagnosticos" className="border-b px-5 py-6 outline-none sm:px-7">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-diagnosticos" className="flex items-center gap-2 font-semibold"><Wrench aria-hidden="true" className="size-4 text-primary" /> Diagnóstico</h2><p className="mt-1 text-sm text-muted-foreground">Historial técnico de revisiones</p></div>{puedeRegistrarDiagnostico ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('diagnostico')}><Plus aria-hidden="true" /> Registrar diagnóstico</Button> : null}</div>
         {detalle.diagnosticos.length ? <div className="mt-5 space-y-3">{detalle.diagnosticos.map((diagnostico) => <article key={diagnostico.id} className="border bg-muted/20 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><p className="font-medium">{diagnostico.sintomas}</p><time className="text-xs text-muted-foreground" dateTime={diagnostico.diagnosticadoEn}>{formatoFecha.format(new Date(diagnostico.diagnosticadoEn))}</time></div><dl className="mt-3 grid gap-x-5 sm:grid-cols-2"><Dato etiqueta="Causa encontrada" valor={mostrar(diagnostico.causaEncontrada)} /><Dato etiqueta="Solución recomendada" valor={mostrar(diagnostico.solucionRecomendada)} /></dl>{diagnostico.notas ? <p className="mt-2 border-t pt-3 text-sm leading-6 text-muted-foreground">{diagnostico.notas}</p> : null}</article>)}</div> : <p className="mt-5 border border-dashed px-4 py-5 text-sm text-muted-foreground">Todavía no hay diagnósticos registrados.</p>}
       </section>
@@ -750,6 +843,7 @@ function DetalleContenido({
         <p className={`mt-5 whitespace-pre-wrap text-sm leading-6 ${reparacion.solucionAplicada ? '' : 'border border-dashed px-4 py-5 text-muted-foreground'}`}>{mostrar(reparacion.solucionAplicada, 'Todavía no hay una solución aplicada registrada.')}</p>
       </section>
 
+      <div id="reparacion-seccion-presupuesto" tabIndex={-1} className="outline-none">
       <CotizacionesDetalle
         key={detalle.cotizacionActiva?.id ?? 'sin-cotizacion'}
         detalle={detalle}
@@ -759,6 +853,7 @@ function DetalleContenido({
         alAbrirDialogo={alAbrirDialogo}
         cargarLineasCotizacion={cargarLineasCotizacion}
       />
+      </div>
       <section aria-labelledby="reparacion-partes" className="border-b px-5 py-6 sm:px-7">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-partes" className="flex items-center gap-2 font-semibold"><Package aria-hidden="true" className="size-4 text-primary" /> Repuestos</h2><p className="mt-1 text-sm text-muted-foreground">Reservas, consumos y ubicación física</p></div>{puedeReservar ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('reserva')}><Plus aria-hidden="true" /> Reservar repuesto</Button> : null}</div>
         {detalle.partes.length ? <div className="mt-5 space-y-3">{detalle.partes.map((parte) => { const saldo = Math.max(0, parte.cantidadSolicitada - parte.cantidadConsumida); const puedeOperar = puedeUsarPartes && ['quote_approved', 'warranty', 'in_repair', 'awaiting_parts', 'testing'].includes(reparacion.estado); return <article key={parte.id} className="border bg-muted/20 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-medium">{parte.productoDescripcionSnapshot}</p><p className="mt-1 font-mono text-xs text-muted-foreground">{parte.productoCodigoSnapshot} · {etiquetasEstadoStockReparacion[parte.estadoStock]}</p></div><span className="status-label" data-tone={parte.estado === 'consumed' ? 'listo' : parte.estado === 'reserved' ? 'pendiente' : 'revision'}>{etiquetasEstadoParte[parte.estado]}</span></div><dl className="mt-4 grid grid-cols-2 gap-x-5 sm:grid-cols-4"><Dato etiqueta="Solicitado" valor={`${parte.cantidadSolicitada} ${unidadProducto(productos, parte.productoId)}`} /><Dato etiqueta="Consumido" valor={`${parte.cantidadConsumida} ${unidadProducto(productos, parte.productoId)}`} /><Dato etiqueta="Saldo" valor={<span className="font-semibold">{saldo}</span>} /><Dato etiqueta="Lote" valor={mostrar(parte.lote, 'Sin lote')} /></dl><p className="mt-3 border-t pt-3 text-xs text-muted-foreground">{nombreAlmacen(almacenes, parte.almacenId)} · {nombreUbicacion(ubicaciones, parte.ubicacionId)}</p>{puedeOperar && parte.estado === 'reserved' ? <div className="mt-3 flex flex-wrap justify-end gap-2 border-t pt-3"><Button type="button" variant="outline" size="sm" disabled={saldo <= 0} onClick={() => alAbrirParte('consumo', parte)}>Consumir saldo</Button><Button type="button" variant="ghost" size="sm" onClick={() => alAbrirParte('cancelarParte', parte)}>Cancelar reserva</Button></div> : null}{parte.consumos.length ? <ul className="mt-3 space-y-1 border-t pt-3 text-xs text-muted-foreground">{parte.consumos.map((consumo) => <li key={consumo.id} className="flex flex-wrap justify-between gap-2"><span>Consumo de {consumo.cantidad} · {formatoFecha.format(new Date(consumo.consumidoEn))}</span><span className="font-mono">{abreviarId(consumo.claveOperacion)}</span></li>)}</ul> : null}</article> })}</div> : <p className="mt-5 border border-dashed px-4 py-5 text-sm text-muted-foreground">No hay repuestos reservados para esta reparación.</p>}
@@ -767,8 +862,11 @@ function DetalleContenido({
       <section aria-labelledby="reparacion-pruebas" className="border-b px-5 py-6 sm:px-7">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-pruebas" className="flex items-center gap-2 font-semibold"><ClipboardCheck aria-hidden="true" className="size-4 text-primary" /> Pruebas</h2><p className="mt-1 text-sm text-muted-foreground">Validaciones antes de la entrega</p></div>{puedeRegistrarPrueba ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('prueba')}><Plus aria-hidden="true" /> Registrar prueba</Button> : null}</div><ResultadosPruebas pruebas={detalle.pruebas} cicloActual={detalle.cicloPruebasActual} /></section>
 
-      <section aria-labelledby="reparacion-linea-tiempo" className="px-5 py-6 sm:px-7">
+      <details id="reparacion-seccion-historial" tabIndex={-1} className="px-5 py-6 outline-none sm:px-7">
+        <summary className="cursor-pointer rounded-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Historial de la orden · {detalle.eventos.length} eventos</summary>
+      <section aria-labelledby="reparacion-linea-tiempo" className="pt-5">
         <div className="flex items-end justify-between gap-3"><div><h2 id="reparacion-linea-tiempo" className="flex items-center gap-2 font-semibold"><Clock3 aria-hidden="true" className="size-4 text-primary" /> Línea de tiempo</h2><p className="mt-1 text-sm text-muted-foreground">Registro inmutable de la orden</p></div><span className="font-mono text-xs text-muted-foreground">{detalle.eventos.length} EVENTOS</span></div>{detalle.eventos.length ? <ol className="mt-5 space-y-0 ps-2">{detalle.eventos.map((evento) => <li key={evento.id} className="relative border-s ps-5 pb-6 last:pb-0"><span className="absolute -start-1.5 top-1.5 size-3 rounded-full border-2 border-background bg-primary" /><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-medium">{etiquetaEvento(evento.tipo)}</p>{evento.estadoAnterior || evento.estadoNuevo ? <p className="mt-1 font-mono text-[0.68rem] text-muted-foreground uppercase">{evento.estadoAnterior ? etiquetasEstadoReparacion[evento.estadoAnterior as EstadoReparacion] ?? evento.estadoAnterior : 'Inicio'}{evento.estadoNuevo ? ` → ${etiquetasEstadoReparacion[evento.estadoNuevo as EstadoReparacion] ?? evento.estadoNuevo}` : ''}</p> : null}</div><time className="text-xs text-muted-foreground" dateTime={evento.creadoEn}>{formatoFecha.format(new Date(evento.creadoEn))}</time></div>{evento.observacion ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{evento.observacion}</p> : null}</li>)}</ol> : <p className="mt-5 text-sm text-muted-foreground">La actividad aparecerá aquí al avanzar la orden.</p>}</section>
+      </details>
     </div>
   )
 }

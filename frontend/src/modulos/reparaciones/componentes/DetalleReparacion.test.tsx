@@ -228,6 +228,29 @@ function renderizarDetalle({
 }
 
 describe('DetalleReparacion acciones técnicas', () => {
+  it('guía el próximo trabajo sin ofrecer acciones técnicas sin permiso', () => {
+    renderizarDetalle({ estado: 'testing', puedeCambiarEstado: false, puedeRealizarTecnica: false })
+    expect(screen.getByRole('heading', { name: 'Siguiente paso' })).toBeVisible()
+    expect(screen.getByRole('list', { name: 'Requisitos pendientes para entregar' })).toHaveTextContent('Registrar una prueba aprobada')
+    expect(screen.queryByRole('button', { name: 'Completar pruebas' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Revisar siguiente estado' })).not.toBeInTheDocument()
+  })
+
+  it('ofrece completar las pruebas y advierte reservas antes de preparar la entrega', () => {
+    renderizarDetalle({ estado: 'testing', conParte: true })
+    expect(screen.getByRole('button', { name: 'Completar pruebas' })).toBeVisible()
+    expect(screen.getByRole('list', { name: 'Requisitos pendientes para entregar' })).toHaveTextContent('Consumir o cancelar los saldos reservados')
+  })
+
+  it('abre el historial desde la navegación sin alterar el estado de la reparación', () => {
+    const { operacion } = renderizarDetalle()
+    const historial = screen.getByText(/Historial de la orden/).closest('details')
+    expect(historial).not.toHaveAttribute('open')
+    fireEvent.click(screen.getByRole('link', { name: 'Historial' }))
+    expect(historial).toHaveAttribute('open')
+    expect(operacion).not.toHaveBeenCalled()
+  })
+
   it('carga las líneas históricas al seleccionar su versión y conserva la vigente en caché', async () => {
     const cotizacionVigente: CotizacionReparacion = {
       ...cotizacionRechazada,
@@ -442,7 +465,7 @@ describe('DetalleReparacion acciones técnicas', () => {
       resultadoOperacion: 'La reparación cambió mientras realizabas esta acción.',
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cambiar estado' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar siguiente estado' }))
     rerenderDetalle(99)
     fireEvent.click(screen.getByRole('button', { name: 'Cambiar estado' }))
 
