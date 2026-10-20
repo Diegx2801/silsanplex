@@ -72,20 +72,22 @@ export function PanelControlStock(props: Props) {
   }
   return (
     <div className="space-y-6">
-      {props.puedeGestionar ? (
-        <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-          <Button ref={botonAlertas} variant="outline" onClick={() => setDialogo('alertas')}>
-            <Settings2 aria-hidden="true" />Configurar alertas
-          </Button>
-          <Button ref={botonCondicion} onClick={() => setDialogo('condicion')}>
-            <ShieldCheck aria-hidden="true" />Cambiar condición
-          </Button>
-        </div>
-      ) : null}
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b">
+        <VistasInventario className="shrink-0 border-b-0" etiqueta="Vistas de control de stock" vista={vencimientosActivos ? 'vencimientos' : 'minimos'} opciones={[
+          { valor: 'minimos', etiqueta: 'Stock mínimo' }, { valor: 'vencimientos', etiqueta: 'Vencimientos' },
+        ]} />
+        {props.puedeGestionar ? (
+          <div className="flex flex-wrap gap-3 pb-2">
+            <Button ref={botonAlertas} variant="outline" onClick={() => setDialogo('alertas')}>
+              <Settings2 aria-hidden="true" />Configurar alertas
+            </Button>
+            <Button ref={botonCondicion} onClick={() => setDialogo('condicion')}>
+              <ShieldCheck aria-hidden="true" />Cambiar condición
+            </Button>
+          </div>
+        ) : null}
+      </div>
       {mensaje ? <p role="status" className="text-sm text-primary">{mensaje}</p> : null}
-      <VistasInventario etiqueta="Vistas de control de stock" vista={vencimientosActivos ? 'vencimientos' : 'minimos'} opciones={[
-        { valor: 'minimos', etiqueta: 'Stock mínimo' }, { valor: 'vencimientos', etiqueta: 'Vencimientos' },
-      ]} />
       <section aria-labelledby="control-listado-titulo" className="ledger-sheet">
         <div className="flex flex-wrap items-start justify-between gap-4 border-b px-5 py-5 sm:px-6">
           <div>

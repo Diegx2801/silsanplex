@@ -8,7 +8,7 @@ export function ControlStockPage() {
   const { access, hasPermission } = useAuth()
   const gestion = useAlmacenes()
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <header className="border-b pb-7">
         <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">Inventario</span>
         <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Control de stock</h1>
