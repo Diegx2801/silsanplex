@@ -129,13 +129,13 @@ export function DialogoSeleccionAlmacenPedido({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-60 bg-foreground/30" />
         <DialogPrimitive.Content
-          className="fixed start-1/2 top-1/2 z-70 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 border bg-background shadow-xl outline-none"
+          className="fixed start-1/2 top-1/2 z-70 flex max-h-[90svh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden border bg-background shadow-xl outline-none"
           onCloseAutoFocus={(evento) => {
             evento.preventDefault()
             alRestaurarFoco()
           }}
         >
-          <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7">
+          <header className="flex shrink-0 items-start justify-between gap-4 border-b px-5 py-5 sm:px-7">
             <div>
               <div className="grid size-10 place-items-center rounded-full bg-accent text-primary">
                 <ShoppingCart aria-hidden="true" className="size-5" />
@@ -159,8 +159,8 @@ export function DialogoSeleccionAlmacenPedido({
             </DialogPrimitive.Close>
           </header>
 
-          <form className="px-5 py-6 sm:px-7" onSubmit={(evento) => void guardar(evento)}>
-            <div className="space-y-4">
+          <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={(evento) => void guardar(evento)}>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-6 sm:px-7">
               <div>
                 <label htmlFor="modalidad-cumplimiento-pedido" className="field-label">Modalidad de cumplimiento</label>
                 <select
@@ -246,9 +246,9 @@ export function DialogoSeleccionAlmacenPedido({
               <p className="text-xs text-muted-foreground">
                 {cotizacion.lineas.length} {cotizacion.lineas.length === 1 ? 'producto' : 'productos'} quedarán asociados al almacén seleccionado.
               </p>
+              {error ? <p role="alert" className="mt-5 border-s-4 border-destructive bg-destructive/10 px-4 py-3 text-sm">{error}</p> : null}
             </div>
-            {error ? <p role="alert" className="mt-5 border-s-4 border-destructive bg-destructive/10 px-4 py-3 text-sm">{error}</p> : null}
-            <footer className="mt-6 flex justify-end gap-3 border-t pt-5">
+            <footer className="flex shrink-0 justify-end gap-3 border-t px-5 py-4 sm:px-7">
               <Button type="button" variant="outline" disabled={estaGuardando} onClick={() => alCambiarApertura(false)}>Cancelar</Button>
               <Button type="submit" disabled={estaGuardando || !almacenes.length}>
                 <ShoppingCart aria-hidden="true" /> {estaGuardando ? 'Creando pedido…' : 'Confirmar pedido'}
