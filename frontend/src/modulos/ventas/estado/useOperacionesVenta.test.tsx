@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Cotizacion } from '@/modulos/ventas/modelo/cotizacion'
 import type { ConsultaKardex } from '@/modulos/inventario/modelo/almacen'
 import { inventoryQueryKeys } from '@/modulos/inventario/estado/inventoryQueryKeys'
+import * as fechas from '@/lib/fechas'
 
 const mocks = vi.hoisted(() => ({
   crearPedidoPersistente: vi.fn(),
@@ -49,7 +50,32 @@ function crearCliente() {
 }
 
 describe('useOperacionesVenta', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(fechas, 'fechaActualPeru').mockReturnValue('2026-09-15')
+  })
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it('rechaza cotizaciones vencidas sin crear un pedido ni aceptar la cotización', async () => {
+    vi.mocked(fechas.fechaActualPeru).mockReturnValue('2026-10-01')
+    mocks.listarPedidosPersistentes.mockResolvedValue([])
+    mocks.listarVentasPersistentes.mockResolvedValue([])
+    const aceptar = vi.fn()
+    const cliente = crearCliente()
+    const { result } = renderHook(
+      () => useOperacionesVenta({ cotizaciones: [cotizacion], aceptarCotizacion: aceptar }),
+      { wrapper: ({ children }) => <QueryClientProvider client={cliente}>{children}</QueryClientProvider> },
+    )
+
+    await act(async () => {
+      await expect(result.current.crearPedido(cotizacion.id, 'warehouse-1')).resolves.toBe(
+        'La cotización está vencida; emite una nueva propuesta antes de crear el pedido',
+      )
+    })
+    expect(mocks.crearPedidoPersistente).not.toHaveBeenCalled()
+    expect(aceptar).not.toHaveBeenCalled()
+  })
 
   it('lee pedidos/ventas desde Supabase y crea el pedido de forma asíncrona', async () => {
     mocks.listarPedidosPersistentes.mockResolvedValue([])

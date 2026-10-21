@@ -339,7 +339,10 @@ select is(
 );
 set local role postgres;
 select is(
-  (select count(*) from public.audit_events where action = 'PURCHASE_RECEIPT_INSPECTION_COMPLETED' and entity_type = 'purchase_receipt_inspection'),
+  (select count(*) from public.audit_events
+   where organization_id = 'c4c00000-0000-4000-8000-000000000001'
+     and action = 'PURCHASE_RECEIPT_INSPECTION_COMPLETED'
+     and entity_type = 'purchase_receipt_inspection'),
   1::bigint,
   'la inspeccion completada queda auditada por separado'
 );
@@ -448,7 +451,10 @@ select is(
 );
 set local role postgres;
 select is(
-  (select count(*) from public.audit_events where action = 'PURCHASE_RECEIPT_INSPECTION_CORRECTED' and entity_type = 'purchase_receipt_inspection'),
+  (select count(*) from public.audit_events
+   where organization_id = 'c4c00000-0000-4000-8000-000000000001'
+     and action = 'PURCHASE_RECEIPT_INSPECTION_CORRECTED'
+     and entity_type = 'purchase_receipt_inspection'),
   1::bigint,
   'la correccion queda auditada'
 );
