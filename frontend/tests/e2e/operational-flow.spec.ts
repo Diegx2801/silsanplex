@@ -196,6 +196,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 108
 
       await test.step('Editar planificación tiene nombre accesible y cierre por teclado', async () => {
         await page.goto('/distribucion?vista=seguimiento')
+        await page.getByRole('searchbox', { name: 'Buscar', exact: true }).fill(order.order_number)
         const article = page.getByRole('article').filter({ hasText: order.order_number }).filter({ hasText: f.name })
         const edit = article.getByRole('button', { name: 'Editar planificación', exact: true })
         await edit.click()
@@ -207,6 +208,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 108
 
       await test.step('Traslado y conformidad completa del cliente desde React', async () => {
         await page.goto('/distribucion?vista=seguimiento')
+        await page.getByRole('searchbox', { name: 'Buscar', exact: true }).fill(order.order_number)
         const article = page.getByRole('article').filter({ hasText: order.order_number }).filter({ hasText: f.name })
         for (const [action, status] of [['Iniciar preparación', 'preparando'], ['Iniciar traslado', 'en_curso'], ['Marcar en destino', 'en_destino']]) {
           await mutate(page, 'save_distribution_delivery', () => article.getByRole('button', { name: action, exact: true }).click())
@@ -235,6 +237,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 108
         await mutate(page, 'record_distribution_delivery_outcome', () => dialog.getByRole('button', { name: 'Confirmar entrega completa' }).click())
         await expect(dialog).toBeHidden()
         await page.reload()
+        await page.getByRole('searchbox', { name: 'Buscar', exact: true }).fill(order.order_number)
         await expect(article).toContainText(/entregado/i)
       })
 
