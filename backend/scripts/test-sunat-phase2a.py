@@ -1,7 +1,8 @@
 """Fictitious fiscal SQL tests; fixed, verified temporary Supabase only.
 
---transactional compiles the candidate migration and runs serial tests in ROLLBACK.
-Default runs the installed serial suite (ROLLBACK) plus independent-session races.
+--transactional requires the 148 prior migrations, compiles both candidates in
+order, and runs serial tests inside one ROLLBACK transaction.
+Default requires all 150 installed migrations and also runs independent races.
 No resets, cleanup, existing fixture reuse, credentials, transport, or backend writes.
 """
 import argparse
@@ -17,10 +18,14 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
-MIGRATION = ROOT / 'backend/supabase/migrations/20261023061225_electronic_fiscal_sandbox_persistence.sql'
+MIGRATIONS = (
+    ROOT / 'backend/supabase/migrations/20261023061225_electronic_fiscal_sandbox_persistence.sql',
+    ROOT / 'backend/supabase/migrations/20261023135019_electronic_fiscal_helper_sql_lint.sql',
+)
+VERSIONS = tuple(path.name.split('_')[0] for path in MIGRATIONS)
+BASE_MIGRATION_COUNT = 148
 SUITE = ROOT / 'backend/scripts/fixtures/electronic_document_persistence.sql'
 CONTAINER = 'supabase_db_silsanplexp2c2'
-VERSION = '20261023061225'
 HELPERS = SUITE.read_text(encoding='utf8').split('-- SERIAL_TESTS_START:')[0]
 CHECKS = []
 
@@ -64,6 +69,47 @@ def check(label, ok, evidence=None):
         raise AssertionError(label)
 
 
+def validate_history(migrations, files, transactional):
+    """Reject missing, extra, reordered or duplicate versions before fixtures."""
+    if (files != sorted(set(files))
+            or len(files) != BASE_MIGRATION_COUNT + len(VERSIONS)
+            or tuple(files[-len(VERSIONS):]) != VERSIONS):
+        raise ValueError('CPE_TEST_MIGRATION_FILES_MISMATCH')
+    expected = files[:-len(VERSIONS)] if transactional else files
+    if migrations != expected:
+        raise ValueError('CPE_TEST_MIGRATION_HISTORY_MISMATCH')
+
+
+def candidate_sql(path):
+    """Keep candidate DDL inside the test transaction without editing SQL files."""
+    if path not in MIGRATIONS:
+        raise ValueError('CPE_TEST_UNEXPECTED_CANDIDATE')
+    lines = path.read_text(encoding='utf8').splitlines(keepends=True)
+    statements = [i for i, line in enumerate(lines)
+                  if line.strip() and not line.lstrip().startswith('--')]
+    if not statements:
+        raise ValueError('CPE_TEST_EMPTY_CANDIDATE')
+    first, last = statements[0], statements[-1]
+    if path == MIGRATIONS[1]:
+        if (first == last or lines[first].strip().lower() != 'begin;'
+                or lines[last].strip().lower() != 'commit;'):
+            raise ValueError('CPE_TEST_CANDIDATE_TRANSACTION_CONTROL')
+        lines[first] = lines[last] = ''
+    source = ''.join(lines)
+    # The two fixed candidates use single-line outer wrappers and dollar-quoted
+    # function bodies ending in "end $$;". Fail closed on any remaining control
+    # line instead of letting it commit/abort the enclosing test transaction.
+    if re.search(r'^\s*(?:begin|commit|rollback|end|abort|start\s+transaction)\s*;',
+                 source, re.I | re.M):
+        raise ValueError('CPE_TEST_CANDIDATE_TRANSACTION_CONTROL')
+    return source
+
+
+def serial_script(transactional):
+    candidates = '\n'.join(candidate_sql(path) for path in MIGRATIONS) if transactional else ''
+    return 'begin;\n' + candidates + '\n' + SUITE.read_text(encoding='utf8') + '\nrollback;'
+
+
 def verify(transactional):
     directory = Path(os.environ['LOCALAPPDATA']) / 'Temp/silsanplex-phase2c2-20261021'
     config = (directory / 'supabase/config.toml').read_text(encoding='utf8')
@@ -83,16 +129,17 @@ def verify(transactional):
     assert volume['Labels']['com.supabase.cli.project'] == 'silsanplexp2c2'
     assert sql("select current_database(),current_setting('port')").stdout.strip() == 'postgres|5432'
     migrations = read('select json_agg(version order by version) from supabase_migrations.schema_migrations')
-    files = sorted(p.name.split('_')[0] for p in MIGRATION.parent.glob('*.sql'))
-    assert migrations == ([v for v in files if v != VERSION] if transactional else files)
+    files = sorted(p.name.split('_')[0] for p in MIGRATIONS[0].parent.glob('*.sql'))
+    validate_history(migrations, files, transactional)
     definition = sql("select pg_get_functiondef('public.record_distribution_delivery_outcome(jsonb)'::regprocedure)").stdout
     assert 'pg_advisory_xact_lock' in definition and 'DISTRIBUTION_OUTCOME_OPERATION_KEY_REUSED' in definition
     if not transactional:
-        installed = sql("select array_to_string(statements,E'\\n') from supabase_migrations.schema_migrations where version=" + quote(VERSION)).stdout
+        installed = sql("select array_to_string(statements,E'\\n') from supabase_migrations.schema_migrations where version=" + quote(VERSIONS[0])).stdout
         # History stores statement blocks; effective function definitions are checked below.
         assert 'CPE-PE-DOM-PEN-1' in installed
     check('isolated project preflight', True, dict(project='silsanplexp2c2', api=58121, postgres=58122,
-          volume='supabase_db_silsanplexp2c2', migrations=len(migrations), candidate_sha256=hashlib.sha256(MIGRATION.read_bytes()).hexdigest()))
+          volume='supabase_db_silsanplexp2c2', migrations=len(migrations),
+          candidate_sha256={path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in MIGRATIONS}))
 
 
 def fingerprints():
@@ -104,8 +151,7 @@ def fingerprints():
 
 
 def serial(transactional):
-    candidate = MIGRATION.read_text(encoding='utf8') if transactional else ''
-    result = sql('begin;\n' + candidate + '\n' + SUITE.read_text(encoding='utf8') + '\nrollback;')
+    result = sql(serial_script(transactional))
     assertions = re.findall(r'NOTICE:  PASS: (.+)', result.stderr)
     assert assertions, result.stderr
     for label in assertions:
