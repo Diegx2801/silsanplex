@@ -24,6 +24,12 @@ interface DialogoResultadoEntregaProps {
 
 type ModoResultado = 'recibido' | 'no_entregado'
 
+interface OperacionResultadoPendiente {
+  entregaId: string
+  operationKey: string
+  resultado: ResultadoEntrega
+}
+
 export function DialogoResultadoEntrega({
   abierto,
   entrega,
@@ -39,7 +45,11 @@ export function DialogoResultadoEntrega({
   const [cantidades, setCantidades] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const operationKey = useRef<string | null>(null)
+  const operacionResultadoPendiente = useRef<OperacionResultadoPendiente | null>(null)
+  const lineasParaInicializar = useRef(entrega.lineas)
+  lineasParaInicializar.current = entrega.lineas
 
+  // A query refresh must not replace the command while its outcome is uncertain.
   useEffect(() => {
     if (!abierto) return
     setModo('recibido')
@@ -47,14 +57,20 @@ export function DialogoResultadoEntrega({
     setEvidencia('')
     setCategoriaIncidencia('cliente_ausente')
     setIncidencia('')
-    setCantidades(Object.fromEntries(entrega.lineas.map((linea) => [linea.id, '0'])))
+    setCantidades(Object.fromEntries(lineasParaInicializar.current.map((linea) => [linea.id, '0'])))
     setError('')
     operationKey.current = crypto.randomUUID()
-  }, [abierto, entrega.id, entrega.lineas, entrega.resultadosEntrega.length])
+    operacionResultadoPendiente.current = null
+  }, [abierto, entrega.id])
+
+  const invalidarOperacionPendiente = () => {
+    operationKey.current = crypto.randomUUID()
+    operacionResultadoPendiente.current = null
+    setError('')
+  }
 
   const cambiar = <K extends 'modo' | 'fecha' | 'evidencia' | 'incidencia'>(campo: K, valor: K extends 'modo' ? ModoResultado : string) => {
-    operationKey.current = crypto.randomUUID()
-    setError('')
+    invalidarOperacionPendiente()
     if (campo === 'modo') setModo(valor as ModoResultado)
     if (campo === 'fecha') setFecha(valor)
     if (campo === 'evidencia') setEvidencia(valor)
@@ -68,7 +84,11 @@ export function DialogoResultadoEntrega({
     ? inferirResultadoEntrega(entrega.lineas, cantidadesNumericas)
     : 'rechazado'
   const cantidadNueva = Object.values(cantidadesNumericas).reduce((total, cantidad) => total + cantidad, 0)
-  const resultadoHabilitado = puedeRegistrarResultadoEntrega(entrega)
+  const reintentoPendiente = operacionResultadoPendiente.current
+  const puedeReintentarResultado = reintentoPendiente?.entregaId === entrega.id
+    && reintentoPendiente.operationKey === operationKey.current
+  const resultadoHabilitado = puedeRegistrarResultadoEntrega(entrega) || puedeReintentarResultado
+  const resultadoParaMostrar = puedeReintentarResultado ? reintentoPendiente.resultado.resultado : resultadoInferido
   const cantidadInvalida = entrega.lineas.some((linea) => {
     const pendiente = linea.cantidadPendienteCliente ?? Math.max(0, linea.cantidad - (linea.cantidadEntregadaCliente ?? 0))
     const cantidad = cantidadesNumericas[linea.id] ?? 0
@@ -76,14 +96,27 @@ export function DialogoResultadoEntrega({
   })
 
   const cambiarCantidad = (lineaId: string, valor: string) => {
-    operationKey.current = crypto.randomUUID()
-    setError('')
+    invalidarOperacionPendiente()
     setCantidades((actuales) => ({ ...actuales, [lineaId]: valor }))
   }
 
   const enviar = async (evento: React.FormEvent<HTMLFormElement>) => {
     evento.preventDefault()
-    if (!resultadoHabilitado) {
+    const operacionPendiente = operacionResultadoPendiente.current
+    const esReintentoPendiente = operacionPendiente?.entregaId === entrega.id
+      && operacionPendiente.operationKey === operationKey.current
+
+    if (esReintentoPendiente) {
+      const errorOperacion = await alConfirmar(operacionPendiente.resultado, operacionPendiente.operationKey)
+      if (errorOperacion) setError(errorOperacion)
+      else {
+        operacionResultadoPendiente.current = null
+        alCambiarApertura(false)
+      }
+      return
+    }
+
+    if (!puedeRegistrarResultadoEntrega(entrega)) {
       setError('Marca en destino antes de registrar el resultado de la entrega.')
       return
     }
@@ -109,10 +142,20 @@ export function DialogoResultadoEntrega({
       return
     }
 
-    operationKey.current ??= crypto.randomUUID()
-    const errorOperacion = await alConfirmar(resultado.data, operationKey.current)
+    const claveOperacion = operationKey.current ??= crypto.randomUUID()
+    const errorOperacion = await alConfirmar(resultado.data, claveOperacion)
     if (errorOperacion) setError(errorOperacion)
-    else alCambiarApertura(false)
+    else {
+      operacionResultadoPendiente.current = null
+      alCambiarApertura(false)
+    }
+    if (errorOperacion) {
+      operacionResultadoPendiente.current = {
+        entregaId: entrega.id,
+        operationKey: claveOperacion,
+        resultado: resultado.data,
+      }
+    }
   }
 
   const conciliacionPendiente = entrega.requiereConciliacionCantidades
@@ -158,13 +201,13 @@ export function DialogoResultadoEntrega({
                       )
                     })}
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/20 px-4 py-3 text-sm"><span className="status-label" data-tone={resultadoInferido === 'entregado' ? 'listo' : 'pendiente'}>{resultadoInferido === 'entregado' ? 'Todos los saldos quedarán cubiertos' : resultadoInferido === 'entrega_parcial' ? 'Quedará saldo para una entrega posterior' : cantidadInvalida ? 'Revisa las cantidades ingresadas' : 'Ingresa las cantidades recibidas'}</span><span className="text-xs text-muted-foreground">El resultado se calcula por producto.</span></div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/20 px-4 py-3 text-sm"><span className="status-label" data-tone={resultadoParaMostrar === 'entregado' ? 'listo' : 'pendiente'}>{resultadoParaMostrar === 'entregado' ? 'Todos los saldos quedarán cubiertos' : resultadoParaMostrar === 'entrega_parcial' ? 'Quedará saldo para una entrega posterior' : cantidadInvalida ? 'Revisa las cantidades ingresadas' : 'Ingresa las cantidades recibidas'}</span><span className="text-xs text-muted-foreground">El resultado se calcula por producto.</span></div>
                 </section>
               ) : (
                 <div className="space-y-4">
                   <div>
                     <label htmlFor="resultado-categoria" className="field-label">Motivo principal <span aria-hidden="true">*</span></label>
-                    <select id="resultado-categoria" required value={categoriaIncidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => { operationKey.current = crypto.randomUUID(); setError(''); setCategoriaIncidencia(evento.target.value as typeof CATEGORIAS_NO_ENTREGA[number]) }} className="field-control">
+                    <select id="resultado-categoria" required value={categoriaIncidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => { invalidarOperacionPendiente(); setCategoriaIncidencia(evento.target.value as typeof CATEGORIAS_NO_ENTREGA[number]) }} className="field-control">
                       {CATEGORIAS_NO_ENTREGA.map((categoria) => <option key={categoria} value={categoria}>{ETIQUETAS_CATEGORIA_NO_ENTREGA[categoria]}</option>)}
                     </select>
                   </div>
@@ -180,7 +223,7 @@ export function DialogoResultadoEntrega({
 
             <footer className="flex shrink-0 justify-end gap-2 border-t bg-background px-5 py-4 sm:px-7">
               <Button type="button" variant="outline" disabled={guardando} onClick={() => alCambiarApertura(false)}>Cancelar</Button>
-              <Button type="submit" disabled={guardando || !resultadoHabilitado || conciliacionPendiente || (modo === 'recibido' && (cantidadNueva <= 0 || cantidadInvalida))}>{guardando ? 'Registrando…' : modo === 'no_entregado' ? 'Registrar entrega no completada' : resultadoInferido === 'entregado' ? 'Confirmar entrega completa' : 'Confirmar entrega parcial'}</Button>
+              <Button type="submit" disabled={guardando || !resultadoHabilitado || conciliacionPendiente || (!puedeReintentarResultado && modo === 'recibido' && (cantidadNueva <= 0 || cantidadInvalida))}>{guardando ? 'Registrando…' : modo === 'no_entregado' ? 'Registrar entrega no completada' : resultadoParaMostrar === 'entregado' ? 'Confirmar entrega completa' : 'Confirmar entrega parcial'}</Button>
             </footer>
           </form>
         </DialogPrimitive.Content>

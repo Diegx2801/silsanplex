@@ -1,13 +1,93 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 
 import { checked, expectStock, mutate, operationalFixture, selectRemote } from './fixtures/operational.js'
 
-test('divide una salida física entre dos entregas independientes de 2 y 4 unidades', async ({ page }) => {
+interface ResultadoRpcEntrega {
+  operationKey: string
+  payload: Record<string, unknown>
+  status: number
+  body: string
+  outcomeId?: string
+}
+
+function idResultadoRpc(body: string) {
+  try {
+    const parsed = JSON.parse(body) as unknown
+    if (typeof parsed === 'string') return parsed
+    if (Array.isArray(parsed) && typeof parsed[0] === 'string') return parsed[0]
+  } catch {
+    return undefined
+  }
+  return undefined
+}
+
+async function interceptarPerdidaDeRespuesta(page: Page, deliveryId: string) {
+  const attempts: ResultadoRpcEntrega[] = []
+  let resolveFirst!: (attempt: ResultadoRpcEntrega) => void
+  let resolveSecond!: (attempt: ResultadoRpcEntrega) => void
+  const firstAttempt = new Promise<ResultadoRpcEntrega>((resolve) => { resolveFirst = resolve })
+  const secondAttempt = new Promise<ResultadoRpcEntrega>((resolve) => { resolveSecond = resolve })
+  const pattern = '**/rest/v1/rpc/record_distribution_delivery_outcome'
+  const handler = async (route: Route) => {
+    const envelope = route.request().postDataJSON() as { payload?: Record<string, unknown> }
+    const payload = envelope.payload ?? {}
+    if (payload.entregaId !== deliveryId) {
+      await route.continue()
+      return
+    }
+
+    // route.fetch executes the real RPC. Only after its committed response is
+    // received do we abort the browser-facing request to model a lost response.
+    const response = await route.fetch()
+    const body = await response.text()
+    const attempt: ResultadoRpcEntrega = {
+      operationKey: String(payload.operationKey ?? ''),
+      payload,
+      status: response.status(),
+      body,
+      outcomeId: response.ok() ? idResultadoRpc(body) : undefined,
+    }
+    attempts.push(attempt)
+
+    if (attempts.length === 1) {
+      resolveFirst(attempt)
+      if (response.ok()) await route.abort('connectionreset')
+      else await route.fulfill({ response, body })
+      return
+    }
+    if (attempts.length === 2) resolveSecond(attempt)
+    await route.fulfill({ response, body })
+  }
+
+  await page.route(pattern, handler)
+  return {
+    attempts,
+    firstAttempt,
+    secondAttempt,
+    close: () => page.unroute(pattern, handler),
+  }
+}
+
+test('divide dos entregas y recupera una respuesta perdida del resultado', async ({ page }) => {
   test.setTimeout(180_000)
   page.on('pageerror', (error) => console.error('Error de navegador: ' + error.message))
 
-  const f = await operationalFixture(page)
+  const phase2c2E2E = process.env.SILSAN_PHASE2C2_E2E === '1'
+  const f = await operationalFixture(page, phase2c2E2E ? 'isolated-phase2c2' : 'persistent-silsan')
   const rows = (table: string) => f.api.from(table).select('*').eq('organization_id', f.organizationId)
+  const outcomeAudits = async (deliveryIds: string[]): Promise<Array<{ entity_id: string }>> => {
+    if (!phase2c2E2E) return checked(rows('audit_events')
+      .eq('entity_type', 'distribution_delivery').in('entity_id', deliveryIds)
+      .eq('action', 'DISTRIBUTION_OUTCOME_RECORDED'))
+    // Read-only server-side evidence avoids granting ADMIN to the browser identity.
+    for (const id of [f.organizationId, ...deliveryIds]) expect(id).toMatch(/^[0-9a-f-]{36}$/i)
+    return JSON.parse(execFileSync('docker', ['exec', 'supabase_db_silsanplexp2c2',
+      'psql', '-U', 'postgres', '-Atc',
+      `select coalesce(json_agg(a), '[]'::json) from (select entity_id from public.audit_events where organization_id='${f.organizationId}' and entity_type='distribution_delivery' and action='DISTRIBUTION_OUTCOME_RECORDED' and entity_id in (${deliveryIds.map((id) => `'${id}'`).join(',')})) a`,
+    ], { encoding: 'utf8' }))
+  }
+  const auditEventsForDelivery = (deliveryId: string) => outcomeAudits([deliveryId])
   const guia1 = 'T001-' + f.documentNumber
   const guia2 = 'T002-' + f.documentNumber
   const referencia1 = f.reference + '-ENVIO-1'
@@ -268,7 +348,22 @@ test('divide una salida física entre dos entregas independientes de 2 y 4 unida
     await expect(dialog).toBeHidden()
   }
 
-  async function completarEntrega(deliveryId: string, guide: string, cantidad: number, evidence: string) {
+  type ModoResultadoE2E = 'normal' | 'retry-identical' | 'change-after-loss'
+  type EvidenciaRecuperacion = {
+    first: ResultadoRpcEntrega
+    replay?: ResultadoRpcEntrega
+    changedAttempt?: ResultadoRpcEntrega
+  }
+  let primeraRecuperacion: EvidenciaRecuperacion | undefined
+  let segundaRecuperacion: EvidenciaRecuperacion | undefined
+
+  async function completarEntrega(
+    deliveryId: string,
+    guide: string,
+    cantidad: number,
+    evidence: string,
+    mode: ModoResultadoE2E = 'normal',
+  ): Promise<EvidenciaRecuperacion | undefined> {
     await page.goto('/distribucion?vista=seguimiento')
     await page.getByRole('searchbox', { name: 'Buscar', exact: true }).fill(orderNumber)
     const article = page.getByRole('article').filter({ hasText: guide })
@@ -287,8 +382,91 @@ test('divide una salida física entre dos entregas independientes de 2 y 4 unida
     const outcomeDialog = page.getByRole('dialog', { name: 'Registrar resultado de entrega' })
     await outcomeDialog.getByLabel('Recibido ahora', { exact: true }).fill(String(cantidad))
     await outcomeDialog.getByLabel(/^Evidencia o constancia/).fill(evidence)
-    await mutate(page, 'record_distribution_delivery_outcome', () => outcomeDialog.getByRole('button', { name: 'Confirmar entrega completa' }).click())
-    await expect(outcomeDialog).toBeHidden()
+
+    if (mode === 'normal') {
+      await mutate(page, 'record_distribution_delivery_outcome', () => outcomeDialog.getByRole('button', { name: 'Confirmar entrega completa' }).click())
+      await expect(outcomeDialog).toBeHidden()
+      return undefined
+    }
+
+    const interception = await interceptarPerdidaDeRespuesta(page, deliveryId)
+    const confirmButton = outcomeDialog.getByRole('button', { name: 'Confirmar entrega completa' })
+    try {
+      await confirmButton.click()
+      const first = await interception.firstAttempt
+      expect(first.status, 'La primera RPC real debe confirmar en PostgreSQL antes de perderse su respuesta').toBe(200)
+      expect(first.outcomeId).toMatch(/^[0-9a-f-]{36}$/i)
+      await expect(outcomeDialog.getByRole('alert')).toBeVisible()
+      await expect(outcomeDialog.getByRole('alert')).toContainText(/\S/)
+
+      const persistedAfterLostResponse = await checked(rows('distribution_delivery_outcomes').eq('delivery_id', deliveryId))
+      expect(persistedAfterLostResponse).toHaveLength(1)
+      expect(persistedAfterLostResponse[0].id).toBe(first.outcomeId)
+      expect(await auditEventsForDelivery(deliveryId)).toHaveLength(1)
+      const versionAfterCommit = Number((await checked(rows('distribution_deliveries').eq('id', deliveryId).single())).lock_version)
+      await expectStock(f, 4, 0, 4)
+
+      if (mode === 'retry-identical') {
+        await mutate(page, 'record_distribution_delivery_outcome', () => confirmButton.click())
+        const replay = await interception.secondAttempt
+        expect(replay.status).toBe(200)
+        expect(replay.operationKey).toBe(first.operationKey)
+        expect(replay.payload).toEqual(first.payload)
+        expect(replay.outcomeId).toBe(first.outcomeId)
+        await expect(outcomeDialog).toBeHidden()
+
+        const outcomesAfterReplay = await checked(rows('distribution_delivery_outcomes').eq('delivery_id', deliveryId))
+        expect(outcomesAfterReplay).toHaveLength(1)
+        const linesAfterReplay = await checked(rows('distribution_delivery_outcome_lines').eq('outcome_id', first.outcomeId!))
+        expect(linesAfterReplay).toHaveLength(1)
+        expect(Number(linesAfterReplay[0].quantity_delivered)).toBe(cantidad)
+        expect(await auditEventsForDelivery(deliveryId)).toHaveLength(1)
+        expect(Number((await checked(rows('distribution_deliveries').eq('id', deliveryId).single())).lock_version))
+          .toBe(versionAfterCommit)
+        await expectStock(f, 4, 0, 4)
+        return { first, replay }
+      }
+
+      const evidenciaModificada = `${evidence} (referencia corregida)`
+      await outcomeDialog.getByLabel(/^Evidencia o constancia/).fill(evidenciaModificada)
+      const rejectedResponsePromise = page.waitForResponse((response) =>
+        new URL(response.url()).pathname === '/rest/v1/rpc/record_distribution_delivery_outcome'
+        && response.request().method() === 'POST', { timeout: 15_000 })
+      await confirmButton.click()
+      const rejectedResponse = await rejectedResponsePromise
+      const changedAttempt = await interception.secondAttempt
+      expect(changedAttempt.operationKey).not.toBe(first.operationKey)
+      expect(changedAttempt.payload.evidencia).toBe(evidenciaModificada)
+      expect(changedAttempt.status).not.toBe(200)
+      expect(rejectedResponse.ok(), 'Un comando nuevo sobre la entrega ya confirmada debe mostrarse como conflicto, no como éxito').toBe(false)
+      await expect(outcomeDialog).toBeVisible()
+      await expect(outcomeDialog.getByRole('alert')).toBeVisible()
+
+      await outcomeDialog.getByLabel('Recibido ahora').fill(String(cantidad - 1))
+      const quantityResponsePromise = page.waitForResponse('**/rest/v1/rpc/record_distribution_delivery_outcome')
+      await outcomeDialog.getByRole('button', { name: 'Confirmar entrega parcial', exact: true }).click()
+      const quantityResponse = await quantityResponsePromise
+      const quantityCommand = quantityResponse.request().postDataJSON() as { payload: { operationKey: string } }
+      expect(quantityCommand.payload.operationKey).not.toBe(changedAttempt.operationKey)
+      expect(quantityCommand.payload.operationKey).not.toBe(first.operationKey)
+      expect(quantityResponse.ok()).toBe(false)
+      await expect(outcomeDialog).toBeVisible()
+      await expect(outcomeDialog.getByRole('alert')).toBeVisible()
+
+      const outcomesAfterChangedPayload = await checked(rows('distribution_delivery_outcomes').eq('delivery_id', deliveryId))
+      expect(outcomesAfterChangedPayload).toHaveLength(1)
+      const linesAfterChangedPayload = await checked(rows('distribution_delivery_outcome_lines').eq('outcome_id', first.outcomeId!))
+      expect(linesAfterChangedPayload).toHaveLength(1)
+      expect(await auditEventsForDelivery(deliveryId)).toHaveLength(1)
+      expect(Number((await checked(rows('distribution_deliveries').eq('id', deliveryId).single())).lock_version))
+        .toBe(versionAfterCommit)
+      await expectStock(f, 4, 0, 4)
+      await outcomeDialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
+      await expect(outcomeDialog).toBeHidden()
+      return { first, changedAttempt }
+    } finally {
+      await interception.close()
+    }
   }
 
   let firstDeliveryId = ''
@@ -336,7 +514,49 @@ test('divide una salida física entre dos entregas independientes de 2 y 4 unida
       reservation_id: reservationId,
     })
 
-    await completarEntrega(delivery.id, guia1, 2, 'Conformidad parcial de línea, primer envío ' + f.reference)
+    primeraRecuperacion = await completarEntrega(
+      delivery.id,
+      guia1,
+      2,
+      'Conformidad parcial de línea, primer envío ' + f.reference,
+      phase2c2E2E ? 'retry-identical' : 'normal',
+    )
+    if (phase2c2E2E) {
+      expect(primeraRecuperacion).toBeDefined()
+      const originalPayload = primeraRecuperacion!.first.payload
+      const versionBeforeConflicts = Number((await checked(rows('distribution_deliveries').eq('id', delivery.id).single())).lock_version)
+      const conflictPayloads: Array<{ tipo: string; payload: Record<string, unknown> }> = [
+        {
+          tipo: 'evidencia',
+          payload: { ...originalPayload, evidencia: `${String(originalPayload.evidencia)} modificada` },
+        },
+        {
+          tipo: 'cantidad',
+          payload: {
+            ...originalPayload,
+            lineas: (originalPayload.lineas as Array<Record<string, unknown>>).map((line) => ({
+              ...line,
+              cantidad: Number(line.cantidad) + 1,
+            })),
+          },
+        },
+      ]
+      for (const conflict of conflictPayloads) {
+        const response = await f.api.rpc('record_distribution_delivery_outcome', { payload: conflict.payload })
+        expect(response.error?.message, `La misma operationKey con ${conflict.tipo} distinta debe rechazarse`)
+          .toContain('DISTRIBUTION_OUTCOME_OPERATION_KEY_REUSED')
+        expect(response.data).toBeNull()
+      }
+      const outcomesAfterConflicts = await checked(rows('distribution_delivery_outcomes').eq('delivery_id', delivery.id))
+      expect(outcomesAfterConflicts).toHaveLength(1)
+      const linesAfterConflicts = await checked(rows('distribution_delivery_outcome_lines')
+        .eq('outcome_id', primeraRecuperacion!.first.outcomeId!))
+      expect(linesAfterConflicts).toHaveLength(1)
+      expect(await auditEventsForDelivery(delivery.id)).toHaveLength(1)
+      expect(Number((await checked(rows('distribution_deliveries').eq('id', delivery.id).single())).lock_version))
+        .toBe(versionBeforeConflicts)
+      await expectStock(f, 4, 0, 4)
+    }
     expect((await checked(rows('distribution_deliveries').eq('id', delivery.id).single())).delivery_status).toBe('entregado')
     const firstOutcomeRows = await checked(rows('distribution_delivery_outcomes').eq('delivery_id', delivery.id))
     expect(firstOutcomeRows).toHaveLength(1)
@@ -420,7 +640,13 @@ test('divide una salida física entre dos entregas independientes de 2 y 4 unida
   })
 
   await test.step('Completar segunda entrega y comprobar conservación, estados y trazabilidad', async () => {
-    await completarEntrega(secondDeliveryId, guia2, 4, 'Conformidad final de línea, segundo envío ' + f.reference)
+    segundaRecuperacion = await completarEntrega(
+      secondDeliveryId,
+      guia2,
+      4,
+      'Conformidad final de línea, segundo envío ' + f.reference,
+      phase2c2E2E ? 'change-after-loss' : 'normal',
+    )
 
     const deliveries = await checked(rows('distribution_deliveries').eq('order_id', orderId))
     expect(deliveries).toHaveLength(2)
@@ -479,6 +705,9 @@ test('divide una salida física entre dos entregas independientes de 2 y 4 unida
     expect(outcomeLinesByDelivery.find((item) => item.deliveryId === firstDeliveryId)?.quantity).toBe(2)
     expect(outcomeLinesByDelivery.find((item) => item.deliveryId === secondDeliveryId)?.quantity).toBe(4)
     expect(outcomeLinesByDelivery.reduce((sum, item) => sum + item.quantity, 0)).toBe(6)
+    const outcomeAuditEvents = await outcomeAudits([firstDeliveryId, secondDeliveryId])
+    expect(outcomeAuditEvents).toHaveLength(2)
+    expect(outcomeAuditEvents.map((event) => event.entity_id).sort()).toEqual([firstDeliveryId, secondDeliveryId].sort())
 
     const reservation = await checked(rows('inventory_reservations').eq('id', reservationId).single())
     expect(reservation.status).toBe('consumed')
@@ -596,5 +825,30 @@ test('divide una salida física entre dos entregas independientes de 2 y 4 unida
       counts: { purchases: 1, purchaseItems: 1, receipts: 1, receiptItems: 1, quotes: 1, orders: 1, orderItems: 1, sales: 1, reservations: 1, movements: 2, deliveries: 2, deliveryItems: 2, allocations: 2, outcomes: 2, outcomeLines: 2 },
     }
     console.info('EVIDENCIA_FASE2B ' + JSON.stringify(evidence))
+    if (phase2c2E2E) {
+      console.info('EVIDENCIA_FASE2C3 ' + JSON.stringify({
+        unchangedReplay: {
+          operationKey: primeraRecuperacion?.first.operationKey,
+          firstOutcomeId: primeraRecuperacion?.first.outcomeId,
+          replayOperationKey: primeraRecuperacion?.replay?.operationKey,
+          replayOutcomeId: primeraRecuperacion?.replay?.outcomeId,
+          persistedOutcomesAfterReplay: 1,
+          persistedLinesAfterReplay: 1,
+        },
+        incompatiblePayload: {
+          rejectedVariants: ['evidencia', 'cantidad'],
+          persistedOutcomesAfterRejections: 1,
+          persistedLinesAfterRejections: 1,
+        },
+        changedEvidence: {
+          originalOperationKey: segundaRecuperacion?.first.operationKey,
+          changedOperationKey: segundaRecuperacion?.changedAttempt?.operationKey,
+          firstBackendStatus: segundaRecuperacion?.first.status,
+          changedBackendStatus: segundaRecuperacion?.changedAttempt?.status,
+          persistedOutcomes: 1,
+          persistedLines: 1,
+        },
+      }))
+    }
   })
 })

@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { randomInt, randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createClient } from '@supabase/supabase-js'
 import { expect, type Locator, type Page } from '@playwright/test'
@@ -11,28 +12,77 @@ function env(name: string) {
 }
 
 /** Fail closed before login/setup if the local ports belong to another project. */
-function assertSilsanInstance() {
-  const url = new URL(env('VITE_SUPABASE_URL'))
-  if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(url.hostname) || url.port !== '54321') {
-    throw new Error('El escenario operativo solo admite Supabase local en localhost:54321.')
+export type OperationalTarget = 'persistent-silsan' | 'isolated-phase2c2'
+
+function assertSilsanInstance(target: OperationalTarget = 'persistent-silsan') {
+  const isolatedPhase2c2 = target === 'isolated-phase2c2'
+  if (isolatedPhase2c2 && env('SILSAN_PHASE2C2_E2E') !== '1') {
+    throw new Error('La instancia 2C-2 solo se admite con SILSAN_PHASE2C2_E2E=1.')
   }
-  const expectedDirectory = resolve(import.meta.dirname, '../../../../backend')
+
+  const url = new URL(env('VITE_SUPABASE_URL'))
+  const projectId = isolatedPhase2c2 ? 'silsanplexp2c2' : 'backend'
+  const apiPort = isolatedPhase2c2 ? '58121' : '54321'
+  const databasePort = isolatedPhase2c2 ? '58122' : '54322'
+  if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(url.hostname) || url.port !== apiPort) {
+    throw new Error(`El escenario operativo ${target} requiere Supabase local en localhost:${apiPort}.`)
+  }
+  const expectedDirectory = isolatedPhase2c2
+    ? resolve(env('E2E_PHASE2C2_WORKDIR'))
+    : resolve(import.meta.dirname, '../../../../backend')
+  const databaseContainerName = `supabase_db_${projectId}`
+  if (isolatedPhase2c2) {
+    const authorizedDirectory = resolve(env('LOCALAPPDATA'), 'Temp/silsanplex-phase2c2-20261021')
+    if (expectedDirectory !== authorizedDirectory) throw new Error('Directorio temporal 2C-2 no autorizado.')
+    const config = readFileSync(resolve(expectedDirectory, 'supabase', 'config.toml'), 'utf8')
+    if (!config.includes('project_id = "silsanplexp2c2"')
+      || !/^\[api\][\s\S]*?^port = 58121$/m.test(config)
+      || !/^\[db\][\s\S]*?^port = 58122$/m.test(config)) {
+      throw new Error('La configuración local no coincide con el proyecto y puertos aislados 2C-2.')
+    }
+    const [volume] = JSON.parse(execFileSync('docker', ['volume', 'inspect', 'supabase_db_silsanplexp2c2'], {
+      encoding: 'utf8',
+    })) as Array<{ Labels: Record<string, string> }>
+    if (volume?.Labels['com.supabase.cli.project'] !== 'silsanplexp2c2') {
+      throw new Error('El volumen de PostgreSQL no está etiquetado para SILSAN 2C-2.')
+    }
+  }
   for (const [name, port, hostPort] of [
-    ['supabase_db_backend', '5432/tcp', '54322'],
-    ['supabase_kong_backend', '8000/tcp', '54321'],
+    [databaseContainerName, '5432/tcp', databasePort],
+    [`supabase_kong_${projectId}`, '8000/tcp', apiPort],
   ]) {
     const [container] = JSON.parse(execFileSync('docker', ['inspect', name], { encoding: 'utf8' })) as Array<{
       Config: { Labels: Record<string, string> }
       State: { Running: boolean }
       NetworkSettings: { Ports: Record<string, Array<{ HostPort: string }> | null> }
+      Mounts?: Array<{ Type: string; Name?: string }>
     }>
-    if (!container?.State.Running || container.Config.Labels['com.supabase.cli.project'] !== 'backend'
-      || resolve(container.Config.Labels['com.supabase.cli.workdir'] ?? '') !== expectedDirectory
+    if (!container?.State.Running || container.Config.Labels['com.supabase.cli.project'] !== projectId
+       || (container.Config.Labels['com.supabase.cli.workdir']
+         ? resolve(container.Config.Labels['com.supabase.cli.workdir']) !== expectedDirectory
+         : !isolatedPhase2c2)
       || !container.NetworkSettings.Ports[port]?.some((binding) => binding.HostPort === hostPort)) {
       throw new Error(`La identidad o los puertos de ${name} no corresponden a SILSAN.`)
     }
+    if (isolatedPhase2c2 && name === databaseContainerName
+      && !container.Mounts?.some((mount) => mount.Type === 'volume' && mount.Name === 'supabase_db_silsanplexp2c2')) {
+      throw new Error('La base 2C-2 no utiliza el volumen aislado esperado.')
+    }
   }
-  const organizations = JSON.parse(execFileSync('docker', ['exec', 'supabase_db_backend', 'psql',
+
+  if (isolatedPhase2c2) {
+    const installedDefinition = execFileSync('docker', ['exec', databaseContainerName, 'psql',
+      '-U', 'postgres', '-d', 'postgres', '-Atc',
+      "select pg_get_functiondef('public.record_distribution_delivery_outcome(jsonb)'::regprocedure)",
+    ], { encoding: 'utf8' })
+    if (!installedDefinition.includes('DISTRIBUTION_OUTCOME_OPERATION_KEY_REUSED')
+      || !installedDefinition.includes('pg_advisory_xact_lock')
+      || !installedDefinition.includes('distribution_delivery_outcomes_operation_key')) {
+      throw new Error('La instancia aislada no contiene la corrección SQL de idempotencia 2C-2.')
+    }
+  }
+
+  const organizations = JSON.parse(execFileSync('docker', ['exec', databaseContainerName, 'psql',
     '-U', 'postgres', '-d', 'postgres', '-Atc',
     'select coalesce(json_agg(o), \'[]\'::json) from (select id,name,slug from public.organizations) o',
   ], { encoding: 'utf8' })) as Array<{ id: string; name: string; slug: string }>
@@ -66,14 +116,31 @@ export async function mutate(page: Page, rpc: string, action: () => Promise<unkn
   console.info(`Operación UI real: ${rpc} → ${result.status()}`)
 }
 
-export async function operationalFixture(page: Page) {
-  const organizationId = assertSilsanInstance()
+export async function operationalFixture(page: Page, target: OperationalTarget = 'persistent-silsan') {
+  const organizationId = assertSilsanInstance(target)
+  if (target === 'isolated-phase2c2') {
+    await page.route('**/*', async (route) => {
+      const url = new URL(route.request().url())
+      if (['54321', '54322'].includes(url.port)
+        || ((url.pathname.startsWith('/auth/v1/') || url.pathname.startsWith('/rest/v1/'))
+          && url.origin !== 'http://127.0.0.1:58121')) {
+        await route.abort('blockedbyclient')
+        throw new Error(`Destino Supabase prohibido: ${url.origin}`)
+      }
+      await route.fallback()
+    })
+  }
   await page.goto('/iniciar-sesion')
+  if (target === 'isolated-phase2c2') {
+    const clientModule = await page.request.get('/src/lib/supabase.ts')
+    expect(await clientModule.text()).toContain('http://127.0.0.1:58121')
+  }
   await page.getByLabel('Correo').fill(env('E2E_ADMIN_EMAIL'))
   await page.getByLabel('Contraseña').fill(env('E2E_ADMIN_PASSWORD'))
   const authentication = page.waitForResponse('**/auth/v1/token?grant_type=password')
   await page.getByRole('button', { name: 'Ingresar', exact: true }).click()
-  const session = await (await authentication).json() as { access_token: string; user: { id: string } }
+  const session = await (await authentication).json() as { access_token: string; user: { id: string; email?: string } }
+  if (target === 'isolated-phase2c2') expect(session.user.email).toBe('phase2c3.runner@example.invalid')
   await page.waitForURL(/\/$/)
   // Ordinary authenticated token from this browser, never a service-role key.
   const api = createClient(env('VITE_SUPABASE_URL'), env('VITE_SUPABASE_PUBLISHABLE_KEY'), {
