@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './fixtures/test.js'
 
 function requiredEnvironment(name: string) {
   const value = process.env[name]?.trim()
@@ -33,9 +34,14 @@ test('busca cliente y producto en la cotización y marca los campos requeridos',
   await expect(dialog).toHaveClass(/start-1\/2/)
 
   const cliente = dialog.getByRole('combobox', { name: 'Cliente' })
-  await cliente.fill('E2ECAT0001')
-  await expect(dialog.getByRole('option', { name: /E2E Cliente catálogo 0001/i })).toBeVisible()
-  await dialog.getByRole('option', { name: /E2E Cliente catálogo 0001/i }).click()
+  const catalogPrefix = process.env.SILSAN_PHASE2C2_E2E === '1'
+    ? requiredEnvironment('E2E_CATALOG_PREFIX') : 'E2ECAT'
+  await cliente.fill(catalogPrefix + '0001')
+  const customerName = process.env.SILSAN_PHASE2C2_E2E === '1'
+    ? requiredEnvironment('E2E_CATALOG_CUSTOMER_NAME').replace(/1001$/, '0001') : 'E2E Cliente catálogo 0001'
+  const customerOption = dialog.getByRole('option').filter({ hasText: customerName })
+  await expect(customerOption).toBeVisible()
+  await customerOption.click()
 
   const producto = dialog.getByRole('combobox', { name: 'Producto 1' })
   await producto.fill(firstInventoryFixture().productCode)

@@ -14,7 +14,7 @@ function env(name: string) {
 /** Fail closed before login/setup if the local ports belong to another project. */
 export type OperationalTarget = 'persistent-silsan' | 'isolated-phase2c2'
 
-function assertSilsanInstance(target: OperationalTarget = 'persistent-silsan') {
+export function assertSilsanInstance(target: OperationalTarget = 'persistent-silsan') {
   const isolatedPhase2c2 = target === 'isolated-phase2c2'
   if (isolatedPhase2c2 && env('SILSAN_PHASE2C2_E2E') !== '1') {
     throw new Error('La instancia 2C-2 solo se admite con SILSAN_PHASE2C2_E2E=1.')
@@ -140,7 +140,11 @@ export async function operationalFixture(page: Page, target: OperationalTarget =
   const authentication = page.waitForResponse('**/auth/v1/token?grant_type=password')
   await page.getByRole('button', { name: 'Ingresar', exact: true }).click()
   const session = await (await authentication).json() as { access_token: string; user: { id: string; email?: string } }
-  if (target === 'isolated-phase2c2') expect(session.user.email).toBe('phase2c3.runner@example.invalid')
+  if (target === 'isolated-phase2c2') {
+    const expectedEmail = env('E2E_ADMIN_EMAIL')
+    expect(expectedEmail).toMatch(/^(phase2c3\.runner|regression\.[0-9a-f]+\.admin)@example\.invalid$/)
+    expect(session.user.email).toBe(expectedEmail)
+  }
   await page.waitForURL(/\/$/)
   // Ordinary authenticated token from this browser, never a service-role key.
   const api = createClient(env('VITE_SUPABASE_URL'), env('VITE_SUPABASE_PUBLISHABLE_KEY'), {

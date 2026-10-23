@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto'
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './fixtures/test.js'
 import * as XLSX from 'xlsx'
 
 function requiredEnvironment(name: string) {

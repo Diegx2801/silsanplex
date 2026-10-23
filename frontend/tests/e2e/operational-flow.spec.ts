@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './fixtures/test.js'
 import { writeFile } from 'node:fs/promises'
 import { checked, expectStock, mutate, operationalFixture, selectRemote } from './fixtures/operational.js'
 
@@ -9,7 +10,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 108
     test('compra, recibe un lote, reserva, despacha y entrega sin duplicar existencias', async ({ page }, testInfo) => {
       test.setTimeout(180_000)
       page.on('pageerror', (error) => console.error(`Error de navegador: ${error.message}`))
-      const f = await operationalFixture(page)
+      const f = await operationalFixture(page, process.env.SILSAN_PHASE2C2_E2E === '1' ? 'isolated-phase2c2' : 'persistent-silsan')
       await testInfo.attach('fixture-operativo', { body: JSON.stringify({ reference: f.reference,
         organizationId: f.organizationId, productId: f.productId, warehouseId: f.warehouseId,
         lot: f.lot, expiration: f.expiration }), contentType: 'application/json' })
@@ -72,7 +73,14 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 108
 
       await test.step('Cotización emitida en React', async () => {
         await page.goto('/ventas')
-        await page.getByRole('button', { name: 'Nueva cotización', exact: true }).click()
+        const newQuote = page.getByRole('button', { name: 'Nueva cotización', exact: true })
+        const started = Date.now()
+        // Ventas hydrates active customers in 500-row pages before enabling this
+        // control. Preserved regression catalogs can exceed the 15s action budget.
+        await expect(newQuote).toBeEnabled({ timeout: 45_000 })
+        console.info('Ventas: catálogos disponibles en ' + (Date.now() - started) + ' ms')
+        await page.keyboard.press('Control+Home')
+        await newQuote.click()
         const dialog = page.getByRole('dialog', { name: 'Nueva cotización' })
         await selectRemote(dialog, 'Cliente', f.reference)
         await selectRemote(dialog, 'Producto 1', f.reference)

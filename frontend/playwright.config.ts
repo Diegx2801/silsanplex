@@ -6,12 +6,13 @@ import { loadEnvFile } from 'node:process'
 const localE2eEnvironment = resolve(import.meta.dirname, '.env.e2e.local')
 const localFrontendEnvironment = resolve(import.meta.dirname, '.env.local')
 const isCI = process.env.CI === 'true'
+const isIsolated = process.env.SILSAN_PHASE2C2_E2E === '1'
 
-if (existsSync(localFrontendEnvironment)) {
+if (!isIsolated && existsSync(localFrontendEnvironment)) {
   loadEnvFile(localFrontendEnvironment)
 }
 
-if (existsSync(localE2eEnvironment)) {
+if (!isIsolated && existsSync(localE2eEnvironment)) {
   loadEnvFile(localE2eEnvironment)
 }
 
@@ -51,6 +52,7 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:5173',
     trace: 'on-first-retry',
+    ...(isIsolated ? { timezoneId: 'America/Lima', serviceWorkers: 'block' as const } : {}),
   },
   projects: [
     {
