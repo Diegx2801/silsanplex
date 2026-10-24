@@ -152,7 +152,7 @@ begin
  before_state:=pg_temp.cpe_state(org);
  r:=pg_temp.cpe_ok('prepare_electronic_document',p,a,sid);
  perform pg_temp.cpe_assert('prepare identical replay unchanged',r=d and before_state=pg_temp.cpe_state(org));
- r:=pg_temp.cpe_call('prepare_electronic_document',p||'{"issueDate":"2026-10-24"}',a,sid);
+ r:=pg_temp.cpe_call('prepare_electronic_document',p||jsonb_build_object('issueDate',(p->>'issueDate')::date+1),a,sid);
  perform pg_temp.cpe_assert('prepare key conflict',r->>'message'='CPE_OPERATION_KEY_REUSED' and before_state=pg_temp.cpe_state(org));
  r:=pg_temp.cpe_call('prepare_electronic_document',p||jsonb_build_object('operationKey',gen_random_uuid()),a,sid);
  perform pg_temp.cpe_assert('one original per sale',r->>'message'='CPE_ORIGINAL_EXISTS');
