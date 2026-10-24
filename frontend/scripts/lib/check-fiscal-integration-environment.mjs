@@ -1,11 +1,44 @@
 // Explicit node:test entry, kept outside Vitest's *.test.* discovery.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { FiscalEnvironment, assertLabels, ports, closeFiscalTestResources } from './fiscal-integration-environment.mjs'
+import {
+  FiscalEnvironment, assertLabels, commandInvocation, isGitHubHostedLinux, ports, closeFiscalTestResources,
+} from './fiscal-integration-environment.mjs'
 
 test('puertos exclusivos sin destinos persistentes', () => {
   assert.deepEqual(Object.values(ports), [59220, 59221, 59222, 5197])
   assert.ok(Object.values(ports).every(p => ![54321, 54322, 58121, 58122].includes(p)))
+})
+test('GitHub Actions hosted Linux ejecuta directamente solo los comandos locales permitidos', () => {
+  const env = {
+    GITHUB_ACTIONS: 'true', CI: 'true', RUNNER_OS: 'Linux', RUNNER_ENVIRONMENT: 'github-hosted',
+  }
+  assert.equal(isGitHubHostedLinux(env), true)
+  assert.deepEqual(commandInvocation('docker', ['context', 'inspect'], env), {
+    executable: 'docker', args: ['context', 'inspect'],
+  })
+  assert.deepEqual(commandInvocation('supabase', ['status', '--workdir', '/tmp/owned'], env), {
+    executable: 'supabase', args: ['status', '--workdir', '/tmp/owned'],
+  })
+  assert.throws(() => commandInvocation('psql', ['postgresql://remote'], env), /FISCAL_TEST_COMMAND_NOT_ALLOWED/)
+})
+test('entornos locales, self-hosted y señales CI incompletas conservan rtk proxy', () => {
+  const hosted = {
+    GITHUB_ACTIONS: 'true', CI: 'true', RUNNER_OS: 'Linux', RUNNER_ENVIRONMENT: 'github-hosted',
+  }
+  for (const env of [
+    {},
+    { ...hosted, RUNNER_ENVIRONMENT: 'self-hosted' },
+    { ...hosted, RUNNER_OS: 'Windows' },
+    { ...hosted, CI: undefined },
+    { ...hosted, DOCKER_HOST: 'tcp://example.invalid:2375' },
+    { ...hosted, DOCKER_CONTEXT: 'remote' },
+  ]) {
+    assert.equal(isGitHubHostedLinux(env), false)
+    assert.deepEqual(commandInvocation('docker', ['ps', '-q'], env), {
+      executable: 'rtk', args: ['proxy', 'docker', 'ps', '-q'],
+    })
+  }
 })
 test('rechaza una etiqueta ausente o perteneciente a backend', () => {
   assert.throws(() => assertLabels({ Config: { Labels: {} } }, 'silsan-fiscal-read-test'))

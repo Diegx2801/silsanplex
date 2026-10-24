@@ -13,12 +13,29 @@ const candidateHashes = {
   '20261023061225_electronic_fiscal_sandbox_persistence.sql': 'df0c339852499b2717a5cfd00d822b06128ff970610fb0f74db08a15c242de01',
   '20261023135019_electronic_fiscal_helper_sql_lint.sql': 'ff0d192543f389de8391a72507de5f217407287e60a4b8295fae4606f9bcb670',
 }
+const allowedCommands = new Set(['docker', 'supabase'])
+
+export function isGitHubHostedLinux(env = process.env) {
+  return env.GITHUB_ACTIONS === 'true'
+    && env.CI === 'true'
+    && env.RUNNER_OS === 'Linux'
+    && env.RUNNER_ENVIRONMENT === 'github-hosted'
+    && env.DOCKER_HOST === undefined
+    && env.DOCKER_CONTEXT === undefined
+}
+
+export function commandInvocation(executable, args, env = process.env) {
+  assert.ok(allowedCommands.has(executable), 'FISCAL_TEST_COMMAND_NOT_ALLOWED')
+  if (isGitHubHostedLinux(env)) return { executable, args: [...args] }
+  return { executable: 'rtk', args: ['proxy', executable, ...args] }
+}
 
 // Output of start/status can include local secrets: never forward it or attach it
 // to exceptions. No destination argument or DB URL is accepted by this runner.
 export function command(executable, args, input) {
+  const invocation = commandInvocation(executable, args)
   try {
-    return execFileSync('rtk', ['proxy', executable, ...args], {
+    return execFileSync(invocation.executable, invocation.args, {
       input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 900_000,
       maxBuffer: 32 * 1024 * 1024,
     }).trim()
@@ -105,6 +122,7 @@ enable_confirmations = false
   }
   async prepare() {
     assert.equal(process.env.DOCKER_HOST, undefined, 'FISCAL_TEST_NO_DOCKER_OVERRIDE')
+    assert.equal(process.env.DOCKER_CONTEXT, undefined, 'FISCAL_TEST_NO_DOCKER_CONTEXT_OVERRIDE')
     const endpoint = inspect('context', 'inspect')[0].Endpoints.docker.Host
     assert.ok(['npipe:////./pipe/dockerDesktopLinuxEngine', 'unix:///var/run/docker.sock'].includes(endpoint))
     this.before = this.inventory()

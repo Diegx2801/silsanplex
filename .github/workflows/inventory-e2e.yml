@@ -14,6 +14,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  sunat-fiscal-integration:
+    name: SUNAT Fase 2B — consulta fiscal aislada real
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v5
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Instalar CLI Supabase versionada
+        run: npm ci
+        working-directory: backend
+
+      - name: Instalar dependencias del frontend
+        run: npm ci
+        working-directory: frontend
+
+      - name: Exponer CLI Supabase instalada desde el lockfile
+        run: echo "$GITHUB_WORKSPACE/backend/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Verificar runner GitHub-hosted y versiones locales
+        run: |
+          test "$GITHUB_ACTIONS" = "true"
+          test "$CI" = "true"
+          test "$RUNNER_OS" = "Linux"
+          test "$RUNNER_ENVIRONMENT" = "github-hosted"
+          test -z "${DOCKER_HOST:-}"
+          test -z "${DOCKER_CONTEXT:-}"
+          test "$(supabase --version)" = "2.115.0"
+          test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = "unix:///var/run/docker.sock"
+          docker info --format '{{.ServerVersion}}'
+
+      - name: Instalar Chromium para Playwright
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Validar protecciones del runner fiscal
+        run: node --test scripts/lib/check-fiscal-integration-environment.mjs
+        working-directory: frontend
+
+      - name: Ejecutar 150 migraciones y consulta fiscal real con Playwright
+        run: node scripts/test-fiscal-sandbox-integration.mjs
+        working-directory: frontend
+
   sunat-transactional:
     name: SUNAT 149 y 150 — compilación y rollback real
     runs-on: ubuntu-latest
