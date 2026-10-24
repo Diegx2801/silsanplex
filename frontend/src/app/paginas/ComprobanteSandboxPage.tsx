@@ -17,6 +17,19 @@ function ConsultaComprobante({ organizationId }: { organizationId: string }) {
   const consulta = useComprobanteSandbox(documentId)
   const error = consulta.error instanceof ErrorConsultaFiscal ? consulta.error : null
 
+  if (consulta.estadoAutorizacion !== 'permitido') {
+    const mensaje = consulta.estadoAutorizacion === 'denegado'
+      ? 'Tu permiso para consultar comprobantes fiscales ya no está vigente.'
+      : 'No se pudo verificar tu permiso. El snapshot se ocultó por seguridad.'
+    return <section role={consulta.estadoAutorizacion === 'verificando' ? 'status' : 'alert'}
+      aria-live="assertive" className="border bg-card p-6">
+      <h2 className="text-lg font-semibold">{consulta.estadoAutorizacion === 'verificando'
+        ? 'Verificando autorización fiscal…'
+        : 'Consulta fiscal bloqueada'}</h2>
+      {consulta.estadoAutorizacion !== 'verificando' ? <p className="mt-2 text-sm leading-6">{mensaje}</p> : null}
+    </section>
+  }
+
   const consultar = (evento: SubmitEvent<HTMLFormElement>) => {
     evento.preventDefault()
     const referencia = esquemaReferenciaComprobanteSandbox.safeParse({ organizationId, documentId: entrada.trim() })

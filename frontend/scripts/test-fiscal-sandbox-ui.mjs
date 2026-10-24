@@ -59,6 +59,16 @@ try {
             dto.documentId = payload.document_id;
             await route.fulfill({ status: 200, contentType: 'application/json', headers, body: JSON.stringify(dto) });
             return;
+        } if (url.hostname === '127.0.0.1' && url.port === '1' && url.pathname.startsWith('/rest/v1/rpc/')) {
+            const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'POST,OPTIONS' };
+            if (req.method() === 'OPTIONS') {
+                await route.fulfill({ status: 204, headers });
+                return;
+            }
+            if (['/rest/v1/rpc/current_auth_session_is_active', '/rest/v1/rpc/has_organization_permission'].includes(url.pathname)) {
+                await route.fulfill({ status: 200, contentType: 'application/json', headers, body: 'true' });
+                return;
+            }
         } blocked.push(req.url()); await route.abort(); });
         await page.goto('http://127.0.0.1:5185/__fiscal_ui_fixture');
         const input = page.getByRole('textbox', { name: 'UUID del comprobante' });

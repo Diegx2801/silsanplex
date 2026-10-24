@@ -13,6 +13,7 @@ import { ComprobanteSandboxPage } from './ComprobanteSandboxPage'
 const mocks = vi.hoisted(() => ({
   consultar: vi.fn(),
   auth: { organizationId: '', userId: '', sesion: true, permiso: true, cargando: false },
+  vigencia: { estado: 'permitido' as const, permitido: true },
 }))
 vi.mock('@/features/auth/useAuth', () => ({
   useAuth: () => ({
@@ -26,6 +27,9 @@ vi.mock('@/features/auth/useAuth', () => ({
 vi.mock('@/modulos/facturacion/servicios/comprobantesSandboxService', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/modulos/facturacion/servicios/comprobantesSandboxService')>(),
   consultarComprobanteSandbox: mocks.consultar,
+}))
+vi.mock('@/modulos/facturacion/estado/useVigenciaPermisoFiscal', () => ({
+  useVigenciaPermisoFiscal: () => mocks.vigencia,
 }))
 vi.mock('@/lib/supabase', () => ({ supabase: {} }))
 
@@ -43,6 +47,7 @@ describe('pantalla de consulta fiscal sandbox', () => {
     cliente = new QueryClient()
     Object.assign(mocks.auth, { organizationId: organizacionFiscalPrueba, userId: actorFiscalPrueba,
       sesion: true, permiso: true, cargando: false })
+    Object.assign(mocks.vigencia, { estado: 'permitido', permitido: true })
     mocks.consultar.mockReset().mockResolvedValue(crearComprobanteSandbox())
   })
   afterEach(() => cliente.clear())

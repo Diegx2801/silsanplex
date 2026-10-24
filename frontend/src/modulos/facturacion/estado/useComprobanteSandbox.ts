@@ -7,13 +7,15 @@ import {
   esquemaReferenciaComprobanteSandbox,
 } from '@/modulos/facturacion/modelo/comprobanteSandbox'
 import { consultarComprobanteSandbox, ErrorConsultaFiscal } from '@/modulos/facturacion/servicios/comprobantesSandboxService'
+import { useVigenciaPermisoFiscal } from './useVigenciaPermisoFiscal'
 
 export function useComprobanteSandbox(documentId?: string) {
   const { access, user, session, isLoading, hasPermission } = useAuth()
+  const vigencia = useVigenciaPermisoFiscal(access?.organizationId ?? '')
   const referencia = esquemaReferenciaComprobanteSandbox.safeParse({
     organizationId: access?.organizationId ?? '', documentId: documentId ?? '',
   })
-  const puedeConsultar = Boolean(!isLoading && user && session && referencia.success
+  const puedeConsultar = Boolean(!isLoading && user && session && vigencia.permitido && referencia.success
     && hasPermission(PERMISSIONS.BILLING_VIEW))
   const query = useQuery({
     queryKey: ['electronic-document', referencia.success ? referencia.data.organizationId : null,
@@ -30,6 +32,7 @@ export function useComprobanteSandbox(documentId?: string) {
 
   return {
     puedeConsultar,
+    estadoAutorizacion: vigencia.estado,
     // No mostrar caché previa si cambia la sesión o se revoca el permiso visible.
     comprobante: puedeConsultar && !query.isError ? query.data : undefined,
     cargando: puedeConsultar && query.isFetching,

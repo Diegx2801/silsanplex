@@ -6,11 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { assignablePermissionCodes, expandPermissionDependencies } from '@/features/users/userTypes'
 import { actorFiscalPrueba, crearComprobanteSandbox, documentoFiscalPrueba, organizacionFiscalPrueba, otraOrganizacionFiscal } from '../__fixtures__/comprobanteSandbox'
 import { ErrorConsultaFiscal } from '../servicios/comprobantesSandboxService'
+import { INTERVALO_REVALIDACION_PERMISO_FISCAL_MS, VIGENCIA_MAXIMA_PERMISO_FISCAL_MS } from './useVigenciaPermisoFiscal'
 import { useComprobanteSandbox } from './useComprobanteSandbox'
 
 const mocks = vi.hoisted(() => ({
   consultar: vi.fn(),
-  auth: { organizationId: '', userId: '', sesion: true, permiso: true, cargando: false },
+  rpc: vi.fn(),
+  auth: { organizationId: '', userId: '', sesion: true, permiso: true, permisoRemoto: true, cargando: false },
 }))
 vi.mock('@/features/auth/useAuth', () => ({
   useAuth: () => ({
@@ -27,7 +29,7 @@ vi.mock('../servicios/comprobantesSandboxService', async (importOriginal) => ({
   consultarComprobanteSandbox: mocks.consultar,
 }))
 // El cliente real no se inicializa en esta suite unitaria.
-vi.mock('@/lib/supabase', () => ({ supabase: {} }))
+vi.mock('@/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }))
 
 let cliente: QueryClient
 function contexto() {
@@ -38,10 +40,16 @@ describe('consulta React de comprobantes sandbox', () => {
   beforeEach(() => {
     cliente = new QueryClient()
     mocks.consultar.mockReset().mockResolvedValue(crearComprobanteSandbox())
+    mocks.rpc.mockReset().mockImplementation((funcion: string) => ({
+      abortSignal: () => Promise.resolve({
+        data: funcion === 'current_auth_session_is_active' ? true : mocks.auth.permisoRemoto,
+        error: null,
+      }),
+    }))
     Object.assign(mocks.auth, { organizationId: organizacionFiscalPrueba, userId: actorFiscalPrueba,
-      sesion: true, permiso: true, cargando: false })
+      sesion: true, permiso: true, permisoRemoto: true, cargando: false })
   })
-  afterEach(() => cliente.clear())
+  afterEach(() => { vi.useRealTimers(); cliente.clear() })
 
   it('registrar BILLING_VIEW no lo concede a Ventas ni lo incorpora al selector general de usuarios', () => {
     expect(expandPermissionDependencies(['SALES_MANAGE'])).not.toContain('BILLING_VIEW')
@@ -52,6 +60,11 @@ describe('consulta React de comprobantes sandbox', () => {
     const { result } = renderHook(() => useComprobanteSandbox(documentoFiscalPrueba), { wrapper: contexto() })
     await waitFor(() => expect(result.current.comprobante?.documentId).toBe(documentoFiscalPrueba))
     expect(mocks.consultar).toHaveBeenCalledExactlyOnceWith(organizacionFiscalPrueba, documentoFiscalPrueba, expect.any(AbortSignal))
+    expect(mocks.rpc).toHaveBeenCalledWith('current_auth_session_is_active')
+    expect(mocks.rpc).toHaveBeenCalledWith('has_organization_permission', {
+      requested_organization_id: organizacionFiscalPrueba,
+      requested_permission_code: 'BILLING_VIEW',
+    })
     expect(cliente.getQueryCache().getAll()[0].queryKey).toEqual([
       'electronic-document', organizacionFiscalPrueba, 'sandbox', documentoFiscalPrueba, actorFiscalPrueba,
     ])
@@ -136,5 +149,62 @@ describe('consulta React de comprobantes sandbox', () => {
     await waitFor(() => expect(result.current.comprobante).toBeDefined())
     unmount()
     await waitFor(() => expect(cliente.getQueryCache().getAll()).toHaveLength(0))
+  })
+
+  it('oculta y elimina el snapshot al detectar revocación remota, y bloquea reintentos', async () => {
+    const { result } = renderHook(() => useComprobanteSandbox(documentoFiscalPrueba), { wrapper: contexto() })
+    await waitFor(() => expect(result.current.estadoAutorizacion).toBe('permitido'))
+    await waitFor(() => expect(result.current.comprobante).toBeDefined())
+    expect(mocks.consultar).toHaveBeenCalledTimes(1)
+
+    mocks.auth.permisoRemoto = false
+    await waitFor(() => expect(result.current.estadoAutorizacion).toBe('denegado'), {
+      timeout: INTERVALO_REVALIDACION_PERMISO_FISCAL_MS + 1_000,
+    })
+    expect(result.current.comprobante).toBeUndefined()
+    await act(async () => { await result.current.reintentar() })
+    expect(mocks.consultar).toHaveBeenCalledTimes(1)
+    expect(cliente.getQueryCache().getAll().every((query) => query.state.data === undefined)).toBe(true)
+  })
+
+  it('falla cerrada si la revalidación no responde antes de vencer la vigencia', async () => {
+    const { result } = renderHook(() => useComprobanteSandbox(documentoFiscalPrueba), { wrapper: contexto() })
+    await waitFor(() => expect(result.current.comprobante).toBeDefined())
+
+    mocks.rpc.mockImplementation((funcion: string) => ({
+      abortSignal: () => funcion === 'current_auth_session_is_active'
+        ? Promise.resolve({ data: true, error: null })
+        : new Promise(() => {}),
+    }))
+    await waitFor(() => expect(result.current.estadoAutorizacion).toBe('no_verificable'), {
+      timeout: VIGENCIA_MAXIMA_PERMISO_FISCAL_MS + 1_000,
+    })
+    expect(result.current.comprobante).toBeUndefined()
+    await act(async () => { await result.current.reintentar() })
+    expect(mocks.consultar).toHaveBeenCalledTimes(1)
+  })
+
+  it('oculta por error de red y recupera la consulta cuando el permiso vuelve a verificarse', async () => {
+    const { result } = renderHook(() => useComprobanteSandbox(documentoFiscalPrueba), { wrapper: contexto() })
+    await waitFor(() => expect(result.current.comprobante).toBeDefined())
+
+    mocks.rpc.mockImplementation((funcion: string) => ({
+      abortSignal: () => Promise.resolve(funcion === 'has_organization_permission'
+        ? { data: null, error: { message: 'network error' } }
+        : { data: true, error: null }),
+    }))
+    await waitFor(() => expect(result.current.estadoAutorizacion).toBe('no_verificable'), {
+      timeout: INTERVALO_REVALIDACION_PERMISO_FISCAL_MS + 1_000,
+    })
+    expect(result.current.comprobante).toBeUndefined()
+
+    mocks.rpc.mockImplementation(() => ({
+      abortSignal: () => Promise.resolve({ data: true, error: null }),
+    }))
+    await waitFor(() => expect(result.current.estadoAutorizacion).toBe('permitido'), {
+      timeout: INTERVALO_REVALIDACION_PERMISO_FISCAL_MS + 1_000,
+    })
+    await waitFor(() => expect(result.current.comprobante).toBeDefined())
+    expect(mocks.consultar).toHaveBeenCalledTimes(2)
   })
 })

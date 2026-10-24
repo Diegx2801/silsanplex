@@ -26,6 +26,7 @@ const checked = async request => {
 const sqlLiteral = value => `'${String(value).replaceAll("'", "''")}'`
 const clients = []
 let server, browser
+let releaseDelayedResponse = () => {}
 let phase = 'prepare'
 try {
   await environment.prepare()
@@ -152,12 +153,34 @@ try {
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, serviceWorkers: 'block' })
   const web = `http://127.0.0.1:${ports.web}`
   const observed = []
-  // Only continue real requests to the new web/API origins. Never fulfill an RPC.
+  let failNextPermissionRpc = false
+  let delayNextDocumentRpc = false
+  let delayedResponseReady = Promise.resolve()
+  let resolveDelayedResponseReady = () => {}
+  let delayedResponseReleased = Promise.resolve()
+  // Allow only the ephemeral web/API origins. Delayed RPCs are fetched from the real API.
   await context.route('**/*', async route => {
     const request = route.request()
     const url = new URL(request.url())
     if (url.origin === web || url.origin === api) {
-      if (url.origin === api) observed.push({ path: url.pathname, method: request.method() })
+      if (url.origin === api) {
+        observed.push({ path: url.pathname, method: request.method() })
+        if (url.pathname === '/rest/v1/rpc/has_organization_permission' && failNextPermissionRpc) {
+          failNextPermissionRpc = false
+          await route.abort('failed')
+          return
+        }
+        if (url.pathname === '/rest/v1/rpc/get_electronic_document' && delayNextDocumentRpc) {
+          delayNextDocumentRpc = false
+          const response = await route.fetch()
+          resolveDelayedResponseReady()
+          await delayedResponseReleased
+          try { await route.fulfill({ response }) } catch {
+            evidence.browser.push('late real RPC response discarded after authorization loss')
+          }
+          return
+        }
+      }
       await route.continue()
     } else {
       evidence.unexpectedRequests.push(url.origin)
@@ -205,6 +228,60 @@ try {
   await expect(page.getByText('SANDBOX comprador ficticio', { exact: true })).toBeVisible()
   await expect(page.getByRole('cell', { name: '118.0000', exact: true })).toBeVisible()
   evidence.browser.push('real login/menu/UUID/prepared/exact decimals/sandbox warning')
+
+  assert.equal(await page.evaluate(() => document.hasFocus()), true)
+  delayedResponseReady = new Promise(resolve => { resolveDelayedResponseReady = resolve })
+  delayedResponseReleased = new Promise(resolve => { releaseDelayedResponse = resolve })
+  delayNextDocumentRpc = true
+  await search(fixture.prepared)
+  await Promise.race([
+    delayedResponseReady,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('FISCAL_TEST_DELAYED_RPC_NOT_CAPTURED')), 5_000)),
+  ])
+  const revocationStartedAt = Date.now()
+  const permissionRevocation = await admin.from('organization_user_permissions')
+    .delete().eq('organization_id', fixture.a.org).eq('user_id', identities.viewer.id)
+    .eq('permission_code', 'BILLING_VIEW').select('user_id')
+  if (permissionRevocation.error) throw new Error('FISCAL_TEST_PERMISSION_REVOCATION_FAILED')
+  check('separate admin session revoked exactly the viewer BILLING_VIEW grant', permissionRevocation.data.length === 1)
+  const documentReadsAtRevocation = observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length
+  await expect(page.getByRole('heading', { name: 'Consulta fiscal bloqueada' })).toBeVisible({ timeout: 5_500 })
+  const revocationPropagationMs = Date.now() - revocationStartedAt
+  check('focused browser hides snapshot within the five-second authorization lease', revocationPropagationMs <= 5_000
+    && await page.evaluate(() => document.hasFocus()))
+  await expect(page.getByRole('article', { name: 'Detalle fiscal sandbox' })).toHaveCount(0)
+  releaseDelayedResponse()
+  await page.waitForTimeout(250)
+  await expect(page.getByRole('article', { name: 'Detalle fiscal sandbox' })).toHaveCount(0)
+  const deniedAfterRevocation = await rpc('viewer', fixture.a.org, fixture.prepared)
+  check('PostgreSQL denies a new JWT read after remote permission revocation', deniedAfterRevocation.data === null
+    && deniedAfterRevocation.error?.code === '42501')
+  await page.waitForTimeout(3_100)
+  assert.equal(observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length, documentReadsAtRevocation)
+  await expect(page.getByRole('textbox', { name: 'UUID del comprobante' })).toHaveCount(0)
+  evidence.browser.push(`remote revocation/late response/denied JWT read/no retry (${revocationPropagationMs}ms)`)
+
+  const permissionRestoration = await admin.from('organization_user_permissions').insert({
+    organization_id: fixture.a.org, user_id: identities.viewer.id, permission_code: 'BILLING_VIEW',
+  }).select('user_id')
+  if (permissionRestoration.error) throw new Error('FISCAL_TEST_PERMISSION_RESTORATION_FAILED')
+  check('admin restored the original viewer grant without replacing its identity', permissionRestoration.data.length === 1)
+  await expect.poll(() => observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length,
+    { timeout: 6_000 }).toBeGreaterThan(documentReadsAtRevocation)
+  check('restored authorization causes a fresh real document RPC',
+    observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length > documentReadsAtRevocation)
+  await expect(page.getByRole('article', { name: 'Detalle fiscal sandbox' })).toBeVisible({ timeout: 6_000 })
+  evidence.browser.push('legitimate grant restoration reverified and fetched a fresh snapshot')
+
+  const permissionChecksBeforeNetworkFailure = observed.filter(r => r.path === '/rest/v1/rpc/has_organization_permission').length
+  failNextPermissionRpc = true
+  await expect.poll(() => observed.filter(r => r.path === '/rest/v1/rpc/has_organization_permission').length,
+    { timeout: 5_000 }).toBeGreaterThan(permissionChecksBeforeNetworkFailure)
+  await expect(page.getByRole('heading', { name: 'Consulta fiscal bloqueada' })).toBeVisible({ timeout: 1_000 })
+  await expect(page.getByRole('article', { name: 'Detalle fiscal sandbox' })).toHaveCount(0)
+  await expect(page.getByRole('article', { name: 'Detalle fiscal sandbox' })).toBeVisible({ timeout: 6_000 })
+  evidence.browser.push('permission network failure fails closed and a later real check recovers')
+
   await search(fixture.frozen)
   await expect(page.getByText('Congelado · confirmación interna', { exact: true })).toBeVisible()
   await expect(page.getByText('Crédito', { exact: true })).toBeVisible()
@@ -271,6 +348,7 @@ try {
       && l.includes('test-fiscal-sandbox-integration'))?.trim() }))
   process.exitCode = 1
 } finally {
+  releaseDelayedResponse()
   const closeFailures = await closeFiscalTestResources({ clients, browser, server, environment })
   evidence.cleanup = closeFailures.includes('environment')
     ? 'FAIL: stopped before unverified cleanup; manual inspection required'
