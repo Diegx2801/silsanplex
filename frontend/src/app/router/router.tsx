@@ -26,6 +26,7 @@ const rutasModulos = elementosNavegacion
       elemento.ruta !== '/ventas' &&
       elemento.ruta !== '/reparaciones' &&
       elemento.ruta !== '/distribucion' &&
+      elemento.ruta !== '/facturacion-sandbox' &&
       elemento.ruta !== '/usuarios',
   )
   .map((elemento) => ({
@@ -233,6 +234,19 @@ export const router = createBrowserRouter([
             Component: () => (
               <PermissionRoute permission={PERMISSIONS.DISTRIBUTION_VIEW}>
                 <DistribucionPage />
+              </PermissionRoute>
+            ),
+          }
+        },
+      },
+      {
+        path: 'facturacion-sandbox',
+        lazy: async () => {
+          const { ComprobanteSandboxPage } = await import('@/app/paginas/ComprobanteSandboxPage')
+          return {
+            Component: () => (
+              <PermissionRoute permission={PERMISSIONS.BILLING_VIEW}>
+                <ComprobanteSandboxPage />
               </PermissionRoute>
             ),
           }

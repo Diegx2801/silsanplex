@@ -138,6 +138,13 @@ export const seccionesNavegacion: SeccionNavegacion[] = [
     titulo: 'Control',
     elementos: [
       {
+        titulo: 'Fiscal sandbox',
+        ruta: '/facturacion-sandbox',
+        descripcion: 'Consulta fiscal local, sin envío ni validez tributaria',
+        icono: ReceiptText,
+        permission: PERMISSIONS.BILLING_VIEW,
+      },
+      {
         titulo: 'Reportes',
         ruta: '/reportes',
         descripcion: 'Consultas operativas',
