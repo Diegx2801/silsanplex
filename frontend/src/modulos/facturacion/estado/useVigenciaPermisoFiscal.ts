@@ -109,6 +109,7 @@ export function useVigenciaPermisoFiscal(organizationId: string) {
 
       enVuelo = true
       const solicitud = ++generacionSolicitud
+      const venceEn = performance.now() + VIGENCIA_MAXIMA_PERMISO_FISCAL_MS
       const controller = new AbortController()
       controlador = controller
       limiteSolicitud = setTimeout(() => {
@@ -141,9 +142,16 @@ export function useVigenciaPermisoFiscal(organizationId: string) {
           return
         }
 
-        actualizarEstado('permitido')
+        const tiempoRestante = venceEn - performance.now()
+        if (tiempoRestante <= 0) {
+          denegarPorVencimiento()
+          return
+        }
         if (expiracion) clearTimeout(expiracion)
-        expiracion = setTimeout(denegarPorVencimiento, VIGENCIA_MAXIMA_PERMISO_FISCAL_MS)
+        // Una respuesta positiva atrasada solo conserva la vigencia que resta
+        // desde el inicio de su comprobación, no otros cinco segundos.
+        expiracion = setTimeout(denegarPorVencimiento, tiempoRestante)
+        actualizarEstado('permitido')
       } catch {
         if (montado && solicitud === generacionSolicitud && !controller.signal.aborted) {
           actualizarEstado('no_verificable')

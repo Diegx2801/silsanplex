@@ -207,4 +207,123 @@ describe('consulta React de comprobantes sandbox', () => {
     await waitFor(() => expect(result.current.comprobante).toBeDefined())
     expect(mocks.consultar).toHaveBeenCalledTimes(2)
   })
+
+  it('vence a los cinco segundos del inicio de una revalidación aunque su true llegue tarde', async () => {
+    vi.useFakeTimers()
+    let resolverSegunda!: (value: { data: boolean; error: null }) => void
+    let resolverTercera!: (value: { data: boolean; error: null }) => void
+    let permisosConsultados = 0
+    mocks.rpc.mockImplementation((funcion: string) => ({
+      abortSignal: () => {
+        if (funcion === 'current_auth_session_is_active') return Promise.resolve({ data: true, error: null })
+        permisosConsultados += 1
+        if (permisosConsultados === 1) return Promise.resolve({ data: true, error: null })
+        if (permisosConsultados === 2) return new Promise(resolve => { resolverSegunda = resolve })
+        if (permisosConsultados === 3) return new Promise(resolve => { resolverTercera = resolve })
+        return Promise.resolve({ data: mocks.auth.permisoRemoto, error: null })
+      },
+    }))
+
+    const { result, unmount } = renderHook(() => useComprobanteSandbox(documentoFiscalPrueba), { wrapper: contexto() })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+      for (let i = 0; i < 10; i += 1) await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    for (let i = 0; i < 10 && !result.current.comprobante; i += 1) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    }
+    expect(result.current.estadoAutorizacion).toBe('permitido')
+    expect(result.current.comprobante).toBeDefined()
+    expect(mocks.consultar).toHaveBeenCalledTimes(1)
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000 - performance.now()) })
+    expect(performance.now()).toBe(3_000)
+    expect(permisosConsultados).toBe(2)
+    // t=3,1 s: la revocación ocurre tras iniciarse la segunda comprobación.
+    await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+    mocks.auth.permisoRemoto = false
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_800) })
+    expect(performance.now()).toBe(4_900)
+    resolverSegunda({ data: true, error: null })
+    await act(async () => { await Promise.resolve() })
+    expect(result.current.comprobante).toBeDefined()
+
+    // t=6 s: la siguiente RPC queda sin respuesta. La segunda comenzó en t=3 s.
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_101) })
+    expect(performance.now()).toBe(8_001)
+    expect(permisosConsultados).toBe(3)
+    expect(result.current.estadoAutorizacion).toBe('no_verificable')
+    expect(result.current.comprobante).toBeUndefined()
+    expect(cliente.getQueryCache().getAll().every(query => query.state.data === undefined)).toBe(true)
+    await act(async () => { resolverTercera({ data: true, error: null }); await Promise.resolve() })
+    expect(result.current.comprobante).toBeUndefined()
+    await act(async () => { await result.current.reintentar() })
+    expect(mocks.consultar).toHaveBeenCalledTimes(1)
+
+    mocks.auth.permisoRemoto = true
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+    for (let i = 0; i < 10 && !result.current.comprobante; i += 1) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    }
+    expect(permisosConsultados).toBe(4)
+    expect(result.current.comprobante).toBeDefined()
+    expect(mocks.consultar).toHaveBeenCalledTimes(2)
+    unmount()
+    const consultasAlDesmontar = permisosConsultados
+    await vi.advanceTimersByTimeAsync(9_000)
+    expect(permisosConsultados).toBe(consultasAlDesmontar)
+  })
+
+  it('oculta al suspender la pestaña y exige otra verificación al volver', async () => {
+    const visibilidad = vi.spyOn(document, 'visibilityState', 'get')
+    try {
+      visibilidad.mockReturnValue('visible')
+      const { result } = renderHook(() => useComprobanteSandbox(documentoFiscalPrueba), { wrapper: contexto() })
+      await waitFor(() => expect(result.current.comprobante).toBeDefined())
+      visibilidad.mockReturnValue('hidden')
+      act(() => document.dispatchEvent(new Event('visibilitychange')))
+      expect(result.current.estadoAutorizacion).toBe('no_verificable')
+      expect(result.current.comprobante).toBeUndefined()
+      const lecturasPrevias = mocks.consultar.mock.calls.length
+      await act(async () => { await result.current.reintentar() })
+      expect(mocks.consultar).toHaveBeenCalledTimes(lecturasPrevias)
+      visibilidad.mockReturnValue('visible')
+      act(() => document.dispatchEvent(new Event('visibilitychange')))
+      await waitFor(() => expect(result.current.comprobante).toBeDefined())
+      expect(mocks.consultar).toHaveBeenCalledTimes(lecturasPrevias + 1)
+    } finally {
+      visibilidad.mockRestore()
+    }
+  })
+
+  it('nunca reactiva una respuesta positiva recibida después de su límite absoluto', async () => {
+    vi.useFakeTimers()
+    let resolverAtrasada!: (value: { data: boolean; error: null }) => void
+    let permisosConsultados = 0
+    mocks.rpc.mockImplementation((funcion: string) => ({
+      abortSignal: () => {
+        if (funcion === 'current_auth_session_is_active') return Promise.resolve({ data: true, error: null })
+        permisosConsultados += 1
+        return permisosConsultados === 1
+          ? Promise.resolve({ data: true, error: null })
+          : new Promise(resolve => { resolverAtrasada = resolve })
+      },
+    }))
+    const { result } = renderHook(() => useComprobanteSandbox(documentoFiscalPrueba), { wrapper: contexto() })
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000) })
+    expect(permisosConsultados).toBe(2)
+    const reloj = vi.spyOn(performance, 'now').mockReturnValue(8_001)
+    try {
+      // Los callbacks de timeout aún no corren: simula una respuesta despachada
+      // antes que timers retrasados tras una suspensión del event loop.
+      resolverAtrasada({ data: true, error: null })
+      await act(async () => { await Promise.resolve() })
+      expect(result.current.estadoAutorizacion).toBe('no_verificable')
+      expect(result.current.comprobante).toBeUndefined()
+      expect(cliente.getQueryCache().getAll().every(query => query.state.data === undefined)).toBe(true)
+    } finally {
+      reloj.mockRestore()
+    }
+  })
 })
