@@ -12,7 +12,7 @@ describe('esquemaProducto', () => {
   it('acepta el registro mínimo y limpia espacios', () => {
     const resultado = esquemaProducto.parse({
       ...productoInicial,
-      codigo: '  PROD-001  ',
+      codigo: '  prod-001  ',
       descripcion: '  Producto de prueba  ',
       unidadBaseId,
     })
@@ -26,6 +26,32 @@ describe('esquemaProducto', () => {
     const resultado = esquemaProducto.safeParse(productoInicial)
 
     expect(resultado.success).toBe(false)
+  })
+
+  it('rechaza colecciones excesivas antes de validar cada unidad alternativa', () => {
+    let lecturas = 0
+    const unidad = {
+      get unidadId() {
+        lecturas += 1
+        return 'no-es-un-uuid'
+      },
+    }
+    const resultado = esquemaProducto.safeParse({
+      ...productoInicial,
+      codigo: 'PROD-001',
+      descripcion: 'Producto de prueba',
+      unidadBaseId,
+      unidadesAlternativas: Array.from({ length: 1000 }, () => unidad),
+    })
+
+    expect(resultado.success).toBe(false)
+    expect(lecturas).toBe(0)
+    if (!resultado.success) {
+      expect(resultado.error.issues).toContainEqual(expect.objectContaining({
+        path: ['unidadesAlternativas'],
+        message: 'Máximo 12 unidades alternativas',
+      }))
+    }
   })
 
   it('rechaza precios con más de dos decimales', () => {
