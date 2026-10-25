@@ -2,7 +2,7 @@
 
 --transactional requires the 148 prior migrations, compiles both candidates in
 order, and runs serial tests inside one ROLLBACK transaction.
-Default requires all 150 installed migrations and also runs independent races.
+Default accepts the historical 150-migration fixture or the current 151-migration schema and runs independent races.
 --ci-transactional uses only a verified GitHub-hosted disposable project.
 No resets, cleanup, existing fixture reuse, credentials, transport, or backend writes.
 """
@@ -26,6 +26,7 @@ MIGRATIONS = (
 )
 VERSIONS = tuple(path.name.split('_')[0] for path in MIGRATIONS)
 BASE_MIGRATION_COUNT = 148
+FOLLOWUP_MIGRATION_VERSION = '20261025190353'
 SUITE = ROOT / 'backend/scripts/fixtures/electronic_document_persistence.sql'
 CONTAINER = 'supabase_db_silsanplexp2c2'
 HELPERS = SUITE.read_text(encoding='utf8').split('-- SERIAL_TESTS_START:')[0]
@@ -76,11 +77,14 @@ def check(label, ok, evidence=None):
 def validate_history(migrations, files, transactional):
     """Reject missing, extra, reordered or duplicate versions before fixtures."""
     if (files != sorted(set(files))
-            or len(files) != BASE_MIGRATION_COUNT + len(VERSIONS)
-            or tuple(files[-len(VERSIONS):]) != VERSIONS):
+            or len(files) != BASE_MIGRATION_COUNT + len(VERSIONS) + 1
+            or tuple(files[-3:-1]) != VERSIONS
+            or files[-1] != FOLLOWUP_MIGRATION_VERSION):
         raise ValueError('CPE_TEST_MIGRATION_FILES_MISMATCH')
-    expected = files[:-len(VERSIONS)] if transactional else files
-    if migrations != expected:
+    expected = files[:-3] if transactional else (files, files[:-1])
+    if transactional and migrations != expected:
+        raise ValueError('CPE_TEST_MIGRATION_HISTORY_MISMATCH')
+    if not transactional and migrations not in expected:
         raise ValueError('CPE_TEST_MIGRATION_HISTORY_MISMATCH')
 
 

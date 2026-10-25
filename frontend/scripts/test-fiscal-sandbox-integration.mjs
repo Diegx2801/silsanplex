@@ -30,8 +30,22 @@ let releaseDelayedResponse = () => {}
 let phase = 'prepare'
 try {
   await environment.prepare()
-  console.log(JSON.stringify({ project: environment.project, migrations: 150,
+  console.log(JSON.stringify({ project: environment.project, migrations: 151,
     api, postgres: ports.db, identity: 'verified-exclusive-new-volume' }))
+  phase = 'sql-minimum-privilege-regression'
+  const privilegeTest = path.join(root,
+    'backend/supabase/tests/database/electronic_fiscal_minimum_privilege.test.sql')
+  assert.ok(fs.statSync(privilegeTest).isFile())
+  const tapOutput = environment.testDatabase(privilegeTest)
+  const tapLines = tapOutput.split(/\r?\n/).map(line => line.trim())
+  const tapPlan = tapLines.find(line => /^1\.\.\d+$/.test(line))
+  const tapCount = tapPlan ? Number(tapPlan.slice(3))
+    : Number(tapOutput.match(/\bTests\s*[=:]\s*(\d+)/i)?.[1] ?? 0)
+  const tapFailed = tapLines.filter(line => /^not ok \d+(?:\s|$)/.test(line)).length
+  check('pgTAP proves the six-table direct privilege contract',
+    tapCount === 32 && tapFailed === 0 && !/\bResult:\s*FAIL\b/i.test(tapOutput))
+  evidence.sqlAssertions = { planned: 32, passed: tapCount - tapFailed, failed: tapFailed,
+    summary: tapLines.filter(line => /^(?:All tests|Files=|Result:|1\.\.\d+|not ok )/i.test(line)) }
   phase = 'fixtures'
   const helpers = fs.readFileSync(path.join(root, 'backend/scripts/fixtures/electronic_document_persistence.sql'), 'utf8')
     .split('-- SERIAL_TESTS_START:')[0]
@@ -44,7 +58,7 @@ try {
     ${helpers}
     create function pg_temp.read_fixture() returns jsonb language plpgsql as $$
     declare a jsonb:=pg_temp.cpe_tenant(); b jsonb:=pg_temp.cpe_tenant();
-      sale uuid; p jsonb; prepared jsonb; frozen jsonb; otherdoc jsonb;
+      sale uuid; operation_sale uuid; operation_payload jsonb; p jsonb; prepared jsonb; frozen jsonb; otherdoc jsonb;
     begin
       update public.organizations set name='SANDBOX organización A' where id=(a->>'org')::uuid;
       update public.organizations set name='SANDBOX organización B' where id=(b->>'org')::uuid;
@@ -59,8 +73,11 @@ try {
       frozen:=pg_temp.cpe_ok('confirm_electronic_document',pg_temp.cpe_confirm(a,frozen),(a->>'actor')::uuid,(a->>'sid')::uuid);
       sale:=pg_temp.cpe_sale(b);
       otherdoc:=pg_temp.cpe_ok('prepare_electronic_document',pg_temp.cpe_prepare(b,sale),(b->>'actor')::uuid,(b->>'sid')::uuid);
+      operation_sale:=pg_temp.cpe_sale(a);
+      operation_payload:=pg_temp.cpe_prepare(a,operation_sale);
       return jsonb_build_object('a',a,'b',b,'prepared',prepared->>'documentId',
-        'frozen',frozen->>'documentId','other',otherdoc->>'documentId');
+        'frozen',frozen->>'documentId','other',otherdoc->>'documentId',
+        'operationSale',operation_sale,'operationPayload',operation_payload);
     end $$;
     select pg_temp.read_fixture();
     commit;
@@ -68,7 +85,13 @@ try {
   const authOptions = { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
   const admin = createClient(api, environment.status.SERVICE_ROLE_KEY, authOptions)
   const identities = {}
-  for (const [name, org, view] of [['viewer', fixture.a.org, true], ['denied', fixture.a.org, false], ['other', fixture.b.org, true]]) {
+  const access = {
+    viewer: ['BILLING_VIEW'],
+    manager: ['BILLING_VIEW', 'BILLING_PREPARE', 'BILLING_ISSUE'],
+    denied: [],
+    other: ['BILLING_VIEW'],
+  }
+  for (const [name, org] of [['viewer', fixture.a.org], ['manager', fixture.a.org], ['denied', fixture.a.org], ['other', fixture.b.org]]) {
     const email = `${name}.${randomUUID()}@example.invalid`
     const password = randomBytes(32).toString('base64url')
     const { user } = await checked(admin.auth.admin.createUser({ email, password, email_confirm: true,
@@ -76,8 +99,8 @@ try {
     environment.sql(`begin;
       insert into public.organization_memberships(organization_id,user_id,is_active)
       values(${sqlLiteral(org)},${sqlLiteral(user.id)},true);
-      ${view ? `insert into public.organization_user_permissions(organization_id,user_id,permission_code)
-      values(${sqlLiteral(org)},${sqlLiteral(user.id)},'BILLING_VIEW');` : ''}
+      ${access[name].map(permission => `insert into public.organization_user_permissions(organization_id,user_id,permission_code)
+      values(${sqlLiteral(org)},${sqlLiteral(user.id)},${sqlLiteral(permission)});`).join('\n      ')}
       commit;`)
     const client = createClient(api, environment.status.ANON_KEY, authOptions)
     await checked(client.auth.signInWithPassword({ email, password }))
@@ -95,7 +118,7 @@ try {
         (select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text),'[]') from public.${table} t) value`).join(' union all ')}
     union all select 'fiscal_audits', (select coalesce(jsonb_agg(to_jsonb(t) order by id),'[]')
       from public.audit_events t where action like 'CPE_%')) x`))
-  const before = fingerprint()
+  let before = fingerprint()
   evidence.persistence = {
     documents: before.electronic_documents.length, items: before.electronic_document_items.length,
     commands: before.electronic_document_commands.length, outbox: before.electronic_document_outbox.length,
@@ -104,6 +127,48 @@ try {
   check('fixtures have exactly three documents and one blocked job', before.electronic_documents.length === 3
     && before.electronic_document_outbox.length === 1 && before.electronic_document_outbox[0].state === 'blocked')
   phase = 'postgrest'
+  const fiscalTables = [
+    'electronic_issuer_profiles', 'electronic_document_series', 'electronic_documents',
+    'electronic_document_items', 'electronic_document_commands', 'electronic_document_outbox',
+  ]
+  const privileges = JSON.parse(environment.sql(`select jsonb_object_agg(name, value) from (
+    ${fiscalTables.map(table => `select '${table}' name, jsonb_build_object(
+      'effectiveTableSelect', has_table_privilege('authenticated', 'public.${table}', 'SELECT'),
+      'effectiveColumnSelect', exists(select 1 from pg_attribute a where a.attrelid='public.${table}'::regclass
+        and a.attnum>0 and not a.attisdropped and has_column_privilege('authenticated',a.attrelid,a.attnum,'SELECT')),
+      'effectiveAnonSelect', has_table_privilege('anon', 'public.${table}', 'SELECT'),
+      'effectiveAnonColumnSelect', exists(select 1 from pg_attribute a where a.attrelid='public.${table}'::regclass
+        and a.attnum>0 and not a.attisdropped and has_column_privilege('anon',a.attrelid,a.attnum,'SELECT')),
+      'clientAclSelect', exists(select 1 from pg_class c cross join lateral aclexplode(
+        coalesce(c.relacl,acldefault('r',c.relowner))) acl where c.oid='public.${table}'::regclass
+        and acl.privilege_type='SELECT' and acl.grantee in (0,'anon'::regrole::oid,'authenticated'::regrole::oid)),
+      'rls', (select relrowsecurity from pg_class where oid='public.${table}'::regclass),
+      'readPolicy', exists(select 1 from pg_policy p where p.polrelid='public.${table}'::regclass
+        and p.polname='fiscal_read' and p.polqual is not null
+        and pg_get_expr(p.polqual,p.polrelid) like '%can_view_electronic_documents%')) value`).join(' union all ')}
+  ) fiscal_privileges`))
+  evidence.effectivePrivileges = privileges
+  check('PostgreSQL denies effective table and column SELECT for authenticated on all six tables',
+    Object.keys(privileges).length === fiscalTables.length && fiscalTables.every(table =>
+      privileges[table]?.effectiveTableSelect === false
+      && privileges[table]?.effectiveColumnSelect === false
+      && privileges[table]?.effectiveAnonSelect === false
+      && privileges[table]?.effectiveAnonColumnSelect === false
+      && privileges[table]?.clientAclSelect === false))
+  check('all six fiscal RLS policies remain enabled', fiscalTables.every(table =>
+    privileges[table]?.rls === true && privileges[table]?.readPolicy === true))
+  const rpcPrivileges = JSON.parse(environment.sql(`select jsonb_object_agg(signature, jsonb_build_object(
+    'authenticated', has_function_privilege('authenticated', signature, 'EXECUTE'),
+    'anon', has_function_privilege('anon', signature, 'EXECUTE')))
+    from unnest(array[
+      'public.save_electronic_issuer_profile(jsonb)', 'public.configure_electronic_series(jsonb)',
+      'public.prepare_electronic_document(jsonb)', 'public.revise_electronic_document(jsonb)',
+      'public.confirm_electronic_document(jsonb)', 'public.get_electronic_document(uuid,uuid)',
+      'public.can_view_electronic_documents(uuid)']) signature`))
+  evidence.rpcPrivileges = rpcPrivileges
+  check('authorized fiscal RPC EXECUTE remains available only to authenticated',
+    Object.keys(rpcPrivileges).length === 7 && Object.values(rpcPrivileges).every(value =>
+      value.authenticated === true && value.anon === false))
   const rpc = (who, org, doc) => identities[who].client.rpc('get_electronic_document', { organization_id: org, document_id: doc })
   for (const [state, id] of [['prepared', fixture.prepared], ['frozen', fixture.frozen]]) {
     const data = await checked(rpc('viewer', fixture.a.org, id))
@@ -134,13 +199,61 @@ try {
     check(label, [401, 403].includes(response.status) && ['42501', 'PGRST301', 'PGRST303'].includes(body.code))
     evidence.responses.push({ label, status: response.status, code: body.code })
   }
-  const foreignTable = await identities.other.client.from('electronic_documents').select('id').eq('id', fixture.prepared)
-  check('RLS does not expose foreign document', !foreignTable.error && foreignTable.data.length === 0)
-  const deniedTable = await identities.denied.client.from('electronic_documents').select('id')
-  check('RLS hides rows without permission', !deniedTable.error && deniedTable.data.length === 0)
+  for (const table of fiscalTables) {
+    const { data, error, status } = await identities.viewer.client.from(table).select('*').limit(1)
+    check(`BILLING_VIEW direct PostgREST SELECT denied for ${table}`,
+      data === null && error?.code === '42501')
+    evidence.responses.push({ table, directReadStatus: status, code: error?.code })
+  }
+  const deniedDirectRead = await identities.denied.client.from('electronic_documents').select('*').limit(1)
+  check('PostgREST denies direct fiscal SELECT without BILLING_VIEW',
+    deniedDirectRead.data === null && deniedDirectRead.error?.code === '42501')
   check('independent organization B reads its own DTO', leerComprobanteSandbox(
     await checked(rpc('other', fixture.b.org, fixture.other)), fixture.b.org, fixture.other).state === 'prepared')
   check('PostgREST reads conserve fiscal/commercial rows, numbers, jobs and audits', JSON.stringify(before) === JSON.stringify(fingerprint()))
+
+  phase = 'authorized-mutating-rpc'
+  const manager = identities.manager.client
+  const preparedByRpc = await checked(manager.rpc('prepare_electronic_document', { payload: fixture.operationPayload }))
+  check('JWT manager prepares a document through the real PostgREST RPC',
+    preparedByRpc.state === 'prepared' && typeof preparedByRpc.documentId === 'string')
+  const revisedByRpc = await checked(manager.rpc('revise_electronic_document', { payload: {
+    organizationId: fixture.a.org,
+    environment: 'sandbox',
+    operationKey: randomUUID(),
+    documentId: preparedByRpc.documentId,
+    expectedVersion: preparedByRpc.version,
+    request: fixture.operationPayload,
+  } }))
+  check('JWT manager revises a document through the real PostgREST RPC',
+    revisedByRpc.state === 'prepared' && revisedByRpc.version !== preparedByRpc.version)
+  const confirmCommand = {
+    organizationId: fixture.a.org,
+    environment: 'sandbox',
+    operationKey: randomUUID(),
+    documentId: revisedByRpc.documentId,
+    expectedVersion: revisedByRpc.version,
+  }
+  const confirmedByRpc = await checked(manager.rpc('confirm_electronic_document', { payload: confirmCommand }))
+  check('JWT manager confirms a document through the real PostgREST RPC',
+    confirmedByRpc.state === 'frozen' && confirmedByRpc.fiscalIdentity?.number)
+  const beforeReplay = fingerprint()
+  const replayedConfirmation = await checked(manager.rpc('confirm_electronic_document', { payload: confirmCommand }))
+  check('same confirmation operation key replays the original result',
+    JSON.stringify(replayedConfirmation) === JSON.stringify(confirmedByRpc))
+  check('confirmation replay creates no duplicate commands, audit, outbox or number',
+    JSON.stringify(beforeReplay) === JSON.stringify(fingerprint()))
+  const confirmedDto = leerComprobanteSandbox(
+    await checked(rpc('viewer', fixture.a.org, confirmedByRpc.documentId)), fixture.a.org, confirmedByRpc.documentId)
+  check('BILLING_VIEW can read the confirmed snapshot only through the projected RPC',
+    confirmedDto.state === 'frozen' && confirmedDto.fiscalIdentity.number === confirmedByRpc.fiscalIdentity.number)
+  const afterAuthorizedOperations = fingerprint()
+  check('authorized prepare/revise/confirm persist one document, three commands and one outbox job',
+    afterAuthorizedOperations.electronic_documents.length === before.electronic_documents.length + 1
+      && afterAuthorizedOperations.electronic_document_items.length === before.electronic_document_items.length + 1
+      && afterAuthorizedOperations.electronic_document_commands.length === before.electronic_document_commands.length + 3
+      && afterAuthorizedOperations.electronic_document_outbox.length === before.electronic_document_outbox.length + 1)
+  before = afterAuthorizedOperations
 
   phase = 'browser'
   // Use the real application entry/router/AuthProvider, not a fixture entrypoint.
@@ -338,7 +451,7 @@ try {
   await context.close()
   evidence.project = environment.project
   evidence.ports = ports
-  evidence.migrations = 150
+  evidence.migrations = 151
   evidence.documentIds = { prepared: fixture.prepared, frozen: fixture.frozen, other: fixture.other }
 } catch (error) {
   // Never print raw Auth/CLI payloads, assertions containing credentials or JWTs.

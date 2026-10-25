@@ -29,14 +29,16 @@ class TransactionalRunnerTests(unittest.TestCase):
     def setUp(self):
         self.files = sorted(p.name.split('_')[0]
                             for p in runner.MIGRATIONS[0].parent.glob('*.sql'))
-        self.base = self.files[:-2]
+        self.base = self.files[:-3]
 
     def test_exact_candidate_versions_and_base(self):
         self.assertEqual(runner.VERSIONS, ('20261023061225', '20261023135019'))
+        self.assertEqual(runner.FOLLOWUP_MIGRATION_VERSION, '20261025190353')
         self.assertEqual(len(self.base), 148)
 
     def test_accepts_only_expected_history_for_each_mode(self):
         runner.validate_history(self.base, self.files, True)
+        runner.validate_history(self.files[:-1], self.files, False)
         runner.validate_history(self.files, self.files, False)
 
     def test_rejects_unexpected_transactional_histories(self):
@@ -50,7 +52,7 @@ class TransactionalRunnerTests(unittest.TestCase):
                     runner.validate_history(history, self.files, True)
 
     def test_rejects_unexpected_normal_histories(self):
-        histories = [self.base, self.files[:-1], self.files + ['20990101000000'],
+        histories = [self.base, self.files[:-2], self.files + ['20990101000000'],
                      self.files + [self.files[-1]], list(reversed(self.files)),
                      ['19000101000000'] + self.files[1:]]
         for history in histories:
@@ -61,7 +63,7 @@ class TransactionalRunnerTests(unittest.TestCase):
     def test_rejects_unexpected_repository_manifest(self):
         manifests = [self.files[:-1], self.files + ['20990101000000'],
                      self.files[:-1] + [self.files[-2]], list(reversed(self.files)),
-                     self.base + [runner.VERSIONS[0], '20261023135020']]
+                     self.base + [runner.VERSIONS[0], runner.VERSIONS[1], '20261025190354']]
         for files in manifests:
             with self.subTest(manifest_size=len(files)):
                 with self.assertRaisesRegex(ValueError, 'CPE_TEST_MIGRATION_FILES_MISMATCH'):
@@ -325,7 +327,7 @@ class HostedCIGuardTests(unittest.TestCase):
                         rows={'table': ['row-hash']}, candidates={'relations': 0},
                         manifest={'migration': 'original-hash'},
                         history=sorted(p.name.split('_')[0]
-                                       for p in runner.MIGRATIONS[0].parent.glob('*.sql'))[:-2])
+                                       for p in runner.MIGRATIONS[0].parent.glob('*.sql'))[:-3])
         for changed in (None, *baseline.keys()):
             after = {**baseline}
             if changed:
@@ -347,7 +349,7 @@ class HostedCIGuardTests(unittest.TestCase):
     def test_rollback_snapshot_still_checked_after_sql_failure(self):
         baseline = dict(schema='schema-hash', security={}, rows={}, candidates={}, manifest={},
                         history=sorted(p.name.split('_')[0]
-                                       for p in runner.MIGRATIONS[0].parent.glob('*.sql'))[:-2])
+                                       for p in runner.MIGRATIONS[0].parent.glob('*.sql'))[:-3])
         fake_ci = SimpleNamespace(verify_target=lambda: 'verified-ci-only',
                                   snapshot=unittest.mock.Mock(return_value=baseline))
         with patch.object(runner, 'CONTAINER', runner.CONTAINER), patch.object(runner, 'CHECKS', []), \

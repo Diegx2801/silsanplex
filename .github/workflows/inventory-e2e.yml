@@ -65,7 +65,7 @@ jobs:
         run: node --test scripts/lib/check-fiscal-integration-environment.mjs
         working-directory: frontend
 
-      - name: Ejecutar 150 migraciones y consulta fiscal real con Playwright
+      - name: Ejecutar 151 migraciones y consulta fiscal real con Playwright
         run: node scripts/test-fiscal-sandbox-integration.mjs
         working-directory: frontend
 

@@ -22,6 +22,8 @@ CANDIDATE_HASHES = {
     '20261023135019_electronic_fiscal_helper_sql_lint.sql':
         'ff0d192543f389de8391a72507de5f217407287e60a4b8295fae4606f9bcb670',
 }
+FOLLOWUP_MIGRATION = '20261025190353_restrict_electronic_document_direct_select.sql'
+FOLLOWUP_HASH = '7613198f6c8152d1e4838c057c308ebb35413ef853087fa2b831358f43155aff'
 RPC_NAMES = (
     'save_electronic_issuer_profile', 'configure_electronic_series',
     'prepare_electronic_document', 'revise_electronic_document',
@@ -105,11 +107,13 @@ enable_signup = false
 
 def repository_manifest():
     paths = sorted((ROOT / 'backend/supabase/migrations').glob('*.sql'))
-    require(len(paths) == 150 and [p.name for p in paths[-2:]] == list(CANDIDATE_HASHES),
+    require(len(paths) == 151 and [p.name for p in paths[-3:-1]] == list(CANDIDATE_HASHES)
+            and paths[-1].name == FOLLOWUP_MIGRATION,
             'MIGRATION_MANIFEST')
     values = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
     require(all(values[name] == digest for name, digest in CANDIDATE_HASHES.items()),
             'CANDIDATE_HASH')
+    require(values[FOLLOWUP_MIGRATION] == FOLLOWUP_HASH, 'CANDIDATE_HASH')
     return values
 
 
@@ -119,7 +123,7 @@ def verify_copy(project, directory):
     manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf8'))
     require(manifest == repository_manifest(), 'SOURCE_CHANGED')
     copies = sorted((directory / 'supabase/migrations').iterdir())
-    expected = list(manifest)[:-2]
+    expected = list(manifest)[:-3]
     require([p.name for p in copies] == expected, 'COPIED_HISTORY')
     require(all(not p.is_symlink() and hashlib.sha256(p.read_bytes()).hexdigest() == manifest[p.name]
                 for p in copies), 'COPIED_HASH')
@@ -141,7 +145,7 @@ def prepare():
     directory.mkdir(mode=0o700, exist_ok=False)
     copies = directory / 'supabase/migrations'
     copies.mkdir(parents=True)
-    for name in list(manifest)[:-2]:
+    for name in list(manifest)[:-3]:
         (copies / name).write_bytes((ROOT / 'backend/supabase/migrations' / name).read_bytes())
     (directory / 'supabase/config.toml').write_text(config(project), encoding='utf8')
     (directory / 'manifest.json').write_text(json.dumps(manifest), encoding='utf8')

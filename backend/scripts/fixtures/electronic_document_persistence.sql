@@ -190,7 +190,9 @@ begin
  r:=pg_temp.cpe_capture(format('select public.get_electronic_document(%L,%L)',org,d->>'documentId'),(other_f->>'actor')::uuid,(other_f->>'sid')::uuid);
  perform pg_temp.cpe_assert('foreign tenant cannot read RPC',r->>'state'='42501');
  r:=pg_temp.cpe_capture('select to_jsonb(count(*)) from public.electronic_documents',(other_f->>'actor')::uuid,(other_f->>'sid')::uuid);
- perform pg_temp.cpe_assert('RLS hides another organization',r->'value'='0'::jsonb);
+ perform pg_temp.cpe_assert('direct read is constrained by RLS or denied by SQL grants',
+  case when has_table_privilege('authenticated','public.electronic_documents','SELECT')
+   then r->'value'='0'::jsonb else r->>'state'='42501' end);
  r:=pg_temp.cpe_capture(format('update public.electronic_documents set version=version+1 where organization_id=%L',org),a,sid);
  perform pg_temp.cpe_assert('authenticated no direct writes',r->>'state'='42501');
  insert into auth.users(id,email,raw_user_meta_data) values(anon,anon::text||'@example.invalid','{"full_name":"SANDBOX denied"}');
