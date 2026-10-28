@@ -14,7 +14,7 @@ export interface GarantiaServicio {
 export type TipoComandoComplementario = 'send_repair_external_service' | 'receive_repair_external_service' | 'configure_repair_service_warranty'
 const esquema = z.object({
   tipo: z.enum(['send_repair_external_service', 'receive_repair_external_service', 'configure_repair_service_warranty']),
-  datos: z.record(z.unknown()), expectedLockVersion: z.number().int().nonnegative(),
+  datos: z.record(z.string(), z.unknown()), expectedLockVersion: z.number().int().nonnegative(),
 })
 export function recuperarAtencionPendiente(ambito: string) {
   return leerComandoPendiente(ambito, esquema, 'No se pudo recuperar la operación pendiente. No se enviarán cambios.')
