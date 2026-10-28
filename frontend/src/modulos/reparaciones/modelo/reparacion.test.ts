@@ -51,8 +51,8 @@ describe('modelo de reparaciones', () => {
 
     expect(esquemaDatosReparacion.safeParse({
       ...datos,
-      clienteId: '00000000-0000-0000-0000-000000000001',
-      productoId: '00000000-0000-0000-0000-000000000002',
+      clienteId: '00000000-0000-4000-8000-000000000001',
+      productoId: '00000000-0000-4000-8000-000000000002',
       problema: 'No enciende',
     }).success).toBe(true)
   })
@@ -194,9 +194,9 @@ describe('modelo de reparaciones', () => {
 
   it('limita nuevas reservas y consumos de Reparaciones a stock available', () => {
     const reserva = {
-      productoId: '00000000-0000-0000-0000-000000000001',
-      almacenId: '00000000-0000-0000-0000-000000000002',
-      ubicacionId: '00000000-0000-0000-0000-000000000003',
+      productoId: '00000000-0000-4000-8000-000000000001',
+      almacenId: '00000000-0000-4000-8000-000000000002',
+      ubicacionId: '00000000-0000-4000-8000-000000000003',
       estadoStock: 'available',
       lote: '',
       fechaVencimiento: '',

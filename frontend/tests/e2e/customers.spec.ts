@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto'
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './fixtures/test.js'
 import * as XLSX from 'xlsx'
 
 function requiredEnvironment(name: string) {
@@ -89,8 +90,8 @@ test('registra y edita un cliente con varias direcciones y una principal', async
   await expect(page.getByText(legalName)).toBeVisible()
   await page.getByRole('button', { name: `Editar ${legalName}` }).click()
   const editDialog = page.getByRole('dialog', { name: 'Editar cliente' })
-  const persistedSecondAddress = editDialog.locator('[data-address-index="1"]')
-  await editDialog.getByRole('button', { name: 'Almacén secundario' }).click()
+  const persistedSecondAddress = editDialog.locator('[data-address-index]').filter({ hasText: 'Almacén secundario' })
+  await persistedSecondAddress.getByRole('button', { name: /Almacén secundario/ }).click()
   await expect(persistedSecondAddress.getByLabel('Dirección *')).toHaveValue('Jr. Secundario 200')
   await expect(persistedSecondAddress.getByLabel('Dirección principal')).toBeChecked()
   await editDialog.getByLabel('Nombre comercial').fill('Cliente E2E actualizado')

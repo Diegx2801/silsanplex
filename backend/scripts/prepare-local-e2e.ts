@@ -1,4 +1,3 @@
-import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
@@ -6,6 +5,7 @@ import { config } from 'dotenv'
 
 import { loadSupabaseEnvironment } from './lib/supabase-environment.ts'
 import { findUserByEmail, requiredEnvironment } from './lib/provisioning.ts'
+import { writePrivateE2eFile } from './lib/private-e2e-file.ts'
 
 type E2eIdentity = {
   email: string
@@ -165,7 +165,7 @@ function writePlaywrightEnvironment(
     '',
   ].join('\n')
 
-  writeFileSync(target, contents, { encoding: 'utf8', mode: 0o600 })
+  writePrivateE2eFile(target, contents)
 }
 
 function futureDate(monthsAhead: number) {

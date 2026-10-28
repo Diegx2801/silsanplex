@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './fixtures/test.js'
 
 function requiredE2eEnvironment(name: string) {
   const value = process.env[name]?.trim()

@@ -1,6 +1,10 @@
 begin;
 
-select plan(35);
+select plan(37);
+
+-- Usar el mismo calendario de negocio que las RPC; la vigencia no debe caducar
+-- por el paso del tiempo entre ejecuciones de la suite.
+set local timezone = 'America/Lima';
 
 select has_table('public', 'sales_quotes', 'existe el encabezado persistente de cotizaciones');
 select has_table('public', 'sales_quote_items', 'existen las lineas persistentes de cotizaciones');
@@ -81,7 +85,7 @@ values (
   'a9b00000-0000-4000-8000-000000000002', 'COT-000001',
   'a9200000-0000-4000-8000-000000000003',
   'a9d00000-0000-4000-8000-000000000002',
-  '2026-09-16', '2026-09-30', 'borrador', '', 0, 0, 0, 0, 0, 0
+  current_date, (current_date + 14), 'borrador', '', 0, 0, 0, 0, 0, 0
 );
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values (
@@ -104,7 +108,7 @@ select public.record_inventory_movement(jsonb_build_object('document_reference',
   'warehouse_id', 'a9f00000-0000-4000-8000-000000000001',
   'location_id', 'a9a00000-0000-4000-8000-000000000001',
   'movement_type', 'entrada', 'quantity', 20, 'unit_cost', 10,
-  'stock_status', 'available', 'operation_date', '2026-09-16',
+  'stock_status', 'available', 'operation_date', current_date,
   'reason', 'Stock para cotizacion'
 ));
 
@@ -112,7 +116,7 @@ select public.save_sales_quote(jsonb_build_object(
   'organization_id', 'a9b00000-0000-4000-8000-000000000001',
   'quote_id', 'a9100000-0000-4000-8000-000000000001',
   'customer_id', 'a9d00000-0000-4000-8000-000000000001',
-  'issue_date', '2026-09-16', 'valid_until', '2026-09-30',
+  'issue_date', current_date, 'valid_until', (current_date + 14),
   'prices_include_tax', true, 'notes', 'Cotizacion de prueba',
   'items', jsonb_build_array(jsonb_build_object(
     'product_id', 'a9e00000-0000-4000-8000-000000000001',
@@ -129,7 +133,7 @@ select is((select product_code from public.sales_quote_items where quote_id = :'
 select is((select product_description from public.sales_quote_items where quote_id = :'quote_id'), 'Producto cotizable', 'conserva la descripcion historica del producto');
 select is((select unit_price from public.sales_quote_items where quote_id = :'quote_id'), 118.0000::numeric, 'conserva el precio unitario historico cotizado');
 select is((select line_subtotal from public.sales_quote_items where quote_id = :'quote_id'), 236.0000::numeric, 'conserva el subtotal historico de la linea');
-select is((select valid_until from public.sales_quotes where id = :'quote_id'), '2026-09-30'::date, 'conserva la vigencia de la cotizacion');
+select is((select valid_until from public.sales_quotes where id = :'quote_id'), (current_date + 14), 'conserva la vigencia de la cotizacion');
 
 select public.issue_sales_quote(
   'a9b00000-0000-4000-8000-000000000001', :'quote_id'
@@ -171,7 +175,7 @@ select public.save_sales_quote(jsonb_build_object(
   'organization_id', 'a9b00000-0000-4000-8000-000000000001',
   'quote_id', 'a9100000-0000-4000-8000-000000000002',
   'customer_id', 'a9d00000-0000-4000-8000-000000000001',
-  'issue_date', '2026-09-16', 'valid_until', '2026-09-30',
+  'issue_date', current_date, 'valid_until', (current_date + 14),
   'items', jsonb_build_array(jsonb_build_object(
     'product_id', 'a9e00000-0000-4000-8000-000000000001', 'quantity', 1, 'unit_price', 10
   ))
@@ -195,7 +199,7 @@ select throws_ok($$select public.save_sales_quote(jsonb_build_object(
   'organization_id','a9b00000-0000-4000-8000-000000000001',
   'quote_id','a9100000-0000-4000-8000-000000000002',
   'customer_id','a9d00000-0000-4000-8000-000000000001',
-  'issue_date','2026-09-16','valid_until','2026-09-30',
+  'issue_date',current_date,'valid_until',(current_date + 14),
   'items',jsonb_build_array(jsonb_build_object(
     'product_id','a9e00000-0000-4000-8000-000000000001','quantity',1,'unit_price',10
   ))
@@ -235,6 +239,21 @@ select set_config(
   '{"sub":"a9c00000-0000-4000-8000-000000000001","role":"authenticated"}',
   true
 );
+
+select lives_ok($$select public.save_sales_quote(jsonb_build_object(
+  'organization_id', 'a9b00000-0000-4000-8000-000000000001',
+  'quote_id', 'a9100000-0000-4000-8000-000000000004',
+  'customer_id', 'a9d00000-0000-4000-8000-000000000001',
+  'issue_date', current_date - 2, 'valid_until', current_date - 1,
+  'items', jsonb_build_array(jsonb_build_object(
+    'product_id', 'a9e00000-0000-4000-8000-000000000001',
+    'quantity', 1, 'unit_price', 10
+  ))
+))$$, 'permite conservar un borrador historico vencido');
+select throws_ok($$select public.issue_sales_quote(
+  'a9b00000-0000-4000-8000-000000000001',
+  'a9100000-0000-4000-8000-000000000004'
+)$$, 'P0001', 'SALES_QUOTE_EXPIRED', 'impide emitir una cotizacion vencida');
 
 select * from finish();
 rollback;

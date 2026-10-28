@@ -1,14 +1,17 @@
 import { randomUUID, randomInt } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
+import { test } from './fixtures/test.js'
 
 // A dedicated identity avoids auth/recovery tests revoking our session.
 test.describe.configure({ mode: 'default' })
 test.setTimeout(120_000)
-const catalogCustomerId = 'e0000000-0000-4000-8000-0000000003e9'
-const catalogProductId = 'f0000000-0000-4000-8000-0000000003e9'
-const catalogCustomerName = 'ZZZZ E2E Cliente catálogo 1001'
-const catalogProductName = 'ZZZZ E2E Producto catálogo 1001'
+const isolated = process.env.SILSAN_PHASE2C2_E2E === '1'
+const catalogPrefix = isolated ? env('E2E_CATALOG_PREFIX') : 'E2ECAT'
+const catalogCustomerId = isolated ? env('E2E_CATALOG_CUSTOMER_ID') : 'e0000000-0000-4000-8000-0000000003e9'
+const catalogProductId = isolated ? env('E2E_CATALOG_PRODUCT_ID') : 'f0000000-0000-4000-8000-0000000003e9'
+const catalogCustomerName = isolated ? env('E2E_CATALOG_CUSTOMER_NAME') : 'ZZZZ E2E Cliente catálogo 1001'
+const catalogProductName = isolated ? env('E2E_CATALOG_PRODUCT_NAME') : 'ZZZZ E2E Producto catálogo 1001'
 
 function env(name: string) {
   const value = process.env[name]?.trim()
@@ -311,10 +314,10 @@ test('catálogos remotos permiten seleccionar después del registro 1000 y resol
   expect(await dialog.getByLabel('Producto o equipo *').getByRole('option').count()).toBeLessThanOrEqual(26)
   await dialog.getByRole('button', { name: 'Siguiente', exact: true }).first().click()
   await expect(dialog.getByText(/página 2 de/).first()).toBeVisible()
-  await dialog.getByLabel('Buscar cliente').fill('E2ECAT1001')
+  await dialog.getByLabel('Buscar cliente').fill(catalogPrefix + '1001')
   await expect(dialog.getByLabel('Cliente *').locator(`option[value="${catalogCustomerId}"]`)).toHaveCount(1)
   await dialog.getByLabel('Cliente *').selectOption(catalogCustomerId)
-  await dialog.getByLabel('Buscar producto o equipo').fill('E2ECAT1001')
+  await dialog.getByLabel('Buscar producto o equipo').fill(catalogPrefix + '1001')
   await expect(dialog.getByLabel('Producto o equipo *').locator(`option[value="${catalogProductId}"]`)).toHaveCount(1)
   await dialog.getByLabel('Producto o equipo *').selectOption(catalogProductId)
   await dialog.getByLabel('Problema reportado *').fill('Catálogo remoto verificable')
@@ -364,7 +367,7 @@ test('catálogos remotos permiten seleccionar después del registro 1000 y resol
   await changeState(page, 'in_repair')
   await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
   const reservation = page.getByRole('dialog', { name: 'Reservar repuesto' })
-  await reservation.getByLabel('Buscar repuesto').fill('E2ECAT1001')
+  await reservation.getByLabel('Buscar repuesto').fill(catalogPrefix + '1001')
   await expect(reservation.getByLabel('Producto *').locator(`option[value="${catalogProductId}"]`)).toHaveCount(1)
   await reservation.getByLabel('Producto *').selectOption(catalogProductId)
   await selectWarehouse(reservation, f)
