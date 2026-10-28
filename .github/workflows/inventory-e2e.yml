@@ -70,7 +70,8 @@ jobs:
         working-directory: frontend
 
   sunat-transactional:
-    name: SUNAT Fase 2A — compilación transaccional y rollback real
+    # Keep this exact check context while main's branch protection requires it.
+    name: SUNAT 149 y 150 — compilación y rollback real
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
