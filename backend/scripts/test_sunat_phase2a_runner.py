@@ -132,19 +132,32 @@ class TransactionalRunnerTests(unittest.TestCase):
             runner.candidate_sql(Path('unexpected.sql'))
 
     def test_serial_requires_all_assertions_and_postgres_stage_markers(self):
-        notices = ''.join(f'NOTICE:  PASS: case-{n}\n' for n in range(97))
+        notices = ''.join(f'NOTICE:  PASS: case-{n}\n' for n in range(98))
         markers = ''.join(f'NOTICE:  CPE_TRANSACTIONAL:{stage}\n'
                           for stage in ('149', '150', 'serial'))
         with patch.object(runner, 'sql', return_value=SimpleNamespace(stderr=notices + markers)), \
                 patch.object(runner, 'check') as checked:
             runner.serial(True)
-            self.assertEqual(checked.call_count, 97)
+            self.assertEqual(checked.call_count, 98)
         for stderr in (notices, notices + markers.replace('150', '149'),
                        notices.replace('NOTICE:  PASS: case-0\n', '') + markers):
             with self.subTest(stderr_length=len(stderr)), \
                     patch.object(runner, 'sql', return_value=SimpleNamespace(stderr=stderr)):
                 with self.assertRaises(AssertionError):
                     runner.serial(True)
+
+    def test_normal_serial_requires_the_complete_updated_assertion_count(self):
+        for count in (97, 98, 99):
+            notices = ''.join(f'NOTICE:  PASS: case-{n}\n' for n in range(count))
+            with self.subTest(count=count), \
+                    patch.object(runner, 'sql', return_value=SimpleNamespace(stderr=notices)), \
+                    patch.object(runner, 'check') as checked:
+                if count == 98:
+                    runner.serial(False)
+                    self.assertEqual(checked.call_count, 98)
+                else:
+                    with self.assertRaisesRegex(AssertionError, 'CPE_TEST_SERIAL_ASSERTION_COUNT'):
+                        runner.serial(False)
 
 
 class HostedCIGuardTests(unittest.TestCase):

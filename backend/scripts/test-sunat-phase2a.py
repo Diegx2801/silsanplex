@@ -196,7 +196,7 @@ def fingerprints():
 def serial(transactional):
     result = sql(serial_script(transactional))
     assertions = re.findall(r'NOTICE:  PASS: (.+)', result.stderr)
-    if len(assertions) != 97:
+    if len(assertions) != 98:
         raise AssertionError('CPE_TEST_SERIAL_ASSERTION_COUNT')
     if transactional:
         markers = re.findall(r'NOTICE:  CPE_TRANSACTIONAL:(149|150|serial)', result.stderr)
