@@ -235,7 +235,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', 'e2222222-2222-4222-8222-222222222222', true);
 select ok(public.has_organization_permission('d1111111-1111-4111-8111-111111111111', 'PURCHASES_RECEIVE'), 'ALMACEN puede recibir compras');
 select lives_ok($$
-  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE","organization_id":"d1111111-1111-4111-8111-111111111111","product_id":"f2222222-2222-4222-8222-222222222222","movement_type":"entrada","quantity":"2","warehouse":"Almacén principal","lot":"","expiration_date":"","operation_date":"2026-08-21","reason":"Entrada manual"}'::jsonb)
+  select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE","organization_id":"d1111111-1111-4111-8111-111111111111","product_id":"f2222222-2222-4222-8222-222222222222","movement_type":"entrada","quantity":"2","unit_cost":"8","warehouse":"Almacén principal","lot":"","expiration_date":"","operation_date":"2026-08-21","reason":"Entrada manual"}'::jsonb)
 $$, 'ALMACEN registra una entrada manual');
 select throws_ok($$
   select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE","organization_id":"d1111111-1111-4111-8111-111111111111","product_id":"f2222222-2222-4222-8222-222222222222","movement_type":"salida","quantity":"100","warehouse":"Almacén principal","lot":"","expiration_date":"","operation_date":"2026-08-21","reason":"Salida excesiva"}'::jsonb)

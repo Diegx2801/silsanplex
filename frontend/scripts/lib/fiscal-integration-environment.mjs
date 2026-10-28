@@ -108,7 +108,13 @@ enable_confirmations = false
   manifest() {
     const base = path.join(this.root, 'backend/supabase/migrations')
     const names = fs.readdirSync(base).filter(n => n.endsWith('.sql')).sort()
-    assert.equal(names.length, 150)
+    const candidateNames = Object.keys(candidateHashes)
+    const firstCandidate = names.indexOf(candidateNames[0])
+    assert.ok(firstCandidate >= 0, 'FISCAL_TEST_CANDIDATES_MISSING')
+    assert.deepEqual(names.slice(firstCandidate, firstCandidate + candidateNames.length), candidateNames,
+      'FISCAL_TEST_CANDIDATE_ORDER')
+    assert.equal(names.filter(name => candidateNames.includes(name)).length, candidateNames.length,
+      'FISCAL_TEST_CANDIDATE_DUPLICATE')
     const result = Object.fromEntries(names.map(n => [n, digest(fs.readFileSync(path.join(base, n)))]))
     for (const [name, hash] of Object.entries(candidateHashes)) assert.equal(result[name], hash)
     return result
