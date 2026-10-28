@@ -1,0 +1,3 @@
+Validación temporal del ruleset main-protection-solo-maintainer (26023213).
+
+Este archivo de texto inocuo permite comprobar los requisitos de Pull Request, checks obligatorios y cero aprobaciones humanas. El PR asociado se cerrará sin fusionar y la rama temporal se eliminará al terminar la validación.
