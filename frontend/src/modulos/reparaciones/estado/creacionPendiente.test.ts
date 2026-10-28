@@ -48,6 +48,15 @@ beforeEach(() => sessionStorage.clear())
 afterEach(() => vi.restoreAllMocks())
 
 describe('consumo pendiente de repuestos', () => {
+  it('recupera creaciones del primer bloque sin alterar su intención al añadir los selectores nuevos', async () => {
+    const { tipoSolicitante: _tipo, areaSolicitante: _area, tipoEquipo: _equipo, descripcionEquipoExterno: _descripcion, ...anteriores } = datos
+    const clave = crypto.randomUUID()
+    const enviar = vi.fn().mockRejectedValueOnce(new Error('timeout')).mockResolvedValue(undefined)
+    await expect(crearConReintentoPersistente(ambito, anteriores, clave, enviar)).rejects.toThrow('timeout')
+    await crearConReintentoPersistente(ambito, datos, crypto.randomUUID(), enviar)
+    expect(enviar.mock.calls[1]).toEqual([anteriores, clave])
+    expect(leerCreacionPendiente(ambito)).toBeNull()
+  })
   it('recupera cantidad, versión y clave tras cierre y respuesta ambigua', async () => {
     const consumo = { datos: { cantidad: '2' }, expectedLockVersion: 5 }
     const clave = crypto.randomUUID()

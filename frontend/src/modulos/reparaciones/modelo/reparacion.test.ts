@@ -15,6 +15,16 @@ import {
 } from './reparacion'
 
 describe('modelo de reparaciones', () => {
+  it('valida identidad interna y externa sin exigir cliente o producto', () => {
+    const datos = { ...datosReparacionInicial(), tipoSolicitante: 'internal', areaSolicitante: 'Administración',
+      tipoEquipo: 'external', descripcionEquipoExterno: 'Laptop Dell', problema: 'No enciende' }
+    expect(esquemaDatosReparacion.safeParse(datos).success).toBe(true)
+    expect(esquemaDatosReparacion.safeParse({ ...datos, areaSolicitante: '' }).success).toBe(false)
+    expect(esquemaDatosReparacion.safeParse({ ...datos, descripcionEquipoExterno: '' }).success).toBe(false)
+    expect(esquemaDatosReparacion.safeParse({ ...datos, descripcionEquipoExterno: 'x'.repeat(241) }).success).toBe(false)
+    expect(esquemaDatosReparacion.safeParse({ ...datos, tipoSolicitante: 'customer' }).success).toBe(false)
+    expect(esquemaDatosReparacion.safeParse({ ...datos, tipoEquipo: 'catalog' }).success).toBe(false)
+  })
   it('normaliza textos opcionales y búsquedas sin permitir patrones de PostgREST', () => {
     expect(normalizarTextoOpcional('  referencia  ')).toBe('referencia')
     expect(normalizarTextoOpcional('   ')).toBeNull()
@@ -110,6 +120,10 @@ describe('modelo de reparaciones', () => {
         estadoNuevo: 'received',
       }],
     } as unknown as DetalleReparacion
+
+    expect(identidadReparacionEsEditable({ ...detalleInicial, eventos: [...detalleInicial.eventos,
+      { ...detalleInicial.eventos[0], id: 2, tipo: 'ATTACHMENT_ADDED', estadoAnterior: 'received', estadoNuevo: 'received' }],
+    })).toBe(false)
 
     expect(identidadReparacionEsEditable({
       ...detalleInicial,

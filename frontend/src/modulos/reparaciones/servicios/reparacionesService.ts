@@ -40,12 +40,17 @@ interface ErrorSupabase {
 }
 
 interface FilaReparacion {
+  requester_type?: 'customer' | 'internal'
+  requesting_area?: string | null
+  equipment_type?: 'catalog' | 'external'
+  external_equipment_description?: string | null
+  external_service_pending?: boolean
   id: string
   organization_id: string
   lock_version: number
   repair_code: string
-  customer_id: string
-  product_id: string
+  customer_id: string | null
+  product_id: string | null
   serial_number: string | null
   received_at: string
   estimated_delivery_date: string | null
@@ -239,7 +244,7 @@ interface FilaUbicacion {
 }
 
 const columnasReparacion =
-  'id,organization_id,lock_version,repair_code,customer_id,product_id,serial_number,received_at,estimated_delivery_date,delivered_at,status,priority,problem_description,diagnosis,applied_solution,notes,customer_reference,sale_document_id,warranty_reference,assigned_technician_id,customer_name_snapshot,customer_document_snapshot,product_code_snapshot,product_description_snapshot,created_by,updated_by,created_at,updated_at,serial_control_snapshot' as const
+  'id,organization_id,lock_version,repair_code,customer_id,product_id,serial_number,received_at,estimated_delivery_date,delivered_at,status,priority,problem_description,diagnosis,applied_solution,notes,customer_reference,sale_document_id,warranty_reference,assigned_technician_id,customer_name_snapshot,customer_document_snapshot,product_code_snapshot,product_description_snapshot,created_by,updated_by,created_at,updated_at,serial_control_snapshot,requester_type,requesting_area,equipment_type,external_equipment_description,external_service_pending' as const
 
 const tamanioPaginaMaximo = 50
 const paginaMaxima = 100_000
@@ -266,6 +271,11 @@ function textoError(error: ErrorSupabase) {
 }
 
 const mensajesDominio: Array<[string, string]> = [
+  ['REPAIR_REQUESTING_AREA_INVALID', 'Indica el área interna que solicita la atención.'],
+  ['REPAIR_EXTERNAL_EQUIPMENT_INVALID', 'Describe el equipo fuera del catálogo sin vincularlo a un producto de inventario.'],
+  ['REPAIR_REQUESTER_TYPE_INVALID', 'Revisa el tipo de solicitante de la orden.'],
+  ['REPAIR_EQUIPMENT_TYPE_INVALID', 'Revisa cómo se identifica el equipo recibido.'],
+  ['REPAIR_EXTERNAL_SERVICE_OUTSTANDING', 'El equipo aún está con un proveedor. Registra su retorno antes de continuar.'],
   ['REPAIR_VERSION_REQUIRED', 'No se pudo verificar la versión de la reparación. Actualiza el detalle e inténtalo nuevamente.'],
   ['REPAIR_VERSION_CONFLICT', 'La reparación cambió mientras realizabas esta acción. Revisa la información actualizada antes de volver a intentarlo.'],
   ['REPAIR_PAYLOAD_INVALID', 'Los datos enviados no tienen un formato válido.'],
@@ -420,8 +430,13 @@ function mapearReparacion(fila: FilaReparacion): Reparacion {
     organizationId: fila.organization_id,
     lockVersion: validarLockVersion(fila.lock_version),
     codigo: fila.repair_code,
-    clienteId: fila.customer_id,
-    productoId: fila.product_id,
+    clienteId: fila.customer_id ?? '',
+    productoId: fila.product_id ?? '',
+    tipoSolicitante: fila.requester_type ?? 'customer',
+    areaSolicitante: fila.requesting_area ?? '',
+    tipoEquipo: fila.equipment_type ?? 'catalog',
+    descripcionEquipoExterno: fila.external_equipment_description ?? '',
+    servicioExternoPendiente: fila.external_service_pending ?? false,
     numeroSerie: fila.serial_number ?? '',
     recibidaEn: fila.received_at,
     fechaEntregaEstimada: fila.estimated_delivery_date ?? '',
@@ -1053,10 +1068,18 @@ function payloadGeneralReparacion(
   }
 }
 
-function payloadIdentidadReparacion(datos: DatosReparacion) {
+function payloadIdentidadReparacion(datos: DatosReparacion, creacion = false) {
+  const identidadExtendida = {
+    requester_type: datos.tipoSolicitante ?? 'customer',
+    requesting_area: datos.tipoSolicitante === 'internal' ? datos.areaSolicitante?.trim() : null,
+    equipment_type: datos.tipoEquipo ?? 'catalog',
+    external_equipment_description: datos.tipoEquipo === 'external' ? datos.descripcionEquipoExterno?.trim() : null,
+  }
   return {
-    customer_id: datos.clienteId,
-    product_id: datos.productoId,
+    // Keep legacy creation fingerprints replayable after upgrading the UI.
+    ...(!creacion || datos.tipoSolicitante === 'internal' || datos.tipoEquipo === 'external' ? identidadExtendida : {}),
+    customer_id: datos.tipoSolicitante === 'internal' ? null : datos.clienteId,
+    product_id: datos.tipoEquipo === 'external' ? null : datos.productoId,
     serial_number: normalizarTextoOpcional(datos.numeroSerie),
   }
 }
@@ -1069,7 +1092,7 @@ export async function crearReparacion(
   const { data, error } = await supabase.rpc('create_repair', {
     payload: {
       ...payloadGeneralReparacion(organizationId, datos),
-      ...payloadIdentidadReparacion(datos),
+      ...payloadIdentidadReparacion(datos, true),
       status: datos.esGarantia ? 'warranty' : 'received',
       operation_key: operationKey,
     },

@@ -1,4 +1,6 @@
 import { ResultadosPruebas } from './ResultadosPruebas'
+import { AdjuntosReparacion } from './AdjuntosReparacion'
+import { AtencionComplementariaReparacion } from './AtencionComplementariaReparacion'
 import {
   Ban,
   CheckCircle2,
@@ -101,6 +103,10 @@ function nombreUbicacion(ubicaciones: readonly UbicacionAlmacen[], id: string) {
 
 function etiquetaEvento(tipo: string) {
   const etiquetas: Record<string, string> = {
+    ATTACHMENT_ADDED: 'Evidencia adjuntada',
+    EXTERNAL_SERVICE_SENT: 'Equipo enviado a proveedor',
+    EXTERNAL_SERVICE_RECEIVED: 'Equipo retornado del proveedor',
+    SERVICE_WARRANTY_CONFIGURED: 'Garantía del servicio configurada',
     CREATED: 'Reparación creada',
     UPDATED: 'Datos actualizados',
     STATUS_CHANGED: 'Estado cambiado',
@@ -793,7 +799,7 @@ function DetalleContenido({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1 basis-64">
             <h2 id="reparacion-siguiente-paso" className="font-semibold">{estadoEsTerminal(reparacion.estado) && reparacion.estado !== 'rejected' ? 'Orden cerrada' : 'Siguiente paso'}</h2>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">{guias[reparacion.estado]}</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">{reparacion.servicioExternoPendiente ? 'El equipo está con un proveedor externo. Registra su retorno en Servicio externo y garantía antes de iniciar pruebas o preparar la entrega.' : guias[reparacion.estado]}</p>
           </div>
           {siguienteAccion ? <Button type="button" onClick={() => alAbrirDialogo(siguienteAccion.tipo)}>{siguienteAccion.etiqueta}</Button> : null}
         </div>
@@ -817,7 +823,7 @@ function DetalleContenido({
       <section id="reparacion-seccion-resumen" tabIndex={-1} aria-labelledby="reparacion-resumen" className="border-b px-5 py-6 outline-none sm:px-7">
         <h2 id="reparacion-resumen" className="flex items-center gap-2 font-semibold"><FileText aria-hidden="true" className="size-4 text-primary" /> Resumen de la orden</h2>
         <dl className="mt-4 grid sm:grid-cols-2 sm:gap-x-6">
-          <Dato etiqueta="Cliente" valor={<span>{reparacion.clienteNombreSnapshot}<span className="mt-1 block text-xs text-muted-foreground">{reparacion.clienteDocumentoSnapshot}</span></span>} />
+          <Dato etiqueta={reparacion.tipoSolicitante === 'internal' ? 'Área solicitante' : 'Cliente'} valor={<span>{reparacion.clienteNombreSnapshot}<span className="mt-1 block text-xs text-muted-foreground">{reparacion.clienteDocumentoSnapshot}</span></span>} />
           <Dato etiqueta="Producto" valor={<span>{reparacion.productoDescripcionSnapshot}<span className="mt-1 block font-mono text-xs text-muted-foreground">{reparacion.productoCodigoSnapshot}</span></span>} />
           <Dato etiqueta="Número de serie" valor={mostrar(reparacion.numeroSerie, 'No aplica')} />
           <Dato etiqueta="Prioridad" valor={<span className={reparacion.prioridad === 'urgent' ? 'font-semibold text-destructive' : undefined}>{prioridadLabel(reparacion.prioridad)}</span>} />
@@ -862,6 +868,8 @@ function DetalleContenido({
       <section aria-labelledby="reparacion-pruebas" className="border-b px-5 py-6 sm:px-7">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-pruebas" className="flex items-center gap-2 font-semibold"><ClipboardCheck aria-hidden="true" className="size-4 text-primary" /> Pruebas</h2><p className="mt-1 text-sm text-muted-foreground">Validaciones antes de la entrega</p></div>{puedeRegistrarPrueba ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('prueba')}><Plus aria-hidden="true" /> Registrar prueba</Button> : null}</div><ResultadosPruebas pruebas={detalle.pruebas} cicloActual={detalle.cicloPruebasActual} /></section>
 
+      <AtencionComplementariaReparacion key={`${reparacion.organizationId}:${reparacion.id}`} reparacion={reparacion} puedeEditar={puedeEditar} puedeGarantia={puedeEntregar} />
+      <AdjuntosReparacion reparacionId={reparacion.id} puedeAdjuntar={puedeEditar || puedeRealizarTecnica} />
       <details id="reparacion-seccion-historial" tabIndex={-1} className="px-5 py-6 outline-none sm:px-7">
         <summary className="cursor-pointer rounded-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Historial de la orden · {detalle.eventos.length} eventos</summary>
       <section aria-labelledby="reparacion-linea-tiempo" className="pt-5">

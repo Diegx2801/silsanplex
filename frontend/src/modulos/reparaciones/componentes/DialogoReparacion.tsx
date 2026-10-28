@@ -172,6 +172,8 @@ export function DialogoReparacion({
     defaultValues: reparacion ? datosReparacionInicial(reparacion) : datosCreacionPendiente ?? datosReparacionInicial(null),
   })
   const productoId = watch('productoId')
+  const tipoSolicitante = watch('tipoSolicitante') ?? 'customer'
+  const tipoEquipo = watch('tipoEquipo') ?? 'catalog'
   const numeroSerie = watch('numeroSerie')
   const esGarantia = watch('esGarantia')
   const referenciaGarantia = watch('referenciaGarantia')
@@ -183,15 +185,15 @@ export function DialogoReparacion({
   const productoEsReferenciaOriginal = Boolean(
     reparacion && productoId === reparacion.productoId,
   )
-  const productoEsConocido = productoEsReferenciaOriginal || Boolean(producto)
+  const productoEsConocido = tipoEquipo === 'external' || productoEsReferenciaOriginal || Boolean(producto)
   const controlaSerie = productoEsReferenciaOriginal
     ? reparacion?.serialControlSnapshot ?? false
     : producto?.serialControl ?? false
-  const clienteHistorico: OpcionClienteReparacion | null = reparacion
+  const clienteHistorico: OpcionClienteReparacion | null = reparacion?.clienteId
     ? { id: reparacion.clienteId, nombre: reparacion.clienteNombreSnapshot,
       nombreComercial: '', documento: reparacion.clienteDocumentoSnapshot, activo: false }
     : null
-  const productoHistorico: OpcionProductoReparacion | null = reparacion
+  const productoHistorico: OpcionProductoReparacion | null = reparacion?.productoId
     ? { id: reparacion.productoId, codigo: reparacion.productoCodigoSnapshot,
       descripcion: reparacion.productoDescripcionSnapshot, unidadMedida: '',
       serialControl: reparacion.serialControlSnapshot, controlLote: false,
@@ -201,6 +203,7 @@ export function DialogoReparacion({
   useEffect(() => {
     if (
       identidadEditable
+      && tipoEquipo !== 'external'
       && productoSeleccionadoExplicitamente
       && productoEsConocido
       && !controlaSerie
@@ -215,6 +218,7 @@ export function DialogoReparacion({
     productoEsConocido,
     productoSeleccionadoExplicitamente,
     setValue,
+    tipoEquipo,
   ])
 
   useEffect(() => {
@@ -235,7 +239,7 @@ export function DialogoReparacion({
       setError('productoId', { message: 'Selecciona un producto activo' })
       return
     }
-    const errorSerie = identidadEditable
+    const errorSerie = identidadEditable && tipoEquipo !== 'external'
       ? validarNumeroSerie(datos.numeroSerie, controlaSerie)
       : undefined
     if (errorSerie) {
@@ -247,7 +251,7 @@ export function DialogoReparacion({
     const datosNormalizados = {
       ...datos,
       numeroSerie:
-        identidadEditable && productoSeleccionadoExplicitamente && !controlaSerie
+        identidadEditable && tipoEquipo !== 'external' && productoSeleccionadoExplicitamente && !controlaSerie
           ? ''
           : datos.numeroSerie,
     }
@@ -318,21 +322,25 @@ export function DialogoReparacion({
                   {identidadEditable
                     ? reparacion
                       ? 'Puedes conservar las referencias de la orden; cualquier reemplazo debe estar activo.'
-                      : 'Cliente y producto deben estar activos en la organización.'
+                      : 'Elige quién solicita la atención y cómo identificar el equipo. No se creará stock del equipo recibido.'
                     : 'Información conservada de la recepción de la orden.'}
                 </p>
               </div>
               {!identidadEditable && reparacion ? (
                 <>
                   <p className="mb-5 border border-primary/25 bg-primary/5 px-4 py-3 text-sm leading-6 text-muted-foreground sm:col-span-2">
-                    El cliente, el producto y la serie ya no pueden modificarse porque la atención tiene historial operativo.
+                    El solicitante, el equipo y la serie ya no pueden modificarse porque la atención tiene historial o evidencia registrada.
                   </p>
                   <input type="hidden" {...register('clienteId')} />
                   <input type="hidden" {...register('productoId')} />
                   <input type="hidden" {...register('numeroSerie')} />
+                  <input type="hidden" {...register('tipoSolicitante')} />
+                  <input type="hidden" {...register('areaSolicitante')} />
+                  <input type="hidden" {...register('tipoEquipo')} />
+                  <input type="hidden" {...register('descripcionEquipoExterno')} />
                   <dl className="grid gap-4 sm:grid-cols-2">
                     <div className="border bg-muted/20 px-4 py-3">
-                      <dt className="field-label">Cliente</dt>
+                      <dt className="field-label">{tipoSolicitante === 'internal' ? 'Área solicitante' : 'Cliente'}</dt>
                       <dd className="text-sm font-medium">{reparacion.clienteNombreSnapshot}</dd>
                       <dd className="mt-1 text-xs text-muted-foreground">{reparacion.clienteDocumentoSnapshot}</dd>
                     </div>
@@ -349,7 +357,13 @@ export function DialogoReparacion({
                 </>
               ) : (
                 <div className="grid gap-5 sm:grid-cols-2">
-                <Controller name="clienteId" control={control} render={({ field }) =>
+                <div>
+                  <label htmlFor="reparacion-solicitante-tipo" className="field-label">Solicitante *</label>
+                  <select id="reparacion-solicitante-tipo" className="field-control" {...register('tipoSolicitante')}>
+                    <option value="customer">Cliente</option><option value="internal">Área interna de SILSAN</option>
+                  </select>
+                </div>
+                {tipoSolicitante === 'internal' ? <CampoTexto etiqueta="Área solicitante *" placeholder="Ej. Almacén o Administración" error={errors.areaSolicitante?.message} {...register('areaSolicitante')} /> : <Controller name="clienteId" control={control} render={({ field }) =>
                   <SelectorCatalogoReparacion id="reparacion-cliente" etiqueta="Cliente *"
                     etiquetaBusqueda="Buscar cliente" valor={field.value}
                     opcionesIniciales={clientes} totalInicial={totalClientes}
@@ -358,8 +372,14 @@ export function DialogoReparacion({
                     representar={(cliente) => `${cliente.nombre} · ${cliente.documento}${cliente.activo === false ? ' (referencia histórica)' : ''}`}
                     alCambiar={field.onChange} error={errors.clienteId?.message}
                     deshabilitado={cargandoOpciones} textoVacio="Selecciona un cliente" />
-                } />
-                <Controller name="productoId" control={control} render={({ field }) =>
+                } />}
+                <div>
+                  <label htmlFor="reparacion-equipo-tipo" className="field-label">Identificación del equipo *</label>
+                  <select id="reparacion-equipo-tipo" className="field-control" {...register('tipoEquipo')}>
+                    <option value="catalog">Producto del catálogo</option><option value="external">Equipo fuera del catálogo</option>
+                  </select>
+                </div>
+                {tipoEquipo === 'external' ? <CampoTexto etiqueta="Equipo recibido *" placeholder="Marca, modelo e identificación" error={errors.descripcionEquipoExterno?.message} {...register('descripcionEquipoExterno')} /> : <Controller name="productoId" control={control} render={({ field }) =>
                   <SelectorCatalogoReparacion id="reparacion-producto" etiqueta="Producto o equipo *"
                     etiquetaBusqueda="Buscar producto o equipo" valor={field.value}
                     opcionesIniciales={productos} totalInicial={totalProductos}
@@ -373,14 +393,14 @@ export function DialogoReparacion({
                     }}
                     error={errors.productoId?.message} deshabilitado={cargandoOpciones}
                     textoVacio="Selecciona un producto" />
-                } />
-                {controlaSerie || (productoEsReferenciaOriginal && Boolean(numeroSerie)) ? (
+                } />}
+                {tipoEquipo === 'external' || controlaSerie || (productoEsReferenciaOriginal && Boolean(numeroSerie)) ? (
                   <CampoTexto
-                    etiqueta={`Número de serie${controlaSerie ? ' *' : ''}`}
+                    etiqueta={`Número de serie${tipoEquipo !== 'external' && controlaSerie ? ' *' : ' (si existe)'}`}
                     autoComplete="off"
                     placeholder="Serie del equipo recibido"
                     error={errors.numeroSerie?.message}
-                    ayuda={controlaSerie
+                    ayuda={tipoEquipo === 'external' ? 'Registra la serie impresa si el equipo dispone de ella.' : controlaSerie
                       ? 'La regla de serie conservada al recibir la orden exige este dato.'
                       : 'La serie histórica se conservará mientras mantengas el producto original.'}
                     {...register('numeroSerie')}
