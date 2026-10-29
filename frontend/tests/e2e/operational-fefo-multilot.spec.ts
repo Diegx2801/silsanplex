@@ -1,13 +1,13 @@
 import { expect } from '@playwright/test'
 import { test } from './fixtures/test.js'
 
-import { checked, expectStock, mutate, operationalFixture, selectRemote } from './fixtures/operational.js'
+import { checked, expectStock, mutate, operationalFixture, operationalTargetFromEnvironment, selectRemote } from './fixtures/operational.js'
 
 test('recibe, reserva, despacha y entrega dos lotes mediante FEFO', async ({ page }, testInfo) => {
   test.setTimeout(180_000)
   page.on('pageerror', (error) => console.error(`Error de navegador: ${error.message}`))
 
-  const f = await operationalFixture(page, process.env.SILSAN_PHASE2C2_E2E === '1' ? 'isolated-phase2c2' : 'persistent-silsan')
+  const f = await operationalFixture(page, operationalTargetFromEnvironment())
   const rows = (table: string) => f.api.from(table).select('*').eq('organization_id', f.organizationId)
   const lotA = `A-${f.reference}`
   const lotB = `B-${f.reference}`

@@ -1,7 +1,9 @@
--- Uses independent committed sessions; fresh synthetic tenants are retained in the disposable DB.
+-- Uses independent committed sessions; synthetic tenants are deleted before the suite finishes.
 create extension if not exists dblink with schema extensions;
 select no_plan();
 begin;
+create temporary table repair_accessory_organizations_before on commit preserve rows as
+  select id,name,slug from public.organizations;
 create function pg_temp.acc_fixture() returns jsonb language plpgsql as $$
 declare org uuid := gen_random_uuid(); actor uuid := gen_random_uuid(); sid uuid := gen_random_uuid(); repair uuid;
 begin
@@ -121,5 +123,58 @@ select * from pg_temp.acc_race('replay','record_repair_accessory_return','record
   '{"returns":[{"accessory_id":"CABLE_ID","quantity":1}]}','{}',true);
 select is((select sum(quantity) from repair_accessory_returns where repair_id=(select (f->>'repair')::uuid from repair_accessory_races.fixtures where kind='replay')),1::bigint,'concurrent replay has one physical return');
 select is((select count(*) from inventory_movements where organization_id in (select (f->>'org')::uuid from repair_accessory_races.fixtures)),0::bigint,'all races preserve inventory');
+
+-- dblink workers need committed fixtures, but this suite runs before the shared
+-- operational E2E fixture. Remove only the exact synthetic tenants created here.
+begin;
+do $$
+declare org_ids uuid[]; user_ids uuid[];
+begin
+  select array_agg(distinct (fixture.f->>'org')::uuid), array_agg(distinct actor.id)
+  into org_ids, user_ids
+  from repair_accessory_races.fixtures fixture
+  cross join lateral (values ((fixture.f->>'actor')::uuid), ((fixture.f->>'other_actor')::uuid)) actor(id);
+
+  alter table public.repair_accessory_returns disable trigger repair_accessory_returns_immutable;
+  alter table public.repair_command_operations disable trigger repair_command_operations_immutable;
+  alter table public.repair_events disable trigger repair_events_immutable;
+  alter table public.audit_events disable trigger audit_events_immutable;
+
+  delete from public.repair_accessory_returns where organization_id = any(org_ids);
+  delete from public.repair_accessories where organization_id = any(org_ids);
+  delete from public.repair_part_consumptions where organization_id = any(org_ids);
+  delete from public.repair_parts where organization_id = any(org_ids);
+  delete from public.repair_quote_items where organization_id = any(org_ids);
+  delete from public.repair_quotes where organization_id = any(org_ids);
+  delete from public.repair_diagnostics where organization_id = any(org_ids);
+  delete from public.repair_tests where organization_id = any(org_ids);
+  delete from public.repair_attachments where organization_id = any(org_ids);
+  delete from public.repair_external_services where organization_id = any(org_ids);
+  delete from public.repair_service_warranties where organization_id = any(org_ids);
+  delete from public.repair_events where organization_id = any(org_ids);
+  delete from public.repair_command_operations where organization_id = any(org_ids);
+  delete from public.audit_events where organization_id = any(org_ids);
+
+  alter table public.repair_accessory_returns enable trigger repair_accessory_returns_immutable;
+  alter table public.repair_command_operations enable trigger repair_command_operations_immutable;
+  alter table public.repair_events enable trigger repair_events_immutable;
+  alter table public.audit_events enable trigger audit_events_immutable;
+
+  delete from public.repairs where organization_id = any(org_ids);
+  delete from public.organization_memberships where organization_id = any(org_ids);
+  delete from public.organizations where id = any(org_ids);
+  delete from auth.sessions where user_id = any(user_ids);
+  delete from auth.users where id = any(user_ids);
+end $$;
+commit;
+
+select is((select count(*) from public.organizations),
+  (select count(*) from repair_accessory_organizations_before),
+  'concurrency fixtures restore organization cardinality for subsequent E2E');
+select results_eq(
+  $$select id,name,slug from public.organizations order by id$$,
+  $$select id,name,slug from repair_accessory_organizations_before order by id$$,
+  'concurrency fixtures leave every pre-existing organization unchanged'
+);
 select * from finish();
 drop schema repair_accessory_races cascade;
