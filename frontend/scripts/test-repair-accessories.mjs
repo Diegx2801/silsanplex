@@ -73,53 +73,26 @@ function futureDate(monthsAhead) {
   date.setUTCMonth(date.getUTCMonth() + monthsAhead)
   return date.toISOString().slice(0,10)
 }
-async function createInventoryE2eFixture(admin, organizationId, actorId) {
-  const suffix = randomBytes(5).toString('hex').toUpperCase()
-  const fixture = {
-    productCode: `E2E-FEFO-${suffix}`, productDescription: `Producto control E2E FEFO ${suffix}`,
-    sourceWarehouseCode: `E2O-${suffix.slice(-8)}`, sourceWarehouseName: `E2E Origen ${suffix}`,
-    destinationWarehouseCode: `E2D-${suffix.slice(-8)}`, destinationWarehouseName: `E2E Destino ${suffix}`,
-  }
-  const checked = async request => { const result = await request; if (result.error) throw result.error; return result.data }
-  const product = await checked(admin.from('products').insert({ organization_id:organizationId, code:fixture.productCode,
-    description:fixture.productDescription, unit_of_measure:'UND', batch_control:true, expiration_control:true,
-    cost:10, sale_price:25, created_by:actorId, updated_by:actorId }).select('id').single())
-  const warehouses = await Promise.all([fixture.sourceWarehouseCode,fixture.destinationWarehouseCode].map((code,index) =>
-    admin.rpc('save_warehouse',{payload:{organization_id:organizationId,operation_key:randomUUID(),code,
-      name:index===0?fixture.sourceWarehouseName:fixture.destinationWarehouseName,address:'Disposable E2E fixture'}})))
-  if (warehouses.some(row=>row.error)) throw warehouses.find(row=>row.error).error
-  const [source,destination] = warehouses.map(row=>row.data)
-  const locations = await checked(admin.from('warehouse_locations').select('id,warehouse_id').in('warehouse_id',[source,destination]).eq('code','GENERAL'))
-  const sourceLocation = locations.find(row=>row.warehouse_id===source)
-  const destinationLocation = locations.find(row=>row.warehouse_id===destination)
-  assert(sourceLocation && destinationLocation,'Isolated inventory fixtures need both GENERAL locations')
-  for (const [lot,quantity,unitCost,months] of [['LOTE-E2E-A',3,10,12],['LOTE-E2E-B',6,20,13],['LOTE-E2E-C',4,30,14]]) {
-    await checked(admin.rpc('record_inventory_movement',{payload:{document_reference:'E2E-STOCK-SETUP',organization_id:organizationId,
-      product_id:product.id,movement_type:'entrada',quantity,warehouse_id:source,location_id:sourceLocation.id,
-      stock_status:'available',unit_cost:unitCost,lot,expiration_date:futureDate(months),operation_date:peruDate(),
-      reason:`Preparación E2E FEFO ${lot}`}}))
-  }
-  return fixture
-}
-async function createWorkflowInventoryFixture(admin, organizationId, actorId) {
+// Business RPCs require an ordinary authenticated session, including fixture setup.
+async function createInventoryE2eFixture(authenticatedClient, organizationId, actorId) {
   const suffix=randomBytes(5).toString('hex').toUpperCase()
   const fixture={productCode:`E2E-FEFO-${suffix}`,productDescription:`Producto control E2E FEFO ${suffix}`,
     sourceWarehouseCode:`E2O-${suffix.slice(-8)}`,sourceWarehouseName:`E2E Origen ${suffix}`,
     destinationWarehouseCode:`E2D-${suffix.slice(-8)}`,destinationWarehouseName:`E2E Destino ${suffix}`}
   const checked=async request=>{const result=await request;if(result.error)throw result.error;return result.data}
-  const product=await checked(admin.from('products').insert({organization_id:organizationId,code:fixture.productCode,
+  const product=await checked(authenticatedClient.from('products').insert({organization_id:organizationId,code:fixture.productCode,
     description:fixture.productDescription,unit_of_measure:'UND',batch_control:true,expiration_control:true,
     cost:10,sale_price:25,created_by:actorId,updated_by:actorId}).select('id').single())
   const warehouseResults=await Promise.all([fixture.sourceWarehouseCode,fixture.destinationWarehouseCode].map((code,index)=>
-    admin.rpc('save_warehouse',{payload:{organization_id:organizationId,operation_key:randomUUID(),code,
+    authenticatedClient.rpc('save_warehouse',{payload:{organization_id:organizationId,operation_key:randomUUID(),code,
       name:index===0?fixture.sourceWarehouseName:fixture.destinationWarehouseName,address:'Fixture E2E operational'}})))
   const failed=warehouseResults.find(result=>result.error);if(failed?.error)throw failed.error
   const [source,destination]=warehouseResults.map(result=>result.data)
-  const locations=await checked(admin.from('warehouse_locations').select('id,warehouse_id').in('warehouse_id',[source,destination]).eq('code','GENERAL'))
+  const locations=await checked(authenticatedClient.from('warehouse_locations').select('id,warehouse_id').in('warehouse_id',[source,destination]).eq('code','GENERAL'))
   const sourceLocation=locations.find(location=>location.warehouse_id===source),destinationLocation=locations.find(location=>location.warehouse_id===destination)
   assert(sourceLocation&&destinationLocation,'Operational fixtures require both GENERAL locations')
   for(const [lot,quantity,unitCost,months] of [['LOTE-E2E-A',3,10,12],['LOTE-E2E-B',6,20,13],['LOTE-E2E-C',4,30,14]]) {
-    await checked(admin.rpc('record_inventory_movement',{payload:{document_reference:`E2E-STOCK-${suffix}`,organization_id:organizationId,
+    await checked(authenticatedClient.rpc('record_inventory_movement',{payload:{document_reference:`E2E-STOCK-${suffix}`,organization_id:organizationId,
       product_id:product.id,movement_type:'entrada',quantity,warehouse_id:source,location_id:sourceLocation.id,stock_status:'available',unit_cost:unitCost,
       lot,expiration_date:futureDate(months),operation_date:peruDate(),reason:`Preparación operativa ${lot}`}}))
   }
@@ -272,9 +245,7 @@ try {
       }
       await checked(admin.from('customers').insert(customers)); await checked(admin.from('products').insert(products))
     }
-    const workflowInventoryFixtures = await Promise.all(Array.from({length:3},()=>createWorkflowInventoryFixture(inventoryClient,organizationId,identities.admin.id)))
-    const inventoryFixtures = workflowE2e ? workflowInventoryFixtures
-      : await Promise.all(Array.from({length:3},()=>createInventoryE2eFixture(admin,organizationId,identities.admin.id)))
+    const inventoryFixtures = await Promise.all(Array.from({length:3},()=>createInventoryE2eFixture(inventoryClient,organizationId,identities.admin.id)))
     let playwright = fs.readFileSync(path.join(frontend, 'playwright.config.ts'), 'utf8')
       .replace("testDir: './tests/e2e'", "testDir: './tests'")
       .replaceAll('127.0.0.1:5173', `127.0.0.1:${ports.web}`)
@@ -288,7 +259,7 @@ try {
     const viteConfig = path.join(frontend, 'vite.config.ts')
     fs.writeFileSync(viteConfig, fs.readFileSync(viteConfig, 'utf8').replace('server: {', `server: { fs: { allow: [${JSON.stringify(frontend)}, ${JSON.stringify(path.join(root, 'frontend/node_modules'))}] },`))
     const env = { ...process.env, VITE_SUPABASE_URL: api, VITE_SUPABASE_PUBLISHABLE_KEY: status.ANON_KEY,
-      E2E_INVENTORY_FIXTURES_BASE64: Buffer.from(JSON.stringify(workflowE2e ? workflowInventoryFixtures : inventoryFixtures)).toString('base64url'),
+      E2E_INVENTORY_FIXTURES_BASE64: Buffer.from(JSON.stringify(inventoryFixtures)).toString('base64url'),
       E2E_ACCESSORY_IDENTITIES: JSON.stringify(identities), E2E_ACCESSORY_PROJECT: project,
       E2E_ACCESSORY_WORKDIR: backend, E2E_ACCESSORY_API_URL: api, E2E_ACCESSORY_DB_PORT: String(ports.db),
       E2E_ACCESSORY_WEB_URL: `http://127.0.0.1:${ports.web}` }
@@ -314,17 +285,16 @@ try {
       playwrightCommand.push(...['auth','customers','inventory-fefo','operational-flow','operational-fefo-multilot',
         'operational-partial-deliveries','repairs','sales'].map(name=>`e2e/${name}.spec.ts`))
     } else {
-      await createForeignTenant()
-      playwrightCommand.push('tests/e2e/repairs.spec.ts','tests/accessory-e2e/repair-accessories.spec.ts')
+      playwrightCommand.push('tests/e2e/repairs.spec.ts')
     }
     run(process.execPath, playwrightCommand,
       { cwd: frontend, env, log: 'e2e.log' })
-    if (workflowE2e) {
-      await createForeignTenant()
-      run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
-        'accessory-e2e/repair-accessories.spec.ts'],
-      {cwd:frontend,env,log:'e2e-accessory-multitenant.log'})
-    }
+    // Both modes keep SILSAN exclusive until the strict operational preflight
+    // has finished; only the accessory suite needs a second organization.
+    await createForeignTenant()
+    run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+      'accessory-e2e/repair-accessories.spec.ts'],
+    {cwd:frontend,env,log:'e2e-accessory-multitenant.log'})
     runLog.push({ e2e: 'passed', suite: workflowE2e ? 'all workflow E2E plus isolated accessory tenant case' : 'repairs and accessories', api, web: ports.web })
   }
   }
