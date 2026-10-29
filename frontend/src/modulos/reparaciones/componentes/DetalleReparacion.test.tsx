@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('./AdjuntosReparacion', () => ({ AdjuntosReparacion: () => <div>Adjuntos de la orden</div> }))
 vi.mock('./AtencionComplementariaReparacion', () => ({ AtencionComplementariaReparacion: () => <div>Atención complementaria</div> }))
+vi.mock('./AccesoriosReparacion', () => ({ AccesoriosReparacion: () => <div>Accesorios de la orden</div> }))
+vi.mock('./DialogoEntregaAccesorios', () => ({ DialogoEntregaAccesorios: () => null, RecuperarEntregaAccesorios: () => null }))
 
 vi.mock('@/modulos/reparaciones/estado/useReparacionOpciones', () => ({
   useTecnicosReparacion: () => ({ tecnicos: [], cargando: false, error: null }),

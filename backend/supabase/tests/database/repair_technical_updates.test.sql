@@ -56,7 +56,7 @@ select ok(
 );
 select is(
   (select count(*) from public.permissions where code like 'REPAIRS_%'),
-  9::bigint,
+  10::bigint,
   'the repair permissions include explicit technical capability'
 );
 select is(

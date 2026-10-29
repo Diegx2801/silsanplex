@@ -153,3 +153,96 @@ npm run build
 
 La migración y las pruebas SQL del backend son el contrato de datos del módulo y
 no deben modificarse desde el frontend.
+
+## Accesorios del equipo — R06/R33
+
+Los accesorios son pertenencias en custodia, independientes del inventario y de
+los repuestos. La migración `20261029010000_repair_accessory_control.sql` incorpora
+`repair_accessories` y `repair_accessory_returns`. Los saldos se derivan de las
+devoluciones append-only; nunca se modifica stock ni FEFO al recibir o devolver
+accesorios.
+
+En **Datos adicionales de recepción** se pueden registrar hasta 100 accesorios,
+con nombre y cantidad entera positiva (máximo 1.000.000 por fila), condición y
+observaciones opcionales. La orden y su listado se crean en la misma transacción
+idempotente. `Notas de recepción` conserva observaciones generales del equipo.
+
+Las notas históricas no se interpretan. `accessories_reviewed_at IS NULL` indica
+que no hay revisión estructurada; una recepción explícita con lista vacía es
+válida y no crea obligaciones. Los pendientes antiguos en `sessionStorage`
+conservan la omisión del campo y su fingerprint original.
+
+En **Accesorios recibidos y devolución**, `REPAIRS_UPDATE` permite altas,
+correcciones y anulaciones explícitas con motivo antes de cualquier devolución y
+en estados no terminales. No se reemplaza toda la colección ni se borran filas.
+Después de devolver, las correcciones ordinarias de recepción quedan bloqueadas.
+Una devolución confirmada no dispone de eliminación ni rectificación implícita.
+
+`REPAIRS_DELIVER` permite devoluciones parciales o totales, también en órdenes
+canceladas/rechazadas y después de una entrega excepcional, sin reabrir la orden.
+Los responsables y fechas provienen de la sesión y del servidor. Estos comandos
+nuevos requieren un usuario autenticado; no aceptan actores delegados mediante
+`service_role`.
+
+### Contratos
+
+- `create_repair(jsonb)` admite `accessories` opcional con filas
+  `{name, quantity_received, received_condition?, observations?}`. Omitir el campo
+  conserva el contrato anterior; `[]` registra una recepción revisada sin filas.
+- `save_repair_accessories(jsonb)` recibe organización, reparación, versión,
+  `operation_key` y un **patch** `accessories`. Sin `id` agrega; con `id` corrige;
+  `{id, void: true, reason}` anula. `[]` no borra accesorios existentes.
+- `update_repair(jsonb)` conserva la edición anterior. Si incluye `accessories`,
+  exige también `operation_key` y audita/guarda todo atómicamente.
+- `record_repair_accessory_return(jsonb)` recibe `returns` con
+  `{accessory_id, quantity, observation?}`. Rechaza sobredevoluciones y conserva
+  cada devolución real.
+- `deliver_repair_with_accessories(jsonb)` admite devoluciones simultáneas y
+  entrega ordinaria o excepción. Reutiliza los gates técnicos actuales.
+- `get_repair_accessories(uuid, uuid)` devuelve revisión, versión, accesorios,
+  saldos y devoluciones completas bajo el permiso de consulta.
+
+Los comandos nuevos tienen replay persistente por organización y operación. Un
+payload distinto con la misma clave se rechaza. Todos bloquean el agregado y
+avanzan `lock_version` una sola vez por operación; el frontend conserva intención,
+clave y versión antes del envío. Hay recuperación de entrega pendiente incluso
+cuando el primer intento ya dejó la orden entregada.
+
+### Política de entrega
+
+La entrega ordinaria, incluida la RPC anterior `deliver_repair`, rechaza
+accesorios estructurados pendientes. Esto no cambia el gate compartido para
+marcar la orden lista para entrega.
+
+La excepción exige simultáneamente `REPAIRS_DELIVER` y
+`REPAIRS_AUTHORIZE_ACCESSORY_EXCEPTION`, un motivo no vacío y confirmación
+explícita en la interfaz. El permiso especial se concede inicialmente solo a
+`ADMIN` y no es asignable mediante la selección operativa ordinaria de usuarios.
+La autorización comprueba permisos efectivos, nunca nombres de rol en React.
+
+`ACCESSORY_DELIVERY_EXCEPTION` conserva motivo, actor y snapshot de pendientes.
+No simula devoluciones. La regularización posterior usa la RPC de custodia,
+mantiene `delivered` y conserva tanto el evento original como el posterior.
+
+### Pruebas aisladas
+
+Desde `frontend/`, con Docker y dependencias instaladas:
+
+```text
+npm run test:repairs:isolated
+npm run test:repairs:isolated -- --sql-only --upgrade
+npm run test:repairs:isolated -- --sql-only --all-sql
+npm run test:repairs:isolated -- --checks-only
+```
+
+El runner crea un proyecto exclusivo, verifica su contenedor/volumen y usa los
+puertos 59321/59322/59325. No carga `.env` empresariales, no reutiliza el servidor
+5173 y no resetea bases existentes. Conserva logs, TAP, JSON y capturas en un
+directorio temporal; elimina solo sus recursos desechables verificados.
+
+Las pruebas nuevas de navegador viven en `frontend/tests/accessory-e2e/` y se
+ejecutan mediante este runner y el workflow E2E, separadas de Vitest. Se ejecutan
+también los seis escenarios originales de `tests/e2e/repairs.spec.ts`.
+
+El resultado y las evidencias locales están en
+`RESULTADO_R06_R33_ACCESORIOS.md`.

@@ -2,7 +2,7 @@ import { expect, type Page, type Route } from '@playwright/test'
 import { test } from './fixtures/test.js'
 import { execFileSync } from 'node:child_process'
 
-import { checked, expectStock, mutate, operationalFixture, selectRemote } from './fixtures/operational.js'
+import { checked, expectStock, mutate, operationalFixture, operationalTargetFromEnvironment, selectRemote } from './fixtures/operational.js'
 
 interface ResultadoRpcEntrega {
   operationKey: string
@@ -75,7 +75,7 @@ test('divide dos entregas y recupera una respuesta perdida del resultado', async
   page.on('pageerror', (error) => console.error('Error de navegador: ' + error.message))
 
   const phase2c2E2E = process.env.SILSAN_PHASE2C2_E2E === '1'
-  const f = await operationalFixture(page, phase2c2E2E ? 'isolated-phase2c2' : 'persistent-silsan')
+  const f = await operationalFixture(page, operationalTargetFromEnvironment())
   const rows = (table: string) => f.api.from(table).select('*').eq('organization_id', f.organizationId)
   const outcomeAudits = async (deliveryIds: string[]): Promise<Array<{ entity_id: string }>> => {
     if (!phase2c2E2E) return checked(rows('audit_events')

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { esquemaAccesorioRecepcion } from './accesorios'
 
 export const estadosReparacion = [
   'received',
@@ -329,6 +330,7 @@ const uuidOpcional = z
   )
 
 export const esquemaDatosReparacion = z.object({
+  accesorios: z.array(esquemaAccesorioRecepcion).max(100).optional(),
   tipoSolicitante: z.enum(['customer', 'internal']).optional(),
   areaSolicitante: textoOpcional(160).optional(),
   tipoEquipo: z.enum(['catalog', 'external']).optional(),
