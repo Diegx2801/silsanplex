@@ -82,6 +82,67 @@ function renderizarDialogo(
 }
 
 describe('DialogoReparacion', () => {
+  it('registra un equipo externo de un área interna sin crear referencias ficticias', async () => {
+    const alGuardar = renderizarDialogo(null, true, [], [])
+    fireEvent.change(screen.getByLabelText('Solicitante *'), { target: { value: 'internal' } })
+    fireEvent.change(screen.getByLabelText('Área solicitante *'), { target: { value: 'Almacén' } })
+    fireEvent.change(screen.getByLabelText('Identificación del equipo *'), { target: { value: 'external' } })
+    fireEvent.change(screen.getByLabelText('Equipo recibido *'), { target: { value: 'Impresora Zebra ZD220' } })
+    fireEvent.change(screen.getByLabelText('Número de serie (si existe)'), { target: { value: 'SER-EXTERNA' } })
+    fireEvent.change(screen.getByLabelText('Problema reportado *'), { target: { value: 'No imprime' } })
+    expect(screen.queryByLabelText('Cliente *')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Producto o equipo *')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar reparación' }))
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(expect.objectContaining({
+      tipoSolicitante: 'internal', areaSolicitante: 'Almacén', clienteId: '',
+      tipoEquipo: 'external', descripcionEquipoExterno: 'Impresora Zebra ZD220', productoId: '', numeroSerie: 'SER-EXTERNA',
+    }), undefined, true, expect.any(String)))
+  })
+
+  it('mantiene la identidad externa bloqueada al editar una orden con historial', async () => {
+    const alGuardar = renderizarDialogo({ ...reparacion, tipoSolicitante: 'internal', areaSolicitante: 'Almacén',
+      clienteId: '', clienteNombreSnapshot: 'Almacén', clienteDocumentoSnapshot: 'INTERNO', tipoEquipo: 'external',
+      productoId: '', descripcionEquipoExterno: 'Impresora Zebra', productoDescripcionSnapshot: 'Impresora Zebra', productoCodigoSnapshot: 'EXTERNO' }, false)
+    expect(screen.queryByLabelText('Solicitante *')).not.toBeInTheDocument()
+    expect(screen.getByText('Impresora Zebra')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(expect.objectContaining({
+      tipoEquipo: 'external', descripcionEquipoExterno: 'Impresora Zebra', tipoSolicitante: 'internal', areaSolicitante: 'Almacén',
+    }), reparacion.id, false, undefined))
+  })
+
+  it('prioriza los datos esenciales y deja la recepción adicional plegada', () => {
+    renderizarDialogo(null, true)
+
+    expect(screen.getByLabelText('Problema reportado *')).toBeVisible()
+    expect(screen.getByText('Datos adicionales de recepción').closest('details')).not.toHaveAttribute('open')
+    expect(screen.queryByLabelText('ID de documento de venta')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Referencia de garantía')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Prioridad *')).toHaveValue('normal')
+
+    fireEvent.click(screen.getByLabelText(/^Atención en garantía/))
+    expect(screen.getByLabelText('Referencia de garantía')).toBeInTheDocument()
+  })
+
+  it('conserva documentos y referencias históricas aunque no estén en la recepción esencial', async () => {
+    const documentoVentaId = '00000000-0000-4000-8000-000000000055'
+    const alGuardar = renderizarDialogo({
+      ...reparacion,
+      documentoVentaId,
+      referenciaGarantia: 'GAR-2026-01',
+      notas: 'Incluye cargador y estuche',
+    }, false)
+
+    expect(screen.queryByLabelText('ID de documento de venta')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Referencia de garantía')).toHaveValue('GAR-2026-01')
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(
+      expect.objectContaining({ documentoVentaId, referenciaGarantia: 'GAR-2026-01', notas: 'Incluye cargador y estuche' }),
+      'repair-1', false, undefined,
+    ))
+  })
+
   it('permite editar la identidad durante la creación', () => {
     renderizarDialogo(null, true)
 
@@ -137,7 +198,7 @@ describe('DialogoReparacion', () => {
     })).toBeInTheDocument()
     expect(screen.getByLabelText('Cliente *')).toHaveValue(clienteId)
     expect(screen.getByLabelText('Producto o equipo *')).toHaveValue(productoId)
-    expect(screen.getByLabelText('Número de serie')).toHaveValue('SER-ORIGINAL')
+    expect(screen.getByLabelText('Número de serie (si existe)')).toHaveValue('SER-ORIGINAL')
 
     fireEvent.change(screen.getByLabelText('Notas de recepción'), {
       target: { value: 'Actualización administrativa' },

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import type { ConsultaPaginadaInventario } from './paginacionInventario'
+import type { CapturaUnidadMovimiento } from './capturaUnidadMovimiento'
 
 export type EstadoStock = 'available' | 'quarantine' | 'damaged'
 
@@ -59,12 +60,13 @@ export interface AlertaInventario extends SaldoInventario {
   estadoVencimiento: 'expired' | 'urgent' | 'upcoming' | null
 }
 
-export interface MovimientoKardex {
+export interface MovimientoKardex extends CapturaUnidadMovimiento {
   id: string
   secuenciaLedger: number
   productoId: string
   productoCodigo: string
   productoDescripcion: string
+  unidadMedida?: string
   almacen: string
   estado: EstadoStock
   lote: string
@@ -86,6 +88,8 @@ export interface TransferenciaAlmacen {
   referencia: string
   almacenOrigenId: string
   almacenDestinoId: string
+  ubicacionOrigenId?: string
+  ubicacionDestinoId?: string
   fechaTransferencia: string
   notas: string
 }
@@ -156,32 +160,36 @@ export const esquemaUbicacion = z.object({
 })
 
 export const esquemaTransferencia = z.object({
-  referencia: z.string().trim().min(2).max(40),
-  almacenOrigenId: z.string().uuid(),
-  ubicacionOrigenId: z.string().uuid(),
-  almacenDestinoId: z.string().uuid(),
-  ubicacionDestinoId: z.string().uuid(),
-  productoId: z.string().uuid(),
+  referencia: z.string().trim().max(40).optional(),
+  almacenOrigenId: z.string().uuid('Selecciona un almacén de origen'),
+  ubicacionOrigenId: z.string().uuid('Selecciona una posición de origen'),
+  almacenDestinoId: z.string().uuid('Selecciona un almacén de destino'),
+  ubicacionDestinoId: z.string().uuid('Selecciona una ubicación de destino'),
+  productoId: z.string().uuid('Selecciona un producto'),
   cantidad: cantidadPositiva,
+  unidadEntradaId: z.string().uuid('Selecciona una unidad válida').or(z.literal('')).optional(),
+  factorConversionEsperado: z.number().finite().positive().optional(),
   lote: z.string().trim().max(60),
   fechaVencimiento: z.string(),
   estado: z.enum(['available', 'quarantine', 'damaged']),
-  notas: z.string().trim().max(240),
-}).refine((datos) => datos.almacenOrigenId !== datos.almacenDestinoId, {
-  message: 'El origen y destino deben ser diferentes',
-  path: ['almacenDestinoId'],
+}).refine((datos) => datos.almacenOrigenId !== datos.almacenDestinoId
+  || datos.ubicacionOrigenId !== datos.ubicacionDestinoId, {
+  message: 'Selecciona una ubicación de destino diferente a la de origen',
+  path: ['ubicacionDestinoId'],
 })
 
 export const esquemaReclasificacion = z.object({
-  productoId: z.string().uuid(),
-  almacenId: z.string().uuid(),
-  ubicacionId: z.string().uuid(),
+  productoId: z.string().uuid('Selecciona un producto'),
+  almacenId: z.string().uuid('Selecciona un almacén'),
+  ubicacionId: z.string().uuid('Selecciona una posición de origen'),
   estadoOrigen: z.enum(['available', 'quarantine', 'damaged']),
   estadoDestino: z.enum(['available', 'quarantine', 'damaged']),
   cantidad: cantidadPositiva,
+  unidadEntradaId: z.string().uuid('Selecciona una unidad válida').or(z.literal('')).optional(),
+  factorConversionEsperado: z.number().finite().positive().optional(),
   lote: z.string().trim().max(60),
   fechaVencimiento: z.string(),
-  motivo: z.string().trim().min(3).max(180),
+  motivo: z.string().trim().min(3, 'Describe el motivo con al menos 3 caracteres').max(180, 'El motivo admite hasta 180 caracteres'),
 }).refine((datos) => datos.estadoOrigen !== datos.estadoDestino, {
   message: 'Selecciona un estado diferente',
   path: ['estadoDestino'],

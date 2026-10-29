@@ -1,13 +1,17 @@
 import { useState } from 'react'
+import type { MouseEvent } from 'react'
+import { AccionesFilaInventario } from './AccionesFilaInventario'
 import { EstadoListadoInventario } from './EstadoListadoInventario'
 import { PaginacionInventario } from './PaginacionInventario'
 import { useDebounceInventario } from '../estado/useDebounceInventario'
 import { useListadosAlmacen } from '../estado/useListadosAlmacen'
 import type { TamanioPaginaInventario } from '../modelo/paginacionInventario'
+import { cantidadFisicaNoReservada } from '../modelo/inventario'
 
 import {
   etiquetasEstadoStock,
   type Almacen,
+  type SaldoInventario,
   type UbicacionAlmacen,
 } from '../modelo/almacen'
 const formatoCantidad = new Intl.NumberFormat('es-PE', {
@@ -18,12 +22,29 @@ const formatoMoneda = new Intl.NumberFormat('es-PE', {
   currency: 'PEN',
 })
 
+function posicionActiva(
+  saldo: SaldoInventario,
+  almacenes: readonly Almacen[],
+  ubicaciones: readonly UbicacionAlmacen[],
+) {
+  return almacenes.some((almacen) => almacen.id === saldo.almacenId && almacen.activo)
+    && ubicaciones.some((ubicacion) => ubicacion.id === saldo.ubicacionId && ubicacion.activa)
+}
+
 export function PanelExistenciasLotes({
   almacenes,
   ubicaciones,
+  puedeGestionar,
+  accionesDeshabilitadas,
+  onAjustar,
+  onMovimiento,
 }: {
   almacenes: Almacen[]
   ubicaciones: UbicacionAlmacen[]
+  puedeGestionar: boolean
+  accionesDeshabilitadas: boolean
+  onAjustar: (fila: SaldoInventario, evento: MouseEvent<HTMLButtonElement>) => void
+  onMovimiento: (fila: SaldoInventario, evento: MouseEvent<HTMLButtonElement>) => void
 }) {
   const [stockConsulta, setStockConsulta] = useState({
     pagina: 1,
@@ -210,8 +231,51 @@ export function PanelExistenciasLotes({
         alReintentar={() => void listados.stock.refetch()}
       >
         <div className={listados.stock.isFetching ? 'opacity-70' : undefined}>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[66rem] text-left text-sm">
+          <div className="divide-y lg:hidden">
+            {saldos.map((saldo) => {
+              const esPosicionActiva = posicionActiva(saldo, almacenes, ubicaciones)
+              const sinDisponibleParaAjuste = cantidadFisicaNoReservada(saldo.cantidad, saldo.cantidadReservada ?? 0) <= 0
+              return (
+                <article key={`${saldo.productoId}-${saldo.almacenId}-${saldo.ubicacionId}-${saldo.estado}-${saldo.lote}-${saldo.fechaVencimiento}`} className="space-y-4 px-5 py-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <span className="font-mono text-xs text-primary">{saldo.productoCodigo}</span>
+                      <h3 className="mt-1 font-medium">{saldo.productoDescripcion}</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {saldo.almacenNombre} · {saldo.ubicacionCodigo} · {saldo.ubicacionNombre}
+                      </p>
+                    </div>
+                    <span className="status-label" data-tone={saldo.estado === 'available' ? 'listo' : 'revision'}>
+                      {etiquetasEstadoStock[saldo.estado]}
+                    </span>
+                  </div>
+                  <dl className="grid grid-cols-2 gap-3 border-t pt-4 text-sm">
+                    <div><dt className="text-xs text-muted-foreground">Lote</dt><dd className="mt-1">{saldo.lote || 'Sin lote'}</dd></div>
+                    <div><dt className="text-xs text-muted-foreground">Vencimiento</dt><dd className="mt-1">{saldo.fechaVencimiento || 'Sin vencimiento'}</dd></div>
+                    <div><dt className="text-xs text-muted-foreground">Físico</dt><dd className="mt-1 font-mono tabular-nums">{formatoCantidad.format(saldo.cantidad)} {saldo.unidadMedida}</dd></div>
+                    <div><dt className="text-xs text-muted-foreground">Reservado</dt><dd className="mt-1 font-mono tabular-nums">{formatoCantidad.format(saldo.cantidadReservada ?? 0)}</dd></div>
+                    <div><dt className="text-xs text-muted-foreground">Disponible para asignar</dt><dd className="mt-1 font-mono font-semibold tabular-nums">{formatoCantidad.format(saldo.cantidadAsignable ?? 0)}</dd></div>
+                    <div><dt className="text-xs text-muted-foreground">Valor</dt><dd className="mt-1 font-mono tabular-nums">{formatoMoneda.format(saldo.valorInventario)}</dd></div>
+                  </dl>
+                  {puedeGestionar ? (
+                    <div className="border-t pt-4">
+                      <AccionesFilaInventario
+                        producto={saldo.productoDescripcion}
+                        ajusteDeshabilitado={accionesDeshabilitadas || !esPosicionActiva || sinDisponibleParaAjuste}
+                        ajusteSinDisponible={!accionesDeshabilitadas && esPosicionActiva && sinDisponibleParaAjuste}
+                        movimientoDeshabilitado={accionesDeshabilitadas || !esPosicionActiva}
+                        onAjustar={(evento) => onAjustar(saldo, evento)}
+                        onMovimiento={(evento) => onMovimiento(saldo, evento)}
+                      />
+                      {!esPosicionActiva ? <p className="mt-2 text-xs text-muted-foreground">El almacén o la ubicación ya no están activos para nuevas operaciones.</p> : null}
+                    </div>
+                  ) : null}
+                </article>
+              )
+            })}
+          </div>
+          <div className="hidden overflow-x-auto lg:block">
+            <table className="w-full min-w-[78rem] text-left text-sm">
               <thead>
                 <tr className="border-b bg-muted/45 font-mono text-[0.68rem] uppercase tracking-[0.06em] text-muted-foreground">
                   <th className="px-5 py-3">Producto</th>
@@ -224,10 +288,14 @@ export function PanelExistenciasLotes({
                     Disponible para asignar
                   </th>
                   <th className="px-5 py-3 text-end">Valor</th>
+                  {puedeGestionar ? <th scope="col" className="px-5 py-3 text-center">Acciones</th> : null}
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {saldos.map((saldo) => (
+                {saldos.map((saldo) => {
+                  const esPosicionActiva = posicionActiva(saldo, almacenes, ubicaciones)
+                  const sinDisponibleParaAjuste = cantidadFisicaNoReservada(saldo.cantidad, saldo.cantidadReservada ?? 0) <= 0
+                  return (
                   <tr
                     key={`${saldo.productoId}-${saldo.almacenId}-${saldo.ubicacionId}-${saldo.estado}-${saldo.lote}-${saldo.fechaVencimiento}`}
                   >
@@ -271,8 +339,22 @@ export function PanelExistenciasLotes({
                     <td className="px-5 py-4 text-end font-mono">
                       {formatoMoneda.format(saldo.valorInventario)}
                     </td>
+                    {puedeGestionar ? (
+                      <td className="px-5 py-4">
+                        <AccionesFilaInventario
+                          producto={saldo.productoDescripcion}
+                          centrado
+                          ajusteDeshabilitado={accionesDeshabilitadas || !esPosicionActiva || sinDisponibleParaAjuste}
+                          ajusteSinDisponible={!accionesDeshabilitadas && esPosicionActiva && sinDisponibleParaAjuste}
+                          movimientoDeshabilitado={accionesDeshabilitadas || !esPosicionActiva}
+                          onAjustar={(evento) => onAjustar(saldo, evento)}
+                          onMovimiento={(evento) => onMovimiento(saldo, evento)}
+                        />
+                      </td>
+                    ) : null}
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

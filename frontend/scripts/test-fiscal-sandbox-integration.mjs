@@ -30,7 +30,8 @@ let releaseDelayedResponse = () => {}
 let phase = 'prepare'
 try {
   await environment.prepare()
-  console.log(JSON.stringify({ project: environment.project, migrations: 151,
+  console.log(JSON.stringify({ project: environment.project,
+    migrations: Object.keys(environment.sourceManifest).length,
     api, postgres: ports.db, identity: 'verified-exclusive-new-volume' }))
   phase = 'sql-minimum-privilege-regression'
   const privilegeTest = path.join(root,
@@ -451,7 +452,7 @@ try {
   await context.close()
   evidence.project = environment.project
   evidence.ports = ports
-  evidence.migrations = 151
+  evidence.migrations = Object.keys(environment.sourceManifest).length
   evidence.documentIds = { prepared: fixture.prepared, frozen: fixture.frozen, other: fixture.other }
 } catch (error) {
   // Never print raw Auth/CLI payloads, assertions containing credentials or JWTs.

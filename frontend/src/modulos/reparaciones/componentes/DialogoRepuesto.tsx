@@ -19,7 +19,7 @@ import {
   type ParteReparacion,
   type Reparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
-import type { ReservaPartePendiente } from '@/modulos/reparaciones/estado/creacionPendiente'
+import type { ConsumoPartePendiente, ReservaPartePendiente } from '@/modulos/reparaciones/estado/creacionPendiente'
 import { SelectorCatalogoReparacion } from './SelectorCatalogoReparacion'
 
 interface DialogoReservaParteProps {
@@ -209,12 +209,8 @@ export function DialogoReservaParte({
             <div>
               <label htmlFor="reserva-cantidad" className="field-label">Cantidad solicitada *</label>
               <input id="reserva-cantidad" type="number" min="0.001" max={candidatoFefo?.cantidadAsignable} step="0.001" className="field-control" aria-invalid={Boolean(errors.cantidadSolicitada)} {...register('cantidadSolicitada')} />
+              <p className="field-help">{producto?.unidadMedida ? `Cantidad en ${producto.unidadMedida} · unidad base del producto.` : 'Selecciona un producto para conocer su unidad base.'}</p>
               {errors.cantidadSolicitada ? <p className="field-error">{errors.cantidadSolicitada.message}</p> : null}
-            </div>
-            <div>
-              <label htmlFor="reserva-estado-stock" className="field-label">Condición del stock *</label>
-              <input type="hidden" {...register('estadoStock')} />
-              <p id="reserva-estado-stock" className="field-control flex items-center bg-muted/35">Disponible · FEFO canónico</p>
             </div>
             <div className="sm:col-span-2">
               <Controller name="almacenId" control={control} render={({ field }) =>
@@ -228,34 +224,30 @@ export function DialogoReservaParte({
                   error={errors.almacenId?.message} textoVacio="Selecciona un almacén" />
               } />
             </div>
-            <div>
-              <label htmlFor="reserva-ubicacion-fefo" className="field-label">Ubicación FEFO *</label>
-              <input type="hidden" {...register('ubicacionId')} />
-              <input id="reserva-ubicacion-fefo" className="field-control" value={candidatoFefo ? `${candidatoFefo.ubicacionCodigo} · ${candidatoFefo.ubicacionNombre}` : ''} placeholder={cargandoFefo ? 'Consultando...' : 'Sin stock asignable'} readOnly />
+            <input type="hidden" {...register('estadoStock')} />
+            <input type="hidden" {...register('ubicacionId')} />
+            <input type="hidden" {...register('lote')} />
+            <input type="hidden" {...register('fechaVencimiento')} />
+            <section aria-label="Stock seleccionado" className="sm:col-span-2 border bg-muted/35 px-4 py-3 text-sm leading-6">
+              <p className="font-medium">Lote seleccionado automáticamente</p>
+              {candidatoFefo ? <>
+                <p className="text-muted-foreground">{candidatoFefo.ubicacionCodigo} · {candidatoFefo.ubicacionNombre} · Disponible</p>
+                <p className="text-muted-foreground">{candidatoFefo.lote || 'Sin lote'} · {candidatoFefo.fechaVencimiento ? `Vence ${candidatoFefo.fechaVencimiento}` : 'Sin vencimiento'}</p>
+                <p className="mt-1">{candidatoFefo.cantidadAsignable} {producto?.unidadMedida || '(unidad base pendiente de consultar)'} disponibles en esta posición.</p>
+                <p className="field-help">Se utiliza primero el lote disponible que vence más pronto.</p>
+              </> : <p role={errorFefo ? 'alert' : 'status'} className="text-muted-foreground">{cargandoFefo ? 'Consultando existencias disponibles…' : errorFefo || 'No hay stock disponible para reservar en este almacén.'}</p>}
               {errors.ubicacionId ? <p className="field-error">{errors.ubicacionId.message}</p> : null}
-            </div>
-            <div>
-              <label htmlFor="reserva-lote" className="field-label">Lote {producto?.controlLote ? '*' : '(opcional)'}</label>
-              <input id="reserva-lote" className="field-control" autoComplete="off" placeholder={producto?.controlLote ? 'Obligatorio' : 'Sin lote'} aria-invalid={Boolean(errors.lote)} readOnly {...register('lote')} />
               {errors.lote ? <p className="field-error">{errors.lote.message}</p> : null}
-            </div>
-            <div>
-              <label htmlFor="reserva-vencimiento" className="field-label">Vencimiento {producto?.controlVencimiento ? '*' : '(opcional)'}</label>
-              <input id="reserva-vencimiento" type="date" className="field-control" min={new Date().toISOString().slice(0, 10)} aria-invalid={Boolean(errors.fechaVencimiento)} readOnly {...register('fechaVencimiento')} />
               {errors.fechaVencimiento ? <p className="field-error">{errors.fechaVencimiento.message}</p> : null}
-            </div>
-            <div className="sm:col-span-2">
+            </section>
+            <details className="sm:col-span-2" open={errors.notas ? true : undefined}>
+              <summary className="cursor-pointer text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Agregar una nota</summary>
+              <div className="mt-3">
               <label htmlFor="reserva-notas" className="field-label">Notas</label>
               <textarea id="reserva-notas" rows={3} className="field-control resize-y py-2" placeholder="Referencia interna de la reserva" aria-invalid={Boolean(errors.notas)} {...register('notas')} />
               {errors.notas ? <p className="field-error">{errors.notas.message}</p> : null}
-            </div>
-            <p className="sm:col-span-2 border bg-muted/35 px-4 py-3 text-sm leading-6 text-muted-foreground">
-              {candidatoFefo
-                ? `FEFO seleccionó ${candidatoFefo.lote || 'stock sin lote'} · vence ${candidatoFefo.fechaVencimiento || 'sin fecha'} · ${candidatoFefo.cantidadAsignable} asignables.`
-                : cargandoFefo
-                  ? 'Consultando el primer lote asignable según FEFO...'
-                  : errorFefo || 'No existe stock sanitario asignable en este almacén.'}
-            </p>
+              </div>
+            </details>
           </form>
           {operacionPendiente ? (
             <p role="status" className="border-t bg-primary/5 px-5 py-3 text-sm text-primary sm:px-7">
@@ -276,6 +268,8 @@ export function DialogoReservaParte({
 interface DialogoConsumoParteProps {
   abierto: boolean
   parte: ParteReparacion
+  unidadMedida: string
+  operacionPendiente?: ConsumoPartePendiente | null
   alCambiarApertura: (abierto: boolean) => void
   alGuardar: (datos: DatosConsumoParte, operationKey: string) => Promise<string | undefined>
 }
@@ -283,6 +277,8 @@ interface DialogoConsumoParteProps {
 export function DialogoConsumoParte({
   abierto,
   parte,
+  unidadMedida,
+  operacionPendiente,
   alCambiarApertura,
   alGuardar,
 }: DialogoConsumoParteProps) {
@@ -298,26 +294,30 @@ export function DialogoConsumoParte({
     resolver: zodResolver(esquemaDatosConsumoParte),
     defaultValues: { cantidad: String(saldo) },
   })
-  const operationKey = useRef<string | null>(null)
+  const operacion = useRef<{ datos: DatosConsumoParte; clave: string } | null>(null)
 
   useEffect(() => {
     if (abierto) {
-      operationKey.current = crypto.randomUUID()
-      reset({ cantidad: String(saldo) })
+      if (operacion.current) return
+      operacion.current = operacionPendiente
+        ? { datos: operacionPendiente.datos, clave: operacionPendiente.clave } : null
+      reset(operacionPendiente?.datos ?? { cantidad: String(saldo) })
+      setMensaje('')
     } else {
-      operationKey.current = null
+      operacion.current = null
     }
-  }, [abierto, parte.id, saldo, reset])
+  }, [abierto, parte.id, saldo, reset, operacionPendiente])
 
   const guardar = async (datos: DatosConsumoParte) => {
     const cantidad = Number(datos.cantidad)
-    if (cantidad > saldo) {
-      setError('cantidad', { message: `El saldo pendiente es ${saldo}` })
+    const esReintento = operacion.current?.datos.cantidad === datos.cantidad
+    if (!esReintento && cantidad > saldo) {
+      setError('cantidad', { message: `El saldo pendiente es ${saldo} ${unidadMedida}` })
       return
     }
     setMensaje('')
-    const claveOperacion = operationKey.current ?? (operationKey.current = crypto.randomUUID())
-    const error = await alGuardar(datos, claveOperacion)
+    if (!esReintento) operacion.current = { datos, clave: crypto.randomUUID() }
+    const error = await alGuardar(datos, operacion.current!.clave)
     if (error) {
       setMensaje(error)
       return
@@ -331,18 +331,19 @@ export function DialogoConsumoParte({
         <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-foreground/30" />
         <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-[70] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 border bg-background shadow-xl outline-none">
           <header className="flex items-start justify-between gap-4 border-b px-5 py-5">
-            <div><DialogPrimitive.Title className="text-xl font-semibold">Consumir repuesto</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">{parte.productoDescripcionSnapshot} · Saldo pendiente: {saldo}</DialogPrimitive.Description></div>
+            <div><DialogPrimitive.Title className="text-xl font-semibold">Consumir repuesto</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">{parte.productoDescripcionSnapshot} · Saldo pendiente: {saldo} {unidadMedida || '(unidad base pendiente de consultar)'}</DialogPrimitive.Description></div>
             <DialogPrimitive.Close asChild><button type="button" aria-label="Cerrar consumo" className="grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X aria-hidden="true" className="size-5" /></button></DialogPrimitive.Close>
           </header>
           <form id="formulario-consumo-parte" className="px-5 py-6" onSubmit={handleSubmit(guardar)}>
             <label htmlFor="consumo-cantidad" className="field-label">Cantidad a consumir *</label>
-            <input id="consumo-cantidad" type="number" min="0.001" max={saldo} step="0.001" className="field-control" aria-invalid={Boolean(errors.cantidad)} {...register('cantidad')} />
-            {errors.cantidad ? <p className="field-error">{errors.cantidad.message}</p> : <p className="field-help">Cada consumo crea un movimiento de salida idempotente.</p>}
+            <input id="consumo-cantidad" type="number" min="0.001" max={operacionPendiente ? undefined : saldo} step="0.001" className="field-control" readOnly={Boolean(operacionPendiente)} aria-invalid={Boolean(errors.cantidad)} {...register('cantidad')} />
+            {errors.cantidad ? <p className="field-error">{errors.cantidad.message}</p> : <p className="field-help">Cantidad en {unidadMedida || 'la unidad base del producto'}. Se descontará del inventario y quedará registrada en el Kardex.</p>}
+            {operacionPendiente ? <p role="status" className="mt-3 text-sm text-muted-foreground">Hay un consumo pendiente de confirmar. Reinténtalo para consultar su resultado sin duplicarlo.</p> : null}
           </form>
           {mensaje ? <p role="alert" className="border-t bg-destructive/10 px-5 py-3 text-sm text-destructive">{mensaje}</p> : null}
           <footer className="flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end">
             <DialogPrimitive.Close asChild><Button type="button" variant="outline">Cancelar</Button></DialogPrimitive.Close>
-            <Button type="submit" form="formulario-consumo-parte" disabled={isSubmitting || saldo <= 0}>Confirmar consumo</Button>
+            <Button type="submit" form="formulario-consumo-parte" disabled={isSubmitting || (!operacionPendiente && saldo <= 0) || !unidadMedida}>{operacionPendiente ? 'Reintentar consumo' : 'Confirmar consumo'}</Button>
           </footer>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

@@ -65,11 +65,12 @@ jobs:
         run: node --test scripts/lib/check-fiscal-integration-environment.mjs
         working-directory: frontend
 
-      - name: Ejecutar 151 migraciones y consulta fiscal real con Playwright
+      - name: Ejecutar migraciones actuales y consulta fiscal real con Playwright
         run: node scripts/test-fiscal-sandbox-integration.mjs
         working-directory: frontend
 
   sunat-transactional:
+    # Keep this exact check context while main's branch protection requires it.
     name: SUNAT 149 y 150 — compilación y rollback real
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -97,7 +98,7 @@ jobs:
       - name: Validar contrato del runner sin conexiones
         run: python -B -m unittest discover -s backend/scripts -p test_sunat_phase2a_runner.py -v
 
-      - name: Iniciar proyecto efímero con solo 148 migraciones históricas
+      - name: Iniciar proyecto efímero con el historial previo a las migraciones fiscales
         run: python -B backend/scripts/sunat_phase2a_ci.py prepare
 
       - name: Compilar candidatas y demostrar rollback integral
@@ -179,11 +180,13 @@ jobs:
         working-directory: frontend
 
       - name: Conservar diagnóstico de fallos E2E
-        if: failure()
+        # Debe correr también tras un timeout/cancelación para conservar trazas Playwright.
+        if: always() && (failure() || cancelled())
         uses: actions/upload-artifact@v4
         with:
           name: e2e-test-results
           path: frontend/test-results/
+          if-no-files-found: ignore
           retention-days: 7
 
       - name: Detener Supabase local

@@ -6,12 +6,13 @@ interface Props {
   etiqueta: string
   vista: string
   opciones: readonly { valor: string; etiqueta: string }[]
+  className?: string
 }
 
-export function VistasInventario({ etiqueta, vista, opciones }: Props) {
+export function VistasInventario({ etiqueta, vista, opciones, className }: Props) {
   const [parametros] = useSearchParams()
   return (
-    <nav aria-label={etiqueta} className="flex flex-wrap gap-x-4 border-b">
+    <nav aria-label={etiqueta} className={cn('flex flex-wrap gap-x-4 border-b', className)}>
       {opciones.map((opcion) => {
         const siguiente = new URLSearchParams(parametros)
         siguiente.set('vista', opcion.valor)

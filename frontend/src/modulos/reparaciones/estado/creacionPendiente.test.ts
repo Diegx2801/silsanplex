@@ -9,6 +9,8 @@ import {
   leerCreacionPendiente,
   leerReservaPartePendiente,
   reservarParteConReintentoPersistente,
+  consumirParteConReintentoPersistente,
+  leerConsumoPartePendiente,
 } from './creacionPendiente'
 
 const datos = { ...datosReparacionInicial(), clienteId: crypto.randomUUID(), productoId: crypto.randomUUID(), problema: 'No enciende' }
@@ -44,6 +46,42 @@ const reserva = {
 }
 beforeEach(() => sessionStorage.clear())
 afterEach(() => vi.restoreAllMocks())
+
+describe('consumo pendiente de repuestos', () => {
+  it('recupera creaciones del primer bloque sin alterar su intención al añadir los selectores nuevos', async () => {
+    const { tipoSolicitante: _tipo, areaSolicitante: _area, tipoEquipo: _equipo, descripcionEquipoExterno: _descripcion, ...anteriores } = datos
+    const clave = crypto.randomUUID()
+    const enviar = vi.fn().mockRejectedValueOnce(new Error('timeout')).mockResolvedValue(undefined)
+    await expect(crearConReintentoPersistente(ambito, anteriores, clave, enviar)).rejects.toThrow('timeout')
+    await crearConReintentoPersistente(ambito, datos, crypto.randomUUID(), enviar)
+    expect(enviar.mock.calls[1]).toEqual([anteriores, clave])
+    expect(leerCreacionPendiente(ambito)).toBeNull()
+  })
+  it('recupera cantidad, versión y clave tras cierre y respuesta ambigua', async () => {
+    const consumo = { datos: { cantidad: '2' }, expectedLockVersion: 5 }
+    const clave = crypto.randomUUID()
+    const enviar = vi.fn().mockRejectedValueOnce(new Error('timeout')).mockResolvedValue(undefined)
+    await expect(consumirParteConReintentoPersistente(ambito, consumo, clave, enviar)).rejects.toThrow('timeout')
+    expect(leerConsumoPartePendiente(ambito)).toEqual({ ...consumo, clave })
+    await consumirParteConReintentoPersistente(ambito, { ...consumo, expectedLockVersion: 8 }, crypto.randomUUID(), enviar)
+    expect(enviar.mock.calls[1]).toEqual([consumo, clave])
+    expect(leerConsumoPartePendiente(ambito)).toBeNull()
+  })
+  it('no cambia la cantidad de un intento incierto ni mezcla ámbitos', async () => {
+    const consumo = { datos: { cantidad: '2' }, expectedLockVersion: 5 }
+    const enviar = vi.fn().mockRejectedValue(new Error('timeout'))
+    await expect(consumirParteConReintentoPersistente(ambito, consumo, crypto.randomUUID(), enviar)).rejects.toThrow()
+    await expect(consumirParteConReintentoPersistente(ambito, { ...consumo, datos: { cantidad: '3' } }, crypto.randomUUID(), enviar)).rejects.toThrow('pendiente')
+    expect(enviar).toHaveBeenCalledTimes(1)
+    expect(leerConsumoPartePendiente('otra-organizacion:otro-usuario')).toBeNull()
+  })
+  it('no envía si no puede conservar la intención en almacenamiento', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('almacenamiento no disponible') })
+    const enviar = vi.fn()
+    await expect(consumirParteConReintentoPersistente(ambito, { datos: { cantidad: '1' }, expectedLockVersion: 1 }, crypto.randomUUID(), enviar)).rejects.toThrow('almacenamiento')
+    expect(enviar).not.toHaveBeenCalled()
+  })
+})
 
 describe('creación pendiente', () => {
   it('recupera datos y clave tras respuesta ambigua y permite otra creación solo después de confirmar', async () => {

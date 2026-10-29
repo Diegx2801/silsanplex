@@ -21,7 +21,6 @@ type InventoryE2eFixture = {
   sourceWarehouseName: string
   destinationWarehouseCode: string
   destinationWarehouseName: string
-  transferReference: string
 }
 
 config({ path: '.env.local', quiet: true })
@@ -175,6 +174,19 @@ function futureDate(monthsAhead: number) {
   return date.toISOString().slice(0, 10)
 }
 
+function fechaActualPeru(reloj = new Date()) {
+  const partes = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Lima',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(reloj)
+  const obtener = (tipo: Intl.DateTimeFormatPartTypes) =>
+    partes.find((parte) => parte.type === tipo)?.value ?? ''
+
+  return `${obtener('year')}-${obtener('month')}-${obtener('day')}`
+}
+
 async function createInventoryFixture(
   admin: SupabaseClient,
   organizationId: string,
@@ -256,7 +268,7 @@ async function createInventoryFixture(
     throw new Error('Ubicaciones generales E2E incompletas.')
   }
 
-  const operationDate = new Date().toISOString().slice(0, 10)
+  const operationDate = fechaActualPeru()
   const movementResults = await Promise.all([
     { lot: 'LOTE-E2E-A', quantity: 3, unit_cost: 10, expiration_date: futureDate(12) },
     { lot: 'LOTE-E2E-B', quantity: 6, unit_cost: 20, expiration_date: futureDate(13) },
@@ -288,7 +300,6 @@ async function createInventoryFixture(
     sourceWarehouseName,
     destinationWarehouseCode,
     destinationWarehouseName,
-    transferReference: `TR-${suffix}`,
   }
 }
 

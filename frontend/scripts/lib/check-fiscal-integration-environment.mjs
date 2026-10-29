@@ -10,6 +10,21 @@ import {
 } from './fiscal-integration-environment.mjs'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
+test('manifest incluye migraciones posteriores a las candidatas fiscales', () => {
+  const manifest = new FiscalEnvironment(repositoryRoot).manifest()
+  const names = Object.keys(manifest)
+  const candidates = [
+    '20261023061225_electronic_fiscal_sandbox_persistence.sql',
+    '20261023135019_electronic_fiscal_helper_sql_lint.sql',
+    '20261025190353_restrict_electronic_document_direct_select.sql',
+  ]
+  const firstCandidate = names.indexOf(candidates[0])
+  assert.ok(firstCandidate >= 0)
+  assert.deepEqual(names.slice(firstCandidate, firstCandidate + candidates.length), candidates)
+  assert.ok(firstCandidate + candidates.length < names.length)
+  assert.equal(manifest[candidates[2]],
+    '7613198f6c8152d1e4838c057c308ebb35413ef853087fa2b831358f43155aff')
+})
 
 test('puertos exclusivos sin destinos persistentes', () => {
   assert.deepEqual(Object.values(ports), [59220, 59221, 59222, 5197])
@@ -75,16 +90,6 @@ test('cada instancia deriva una identidad nueva, sin URL configurable', () => {
   assert.ok(!a.config().includes('58121'))
   assert.ok(a.config().includes('enable_signup = false'))
   assert.ok(a.config().includes('sql_paths = []'))
-})
-test('el manifiesto fiscal fija las 151 migraciones y las identidades 149/150/151', () => {
-  const manifest = new FiscalEnvironment(repositoryRoot).manifest()
-  const names = Object.keys(manifest)
-  assert.equal(names.length, 151)
-  assert.deepEqual(names.slice(-3), [
-    '20261023061225_electronic_fiscal_sandbox_persistence.sql',
-    '20261023135019_electronic_fiscal_helper_sql_lint.sql',
-    '20261025190353_restrict_electronic_document_direct_select.sql',
-  ])
 })
 test('rechaza identidad persistente antes de inspeccionar o limpiar archivos', () => {
   const e = new FiscalEnvironment('/unused')

@@ -80,9 +80,10 @@ function CampoArea({ etiqueta, error, ayuda, id, ...props }: CampoAreaProps) {
         id={controlId}
         className="field-control min-h-24 resize-y py-2"
         aria-invalid={Boolean(error)}
+        aria-describedby={error || ayuda ? `${controlId}-ayuda` : undefined}
         {...props}
       />
-      {error ? <p className="field-error">{error}</p> : ayuda ? <p className="field-help">{ayuda}</p> : null}
+      {error ? <p id={`${controlId}-ayuda`} className="field-error">{error}</p> : ayuda ? <p id={`${controlId}-ayuda`} className="field-help">{ayuda}</p> : null}
     </div>
   )
 }
@@ -154,6 +155,7 @@ export function DialogoReparacion({
   alRestaurarFoco,
 }: DialogoReparacionProps) {
   const [mensaje, setMensaje] = useState('')
+  const [datosAdicionalesAbiertos, setDatosAdicionalesAbiertos] = useState(false)
   const [productoSeleccionadoExplicitamente, setProductoSeleccionadoExplicitamente] = useState(false)
   const [productoRemoto, setProductoRemoto] = useState<OpcionProductoReparacion | null>(null)
   const operacionCreacion = useRef<{ firma: string; clave: string } | null>(null)
@@ -170,7 +172,11 @@ export function DialogoReparacion({
     defaultValues: reparacion ? datosReparacionInicial(reparacion) : datosCreacionPendiente ?? datosReparacionInicial(null),
   })
   const productoId = watch('productoId')
+  const tipoSolicitante = watch('tipoSolicitante') ?? 'customer'
+  const tipoEquipo = watch('tipoEquipo') ?? 'catalog'
   const numeroSerie = watch('numeroSerie')
+  const esGarantia = watch('esGarantia')
+  const referenciaGarantia = watch('referenciaGarantia')
   const productosDisponibles = productoActual && !productos.some((item) => item.id === productoActual.id)
     ? [productoActual, ...productos] : productos
   const producto = productoRemoto?.id === productoId
@@ -179,15 +185,15 @@ export function DialogoReparacion({
   const productoEsReferenciaOriginal = Boolean(
     reparacion && productoId === reparacion.productoId,
   )
-  const productoEsConocido = productoEsReferenciaOriginal || Boolean(producto)
+  const productoEsConocido = tipoEquipo === 'external' || productoEsReferenciaOriginal || Boolean(producto)
   const controlaSerie = productoEsReferenciaOriginal
     ? reparacion?.serialControlSnapshot ?? false
     : producto?.serialControl ?? false
-  const clienteHistorico: OpcionClienteReparacion | null = reparacion
+  const clienteHistorico: OpcionClienteReparacion | null = reparacion?.clienteId
     ? { id: reparacion.clienteId, nombre: reparacion.clienteNombreSnapshot,
       nombreComercial: '', documento: reparacion.clienteDocumentoSnapshot, activo: false }
     : null
-  const productoHistorico: OpcionProductoReparacion | null = reparacion
+  const productoHistorico: OpcionProductoReparacion | null = reparacion?.productoId
     ? { id: reparacion.productoId, codigo: reparacion.productoCodigoSnapshot,
       descripcion: reparacion.productoDescripcionSnapshot, unidadMedida: '',
       serialControl: reparacion.serialControlSnapshot, controlLote: false,
@@ -197,6 +203,7 @@ export function DialogoReparacion({
   useEffect(() => {
     if (
       identidadEditable
+      && tipoEquipo !== 'external'
       && productoSeleccionadoExplicitamente
       && productoEsConocido
       && !controlaSerie
@@ -211,6 +218,7 @@ export function DialogoReparacion({
     productoEsConocido,
     productoSeleccionadoExplicitamente,
     setValue,
+    tipoEquipo,
   ])
 
   useEffect(() => {
@@ -219,12 +227,19 @@ export function DialogoReparacion({
     setProductoSeleccionadoExplicitamente(false)
   }, [abierto, reparacion?.id])
 
+  useEffect(() => {
+    if (errors.prioridad || errors.fechaEstimadaEntrega || errors.notas
+      || errors.referenciaCliente || errors.referenciaGarantia || errors.esGarantia) {
+      setDatosAdicionalesAbiertos(true)
+    }
+  }, [errors])
+
   const guardar = async (datos: DatosReparacion) => {
     if (identidadEditable && !productoEsConocido) {
       setError('productoId', { message: 'Selecciona un producto activo' })
       return
     }
-    const errorSerie = identidadEditable
+    const errorSerie = identidadEditable && tipoEquipo !== 'external'
       ? validarNumeroSerie(datos.numeroSerie, controlaSerie)
       : undefined
     if (errorSerie) {
@@ -236,7 +251,7 @@ export function DialogoReparacion({
     const datosNormalizados = {
       ...datos,
       numeroSerie:
-        identidadEditable && productoSeleccionadoExplicitamente && !controlaSerie
+        identidadEditable && tipoEquipo !== 'external' && productoSeleccionadoExplicitamente && !controlaSerie
           ? ''
           : datos.numeroSerie,
     }
@@ -299,6 +314,7 @@ export function DialogoReparacion({
             className="min-h-0 flex-1 overflow-y-auto"
             onSubmit={handleSubmit(guardar)}
           >
+            <input type="hidden" {...register('documentoVentaId')} />
             <section aria-labelledby="reparacion-identificacion" className="px-5 py-6 sm:px-7">
               <div className="mb-5 border-b pb-3">
                 <h2 id="reparacion-identificacion" className="font-semibold">Identificación del servicio</h2>
@@ -306,21 +322,25 @@ export function DialogoReparacion({
                   {identidadEditable
                     ? reparacion
                       ? 'Puedes conservar las referencias de la orden; cualquier reemplazo debe estar activo.'
-                      : 'Cliente y producto deben estar activos en la organización.'
+                      : 'Elige quién solicita la atención y cómo identificar el equipo. No se creará stock del equipo recibido.'
                     : 'Información conservada de la recepción de la orden.'}
                 </p>
               </div>
               {!identidadEditable && reparacion ? (
                 <>
                   <p className="mb-5 border border-primary/25 bg-primary/5 px-4 py-3 text-sm leading-6 text-muted-foreground sm:col-span-2">
-                    El cliente, el producto y la serie ya no pueden modificarse porque la atención tiene historial operativo.
+                    El solicitante, el equipo y la serie ya no pueden modificarse porque la atención tiene historial o evidencia registrada.
                   </p>
                   <input type="hidden" {...register('clienteId')} />
                   <input type="hidden" {...register('productoId')} />
                   <input type="hidden" {...register('numeroSerie')} />
+                  <input type="hidden" {...register('tipoSolicitante')} />
+                  <input type="hidden" {...register('areaSolicitante')} />
+                  <input type="hidden" {...register('tipoEquipo')} />
+                  <input type="hidden" {...register('descripcionEquipoExterno')} />
                   <dl className="grid gap-4 sm:grid-cols-2">
                     <div className="border bg-muted/20 px-4 py-3">
-                      <dt className="field-label">Cliente</dt>
+                      <dt className="field-label">{tipoSolicitante === 'internal' ? 'Área solicitante' : 'Cliente'}</dt>
                       <dd className="text-sm font-medium">{reparacion.clienteNombreSnapshot}</dd>
                       <dd className="mt-1 text-xs text-muted-foreground">{reparacion.clienteDocumentoSnapshot}</dd>
                     </div>
@@ -337,7 +357,13 @@ export function DialogoReparacion({
                 </>
               ) : (
                 <div className="grid gap-5 sm:grid-cols-2">
-                <Controller name="clienteId" control={control} render={({ field }) =>
+                <div>
+                  <label htmlFor="reparacion-solicitante-tipo" className="field-label">Solicitante *</label>
+                  <select id="reparacion-solicitante-tipo" className="field-control" {...register('tipoSolicitante')}>
+                    <option value="customer">Cliente</option><option value="internal">Área interna de SILSAN</option>
+                  </select>
+                </div>
+                {tipoSolicitante === 'internal' ? <CampoTexto etiqueta="Área solicitante *" placeholder="Ej. Almacén o Administración" error={errors.areaSolicitante?.message} {...register('areaSolicitante')} /> : <Controller name="clienteId" control={control} render={({ field }) =>
                   <SelectorCatalogoReparacion id="reparacion-cliente" etiqueta="Cliente *"
                     etiquetaBusqueda="Buscar cliente" valor={field.value}
                     opcionesIniciales={clientes} totalInicial={totalClientes}
@@ -346,8 +372,14 @@ export function DialogoReparacion({
                     representar={(cliente) => `${cliente.nombre} · ${cliente.documento}${cliente.activo === false ? ' (referencia histórica)' : ''}`}
                     alCambiar={field.onChange} error={errors.clienteId?.message}
                     deshabilitado={cargandoOpciones} textoVacio="Selecciona un cliente" />
-                } />
-                <Controller name="productoId" control={control} render={({ field }) =>
+                } />}
+                <div>
+                  <label htmlFor="reparacion-equipo-tipo" className="field-label">Identificación del equipo *</label>
+                  <select id="reparacion-equipo-tipo" className="field-control" {...register('tipoEquipo')}>
+                    <option value="catalog">Producto del catálogo</option><option value="external">Equipo fuera del catálogo</option>
+                  </select>
+                </div>
+                {tipoEquipo === 'external' ? <CampoTexto etiqueta="Equipo recibido *" placeholder="Marca, modelo e identificación" error={errors.descripcionEquipoExterno?.message} {...register('descripcionEquipoExterno')} /> : <Controller name="productoId" control={control} render={({ field }) =>
                   <SelectorCatalogoReparacion id="reparacion-producto" etiqueta="Producto o equipo *"
                     etiquetaBusqueda="Buscar producto o equipo" valor={field.value}
                     opcionesIniciales={productos} totalInicial={totalProductos}
@@ -361,14 +393,14 @@ export function DialogoReparacion({
                     }}
                     error={errors.productoId?.message} deshabilitado={cargandoOpciones}
                     textoVacio="Selecciona un producto" />
-                } />
-                {controlaSerie || (productoEsReferenciaOriginal && Boolean(numeroSerie)) ? (
+                } />}
+                {tipoEquipo === 'external' || controlaSerie || (productoEsReferenciaOriginal && Boolean(numeroSerie)) ? (
                   <CampoTexto
-                    etiqueta={`Número de serie${controlaSerie ? ' *' : ''}`}
+                    etiqueta={`Número de serie${tipoEquipo !== 'external' && controlaSerie ? ' *' : ' (si existe)'}`}
                     autoComplete="off"
                     placeholder="Serie del equipo recibido"
                     error={errors.numeroSerie?.message}
-                    ayuda={controlaSerie
+                    ayuda={tipoEquipo === 'external' ? 'Registra la serie impresa si el equipo dispone de ella.' : controlaSerie
                       ? 'La regla de serie conservada al recibir la orden exige este dato.'
                       : 'La serie histórica se conservará mientras mantengas el producto original.'}
                     {...register('numeroSerie')}
@@ -386,11 +418,31 @@ export function DialogoReparacion({
               )}
             </section>
 
-            <section aria-labelledby="reparacion-recepcion" className="border-t px-5 py-6 sm:px-7">
-              <div className="mb-5">
-                <h2 id="reparacion-recepcion" className="font-semibold">Recepción y prioridad</h2>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">La fecha de recepción la asigna el servidor; la fecha estimada sí puede ajustarse.</p>
-              </div>
+            <section aria-label="Problema reportado" className="border-t px-5 py-6 sm:px-7">
+              <CampoArea
+                etiqueta="Problema reportado *"
+                rows={4}
+                placeholder="Describe la falla, síntoma o motivo de ingreso"
+                error={errors.problema?.message}
+                {...register('problema')}
+              />
+              <p className="mt-3 text-sm text-muted-foreground">
+                {reparacion
+                  ? 'La fecha de recepción y el código se conservan. Puedes revisar los datos adicionales a continuación.'
+                  : 'El código y la fecha de recepción se asignan automáticamente. La prioridad inicial es Normal.'}
+              </p>
+            </section>
+
+            <details
+              className="border-t px-5 py-5 sm:px-7"
+              open={datosAdicionalesAbiertos}
+              onToggle={(evento) => setDatosAdicionalesAbiertos(evento.currentTarget.open)}
+            >
+              <summary className="cursor-pointer rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                Datos adicionales de recepción
+              </summary>
+              <p className="mt-2 text-sm text-muted-foreground">Accesorios, fecha estimada, prioridad y atención en garantía, cuando correspondan.</p>
+              <div className="mt-5">
               <div className="grid gap-5 sm:grid-cols-2">
                 <div>
                   <label htmlFor="reparacion-prioridad" className="field-label">Prioridad *</label>
@@ -407,28 +459,12 @@ export function DialogoReparacion({
                   {...register('fechaEstimadaEntrega')}
                 />
                 <CampoArea
-                  etiqueta="Problema reportado *"
-                  rows={5}
-                  placeholder="Describe la falla, síntoma o motivo de ingreso"
-                  error={errors.problema?.message}
-                  {...register('problema')}
-                />
-                <CampoArea
                   etiqueta="Notas de recepción"
-                  rows={5}
+                  rows={3}
                   placeholder="Accesorios recibidos, condición física u observaciones"
                   error={errors.notas?.message}
                   {...register('notas')}
                 />
-              </div>
-            </section>
-
-            <section aria-labelledby="reparacion-comercial" className="border-t px-5 py-6 sm:px-7">
-              <div className="mb-5">
-                <h2 id="reparacion-comercial" className="font-semibold">Referencias comerciales y garantía</h2>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">Estos datos quedan asociados a la orden para facilitar la comunicación con el cliente.</p>
-              </div>
-              <div className="grid gap-5 sm:grid-cols-2">
                 <CampoTexto
                   etiqueta="Referencia del cliente"
                   autoComplete="off"
@@ -436,31 +472,26 @@ export function DialogoReparacion({
                   error={errors.referenciaCliente?.message}
                   {...register('referenciaCliente')}
                 />
-                <CampoTexto
-                  etiqueta="ID de documento de venta"
-                  autoComplete="off"
-                  placeholder="UUID opcional"
-                  ayuda="Solo si la orden proviene de una venta registrada."
-                  error={errors.documentoVentaId?.message}
-                  {...register('documentoVentaId')}
-                />
-                <CampoTexto
-                  etiqueta="Referencia de garantía"
-                  autoComplete="off"
-                  placeholder="N.º de garantía o autorización"
-                  error={errors.referenciaGarantia?.message}
-                  {...register('referenciaGarantia')}
-                />
                 <div className="sm:col-span-2">
                   <OpcionBinaria
                     etiqueta="Atención en garantía"
-                    descripcion="Inicia la orden en estado de garantía para distinguirla del flujo comercial regular."
+                    descripcion="Marca esta opción si el equipo ingresa para una atención cubierta por garantía."
                     disabled={Boolean(reparacion)}
                     {...register('esGarantia')}
                   />
                 </div>
+                {esGarantia || (reparacion && referenciaGarantia) ? (
+                  <CampoTexto
+                    etiqueta="Referencia de garantía"
+                    autoComplete="off"
+                    placeholder="N.º de garantía o autorización"
+                    error={errors.referenciaGarantia?.message}
+                    {...register('referenciaGarantia')}
+                  />
+                ) : <input type="hidden" {...register('referenciaGarantia')} />}
               </div>
-            </section>
+              </div>
+            </details>
 
           </form>
 

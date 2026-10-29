@@ -84,13 +84,28 @@ select results_eq(
   'la secuencia conserva el orden FEFO dentro de la operacion'
 );
 select results_eq(
-  $$select running_quantity, running_value from public.inventory_kardex
-    where organization_id = 'd1000000-0000-4000-8000-000000000001'
-      and product_id = 'd3000000-0000-4000-8000-000000000001'
-      and warehouse_id = 'd4000000-0000-4000-8000-000000000001'
-    order by ledger_sequence desc limit 1$$,
+  $$select coalesce(sum(bucket.running_quantity), 0),
+      coalesce(sum(bucket.running_value), 0)
+    from (
+      select distinct on (
+        kardex.location_id, kardex.stock_status, coalesce(kardex.lot, ''), kardex.expiration_date
+      ) kardex.running_quantity, kardex.running_value
+      from public.inventory_kardex kardex
+      where kardex.organization_id = 'd1000000-0000-4000-8000-000000000001'
+        and kardex.product_id = 'd3000000-0000-4000-8000-000000000001'
+        and kardex.warehouse_id = 'd4000000-0000-4000-8000-000000000001'
+        and kardex.ledger_sequence <= (
+          select max(movement.ledger_sequence) from public.inventory_kardex movement
+          where movement.organization_id = kardex.organization_id
+            and movement.product_id = kardex.product_id
+            and movement.warehouse_id = kardex.warehouse_id
+            and movement.reason = 'Salida multilote determinista'
+        )
+      order by kardex.location_id, kardex.stock_status,
+        coalesce(kardex.lot, ''), kardex.expiration_date, kardex.ledger_sequence desc
+    ) bucket$$,
   $$values (8.000::numeric, 200.0000000::numeric)$$,
-  'el saldo posterior a la salida corresponde al almacen origen'
+  'el saldo total posterior a la salida suma los saldos independientes de cada lote'
 );
 
 select lives_ok($$select public.transfer_inventory_fefo('{
@@ -107,9 +122,9 @@ select results_eq(
       and warehouse_id = 'd4000000-0000-4000-8000-000000000001'
     order by ledger_sequence$$,
   $$values
-    ('LOTE-B'::text, 4.000::numeric, 120.0000000::numeric),
+    ('LOTE-B'::text, 0.000::numeric, 0.0000000::numeric),
     ('LOTE-C'::text, 2.000::numeric, 60.0000000::numeric)$$,
-  'el origen reduce su propio saldo en orden determinista'
+  'el origen conserva el saldo propio de cada lote en orden determinista'
 );
 select results_eq(
   $$select lot, running_quantity, running_value from public.inventory_kardex
@@ -118,22 +133,26 @@ select results_eq(
     order by ledger_sequence$$,
   $$values
     ('LOTE-B'::text, 4.000::numeric, 80.0000000::numeric),
-    ('LOTE-C'::text, 6.000::numeric, 140.0000000::numeric)$$,
-  'el destino incrementa su propio saldo en orden determinista'
+    ('LOTE-C'::text, 2.000::numeric, 60.0000000::numeric)$$,
+  'el destino conserva el saldo propio de cada lote en orden determinista'
 );
 select results_eq(
-  $$select warehouse_id, running_quantity, running_value
+  $$select warehouse_id, sum(running_quantity), sum(running_value)
     from (
-      select distinct on (warehouse_id) warehouse_id, running_quantity, running_value
+      select distinct on (
+        warehouse_id, location_id, stock_status, coalesce(lot, ''), expiration_date
+      ) warehouse_id, running_quantity, running_value
       from public.inventory_kardex
       where organization_id = 'd1000000-0000-4000-8000-000000000001'
         and product_id = 'd3000000-0000-4000-8000-000000000001'
-      order by warehouse_id, ledger_sequence desc
-    ) latest order by warehouse_id$$,
+      order by warehouse_id, location_id, stock_status,
+        coalesce(lot, ''), expiration_date, ledger_sequence desc
+    ) latest
+    group by warehouse_id order by warehouse_id$$,
   $$values
     ('d4000000-0000-4000-8000-000000000001'::uuid, 2.000::numeric, 60.0000000::numeric),
     ('d4000000-0000-4000-8000-000000000002'::uuid, 6.000::numeric, 140.0000000::numeric)$$,
-  'los saldos finales quedan separados por almacen'
+  'los saldos finales por almacén suman los saldos independientes de sus lotes'
 );
 
 reset role;

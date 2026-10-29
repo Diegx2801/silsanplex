@@ -43,6 +43,11 @@ export function useAlmacenes() {
       queryClient.invalidateQueries({ queryKey }),
       queryClient.invalidateQueries({ queryKey: ['inventory', organizationId] }),
       queryClient.invalidateQueries({ queryKey: ['inventory-fefo', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory-movement-warehouses', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory-adjustment-warehouses', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory-adjustment-buckets', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory-transfer-warehouses', organizationId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory-transfer-buckets', organizationId] }),
     ])
   }
   const ejecutar = async (operacion: () => Promise<void>) => {
@@ -73,8 +78,14 @@ export function useAlmacenes() {
   const estadoUbicacionMutation = useMutation({
     mutationFn: (ubicacion: UbicacionAlmacen) => cambiarEstadoUbicacion(organizationId, ubicacion),
   })
-  const transferenciaMutation = useMutation({ mutationFn: (datos: DatosTransferencia) => transferirInventario(organizationId, datos) })
-  const reclasificacionMutation = useMutation({ mutationFn: (datos: DatosReclasificacion) => reclasificarInventario(organizationId, datos) })
+  const transferenciaMutation = useMutation({
+    mutationFn: ({ datos, operationKey }: { datos: DatosTransferencia; operationKey?: string }) =>
+      transferirInventario(organizationId, datos, operationKey),
+  })
+  const reclasificacionMutation = useMutation({
+    mutationFn: ({ datos, operationKey }: { datos: DatosReclasificacion; operationKey?: string }) =>
+      reclasificarInventario(organizationId, datos, operationKey),
+  })
 
   return {
     ...(query.data ?? vacio),
@@ -89,8 +100,8 @@ export function useAlmacenes() {
       ejecutar(() => estadoAlmacenMutation.mutateAsync(almacen)),
     cambiarEstadoUbicacion: (ubicacion: UbicacionAlmacen) =>
       ejecutar(() => estadoUbicacionMutation.mutateAsync(ubicacion)),
-    transferir: (datos: DatosTransferencia) => ejecutar(() => transferenciaMutation.mutateAsync(datos)),
-    reclasificar: (datos: DatosReclasificacion) => ejecutar(() => reclasificacionMutation.mutateAsync(datos)),
+    transferir: (datos: DatosTransferencia, operationKey?: string) => ejecutar(() => transferenciaMutation.mutateAsync({ datos, operationKey })),
+    reclasificar: (datos: DatosReclasificacion, operationKey?: string) => ejecutar(() => reclasificacionMutation.mutateAsync({ datos, operationKey })),
     configurar: (datos: Parameters<typeof configurarAlertas>[2]) => ejecutar(() => configurarAlertas(organizationId, userId, datos)),
   }
 }

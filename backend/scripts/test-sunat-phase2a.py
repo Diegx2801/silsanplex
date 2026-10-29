@@ -1,8 +1,10 @@
 """Fictitious fiscal SQL tests; fixed, verified temporary Supabase only.
 
---transactional requires the 148 prior migrations, compiles both candidates in
-order, and runs serial tests inside one ROLLBACK transaction.
-Default accepts the historical 150-migration fixture or the current 151-migration schema and runs independent races.
+--transactional requires the history preceding the fiscal candidate migrations,
+compiles those candidates in order, and runs serial tests inside one ROLLBACK
+transaction. Default requires the complete installed history and also runs
+independent races; a normal history may omit only the separately identified
+minimum-privilege follow-up migration when validating the pre-follow-up schema.
 --ci-transactional uses only a verified GitHub-hosted disposable project.
 No resets, cleanup, existing fixture reuse, credentials, transport, or backend writes.
 """
@@ -25,8 +27,13 @@ MIGRATIONS = (
     ROOT / 'backend/supabase/migrations/20261023135019_electronic_fiscal_helper_sql_lint.sql',
 )
 VERSIONS = tuple(path.name.split('_')[0] for path in MIGRATIONS)
-BASE_MIGRATION_COUNT = 148
 FOLLOWUP_MIGRATION_VERSION = '20261025190353'
+CANDIDATE_HASHES = {
+    '20261023061225_electronic_fiscal_sandbox_persistence.sql':
+        'df0c339852499b2717a5cfd00d822b06128ff970610fb0f74db08a15c242de01',
+    '20261023135019_electronic_fiscal_helper_sql_lint.sql':
+        'ff0d192543f389de8391a72507de5f217407287e60a4b8295fae4606f9bcb670',
+}
 SUITE = ROOT / 'backend/scripts/fixtures/electronic_document_persistence.sql'
 CONTAINER = 'supabase_db_silsanplexp2c2'
 HELPERS = SUITE.read_text(encoding='utf8').split('-- SERIAL_TESTS_START:')[0]
@@ -74,17 +81,34 @@ def check(label, ok, evidence=None):
         raise AssertionError(label)
 
 
+def candidate_start(files):
+    """Return the exact candidate offset without assuming later history is absent."""
+    repository_files = sorted(path.name.split('_')[0]
+                              for path in MIGRATIONS[0].parent.glob('*.sql'))
+    if files != sorted(set(files)) or files != repository_files:
+        raise ValueError('CPE_TEST_MIGRATION_FILES_MISMATCH')
+    if tuple(path.name for path in MIGRATIONS) != tuple(CANDIDATE_HASHES):
+        raise ValueError('CPE_TEST_MIGRATION_FILES_MISMATCH')
+    if any(not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()
+           != CANDIDATE_HASHES.get(path.name) for path in MIGRATIONS):
+        raise ValueError('CPE_TEST_CANDIDATE_HASH')
+    starts = [index for index, version in enumerate(files) if version == VERSIONS[0]]
+    if len(starts) != 1 or tuple(files[starts[0]:starts[0] + len(VERSIONS)]) != VERSIONS:
+        raise ValueError('CPE_TEST_MIGRATION_FILES_MISMATCH')
+    followup_index = starts[0] + len(VERSIONS)
+    if (followup_index >= len(files) or files[followup_index] != FOLLOWUP_MIGRATION_VERSION
+            or files.count(FOLLOWUP_MIGRATION_VERSION) != 1):
+        raise ValueError('CPE_TEST_MIGRATION_FILES_MISMATCH')
+    return starts[0]
+
+
 def validate_history(migrations, files, transactional):
     """Reject missing, extra, reordered or duplicate versions before fixtures."""
-    if (files != sorted(set(files))
-            or len(files) != BASE_MIGRATION_COUNT + len(VERSIONS) + 1
-            or tuple(files[-3:-1]) != VERSIONS
-            or files[-1] != FOLLOWUP_MIGRATION_VERSION):
-        raise ValueError('CPE_TEST_MIGRATION_FILES_MISMATCH')
-    expected = files[:-3] if transactional else (files, files[:-1])
-    if transactional and migrations != expected:
-        raise ValueError('CPE_TEST_MIGRATION_HISTORY_MISMATCH')
-    if not transactional and migrations not in expected:
+    first_candidate = candidate_start(files)
+    historical = files[:first_candidate]
+    without_followup = [version for version in files if version != FOLLOWUP_MIGRATION_VERSION]
+    expected = (historical,) if transactional else (files, without_followup)
+    if migrations not in expected:
         raise ValueError('CPE_TEST_MIGRATION_HISTORY_MISMATCH')
 
 
@@ -119,22 +143,24 @@ def serial_script(transactional):
           select txid_current() transaction_id, pg_backend_pid() backend_pid;
         """
         for index, path in enumerate(MIGRATIONS):
-            candidates += candidate_sql(path) + '\n' + transaction_probe(str(index + 149)) + '\n'
+            candidates += candidate_sql(path) + '\n' + transaction_probe(
+                f'candidate-{index + 1}', verify_helpers=index == len(MIGRATIONS) - 1
+            ) + '\n'
         return ('begin;\n' + candidates + SUITE.read_text(encoding='utf8')
-                + '\n' + transaction_probe('serial') + '\nrollback;')
+                + '\n' + transaction_probe('serial', verify_helpers=True) + '\nrollback;')
     candidates = ''
     return 'begin;\n' + candidates + '\n' + SUITE.read_text(encoding='utf8') + '\nrollback;'
 
 
-def transaction_probe(stage):
+def transaction_probe(stage, verify_helpers=False):
     """Executed by PostgreSQL, not inferred from the exit status of psql."""
-    volatility = '' if stage == '149' else """
+    volatility = '' if not verify_helpers else """
       if (select array_agg(p.provolatile::text order by p.proname)
           from pg_proc p join pg_namespace n on n.oid=p.pronamespace
           where n.nspname='electronic_private'
           and p.proname in ('address','date_value','payment','request','snapshot'))
          is distinct from array['s','s','s','s','v']::text[] then
-        raise exception 'CPE_TEST_CANDIDATE_150_NOT_EFFECTIVE';
+        raise exception 'CPE_TEST_CANDIDATE_HELPERS_NOT_EFFECTIVE';
       end if;
     """
     return f"""do $cpe_probe$ begin
@@ -146,7 +172,7 @@ def transaction_probe(stage):
           and tablename in ('electronic_issuer_profiles','electronic_document_series',
             'electronic_documents','electronic_document_items',
             'electronic_document_commands','electronic_document_outbox')) <> 6 then
-        raise exception 'CPE_TEST_CANDIDATE_149_NOT_EFFECTIVE';
+        raise exception 'CPE_TEST_CANDIDATE_SCHEMA_NOT_EFFECTIVE';
       end if;
       {volatility}
       raise notice 'CPE_TRANSACTIONAL:{stage}';
@@ -199,8 +225,8 @@ def serial(transactional):
     if len(assertions) != 98:
         raise AssertionError('CPE_TEST_SERIAL_ASSERTION_COUNT')
     if transactional:
-        markers = re.findall(r'NOTICE:  CPE_TRANSACTIONAL:(149|150|serial)', result.stderr)
-        if markers != ['149', '150', 'serial']:
+        markers = re.findall(r'NOTICE:  CPE_TRANSACTIONAL:([a-z0-9-]+)', result.stderr)
+        if markers != ['candidate-1', 'candidate-2', 'serial']:
             raise AssertionError('CPE_TEST_TRANSACTIONAL_EXECUTION_NOT_PROVEN')
     for label in assertions:
         check('serial/' + label, True)
@@ -364,7 +390,7 @@ def ci_transactional(ci):
     before = ci.snapshot(sys.modules[__name__])
     files = sorted(p.name.split('_')[0] for p in MIGRATIONS[0].parent.glob('*.sql'))
     validate_history(before['history'], files, True)
-    check('CI initial 148 migrations and no candidate objects', True)
+    check(f'CI initial {candidate_start(files)} migrations and no candidate objects', True)
     try:
         serial(True)
     finally:

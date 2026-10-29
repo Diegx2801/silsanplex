@@ -3,9 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/useAuth'
 import {
   crearConReintentoPersistente,
+  consumirParteConReintentoPersistente,
   guardarCotizacionConReintentoPersistente,
   leerCotizacionPendiente,
   leerCreacionPendiente,
+  leerConsumoPartePendiente,
   leerReservaPartePendiente,
   reservarParteConReintentoPersistente,
 } from './creacionPendiente'
@@ -80,6 +82,8 @@ export function useReparaciones(
   const ambitoCotizacion = (repairId: string, esRevision: boolean) =>
     `${ambitoCreacion}:${repairId}:quote:${esRevision ? 'revision' : 'save'}`
   const ambitoReserva = (repairId: string) => `${ambitoCreacion}:${repairId}:part-reservation`
+  const ambitoConsumo = (repairId: string, partId: string) =>
+    `${ambitoCreacion}:${repairId}:${partId}:part-consumption`
   const consulta = configuracion.consulta ?? consultaInicial
   const pagina = configuracion.pagina ?? 1
   const tamanioPagina = configuracion.tamanioPagina ?? 10
@@ -300,8 +304,10 @@ export function useReparaciones(
     reparaciones: listaQuery.data?.elementos ?? reparacionesVacias,
     totalFiltrado: listaQuery.data?.totalFiltrado ?? 0,
     resumen: resumenQuery.data ?? resumenVacio,
-    cargando: listaQuery.isLoading || resumenQuery.isLoading,
-    error: listaQuery.error ?? resumenQuery.error,
+    cargando: listaQuery.isLoading,
+    error: listaQuery.error,
+    cargandoResumen: resumenQuery.isLoading,
+    errorResumen: resumenQuery.error,
     reintentar: async () => {
       await Promise.all([listaQuery.refetch(), resumenQuery.refetch()])
     },
@@ -327,6 +333,8 @@ export function useReparaciones(
       ?? leerCotizacionPendiente(ambitoCotizacion(repairId, !esRevision)),
     recuperarReservaPartePendiente: (repairId: string) =>
       leerReservaPartePendiente(ambitoReserva(repairId)),
+    recuperarConsumoPartePendiente: (repairId: string, partId: string) =>
+      leerConsumoPartePendiente(ambitoConsumo(repairId, partId)),
     crear: async (datos: DatosReparacion, operationKey: string) => {
       try {
         await crearConReintentoPersistente(ambitoCreacion, datos, operationKey,
@@ -471,9 +479,15 @@ export function useReparaciones(
         return mensajeDeError(error, 'No se pudo reservar el repuesto.')
       }
     },
-    consumirParte: async (partId: string, datos: DatosConsumoParte, operationKey: string, expectedLockVersion: number) => {
+    consumirParte: async (repairId: string, partId: string, datos: DatosConsumoParte, operationKey: string, expectedLockVersion: number) => {
       try {
-        await consumoMutation.mutateAsync({ partId, datos, operationKey, expectedLockVersion })
+        await consumirParteConReintentoPersistente(
+          ambitoConsumo(repairId, partId), { datos, expectedLockVersion }, operationKey,
+          (pendiente, clave) => consumoMutation.mutateAsync({
+            partId, datos: pendiente.datos, operationKey: clave,
+            expectedLockVersion: pendiente.expectedLockVersion,
+          }),
+        )
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo consumir el repuesto.')

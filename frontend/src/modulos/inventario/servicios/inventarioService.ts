@@ -1,5 +1,8 @@
 import { supabase } from '@/lib/supabase'
+import { leerCapturaUnidadMovimiento } from '../modelo/capturaUnidadMovimiento'
 import type {
+  AlmacenAjusteStockOpcion,
+  AlmacenInventarioOpcion,
   BucketAjusteStock,
   CandidatoFefo,
   ConsultaExistenciasInventario,
@@ -19,6 +22,9 @@ import {
 import { leerRespuestaReadInventario } from '@/modulos/inventario/servicios/productoInventarioReadService'
 
 interface MovimientoFila {
+  entered_quantity?: number | string | null
+  entered_unit_of_measure?: string | null
+  unit_conversion_factor?: number | string | null
   id: string
   product_id: string
   product_code: string
@@ -40,10 +46,11 @@ interface MovimientoFila {
   created_by: string | null
   source_type: string | null
   source_id: string | null
+  ledger_sequence: number
 }
 
 const columnasMovimiento =
-  'id,product_id,product_code,product_description,unit_of_measure,movement_type,quantity,warehouse,warehouse_id,location_id,stock_status,unit_cost,lot,expiration_date,operation_date,created_at,reason,document_reference,created_by,source_type,source_id' as const
+  'id,product_id,product_code,product_description,unit_of_measure,movement_type,quantity,warehouse,warehouse_id,location_id,stock_status,unit_cost,lot,expiration_date,operation_date,created_at,reason,document_reference,created_by,source_type,source_id,ledger_sequence,entered_quantity,entered_unit_of_measure,unit_conversion_factor' as const
 
 interface ExistenciaFila {
   product_id: string
@@ -66,6 +73,7 @@ interface ExistenciaFila {
 
 function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
   return {
+    ...leerCapturaUnidadMovimiento(fila),
     id: fila.id,
     productoId: fila.product_id,
     productoCodigo: fila.product_code,
@@ -84,6 +92,7 @@ function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
     fechaRegistro: fila.created_at,
     motivo: fila.reason,
     documentoReferencia: fila.document_reference ?? undefined,
+    secuenciaLedger: Number(fila.ledger_sequence),
     creadoPor: fila.created_by ?? undefined,
     fuenteTipo: fila.source_type ?? undefined,
     fuenteId: fila.source_id ?? undefined,
@@ -91,7 +100,15 @@ function mapearMovimiento(fila: MovimientoFila): MovimientoInventario {
 }
 
 function mensajeError(error: { code?: string; message?: string }) {
-  if (error.message?.includes('INVENTORY_DOCUMENT_REFERENCE_INVALID')) return 'Ingresa un documento de sustento de hasta 120 caracteres'
+  if (error.message?.includes('INVENTORY_BASE_UNIT_MISMATCH')) return 'La unidad base del producto cambió. Actualiza el producto y vuelve a revisar la cantidad antes de registrar el movimiento.'
+  if (error.message?.includes('INVENTORY_INPUT_UNIT_INVALID')) return 'La unidad seleccionada ya no está disponible para este producto. Vuelve a elegirla.'
+  if (error.message?.includes('INVENTORY_INPUT_UNIT_STALE')) return 'La equivalencia de esta unidad cambió. Actualiza la selección del producto e inténtalo nuevamente.'
+  if (error.message?.includes('INVENTORY_QUANTITY_CONVERSION_INVALID')) return 'La cantidad no puede convertirse exactamente a la unidad base. Ajusta la cantidad o usa otra unidad.'
+  if (error.message?.includes('INVENTORY_QUANTITY_INVALID')) return 'Ingresa una cantidad válida mayor a cero.'
+  if (error.message?.includes('INVENTORY_DOCUMENT_REFERENCE_INVALID')) return 'Ingresa una referencia del documento de hasta 120 caracteres'
+  if (error.message?.includes('INVENTORY_ADJUSTMENT_COST_REQUIRED')) return 'Ingresa el costo unitario para valorar la nueva posición'
+  if (error.message?.includes('INVENTORY_MOVEMENT_COST_REQUIRED')) return 'Ingresa el costo unitario para valorar la entrada'
+  if (error.message?.includes('INVENTORY_FEFO_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock asignable disponible según FEFO'
   if (error.message?.includes('INVENTORY_REASON_INVALID')) return 'Describe el motivo del movimiento con entre 3 y 180 caracteres'
   if (error.message?.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no generan stock ni movimientos de inventario'
   if (error.message?.includes('INVENTORY_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock disponible'
@@ -121,9 +138,11 @@ export async function listarMovimientosInventario(
   const busqueda = normalizarBusquedaInventario(consulta.busqueda)
 
   if (busqueda) {
-    query = query.or(
-      `product_code.ilike.%${busqueda}%,product_description.ilike.%${busqueda}%,lot.ilike.%${busqueda}%`,
-    )
+    const secuenciaBuscada = busqueda.toLocaleUpperCase('es-PE').replace(/^MOV-/, '')
+    const filtroTexto = `product_code.ilike.%${busqueda}%,product_description.ilike.%${busqueda}%,lot.ilike.%${busqueda}%,document_reference.ilike.%${busqueda}%`
+    query = query.or(/^\d+$/.test(secuenciaBuscada)
+      ? `${filtroTexto},ledger_sequence.eq.${secuenciaBuscada}`
+      : filtroTexto)
   }
   if (consulta.almacenId) query = query.eq('warehouse_id', consulta.almacenId)
   if (consulta.tipo) query = query.eq('movement_type', consulta.tipo)
@@ -298,6 +317,73 @@ export async function listarBucketsAjusteStock(
   }))
 }
 
+interface AlmacenAjusteStockFila {
+  warehouse_id: string
+  warehouse_code: string
+  warehouse_name: string
+  adjustable_quantity: number
+}
+
+interface AlmacenMovimientoFila {
+  warehouse_id: string
+  warehouse_code: string
+  warehouse_name: string
+  eligible_quantity: number | null
+}
+
+export async function buscarAlmacenesMovimientoInventario(
+  organizationId: string,
+  productId: string,
+  estadoStock: EstadoStock | null,
+  busqueda: string,
+) {
+  const { data, error } = await supabase.rpc('inventory_movement_warehouses_read', {
+    requested_organization_id: organizationId,
+    requested_product_id: productId,
+    requested_stock_status: estadoStock,
+    search_term: normalizarBusquedaInventario(busqueda),
+    requested_limit: 50,
+    requested_offset: 0,
+  })
+
+  if (error) throw new Error('No se pudieron consultar los almacenes disponibles')
+
+  const respuesta = leerRespuestaReadInventario<AlmacenMovimientoFila>(data)
+  return respuesta.items.map((fila): AlmacenInventarioOpcion => ({
+    id: fila.warehouse_id,
+    codigo: fila.warehouse_code,
+    nombre: fila.warehouse_name,
+    cantidadDisponible: Number(fila.eligible_quantity ?? 0),
+  }))
+}
+
+export async function listarAlmacenesAjusteStock(
+  organizationId: string,
+  productId: string,
+  busqueda: string,
+) {
+  const { data, error } = await supabase.rpc('inventory_adjustment_warehouses_read', {
+    requested_organization_id: organizationId,
+    requested_product_id: productId,
+    search_term: normalizarBusquedaInventario(busqueda),
+    requested_limit: 50,
+    requested_offset: 0,
+  })
+
+  if (error) throw new Error('No se pudieron consultar los almacenes con stock para ajustar')
+
+  const respuesta = leerRespuestaReadInventario<AlmacenAjusteStockFila>(data)
+  return {
+    totalCount: respuesta.totalCount,
+    items: respuesta.items.map((fila): AlmacenAjusteStockOpcion => ({
+      id: fila.warehouse_id,
+      codigo: fila.warehouse_code,
+      nombre: fila.warehouse_name,
+      cantidadDescontable: Number(fila.adjustable_quantity),
+    })),
+  }
+}
+
 export async function registrarMovimientoInventario(organizationId: string, datos: DatosMovimientoInventario) {
   const esSalidaFefo = datos.tipo === 'salida' && (datos.estadoStock ?? 'available') === 'available'
   const { error } = await supabase.rpc(esSalidaFefo ? 'record_inventory_fefo_outbound' : 'record_inventory_movement', {
@@ -306,16 +392,18 @@ export async function registrarMovimientoInventario(organizationId: string, dato
       product_id: datos.productoId,
       movement_type: datos.tipo,
       quantity: datos.cantidad,
+      input_unit_id: datos.unidadEntradaId || null,
+      expected_conversion_factor: datos.factorConversionEsperado ?? null,
       warehouse: datos.almacen,
       warehouse_id: datos.almacenId,
       location_id: datos.ubicacionId,
       stock_status: datos.estadoStock ?? 'available',
-      unit_cost: datos.costoUnitario ?? '0',
+      unit_cost: datos.costoUnitario ?? null,
       lot: datos.lote,
       expiration_date: datos.fechaVencimiento,
       operation_date: datos.fechaOperacion,
       reason: datos.motivo,
-      document_reference: datos.documentoReferencia,
+      document_reference: datos.documentoReferencia?.trim() || null,
     },
   })
   if (error) throw new Error(mensajeError(error))

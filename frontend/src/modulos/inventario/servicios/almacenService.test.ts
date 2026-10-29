@@ -13,6 +13,8 @@ import {
   listarTransferencias,
   listarVencimientos,
   obtenerConfiguracionAlertasStock,
+  reclasificarInventario,
+  transferirInventario,
 } from './almacenService'
 
 const { from, rpc } = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }))
@@ -31,6 +33,95 @@ function crearQuery(data: Record<string, unknown>[] = [], count = data.length) {
 }
 
 const base = { pagina: 2, tamanioPagina: 50 as const, busqueda: '', almacenId: '' }
+
+describe('reclasificación de posición exacta', () => {
+  const datos = {
+    productoId: 'producto-1', almacenId: 'almacen-1', ubicacionId: 'anaquel-1',
+    estadoOrigen: 'available' as const, estadoDestino: 'quarantine' as const,
+    cantidad: '2', lote: 'LOTE-EXACTO', fechaVencimiento: '2029-01-01', motivo: 'Inspección',
+    unidadEntradaId: 'caja-1', factorConversionEsperado: 20,
+  }
+
+  beforeEach(() => rpc.mockReset())
+
+  it('envía posición, unidad capturada y clave estable sin convertir cantidades en cliente', async () => {
+    rpc.mockResolvedValue({ data: 'operacion-1', error: null })
+    await reclasificarInventario('org-1', datos, 'intento-estable')
+    expect(rpc).toHaveBeenCalledWith('reclassify_inventory', { payload: {
+      organization_id: 'org-1', operation_key: 'intento-estable', product_id: 'producto-1',
+      warehouse_id: 'almacen-1', location_id: 'anaquel-1', source_status: 'available',
+      destination_status: 'quarantine', quantity: '2', input_unit_id: 'caja-1',
+      expected_conversion_factor: 20, lot: 'LOTE-EXACTO', expiration_date: '2029-01-01', reason: 'Inspección',
+    } })
+  })
+
+  it.each([
+    ['INVENTORY_RESERVED_STOCK', 'unidades reservadas'],
+    ['RECLASSIFICATION_OPERATION_CONFLICT', 'intento anterior'],
+    ['RECLASSIFICATION_REASON_INVALID', 'entre 3 y 180 caracteres'],
+    ['RECLASSIFICATION_UNIT_COST_INVALID', 'valorización'],
+  ])('explica %s sin un error genérico', async (message, esperado) => {
+    rpc.mockResolvedValue({ error: { message } })
+    await expect(reclasificarInventario('org-1', datos, 'intento-estable')).rejects.toThrow(esperado)
+  })
+})
+
+describe('transferencia de posición exacta', () => {
+  const datos = {
+    productoId: 'producto-1', almacenOrigenId: 'almacen-1', ubicacionOrigenId: 'anaquel-1',
+    almacenDestinoId: 'almacen-1', ubicacionDestinoId: 'anaquel-2', cantidad: '2',
+    lote: 'LOTE-ESPECIFICO', fechaVencimiento: '2029-01-01', estado: 'available' as const,
+    unidadEntradaId: 'caja-1', factorConversionEsperado: 20,
+  }
+
+  beforeEach(() => { rpc.mockReset() })
+
+  it('envía posición, cantidad capturada y UUID de reintento sin FEFO ni conversión en cliente', async () => {
+    rpc.mockResolvedValue({ data: 'transferencia-1', error: null })
+    await transferirInventario('org-1', datos, 'operacion-estable')
+    expect(rpc).toHaveBeenCalledOnce()
+    expect(rpc).toHaveBeenCalledWith('transfer_inventory_position', { payload: {
+      organization_id: 'org-1', operation_key: 'operacion-estable', product_id: 'producto-1',
+      source_warehouse_id: 'almacen-1', source_location_id: 'anaquel-1',
+      destination_warehouse_id: 'almacen-1', destination_location_id: 'anaquel-2',
+      quantity: '2', input_unit_id: 'caja-1', expected_conversion_factor: 20,
+      lot: 'LOTE-ESPECIFICO', expiration_date: '2029-01-01', stock_status: 'available',
+    } })
+  })
+
+  it('conserva el contrato exacto también para cuarentena sin vencimiento ni unidad alternativa', async () => {
+    rpc.mockResolvedValue({ data: 'transferencia-1', error: null })
+    await transferirInventario('org-1', {
+      ...datos, referencia: 'LEGACY-IGNORADO', estado: 'quarantine', fechaVencimiento: '',
+      unidadEntradaId: '', factorConversionEsperado: undefined,
+    }, 'operacion-estable')
+    expect(rpc).toHaveBeenCalledWith('transfer_inventory_position', { payload: expect.objectContaining({
+      stock_status: 'quarantine', input_unit_id: null, expected_conversion_factor: null,
+      expiration_date: null, source_location_id: 'anaquel-1',
+    }) })
+    expect(rpc.mock.calls[0][1].payload).not.toHaveProperty('reference')
+    expect(rpc.mock.calls[0][1].payload).not.toHaveProperty('notes')
+  })
+
+  it.each([
+    ['TRANSFER_INSUFFICIENT_STOCK', 'stock no reservado'],
+    ['TRANSFER_POSITION_MUST_DIFFER', 'destino diferente'],
+    ['TRANSFER_SOURCE_POSITION_UNAVAILABLE', 'posición de origen'],
+    ['TRANSFER_OPERATION_CONFLICT', 'intento anterior'],
+    ['TRANSFER_WAREHOUSE_UNAVAILABLE', 'ya no está activo'],
+    ['TRANSFER_LOCATION_UNAVAILABLE', 'ya no está activa'],
+    ['INVENTORY_INPUT_UNIT_STALE', 'equivalencia de la unidad cambió'],
+    ['INVENTORY_INPUT_UNIT_INVALID', 'unidad de medida configurada'],
+    ['INVENTORY_QUANTITY_CONVERSION_INVALID', '3 decimales'],
+    ['TRANSFER_UNIT_COST_INVALID', 'valorización'],
+    ['TRANSFER_OPERATION_KEY_REQUIRED', 'identificar el intento'],
+    ['TRANSFER_DETAILS_INVALID', 'datos de la transferencia'],
+    ['INVENTORY_STATUS_INVALID', 'condición de stock válida'],
+  ])('explica %s sin ocultar el fallo', async (message, texto) => {
+    rpc.mockResolvedValue({ data: null, error: { message } })
+    await expect(transferirInventario('org-1', datos, 'operacion-estable')).rejects.toThrow(texto)
+  })
+})
 
 describe('listados paginados de almacén', () => {
   beforeEach(() => {
@@ -92,6 +183,29 @@ describe('listados paginados de almacén', () => {
     expect(query.range).toHaveBeenCalledWith(50, 99)
   })
 
+  it('lee la captura histórica en Kardex sin convertir el saldo base', async () => {
+    const query = crearQuery([{
+      unit_of_measure: 'Unidad', entered_quantity: '10', entered_unit_of_measure: 'Caja', unit_conversion_factor: '20',
+      inbound_quantity: '200', outbound_quantity: '0', running_quantity: '200', running_value: '1000',
+    }])
+    const resultado = await listarKardex('org-1', { ...base, fechaDesde: '', fechaHasta: '', orden: 'fecha-desc' })
+    expect(query.select.mock.calls[0][0]).toContain('entered_quantity,entered_unit_of_measure,unit_conversion_factor')
+    expect(resultado.elementos[0]).toMatchObject({
+      cantidadCapturada: 10, unidadCapturada: 'Caja', factorConversion: 20, unidadMedida: 'Unidad',
+      cantidadEntrada: 200, cantidadSalida: 0, saldoCantidad: 200, saldoValor: 1000,
+    })
+  })
+
+  it('permite buscar referencias registradas en el Kardex', async () => {
+    const query = crearQuery()
+    await listarKardex('org-1', {
+      ...base, busqueda: 'AJ-2026-001', fechaDesde: '', fechaHasta: '', orden: 'fecha-desc',
+    })
+    expect(query.or).toHaveBeenCalledWith(
+      'product_code.ilike.%AJ-2026-001%,product_description.ilike.%AJ-2026-001%,lot.ilike.%AJ-2026-001%,document_reference.ilike.%AJ-2026-001%',
+    )
+  })
+
   it('pagina y filtra transferencias por cualquiera de sus almacenes', async () => {
     const query = crearQuery()
     await listarTransferencias('org-1', {
@@ -101,6 +215,27 @@ describe('listados paginados de almacén', () => {
       'source_warehouse_id.eq.almacen-1,destination_warehouse_id.eq.almacen-1',
     )
     expect(query.range).toHaveBeenCalledWith(50, 99)
+  })
+
+  it('expone las ubicaciones únicas para distinguir reubicaciones dentro del mismo almacén', async () => {
+    crearQuery([{
+      id: 'transferencia-1', source_warehouse_id: 'almacen-1', destination_warehouse_id: 'almacen-1',
+      warehouse_transfer_items: [{ source_location_id: 'anaquel-1', destination_location_id: 'anaquel-2' }],
+    }])
+    const resultado = await listarTransferencias('org-1', { ...base, fechaDesde: '', fechaHasta: '', orden: 'fecha-desc' })
+    expect(resultado.elementos[0]).toMatchObject({ ubicacionOrigenId: 'anaquel-1', ubicacionDestinoId: 'anaquel-2' })
+  })
+
+  it('no presenta un único origen falso para transferencias históricas con varias posiciones', async () => {
+    crearQuery([{
+      warehouse_transfer_items: [
+        { source_location_id: 'anaquel-1', destination_location_id: 'anaquel-3' },
+        { source_location_id: 'anaquel-2', destination_location_id: 'anaquel-3' },
+      ],
+    }])
+    const resultado = await listarTransferencias('org-1', { ...base, fechaDesde: '', fechaHasta: '', orden: 'fecha-desc' })
+    expect(resultado.elementos[0].ubicacionOrigenId).toBeUndefined()
+    expect(resultado.elementos[0].ubicacionDestinoId).toBe('anaquel-3')
   })
 })
 

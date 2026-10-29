@@ -48,6 +48,9 @@ export function useInventario(consultas: ConsultasInventario) {
         queryClient.invalidateQueries({ queryKey: inventoryQueryKey }),
         queryClient.invalidateQueries({ queryKey: ['warehouse-management', organizationId] }),
         queryClient.invalidateQueries({ queryKey: ['inventory-fefo', organizationId] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-movement-warehouses', organizationId] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-adjustment-warehouses', organizationId] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-adjustment-buckets', organizationId] }),
       ])
     },
   })

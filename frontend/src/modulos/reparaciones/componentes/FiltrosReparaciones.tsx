@@ -1,4 +1,4 @@
-import { Search, X } from 'lucide-react'
+import { RotateCcw, Search } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import type {
@@ -31,7 +31,7 @@ export function FiltrosReparaciones({
 }: FiltrosReparacionesProps) {
   return (
     <section aria-label="Filtros de reparaciones" className="ledger-sheet">
-      <div className="grid gap-4 border-b px-5 py-5 sm:px-6 lg:grid-cols-[minmax(16rem,1fr)_15rem_13rem_auto] lg:items-end">
+      <div className="grid gap-4 px-5 py-4 sm:px-6 md:grid-cols-2 xl:grid-cols-4 xl:items-end">
         <div>
           <label htmlFor="buscar-reparaciones" className="field-label">
             Buscar reparación
@@ -91,16 +91,10 @@ export function FiltrosReparaciones({
             ))}
           </select>
         </div>
-        <div className="flex items-center justify-between gap-3 lg:justify-end">
-          <span className="font-mono text-xs text-muted-foreground">
-            {cantidadActivos} {cantidadActivos === 1 ? 'filtro' : 'filtros'}
-          </span>
-          {cantidadActivos ? (
-            <Button type="button" variant="ghost" onClick={alLimpiar}>
-              <X aria-hidden="true" />
-              Limpiar
-            </Button>
-          ) : null}
+        <div className="flex items-end justify-end self-end">
+          <Button type="button" variant="outline" disabled={!cantidadActivos} onClick={alLimpiar}>
+            <RotateCcw aria-hidden="true" />Limpiar filtros
+          </Button>
         </div>
       </div>
     </section>
