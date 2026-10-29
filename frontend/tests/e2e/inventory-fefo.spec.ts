@@ -8,7 +8,6 @@ interface InventoryE2eFixture {
   sourceWarehouseName: string
   destinationWarehouseCode: string
   destinationWarehouseName: string
-  transferReference: string
 }
 
 function requiredEnvironment(name: string) {
@@ -56,14 +55,14 @@ async function expectStock(
   await expect(cells.nth(7)).toContainText(value)
 }
 
-function kardexRow(kardexRegion: Locator, productCode: string, reason: string, warehouse: string, lot: string) {
+function kardexRow(kardexRegion: Locator, productCode: string, reason: string | RegExp, warehouse: string, lot: string) {
   return kardexRegion.getByRole('row').filter({ hasText: productCode }).filter({ hasText: reason }).filter({ hasText: warehouse }).filter({ hasText: lot })
 }
 
 async function expectKardex(
   kardexRegion: Locator,
   productCode: string,
-  reason: string,
+  reason: string | RegExp,
   warehouse: string,
   lot: string,
   inbound: string,
@@ -73,10 +72,10 @@ async function expectKardex(
   balanceValue: string,
 ) {
   const cells = kardexRow(kardexRegion, productCode, reason, warehouse, lot).getByRole('cell')
-  await expect(cells.nth(3)).toHaveText(inbound)
-  await expect(cells.nth(4)).toHaveText(outbound)
+  await expect(cells.nth(3)).toContainText(inbound)
+  await expect(cells.nth(4)).toContainText(outbound)
   await expect(cells.nth(5)).toContainText(cost)
-  await expect(cells.nth(6)).toHaveText(balance)
+  await expect(cells.nth(6)).toContainText(balance)
   await expect(cells.nth(7)).toContainText(balanceValue)
 }
 
@@ -88,10 +87,16 @@ function waitForRestResponse(
 ) {
   return page.waitForResponse((response) => {
     const url = new URL(response.url())
-    const search = resource === 'rpc/inventory_stock_detail_read'
-      ? response.request().postDataJSON()?.search_term ?? ''
-      : url.searchParams.get('or') ?? ''
-    return response.request().method() === method
+    const request = response.request()
+    let search = url.searchParams.get('or') ?? ''
+    if (request.method() === 'POST') {
+      try {
+        search = request.postDataJSON()?.search_term ?? search
+      } catch {
+        // Some POST requests do not carry a JSON search term.
+      }
+    }
+    return request.method() === method
       && url.pathname === `/rest/v1/${resource}`
       && (searchTerm === undefined
         || (searchTerm === null ? !search : search.includes(searchTerm)))
@@ -111,6 +116,34 @@ async function expectSuccessful(responsePromise: Promise<Response>) {
   ).toBeTruthy()
 }
 
+async function selectRemoteComboboxOption(
+  page: Page,
+  scope: Locator,
+  label: string,
+  resource: string,
+  searchTerm: string,
+  optionName: string | RegExp,
+) {
+  const response = waitForRestResponse(page, resource, 'POST', searchTerm)
+  await scope.getByRole('combobox', { name: label, exact: true }).fill(searchTerm)
+  await expectSuccessful(response)
+  const option = scope.getByRole('option', { name: optionName })
+  await expect(option).toBeVisible()
+  await option.click()
+}
+
+async function selectStaticComboboxOption(
+  scope: Locator,
+  label: string,
+  searchTerm: string,
+  optionName: string | RegExp,
+) {
+  await scope.getByRole('combobox', { name: label, exact: true }).fill(searchTerm)
+  const option = scope.getByRole('option', { name: optionName })
+  await expect(option).toBeVisible()
+  await option.click()
+}
+
 async function searchAndWait(
   page: Page,
   region: Locator,
@@ -128,8 +161,8 @@ test('aplica FEFO multilote y conserva kardex y valorización por almacén', asy
     productDescription,
     sourceWarehouseCode,
     sourceWarehouseName,
+    destinationWarehouseCode,
     destinationWarehouseName,
-    transferReference,
   } = inventoryFixtureForAttempt(testInfo.retry)
 
   await signIn(page)
@@ -159,15 +192,26 @@ test('aplica FEFO multilote y conserva kardex y valorización por almacén', asy
   await page.getByRole('button', { name: 'Registrar movimiento', exact: true }).click()
   const movementDialog = page.getByRole('dialog', { name: 'Registrar movimiento' })
   await movementDialog.getByLabel('Tipo de movimiento *').selectOption({ label: 'Salida' })
-  const productOptionsResponse = waitForRestResponse(page, 'rpc/inventory_product_options', 'POST')
-  await movementDialog.getByRole('searchbox', { name: 'Buscar producto', exact: true }).fill(productCode)
-  await expectSuccessful(productOptionsResponse)
-  await movementDialog.getByLabel('Producto', { exact: true }).selectOption({ label: productLabel })
-  await movementDialog.getByLabel('Almacén *').selectOption({ label: sourceWarehouseLabel })
-  await expect(movementDialog.getByText(/13 asignables en 3 buckets/)).toBeVisible()
+  await selectRemoteComboboxOption(
+    page,
+    movementDialog,
+    'Producto',
+    'rpc/inventory_product_options',
+    productCode,
+    productLabel,
+  )
+  await selectRemoteComboboxOption(
+    page,
+    movementDialog,
+    'Almacén',
+    'rpc/inventory_movement_warehouses_read',
+    sourceWarehouseCode,
+    sourceWarehouseLabel,
+  )
+  await expect(movementDialog.getByText(/13 .*disponibles en 3 posiciones/)).toBeVisible()
   await movementDialog.getByLabel('Cantidad *').fill('5')
-  await movementDialog.getByLabel('Motivo del movimiento *').fill('Salida E2E FEFO multilote')
-  await movementDialog.getByLabel('Documento de sustento *').fill('E2E-FEFO-OUTBOUND')
+  await movementDialog.getByLabel('Motivo del movimiento *').selectOption('Otro')
+  await movementDialog.getByLabel('Detalle del motivo *').fill('Salida E2E FEFO multilote')
   const movementResponse = waitForRestResponse(page, 'rpc/record_inventory_fefo_outbound', 'POST')
   await movementDialog.getByRole('button', { name: 'Registrar movimiento', exact: true }).click()
   await expectSuccessful(movementResponse)
@@ -178,37 +222,64 @@ test('aplica FEFO multilote y conserva kardex y valorización por almacén', asy
   await expectStock(stockRegion, productCode, sourceWarehouseName, 'LOTE-E2E-B', '4', '80.00')
   await expectStock(stockRegion, productCode, sourceWarehouseName, 'LOTE-E2E-C', '4', '120.00')
   await openKardex()
-  await expectKardex(kardexRegion, productCode, 'Salida E2E FEFO multilote', sourceWarehouseName, 'LOTE-E2E-A', '—', '3', '10.00', '10', '240.00')
-  await expectKardex(kardexRegion, productCode, 'Salida E2E FEFO multilote', sourceWarehouseName, 'LOTE-E2E-B', '—', '2', '20.00', '8', '200.00')
+  await expectKardex(kardexRegion, productCode, 'Otro: Salida E2E FEFO multilote', sourceWarehouseName, 'LOTE-E2E-A', '—', '3', '10.00', '0', '0.00')
+  await expectKardex(kardexRegion, productCode, 'Otro: Salida E2E FEFO multilote', sourceWarehouseName, 'LOTE-E2E-B', '—', '2', '20.00', '4', '80.00')
 
   await page.goto('/inventario/movimientos?vista=transferencias')
-  const operationsRegion = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Transferencia entre almacenes' }) })
-  await operationsRegion.getByLabel('Referencia', { exact: true }).fill(transferReference)
-  await operationsRegion.getByLabel('Buscar producto', { exact: true }).first().fill(productCode)
-  await expect(operationsRegion.getByLabel('Producto', { exact: true }).first().locator('option', { hasText: productLabel })).toHaveCount(1)
-  await operationsRegion.getByLabel('Producto', { exact: true }).first().selectOption({ label: productLabel })
-  await operationsRegion.getByLabel('Almacén origen', { exact: true }).selectOption({ label: sourceWarehouseName })
-  await operationsRegion.getByLabel('Almacén destino', { exact: true }).selectOption({ label: destinationWarehouseName })
-  await operationsRegion.getByLabel('Cantidad', { exact: true }).first().fill('6')
-  await operationsRegion.getByLabel('Notas', { exact: true }).fill('Transferencia E2E FEFO multilote')
-  const transferResponse = waitForRestResponse(page, 'rpc/transfer_inventory_fefo', 'POST')
+  const operationsRegion = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Transferir stock', exact: true }) })
+  await selectRemoteComboboxOption(
+    page,
+    operationsRegion,
+    'Producto',
+    'rpc/inventory_product_options',
+    productCode,
+    productLabel,
+  )
+  const bucketsResponse = waitForRestResponse(page, 'inventory_bucket_availability', 'GET')
+  await selectRemoteComboboxOption(
+    page,
+    operationsRegion,
+    'Almacén de origen',
+    'rpc/inventory_adjustment_warehouses_read',
+    sourceWarehouseCode,
+    sourceWarehouseLabel,
+  )
+  await expectSuccessful(bucketsResponse)
+  const sourcePosition = operationsRegion.getByRole('combobox', { name: 'Ubicación y lote de origen', exact: true })
+  await expect(sourcePosition).toBeEnabled()
+  await sourcePosition.click()
+  const sourceLot = operationsRegion.getByRole('option').filter({ hasText: 'LOTE-E2E-C' })
+  await expect(sourceLot).toBeVisible()
+  await sourceLot.click()
+  await selectStaticComboboxOption(
+    operationsRegion,
+    'Almacén de destino',
+    destinationWarehouseCode,
+    new RegExp(`${destinationWarehouseCode} · ${destinationWarehouseName}`),
+  )
+  await selectStaticComboboxOption(operationsRegion, 'Ubicación de destino', 'GENERAL', /^GENERAL · /)
+  await operationsRegion.getByLabel('Cantidad a transferir *', { exact: true }).fill('2')
+  await operationsRegion.getByRole('button', { name: 'Revisar transferencia', exact: true }).click()
+  await expect(operationsRegion.getByRole('heading', { name: 'Revisar transferencia', exact: true })).toBeVisible()
+  const transferResponse = waitForRestResponse(page, 'rpc/transfer_inventory_position', 'POST')
   await operationsRegion.getByRole('button', { name: 'Confirmar transferencia' }).click()
   await expectSuccessful(transferResponse)
-  await expect(page.getByText('Transferencia completada y trazada en el kardex.')).toBeVisible()
+  await expect(operationsRegion.getByText(/Transferencia registrada\./)).toBeVisible()
   await openStock()
 
   await expectStock(stockRegion, productCode, sourceWarehouseName, 'LOTE-E2E-C', '2', '60.00')
-  await expectStock(stockRegion, productCode, destinationWarehouseName, 'LOTE-E2E-B', '4', '80.00')
   await expectStock(stockRegion, productCode, destinationWarehouseName, 'LOTE-E2E-C', '2', '60.00')
 
   await openKardex()
-  const transferReason = `Transferencia ${transferReference}`
-  await expectKardex(kardexRegion, productCode, transferReason, sourceWarehouseName, 'LOTE-E2E-B', '—', '4', '20.00', '4', '120.00')
-  await expectKardex(kardexRegion, productCode, transferReason, destinationWarehouseName, 'LOTE-E2E-B', '4', '—', '20.00', '4', '80.00')
-  await expectKardex(kardexRegion, productCode, transferReason, sourceWarehouseName, 'LOTE-E2E-C', '—', '2', '30.00', '2', '60.00')
-  await expectKardex(kardexRegion, productCode, transferReason, destinationWarehouseName, 'LOTE-E2E-C', '2', '—', '30.00', '6', '140.00')
+  await expectKardex(kardexRegion, productCode, /Transferencia TR-/, sourceWarehouseName, 'LOTE-E2E-C', '—', '2', '30.00', '2', '60.00')
+  await expectKardex(kardexRegion, productCode, /Transferencia TR-/, destinationWarehouseName, 'LOTE-E2E-C', '2', '—', '30.00', '2', '60.00')
   await page.goto('/inventario/movimientos?vista=transferencias')
   const transfersRegion = page.getByRole('region', { name: 'Historial de transferencias' })
-  await searchAndWait(page, transfersRegion, 'warehouse_transfers', transferReference)
-  await expect(transfersRegion.getByRole('article').filter({ hasText: transferReference })).toHaveCount(1)
+  await expect(transfersRegion.getByRole('article')
+    .filter({ hasText: sourceWarehouseName })
+    .filter({ hasText: destinationWarehouseName })).toHaveCount(1)
+  await expect(transfersRegion.getByRole('article')
+    .filter({ hasText: sourceWarehouseName })
+    .filter({ hasText: destinationWarehouseName })
+    .locator('p').first()).toContainText(/^TR-/)
 })

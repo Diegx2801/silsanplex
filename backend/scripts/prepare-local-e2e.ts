@@ -21,7 +21,6 @@ type InventoryE2eFixture = {
   sourceWarehouseName: string
   destinationWarehouseCode: string
   destinationWarehouseName: string
-  transferReference: string
 }
 
 config({ path: '.env.local', quiet: true })
@@ -288,7 +287,6 @@ async function createInventoryFixture(
     sourceWarehouseName,
     destinationWarehouseCode,
     destinationWarehouseName,
-    transferReference: `TR-${suffix}`,
   }
 }
 
