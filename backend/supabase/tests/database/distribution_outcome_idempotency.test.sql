@@ -1,5 +1,9 @@
 begin;
 
+-- These fixtures use current_date as the business date. Keep the test session
+-- aligned with SILSAN's calendar even when the runner itself uses UTC.
+set local timezone = 'America/Lima';
+
 select plan(35);
 
 select is(

@@ -1,6 +1,7 @@
 import { randomUUID, randomInt } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { expect, type Locator, type Page } from '@playwright/test'
+import { fechaActualPeru } from '../../src/lib/fechas.js'
 import { test } from './fixtures/test.js'
 
 // A dedicated identity avoids auth/recovery tests revoking our session.
@@ -65,7 +66,7 @@ async function fixture(page: Page) {
     document_reference: reference,
     organization_id: organizationId, product_id: product.id, warehouse_id: warehouseId,
     location_id: location.id, movement_type: 'entrada', quantity: 2, unit_cost: 10,
-    stock_status: 'available', operation_date: new Date().toISOString().slice(0, 10), reason: reference,
+    stock_status: 'available', operation_date: fechaActualPeru(), reason: reference,
   } }))
   return { api, organizationId, customerId, productId: product.id as string,
     warehouseId, locationId: location.id as string,
@@ -367,7 +368,7 @@ test('catálogos remotos permiten seleccionar después del registro 1000 y resol
     organization_id: f.organizationId, product_id: catalogProductId,
     warehouse_id: f.warehouseId, location_id: f.locationId, movement_type: 'entrada',
     quantity: 2, unit_cost: 10, stock_status: 'available',
-    operation_date: new Date().toISOString().slice(0, 10), reason: f.reference,
+    operation_date: fechaActualPeru(), reason: f.reference,
   } }))
   await openRepair(page, f.reference)
   await page.getByRole('button', { name: 'Asignar responsable', exact: true }).click()

@@ -1,3 +1,6 @@
+-- Fixture and worker current_date values represent the Peru business date.
+set timezone = 'America/Lima';
+
 create temporary table distribution_outcome_dblink_state (was_installed boolean not null);
 insert into distribution_outcome_dblink_state
 select exists (select 1 from pg_catalog.pg_extension where extname = 'dblink');
@@ -147,12 +150,24 @@ language plpgsql
 as $$
 declare
   blocked_count integer;
+  active_count integer;
 begin
   for attempt in 1..1000 loop
     select count(distinct lock_row.pid)::integer into blocked_count
     from pg_catalog.pg_locks lock_row
     where lock_row.pid in (pid_a, pid_b) and not lock_row.granted;
     if blocked_count = 2 then return true; end if;
+
+    -- A failed worker can finish before taking the test lock. Do not spend the
+    -- full ten-second polling window waiting for a lock that cannot appear.
+    if attempt = 100 then
+      perform pg_catalog.pg_stat_clear_snapshot();
+      select count(*)::integer into active_count
+      from pg_catalog.pg_stat_activity
+      where pid in (pid_a, pid_b) and state = 'active';
+      if active_count < 2 then return false; end if;
+    end if;
+
     perform pg_catalog.pg_sleep(0.01);
   end loop;
   return false;
@@ -168,6 +183,8 @@ select extensions.dblink_connect(
   'outcome_worker_b',
   pg_catalog.format('host=%s port=%s dbname=postgres user=postgres password=postgres', pg_catalog.host(pg_catalog.inet_server_addr()), pg_catalog.inet_server_port())
 );
+select extensions.dblink_exec('outcome_worker_a', 'set timezone = ''America/Lima''');
+select extensions.dblink_exec('outcome_worker_b', 'set timezone = ''America/Lima''');
 create temporary table distribution_outcome_workers (worker_name text primary key, process_id integer not null);
 insert into distribution_outcome_workers
 select 'a', process_id from extensions.dblink('outcome_worker_a', 'select pg_backend_pid()') as worker(process_id integer);
