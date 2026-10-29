@@ -30,7 +30,8 @@ let releaseDelayedResponse = () => {}
 let phase = 'prepare'
 try {
   await environment.prepare()
-  console.log(JSON.stringify({ project: environment.project, migrations: 150,
+  console.log(JSON.stringify({ project: environment.project,
+    migrations: Object.keys(environment.sourceManifest).length,
     api, postgres: ports.db, identity: 'verified-exclusive-new-volume' }))
   phase = 'fixtures'
   const helpers = fs.readFileSync(path.join(root, 'backend/scripts/fixtures/electronic_document_persistence.sql'), 'utf8')
@@ -338,7 +339,7 @@ try {
   await context.close()
   evidence.project = environment.project
   evidence.ports = ports
-  evidence.migrations = 150
+  evidence.migrations = Object.keys(environment.sourceManifest).length
   evidence.documentIds = { prepared: fixture.prepared, frozen: fixture.frozen, other: fixture.other }
 } catch (error) {
   // Never print raw Auth/CLI payloads, assertions containing credentials or JWTs.

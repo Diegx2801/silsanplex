@@ -15,6 +15,7 @@ export interface ComboboxOption {
   keywords?: readonly string[]
   secondaryText?: string
   disabled?: boolean
+  customValue?: string
 }
 
 export interface ComboboxProps {
@@ -22,7 +23,7 @@ export interface ComboboxProps {
   label: string
   value: string
   options: readonly ComboboxOption[]
-  onChange: (value: string) => void
+  onChange: (value: string, option?: ComboboxOption) => void
   onBlur?: FocusEventHandler<HTMLInputElement>
   placeholder?: string
   helperText?: string
@@ -41,6 +42,7 @@ export interface ComboboxProps {
   minSearchLength?: number
   debounceMs?: number
   loadingMessage?: string
+  allowCustomValue?: boolean
 }
 
 function normalizar(texto: string) {
@@ -49,13 +51,6 @@ function normalizar(texto: string) {
     .replace(/\p{Diacritic}/gu, '')
     .toLocaleLowerCase('es-PE')
     .trim()
-}
-
-function primerIndiceSeleccionable(opciones: readonly ComboboxOption[], desde = 0) {
-  for (let indice = desde; indice < opciones.length; indice += 1) {
-    if (!opciones[indice]?.disabled) return indice
-  }
-  return -1
 }
 
 export function Combobox({
@@ -77,6 +72,7 @@ export function Combobox({
   minSearchLength = 2,
   debounceMs = 220,
   loadingMessage = 'Buscando opciones…',
+  allowCustomValue = false,
 }: ComboboxProps) {
   const listboxId = `${id}-listbox`
   const helperId = `${id}-helper`
@@ -93,8 +89,14 @@ export function Combobox({
   const [opcionesRemotas, setOpcionesRemotas] = useState<readonly ComboboxOption[]>([])
   const [cargando, setCargando] = useState(false)
   const [errorCarga, setErrorCarga] = useState(false)
+  const [seleccionPersonalizada, setSeleccionPersonalizada] = useState<ComboboxOption | null>(null)
   const seleccion = options.find((option) => option.value === value)
     ?? opcionesRemotas.find((option) => option.value === value)
+    ?? (seleccionPersonalizada?.value === value
+      ? seleccionPersonalizada
+      : allowCustomValue && value
+        ? { value, label: value }
+        : undefined)
 
   const opcionesFiltradas = useMemo(() => {
     if (loadOptions) return opcionesRemotas.slice(0, maxVisibleOptions)
@@ -109,6 +111,22 @@ export function Combobox({
 
     return coincidencias.slice(0, maxVisibleOptions)
   }, [busqueda, loadOptions, maxVisibleOptions, opcionesRemotas, options])
+
+  const opcionesVisibles = useMemo(() => {
+    if (!allowCustomValue || loadOptions) return opcionesFiltradas
+    const termino = busqueda.trim()
+    if (!termino) return opcionesFiltradas
+    const yaExiste = opcionesFiltradas.some((option) =>
+      normalizar(option.label) === normalizar(termino)
+      || normalizar(option.value) === normalizar(termino),
+    )
+    return yaExiste
+      ? opcionesFiltradas
+      : [
+          ...opcionesFiltradas,
+          { value: `__custom__${termino}`, label: `Usar «${termino}»`, customValue: termino },
+        ]
+  }, [allowCustomValue, busqueda, loadOptions, opcionesFiltradas])
 
   useEffect(() => {
     loadOptionsRef.current = loadOptions
@@ -153,27 +171,34 @@ export function Combobox({
       return
     }
     setIndiceActivo((actual) => {
-      if (actual >= 0 && actual < opcionesFiltradas.length && !opcionesFiltradas[actual]?.disabled) {
+      if (actual >= 0 && actual < opcionesVisibles.length && !opcionesVisibles[actual]?.disabled) {
         return actual
       }
-      return primerIndiceSeleccionable(opcionesFiltradas)
+      return -1
     })
-  }, [abierto, opcionesFiltradas])
+  }, [abierto, opcionesVisibles])
 
   const seleccionar = (option: ComboboxOption) => {
     if (option.disabled) return
-    onChange(option.value)
+    if (option.customValue !== undefined) {
+      const custom = { value: option.customValue, label: option.customValue }
+      setSeleccionPersonalizada(custom)
+      onChange(option.customValue)
+    } else {
+      setSeleccionPersonalizada(null)
+      onChange(option.value, option)
+    }
     setBusqueda('')
     setAbierto(false)
     setIndiceActivo(-1)
   }
 
   const moverIndice = (direccion: 1 | -1) => {
-    if (!opcionesFiltradas.length) return
-    const inicio = indiceActivo < 0 ? (direccion === 1 ? -1 : opcionesFiltradas.length) : indiceActivo
-    for (let paso = 1; paso <= opcionesFiltradas.length; paso += 1) {
-      const indice = (inicio + direccion * paso + opcionesFiltradas.length) % opcionesFiltradas.length
-      if (!opcionesFiltradas[indice]?.disabled) {
+    if (!opcionesVisibles.length) return
+    const inicio = indiceActivo < 0 ? (direccion === 1 ? -1 : opcionesVisibles.length) : indiceActivo
+    for (let paso = 1; paso <= opcionesVisibles.length; paso += 1) {
+      const indice = (inicio + direccion * paso + opcionesVisibles.length) % opcionesVisibles.length
+      if (!opcionesVisibles[indice]?.disabled) {
         setIndiceActivo(indice)
         return
       }
@@ -195,12 +220,13 @@ export function Combobox({
     }
     if (evento.key === 'Enter' && abierto && indiceActivo >= 0) {
       evento.preventDefault()
-      const option = opcionesFiltradas[indiceActivo]
+      const option = opcionesVisibles[indiceActivo]
       if (option) seleccionar(option)
       return
     }
     if ((evento.key === 'Backspace' || evento.key === 'Delete') && value && !busqueda) {
       evento.preventDefault()
+      setSeleccionPersonalizada(null)
       onChange('')
       setAbierto(true)
       setIndiceActivo(-1)
@@ -242,7 +268,11 @@ export function Combobox({
           aria-haspopup="listbox"
           aria-autocomplete="list"
           aria-expanded={abierto}
-          aria-controls={abierto ? listboxId : undefined}
+          aria-controls={
+            abierto && !cargando && !errorCarga && opcionesVisibles.length > 0
+              ? listboxId
+              : undefined
+          }
           aria-required={required || undefined}
           aria-activedescendant={
             abierto && indiceActivo >= 0 ? `${reactId}-${listboxId}-${indiceActivo}` : undefined
@@ -269,7 +299,10 @@ export function Combobox({
             setBusqueda(siguiente)
             setAbierto(true)
             setIndiceActivo(-1)
-            if (value && siguiente !== seleccion?.label) onChange('')
+            if (value && siguiente !== seleccion?.label) {
+              setSeleccionPersonalizada(null)
+              onChange('')
+            }
           }}
           onKeyDown={controlarTeclado}
         />
@@ -278,11 +311,7 @@ export function Combobox({
 
       {abierto ? (
         <div
-          id={listboxId}
-          role="listbox"
-          aria-label={label}
-          className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-md border bg-background p-1 pe-2 shadow-xl"
-          style={{ scrollbarGutter: 'stable' }}
+          className="absolute inset-x-0 top-full z-30 mt-1 rounded-md border bg-background shadow-xl"
           onPointerDown={() => {
             interactuandoListaRef.current = true
           }}
@@ -291,8 +320,10 @@ export function Combobox({
             // cerrar la lista antes de que el navegador pueda desplazarla.
             const objetivo = evento.target as HTMLElement
             if (!objetivo.closest('[role="option"]')) {
-              const rectangulo = evento.currentTarget.getBoundingClientRect()
-              const anchoBarra = evento.currentTarget.offsetWidth - evento.currentTarget.clientWidth
+              const lista = objetivo.closest('[role="listbox"]')
+              const superficie = lista instanceof HTMLElement ? lista : evento.currentTarget
+              const rectangulo = superficie.getBoundingClientRect()
+              const anchoBarra = superficie.offsetWidth - superficie.clientWidth
               const estaEnBarra = anchoBarra > 0 && evento.clientX >= rectangulo.right - anchoBarra
               if (!estaEnBarra) {
                 evento.preventDefault()
@@ -322,40 +353,53 @@ export function Combobox({
             <p className="px-3 py-2 text-sm text-muted-foreground" role="status">
               Escribe al menos {minSearchLength} caracteres para buscar.
             </p>
-          ) : !opcionesFiltradas.length ? (
+          ) : !opcionesVisibles.length ? (
             <p className="px-3 py-2 text-sm text-muted-foreground" role="status">
               {loadOptions || options.length ? noResultsMessage : noOptionsMessage}
             </p>
           ) : (
-            opcionesFiltradas.map((option, indice) => (
-              <button
-                key={option.value}
-                id={`${reactId}-${listboxId}-${indice}`}
-                type="button"
-                role="option"
-                aria-selected={option.value === value}
-                aria-disabled={option.disabled || undefined}
-                disabled={option.disabled}
-                className={`block w-full rounded-sm px-3 py-2 text-start text-sm disabled:cursor-not-allowed disabled:opacity-50 ${
-                  indice === indiceActivo ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
-                }`}
-                onMouseDown={(evento) => evento.preventDefault()}
-                onClick={() => seleccionar(option)}
-              >
-                <span className="block truncate font-medium">{option.label}</span>
-                {option.secondaryText ? (
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                    {option.secondaryText}
-                  </span>
-                ) : null}
-              </button>
-            ))
+            <div
+              id={listboxId}
+              role="listbox"
+              aria-label={label}
+              className="max-h-64 overflow-y-auto p-1 pe-2"
+              style={{ scrollbarGutter: 'stable' }}
+            >
+              {opcionesVisibles.map((option, indice) => (
+                <div
+                  key={option.value}
+                  id={`${reactId}-${listboxId}-${indice}`}
+                  role="option"
+                  aria-selected={option.value === value}
+                  aria-disabled={option.disabled || undefined}
+                  className={`block rounded-sm px-3 py-2 text-start text-sm ${
+                    option.disabled
+                      ? 'cursor-not-allowed opacity-50'
+                      : indice === indiceActivo
+                        ? 'bg-accent text-accent-foreground'
+                        : 'cursor-pointer hover:bg-muted'
+                  }`}
+                  onMouseDown={(evento) => evento.preventDefault()}
+                  onMouseMove={() => {
+                    if (!option.disabled) setIndiceActivo(indice)
+                  }}
+                  onClick={() => seleccionar(option)}
+                >
+                  <span className="block truncate font-medium">{option.label}</span>
+                  {option.secondaryText ? (
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                      {option.secondaryText}
+                    </span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           )}
         </div>
       ) : null}
 
       {helperText ? <p id={helperId} className="mt-1 text-xs text-muted-foreground">{helperText}</p> : null}
-      {error ? <p id={errorId} className="field-error">{error}</p> : null}
+      {error ? <p id={errorId} className="field-error" role="alert">{error}</p> : null}
     </div>
   )
 }

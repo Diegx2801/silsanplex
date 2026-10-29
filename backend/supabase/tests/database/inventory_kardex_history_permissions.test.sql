@@ -26,9 +26,10 @@ select is(
     'location_id:uuid', 'stock_status:text', 'unit_cost:numeric', 'transfer_id:uuid',
     'inbound_quantity:numeric', 'outbound_quantity:numeric', 'inbound_value:numeric',
     'outbound_value:numeric', 'running_quantity:numeric', 'running_value:numeric',
-    'ledger_sequence:int8', 'document_reference:text'
+    'ledger_sequence:int8', 'document_reference:text', 'entered_quantity:numeric',
+    'entered_unit_id:uuid', 'entered_unit_of_measure:text', 'unit_conversion_factor:numeric'
   ]::text[],
-  'inventory_kardex conserva el contrato histórico y agrega el documento de sustento al final'
+  'inventory_kardex conserva el contrato histórico y expone unidad y cantidad de captura'
 );
 
 insert into public.organizations (id, name, slug) values

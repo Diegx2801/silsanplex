@@ -126,6 +126,11 @@ export interface ResultadoCatalogoReparacion<T> {
 }
 
 export interface Reparacion {
+  tipoSolicitante?: 'customer' | 'internal'
+  areaSolicitante?: string
+  tipoEquipo?: 'catalog' | 'external'
+  descripcionEquipoExterno?: string
+  servicioExternoPendiente?: boolean
   id: string
   organizationId: string
   lockVersion: number
@@ -324,8 +329,12 @@ const uuidOpcional = z
   )
 
 export const esquemaDatosReparacion = z.object({
-  clienteId: z.string().uuid('Selecciona un cliente'),
-  productoId: z.string().uuid('Selecciona un producto'),
+  tipoSolicitante: z.enum(['customer', 'internal']).optional(),
+  areaSolicitante: textoOpcional(160).optional(),
+  tipoEquipo: z.enum(['catalog', 'external']).optional(),
+  descripcionEquipoExterno: textoOpcional(240).optional(),
+  clienteId: z.string(),
+  productoId: z.string(),
   numeroSerie: z.string().trim().max(120, 'Máximo 120 caracteres'),
   prioridad: z.enum(['low', 'normal', 'high', 'urgent']),
   fechaEstimadaEntrega: fechaOpcional,
@@ -339,6 +348,17 @@ export const esquemaDatosReparacion = z.object({
   documentoVentaId: uuidOpcional,
   referenciaGarantia: textoOpcional(160),
   esGarantia: z.boolean(),
+}).superRefine((datos, contexto) => {
+  if (datos.tipoSolicitante === 'internal') {
+    if (!datos.areaSolicitante?.trim()) contexto.addIssue({ code: 'custom', path: ['areaSolicitante'], message: 'Indica el área que solicita la reparación' })
+  } else if (!z.string().uuid().safeParse(datos.clienteId).success) {
+    contexto.addIssue({ code: 'custom', path: ['clienteId'], message: 'Selecciona un cliente' })
+  }
+  if (datos.tipoEquipo === 'external') {
+    if ((datos.descripcionEquipoExterno?.trim().length ?? 0) < 3) contexto.addIssue({ code: 'custom', path: ['descripcionEquipoExterno'], message: 'Describe el equipo recibido (marca, modelo o identificación)' })
+  } else if (!z.string().uuid().safeParse(datos.productoId).success) {
+    contexto.addIssue({ code: 'custom', path: ['productoId'], message: 'Selecciona un producto' })
+  }
 })
 
 export type DatosReparacion = z.infer<typeof esquemaDatosReparacion>
@@ -511,6 +531,10 @@ export function estadoEsEditable(estado: EstadoReparacion) {
 }
 
 const eventosSustantivosIdentidadReparacion = new Set([
+  'ATTACHMENT_ADDED',
+  'EXTERNAL_SERVICE_SENT',
+  'EXTERNAL_SERVICE_RECEIVED',
+  'SERVICE_WARRANTY_CONFIGURED',
   'DIAGNOSIS_CREATED',
   'SOLUTION_RECORDED',
   'QUOTE_CREATED',
@@ -603,6 +627,8 @@ export function datosReparacionInicial(
     return {
       clienteId: '',
       productoId: '',
+      tipoSolicitante: 'customer', areaSolicitante: '',
+      tipoEquipo: 'catalog', descripcionEquipoExterno: '',
       numeroSerie: '',
       prioridad: 'normal',
       fechaEstimadaEntrega: '',
@@ -618,6 +644,10 @@ export function datosReparacionInicial(
   return {
     clienteId: reparacion.clienteId,
     productoId: reparacion.productoId,
+    tipoSolicitante: reparacion.tipoSolicitante ?? 'customer',
+    areaSolicitante: reparacion.areaSolicitante ?? '',
+    tipoEquipo: reparacion.tipoEquipo ?? 'catalog',
+    descripcionEquipoExterno: reparacion.descripcionEquipoExterno ?? '',
     numeroSerie: reparacion.numeroSerie,
     prioridad: reparacion.prioridad,
     fechaEstimadaEntrega: reparacion.fechaEntregaEstimada,

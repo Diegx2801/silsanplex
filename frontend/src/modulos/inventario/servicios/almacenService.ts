@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { leerCapturaUnidadMovimiento } from '../modelo/capturaUnidadMovimiento'
 import type {
   AlertaInventario,
   Almacen,
@@ -29,8 +30,27 @@ function errorAlmacen(error: { code?: string; message?: string }) {
   if (mensaje.includes('INVENTORY_SERVICE_PRODUCT_FORBIDDEN')) return 'Los servicios no pueden transferirse ni administrarse como inventario.'
   if (mensaje.includes('INVENTORY_FEFO_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock asignable disponible según FEFO.'
   if (mensaje.includes('INVENTORY_INSUFFICIENT_STOCK')) return 'La operación supera el stock disponible del lote y ubicación seleccionados.'
+  if (mensaje.includes('INVENTORY_RESERVED_STOCK')) return 'La cantidad afectaría unidades reservadas. Reduce la cantidad al stock no reservado de la posición.'
+  if (mensaje.includes('RECLASSIFICATION_OPERATION_CONFLICT')) return 'El intento anterior corresponde a otros datos. Revisa la reclasificación antes de confirmar nuevamente.'
+  if (mensaje.includes('RECLASSIFICATION_REASON_INVALID')) return 'Describe el motivo de la reclasificación con entre 3 y 180 caracteres.'
+  if (mensaje.includes('RECLASSIFICATION_UNIT_COST_INVALID')) return 'No se pudo verificar el costo de la posición. Revisa su valorización antes de cambiar la condición.'
   if (mensaje.includes('INVENTORY_MAXIMUM_STOCK_EXCEEDED')) return 'La operación superaría el stock máximo configurado para el producto.'
-  if (mensaje.includes('TRANSFER_WAREHOUSES_MUST_DIFFER')) return 'El almacén de destino debe ser diferente al de origen.'
+  if (mensaje.includes('TRANSFER_POSITION_MUST_DIFFER')) return 'Selecciona una ubicación de destino diferente a la de origen.'
+  if (mensaje.includes('TRANSFER_WAREHOUSE_UNAVAILABLE')) return 'Uno de los almacenes ya no está activo. Actualiza la selección.'
+  if (mensaje.includes('TRANSFER_LOCATION_UNAVAILABLE')) return 'Una ubicación ya no está activa o no pertenece al almacén seleccionado.'
+  if (mensaje.includes('TRANSFER_SOURCE_POSITION_UNAVAILABLE')) return 'La posición de origen ya no tiene stock disponible. Actualiza la selección.'
+  if (mensaje.includes('TRANSFER_INSUFFICIENT_STOCK')) return 'La cantidad supera el stock no reservado de la posición seleccionada.'
+  if (mensaje.includes('TRANSFER_OPERATION_CONFLICT')) return 'El intento anterior corresponde a otros datos. Actualiza el formulario antes de volver a confirmar.'
+  if (mensaje.includes('TRANSFER_OPERATION_KEY_REQUIRED')) return 'No se pudo identificar el intento de transferencia. Recarga el formulario antes de confirmar.'
+  if (mensaje.includes('TRANSFER_DETAILS_INVALID')) return 'Revisa los datos de la transferencia.'
+  if (mensaje.includes('INVENTORY_STATUS_INVALID')) return 'Selecciona una condición de stock válida.'
+  if (mensaje.includes('TRANSFER_UNIT_COST_INVALID')) return 'No se pudo verificar el costo de la posición de origen. Revisa su valorización antes de transferir.'
+  if (mensaje.includes('INVENTORY_PRODUCT_UNAVAILABLE')) return 'El producto ya no está disponible para esta operación.'
+  if (mensaje.includes('INVENTORY_WAREHOUSE_UNAVAILABLE')) return 'El almacén ya no está activo. Vuelve a seleccionar una posición disponible.'
+  if (mensaje.includes('INVENTORY_POSITION_UNIT_CONFLICT')) return 'Una posición conserva stock con una unidad base anterior. Es necesario conciliar ese saldo antes de continuar; no se convertirá automáticamente.'
+  if (mensaje.includes('INVENTORY_INPUT_UNIT_STALE')) return 'La equivalencia de la unidad cambió. Vuelve a seleccionar la unidad y revisa la cantidad.'
+  if (mensaje.includes('INVENTORY_INPUT_UNIT_INVALID')) return 'Selecciona una unidad de medida configurada para este producto.'
+  if (mensaje.includes('INVENTORY_QUANTITY_INVALID') || mensaje.includes('INVENTORY_QUANTITY_CONVERSION_INVALID')) return 'Revisa la cantidad y su equivalencia: debe ser mayor a cero y admitir hasta 3 decimales en la unidad base.'
   if (mensaje.includes('LOCATION_UNAVAILABLE')) return 'La ubicación seleccionada no está disponible.'
   if (mensaje.includes('WAREHOUSE_OPERATION_KEY_REUSED')) return 'La operación ya fue utilizada con otros datos. Vuelve a intentarlo.'
   if (mensaje.includes('WAREHOUSE_CODE_DUPLICATE')) return 'Ya existe un almacén con ese código.'
@@ -109,12 +129,18 @@ export async function buscarAlmacenesDisponibles(
 const columnasVencimiento =
   'product_id,product_code,product_description,unit_of_measure,warehouse_id,warehouse_code,warehouse_name,location_id,location_code,location_name,stock_status,lot,expiration_date,physical_quantity,inventory_value,average_cost,expiration_alert_days,days_until_expiration,expiration_state' as const
 const columnasKardex =
-  'id,product_id,product_code,product_description,warehouse,warehouse_id,stock_status,lot,operation_date,created_at,reason,document_reference,unit_cost,inbound_quantity,outbound_quantity,inbound_value,outbound_value,running_quantity,running_value,ledger_sequence' as const
+  'id,product_id,product_code,product_description,unit_of_measure,warehouse,warehouse_id,stock_status,lot,operation_date,created_at,reason,document_reference,unit_cost,inbound_quantity,outbound_quantity,inbound_value,outbound_value,running_quantity,running_value,ledger_sequence,entered_quantity,entered_unit_of_measure,unit_conversion_factor' as const
 
-function aplicarBusqueda<T extends { or: (filtro: string) => T }>(query: T, busqueda: string) {
+function aplicarBusqueda<T extends { or: (filtro: string) => T }>(
+  query: T,
+  busqueda: string,
+  incluirReferencia = false,
+) {
   const termino = normalizarBusquedaInventario(busqueda)
   return termino
-    ? query.or(`product_code.ilike.%${termino}%,product_description.ilike.%${termino}%`)
+    ? query.or(incluirReferencia
+      ? `product_code.ilike.%${termino}%,product_description.ilike.%${termino}%,lot.ilike.%${termino}%,document_reference.ilike.%${termino}%`
+      : `product_code.ilike.%${termino}%,product_description.ilike.%${termino}%`)
     : query
 }
 
@@ -240,6 +266,7 @@ export async function listarKardex(
   let query = aplicarBusqueda(
     supabase.from('inventory_kardex').select(columnasKardex, { count: 'exact' }).eq('organization_id', organizationId),
     consulta.busqueda,
+    true,
   )
   if (consulta.almacenId) query = query.eq('warehouse_id', consulta.almacenId)
   if (consulta.fechaDesde) query = query.gte('operation_date', consulta.fechaDesde)
@@ -252,6 +279,8 @@ export async function listarKardex(
   if (error) throw new Error(errorAlmacen(error))
   const elementos = (data ?? []).map((fila) => ({
       id: fila.id,
+      ...leerCapturaUnidadMovimiento(fila),
+      unidadMedida: fila.unit_of_measure ?? '',
       productoId: fila.product_id,
       productoCodigo: fila.product_code,
       productoDescripcion: fila.product_description,
@@ -281,7 +310,7 @@ export async function listarTransferencias(
   const { desde, hasta } = normalizarPaginacion(consulta)
   let query = supabase
     .from('warehouse_transfers')
-    .select('id,reference,source_warehouse_id,destination_warehouse_id,transferred_at,notes', { count: 'exact' })
+    .select('id,reference,source_warehouse_id,destination_warehouse_id,transferred_at,notes,warehouse_transfer_items(source_location_id,destination_location_id)', { count: 'exact' })
     .eq('organization_id', organizationId)
   const busqueda = normalizarBusquedaInventario(consulta.busqueda)
   if (busqueda) query = query.or(`reference.ilike.%${busqueda}%,notes.ilike.%${busqueda}%`)
@@ -301,10 +330,20 @@ export async function listarTransferencias(
       referencia: fila.reference,
       almacenOrigenId: fila.source_warehouse_id,
       almacenDestinoId: fila.destination_warehouse_id,
+      ubicacionOrigenId: ubicacionUnica(fila.warehouse_transfer_items, 'source_location_id'),
+      ubicacionDestinoId: ubicacionUnica(fila.warehouse_transfer_items, 'destination_location_id'),
       fechaTransferencia: fila.transferred_at,
       notas: fila.notes ?? '',
   })) as TransferenciaAlmacen[]
   return crearResultadoPaginado(elementos, count, consulta)
+}
+
+function ubicacionUnica(
+  items: { source_location_id: string; destination_location_id: string }[] | null,
+  campo: 'source_location_id' | 'destination_location_id',
+): string | undefined {
+  const ids = new Set((items ?? []).map((item) => item[campo]).filter(Boolean))
+  return ids.size === 1 ? [...ids][0] : undefined
 }
 
 function mapearSaldo(fila: Record<string, unknown>): SaldoInventario {
@@ -475,46 +514,45 @@ export async function configurarAlertas(organizationId: string, userId: string, 
   if (error) throw new Error(errorAlmacen(error))
 }
 
-export async function transferirInventario(organizationId: string, datos: DatosTransferencia) {
-  const transferenciaFefo = datos.estado === 'available'
-  const payload = transferenciaFefo ? {
+export async function transferirInventario(
+  organizationId: string,
+  datos: DatosTransferencia,
+  operationKey: string = crypto.randomUUID(),
+) {
+  const { error } = await supabase.rpc('transfer_inventory_position', { payload: {
     organization_id: organizationId,
-    reference: datos.referencia,
+    operation_key: operationKey,
+    product_id: datos.productoId,
     source_warehouse_id: datos.almacenOrigenId,
+    source_location_id: datos.ubicacionOrigenId,
     destination_warehouse_id: datos.almacenDestinoId,
     destination_location_id: datos.ubicacionDestinoId,
-    product_id: datos.productoId,
     quantity: datos.cantidad,
-    notes: datos.notas,
-  } : {
-    organization_id: organizationId,
-    reference: datos.referencia,
-    source_warehouse_id: datos.almacenOrigenId,
-    destination_warehouse_id: datos.almacenDestinoId,
-    notes: datos.notas,
-    items: [{
-      product_id: datos.productoId,
-      source_location_id: datos.ubicacionOrigenId,
-      destination_location_id: datos.ubicacionDestinoId,
-      quantity: datos.cantidad,
-      lot: datos.lote,
-      expiration_date: datos.fechaVencimiento,
-      stock_status: datos.estado,
-    }],
-  }
-  const { error } = await supabase.rpc(transferenciaFefo ? 'transfer_inventory_fefo' : 'transfer_inventory', { payload })
+    input_unit_id: datos.unidadEntradaId || null,
+    expected_conversion_factor: datos.factorConversionEsperado ?? null,
+    lot: datos.lote,
+    expiration_date: datos.fechaVencimiento || null,
+    stock_status: datos.estado,
+  } })
   if (error) throw new Error(errorAlmacen(error))
 }
 
-export async function reclasificarInventario(organizationId: string, datos: DatosReclasificacion) {
+export async function reclasificarInventario(
+  organizationId: string,
+  datos: DatosReclasificacion,
+  operationKey: string = crypto.randomUUID(),
+) {
   const { error } = await supabase.rpc('reclassify_inventory', { payload: {
     organization_id: organizationId,
+    operation_key: operationKey,
     product_id: datos.productoId,
     warehouse_id: datos.almacenId,
     location_id: datos.ubicacionId,
     source_status: datos.estadoOrigen,
     destination_status: datos.estadoDestino,
     quantity: datos.cantidad,
+    input_unit_id: datos.unidadEntradaId || null,
+    expected_conversion_factor: datos.factorConversionEsperado ?? null,
     lot: datos.lote,
     expiration_date: datos.fechaVencimiento,
     reason: datos.motivo,

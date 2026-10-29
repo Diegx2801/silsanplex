@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   leerRespuestaReadInventario,
   listarOpcionesProductoInventario,
+  obtenerOpcionProductoInventarioPorId,
 } from './productoInventarioReadService'
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
@@ -28,6 +29,67 @@ describe('leerRespuestaReadInventario', () => {
   })
 })
 
+describe('obtenerOpcionProductoInventarioPorId', () => {
+  beforeEach(() => rpc.mockReset())
+
+  it('consulta por identidad y conserva reglas de lote y vencimiento', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        items: [{
+          product_id: 'producto-1',
+          product_code: 'SKU-001',
+          product_description: 'Producto uno',
+          barcode: '75000001',
+          unit_of_measure: 'Caja',
+          base_unit_id: 'a6000000-0000-4000-8000-000000000001',
+          alternative_units: [{
+            unit_id: 'a6000000-0000-4000-8000-000000000002',
+            unit_name: 'Paquete',
+            conversion_factor: 12,
+          }],
+          batch_control: true,
+          expiration_control: true,
+        }],
+        total_count: 1,
+      },
+      error: null,
+    })
+
+    await expect(obtenerOpcionProductoInventarioPorId('org-1', 'producto-1')).resolves.toEqual({
+      id: 'producto-1',
+      codigo: 'SKU-001',
+      descripcion: 'Producto uno',
+      codigoBarras: '75000001',
+      unidadMedida: 'Caja',
+      unidadBaseId: 'a6000000-0000-4000-8000-000000000001',
+      unidadesEntrada: [
+        { id: 'a6000000-0000-4000-8000-000000000001', nombre: 'Caja', factorConversion: 1 },
+        { id: 'a6000000-0000-4000-8000-000000000002', nombre: 'Paquete', factorConversion: 12 },
+      ],
+      controlLote: true,
+      controlVencimiento: true,
+    })
+    expect(rpc).toHaveBeenCalledWith('inventory_product_option_read_by_id', {
+      requested_organization_id: 'org-1',
+      requested_product_id: 'producto-1',
+    })
+  })
+
+  it('devuelve null cuando el producto ya no es elegible para operar', async () => {
+    rpc.mockResolvedValue({ data: { items: [], total_count: 0 }, error: null })
+
+    await expect(obtenerOpcionProductoInventarioPorId('org-1', 'producto-inactivo')).resolves.toBeNull()
+  })
+
+  it('oculta detalles del servicio ante fallos de lectura', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'detalle interno' } })
+
+    await expect(obtenerOpcionProductoInventarioPorId('org-1', 'producto-1')).rejects.toThrow(
+      'No se pudo preparar el producto para la operación de Inventario',
+    )
+  })
+})
+
 describe('listarOpcionesProductoInventario', () => {
   beforeEach(() => rpc.mockReset())
 
@@ -40,6 +102,8 @@ describe('listarOpcionesProductoInventario', () => {
           product_description: 'Producto uno',
           barcode: null,
           unit_of_measure: 'UND',
+          base_unit_id: 'a6000000-0000-4000-8000-000000000003',
+          alternative_units: [],
           batch_control: true,
           expiration_control: false,
         }],
@@ -64,6 +128,8 @@ describe('listarOpcionesProductoInventario', () => {
         descripcion: 'Producto uno',
         codigoBarras: '',
         unidadMedida: 'UND',
+        unidadBaseId: 'a6000000-0000-4000-8000-000000000003',
+        unidadesEntrada: [{ id: 'a6000000-0000-4000-8000-000000000003', nombre: 'UND', factorConversion: 1 }],
         controlLote: true,
         controlVencimiento: false,
       }],

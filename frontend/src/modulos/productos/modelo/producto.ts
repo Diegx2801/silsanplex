@@ -84,7 +84,11 @@ export const esquemaProducto = z.object({
   serialControl: z.boolean(),
   ventaReceta: z.boolean(),
   activo: z.boolean(),
-  unidadesAlternativas: z.array(esquemaUnidadAlternativa).max(12, 'Máximo 12 unidades alternativas'),
+  // Reject oversized lists before parsing their nested entries; validate entries fully when within the limit.
+  unidadesAlternativas: z
+    .array(z.any())
+    .max(12, 'Máximo 12 unidades alternativas')
+    .pipe(z.array(esquemaUnidadAlternativa)),
 }).superRefine((datos, contexto) => {
   if (
     datos.precioMinimo &&
@@ -101,6 +105,9 @@ export const esquemaProducto = z.object({
   if (datos.tipo === 'service' && (datos.controlLote || datos.controlVencimiento || datos.serialControl)) {
     contexto.addIssue({ code: 'custom', path: ['tipo'], message: 'Los servicios no controlan lote ni vencimiento' })
   }
+
+  // Zod can still run object refinements after a max-length issue; skip rejected entries here.
+  if (!Array.isArray(datos.unidadesAlternativas) || datos.unidadesAlternativas.length > 12) return
 
   const unidades = new Set<string>()
   const codigosBarras = new Set(

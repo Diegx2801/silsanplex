@@ -86,15 +86,16 @@ export function DialogoPrueba({
               <input id="prueba-resultado" className="field-control" autoComplete="off" placeholder="Ej. Opera correctamente" aria-invalid={Boolean(errors.resultado)} {...register('resultado')} />
               {errors.resultado ? <p className="field-error">{errors.resultado.message}</p> : null}
             </div>
-            <div className="sm:col-span-2">
-              <label htmlFor="prueba-notas" className="field-label">Notas</label>
-              <textarea id="prueba-notas" rows={3} className="field-control resize-y py-2" placeholder="Condiciones o mediciones de la prueba" aria-invalid={Boolean(errors.notas)} {...register('notas')} />
-              {errors.notas ? <p className="field-error">{errors.notas.message}</p> : null}
-            </div>
             <label htmlFor="prueba-aprobada" className="flex cursor-pointer items-start gap-3 border-t py-4 sm:col-span-2">
               <input id="prueba-aprobada" type="checkbox" className="mt-0.5 size-4 shrink-0 accent-primary" {...register('aprobada')} />
               <span><span className="block text-sm font-medium">Prueba aprobada</span><span className="mt-1 block text-sm leading-5 text-muted-foreground">El ciclo vigente necesita una prueba aprobada y ningún fallo.</span></span>
             </label>
+            <details className="border-t pt-4 sm:col-span-2" open={Boolean(errors.notas) || undefined}>
+              <summary className="cursor-pointer rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Condiciones y mediciones adicionales</summary>
+              <label htmlFor="prueba-notas" className="field-label mt-4">Detalle de la prueba</label>
+              <textarea id="prueba-notas" rows={3} className="field-control resize-y py-2" placeholder="Condiciones o mediciones que complementen el resultado" aria-invalid={Boolean(errors.notas)} {...register('notas')} />
+              {errors.notas ? <p className="field-error">{errors.notas.message}</p> : null}
+            </details>
             <input type="hidden" {...register('realizadaPor')} />
           </form>
           {mensaje ? <p role="alert" className="border-t bg-destructive/10 px-5 py-3 text-sm text-destructive sm:px-7">{mensaje}</p> : null}

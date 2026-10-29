@@ -103,14 +103,31 @@ enable_signup = false
 '''
 
 
+def candidate_start(names):
+    candidate_names = list(CANDIDATE_HASHES)
+    require(names == sorted(set(names)), 'MIGRATION_MANIFEST')
+    first_candidate = names.index(candidate_names[0]) if candidate_names[0] in names else -1
+    require(first_candidate >= 0
+            and names[first_candidate:first_candidate + len(candidate_names)] == candidate_names
+            and sum(name in CANDIDATE_HASHES for name in names) == len(candidate_names),
+            'MIGRATION_CANDIDATES')
+    return first_candidate
+
+
 def repository_manifest():
     paths = sorted((ROOT / 'backend/supabase/migrations').glob('*.sql'))
-    require(len(paths) == 150 and [p.name for p in paths[-2:]] == list(CANDIDATE_HASHES),
-            'MIGRATION_MANIFEST')
+    names = [path.name for path in paths]
+    candidate_start(names)
     values = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
     require(all(values[name] == digest for name, digest in CANDIDATE_HASHES.items()),
             'CANDIDATE_HASH')
     return values
+
+
+def pre_candidate_migrations(manifest):
+    names = list(manifest)
+    first_candidate = candidate_start(names)
+    return names[:first_candidate]
 
 
 def verify_copy(project, directory):
@@ -119,7 +136,7 @@ def verify_copy(project, directory):
     manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf8'))
     require(manifest == repository_manifest(), 'SOURCE_CHANGED')
     copies = sorted((directory / 'supabase/migrations').iterdir())
-    expected = list(manifest)[:-2]
+    expected = pre_candidate_migrations(manifest)
     require([p.name for p in copies] == expected, 'COPIED_HISTORY')
     require(all(not p.is_symlink() and hashlib.sha256(p.read_bytes()).hexdigest() == manifest[p.name]
                 for p in copies), 'COPIED_HASH')
@@ -141,20 +158,21 @@ def prepare():
     directory.mkdir(mode=0o700, exist_ok=False)
     copies = directory / 'supabase/migrations'
     copies.mkdir(parents=True)
-    for name in list(manifest)[:-2]:
+    historical = pre_candidate_migrations(manifest)
+    for name in historical:
         (copies / name).write_bytes((ROOT / 'backend/supabase/migrations' / name).read_bytes())
     (directory / 'supabase/config.toml').write_text(config(project), encoding='utf8')
     (directory / 'manifest.json').write_text(json.dumps(manifest), encoding='utf8')
     verify_copy(project, directory)
     cli = str(ROOT / 'backend/node_modules/.bin/supabase')
-    print(json.dumps({'starting_fresh_project': project, 'historical_files': 148}), flush=True)
+    print(json.dumps({'starting_fresh_project': project, 'historical_files': len(historical)}), flush=True)
     command([cli, 'start', '--workdir', str(directory), '--exclude',
              'studio,inbucket,realtime,analytics,vector,edge-runtime,imgproxy,meta'])
-    # start initializes fresh volumes; up is harmless if it already applied all 148.
+    # start initializes fresh volumes; up is harmless if it applied the baseline.
     # No reset, repair, remote URL, seed or backup restore is used.
     verify_target()
     command([cli, 'migration', 'up', '--local', '--workdir', str(directory)])
-    print(json.dumps({'prepared_project': project, 'historical_files': 148,
+    print(json.dumps({'prepared_project': project, 'historical_files': len(historical),
                       'api': 59121, 'postgres': 59122}))
 
 

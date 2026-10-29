@@ -1,9 +1,24 @@
 // Explicit node:test entry, kept outside Vitest's *.test.* discovery.
 import assert from 'node:assert/strict'
+import path from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import {
   FiscalEnvironment, assertLabels, commandInvocation, isGitHubHostedLinux, ports, closeFiscalTestResources,
 } from './fiscal-integration-environment.mjs'
+
+test('manifest incluye migraciones posteriores a las candidatas fiscales', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
+  const names = Object.keys(new FiscalEnvironment(root).manifest())
+  const candidates = [
+    '20261023061225_electronic_fiscal_sandbox_persistence.sql',
+    '20261023135019_electronic_fiscal_helper_sql_lint.sql',
+  ]
+  const firstCandidate = names.indexOf(candidates[0])
+  assert.ok(firstCandidate >= 0)
+  assert.deepEqual(names.slice(firstCandidate, firstCandidate + candidates.length), candidates)
+  assert.ok(firstCandidate + candidates.length < names.length)
+})
 
 test('puertos exclusivos sin destinos persistentes', () => {
   assert.deepEqual(Object.values(ports), [59220, 59221, 59222, 5197])

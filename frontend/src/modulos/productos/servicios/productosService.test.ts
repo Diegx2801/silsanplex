@@ -21,6 +21,7 @@ import {
   editarProducto,
   importarProductos,
   consultarProductosExistentes,
+  consultarUnidadBaseEditable,
   listarArchivosProducto,
   listarOpcionesProductos,
   listarProductosPaginados,
@@ -111,6 +112,19 @@ describe('productosService', () => {
     upload: ReturnType<typeof vi.fn>
     remove: ReturnType<typeof vi.fn>
   }
+
+  it.each([true, false])('consulta permiso de cambio de unidad para el producto y organización: %s', async (editable) => {
+    supabaseMock.rpc.mockResolvedValue({ data: editable, error: null })
+    await expect(consultarUnidadBaseEditable('org-1', 'producto-1')).resolves.toBe(editable)
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('product_base_unit_editable', { requested_organization_id: 'org-1', requested_product_id: 'producto-1' })
+  })
+
+  it('no permite cambios de base ante respuesta inválida o error', async () => {
+    supabaseMock.rpc.mockResolvedValue({ data: null, error: null })
+    await expect(consultarUnidadBaseEditable('org-1', 'producto-1')).rejects.toThrow('No se pudo comprobar')
+    supabaseMock.rpc.mockResolvedValue({ data: null, error: { code: '42501' } })
+    await expect(consultarUnidadBaseEditable('org-1', 'producto-1')).rejects.toThrow('No se pudo comprobar')
+  })
 
   beforeEach(() => {
     respuesta = { data: [], error: null }
@@ -547,6 +561,11 @@ describe('productosService', () => {
     ).rejects.toThrow(
       'Primero deja el producto sin stock ni reservas activas antes de convertirlo en servicio',
     )
+  })
+
+  it('explica que el historial impide reinterpretar el stock cambiando la unidad base', async () => {
+    respuesta = { data: null, error: { code: 'P0001', message: 'PRODUCT_BASE_UNIT_CHANGE_INVENTORY_CONFLICT' } }
+    await expect(editarProducto('org-1', 'user-1', 'producto-1', { ...productoInicial, codigo: 'MED-001', descripcion: 'Producto actualizado' })).rejects.toThrow('La unidad base no puede cambiarse')
   })
 
   it('explica que un servicio no admite control por serie', async () => {

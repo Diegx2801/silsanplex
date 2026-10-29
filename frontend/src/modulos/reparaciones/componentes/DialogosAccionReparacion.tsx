@@ -77,10 +77,12 @@ export function DialogoObservacion({
             <div><DialogPrimitive.Title className="text-xl font-semibold">{titulo}</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">{descripcion}</DialogPrimitive.Description></div>
             <DialogPrimitive.Close asChild><button type="button" aria-label={`Cerrar ${titulo.toLocaleLowerCase('es-PE')}`} className="grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X aria-hidden="true" className="size-5" /></button></DialogPrimitive.Close>
           </header>
-          <form id="formulario-observacion-reparacion" className="px-5 py-6 sm:px-7" onSubmit={handleSubmit(guardar)}>
-            <label htmlFor="observacion-reparacion" className="field-label">Observación {observacionObligatoria ? '*' : '(opcional)'}</label>
-            <textarea id="observacion-reparacion" rows={4} className="field-control min-h-24 resize-y py-2" placeholder="Motivo o confirmación de la acción" aria-invalid={Boolean(errors.observacion)} {...register('observacion')} />
-            {errors.observacion ? <p className="field-error">{errors.observacion.message}</p> : null}
+          <form id="formulario-observacion-reparacion" className={observacionObligatoria ? 'px-5 py-6 sm:px-7' : undefined} onSubmit={handleSubmit(guardar)}>
+            {observacionObligatoria ? <>
+              <label htmlFor="observacion-reparacion" className="field-label">Motivo *</label>
+              <textarea id="observacion-reparacion" rows={4} className="field-control min-h-24 resize-y py-2" placeholder="Explica el motivo de esta acción" aria-invalid={Boolean(errors.observacion)} aria-describedby={errors.observacion ? 'observacion-reparacion-error' : undefined} {...register('observacion')} />
+              {errors.observacion ? <p id="observacion-reparacion-error" className="field-error">{errors.observacion.message}</p> : null}
+            </> : <input type="hidden" {...register('observacion')} />}
           </form>
           {mensaje ? <p role="alert" className="border-t bg-destructive/10 px-5 py-3 text-sm text-destructive sm:px-7">{mensaje}</p> : null}
           <footer className="flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end sm:px-7">

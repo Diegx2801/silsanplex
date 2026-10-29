@@ -1,19 +1,34 @@
-import { Search } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import { useOpcionesProductoInventario } from '@/modulos/inventario/estado/useOpcionesProductoInventario'
 import type { ProductoInventarioOpcion } from '@/modulos/inventario/modelo/productoInventarioRead'
+import { listarOpcionesProductoInventario } from '@/modulos/inventario/servicios/productoInventarioReadService'
 
 interface Props {
   id: string
   name: string
   etiqueta: string
   organizationId: string
+  requerido?: boolean
   deshabilitado?: boolean
+  error?: string
   autoSeleccionarPrimeraOpcion?: boolean
   value?: string
   selectedOption?: ProductoInventarioOpcion | null
   onValueChange?: (value: string, option?: ProductoInventarioOpcion) => void
+}
+
+const opcionesVacias: ProductoInventarioOpcion[] = []
+
+function convertirOpcionProducto(opcion: ProductoInventarioOpcion): ComboboxOption {
+  return {
+    value: opcion.id,
+    label: `${opcion.codigo} · ${opcion.descripcion}`,
+    secondaryText: opcion.unidadMedida ? `Unidad: ${opcion.unidadMedida}` : undefined,
+    keywords: [opcion.codigo, opcion.descripcion, opcion.codigoBarras],
+  }
 }
 
 export function SelectorProductoInventario({
@@ -21,88 +36,103 @@ export function SelectorProductoInventario({
   name,
   etiqueta,
   organizationId,
+  requerido = true,
   deshabilitado = false,
+  error,
   autoSeleccionarPrimeraOpcion = true,
   value,
   selectedOption = null,
   onValueChange,
 }: Props) {
-  const [busqueda, setBusqueda] = useState('')
+  const queryClient = useQueryClient()
   const [seleccionInterna, setSeleccionInterna] = useState(value ?? '')
-  const opcionesQuery = useOpcionesProductoInventario(busqueda, !deshabilitado, organizationId)
-  const opciones = useMemo(() => {
-    const remotas = opcionesQuery.data?.items ?? []
-    if (selectedOption && !remotas.some((opcion) => opcion.id === selectedOption.id)) {
-      return [selectedOption, ...remotas]
-    }
-    return remotas
-  }, [opcionesQuery.data?.items, selectedOption])
+  const [opcionInterna, setOpcionInterna] = useState<ProductoInventarioOpcion | null>(null)
+  const [opcionesConsultadas, setOpcionesConsultadas] = useState<ProductoInventarioOpcion[]>([])
+  const opcionesInicialesQuery = useOpcionesProductoInventario('', !deshabilitado, organizationId)
+  const opcionesIniciales = opcionesInicialesQuery.data?.items ?? opcionesVacias
   const seleccion = value ?? seleccionInterna
-  const sinOpciones = opciones.length === 0
+
+  const productos = useMemo(() => {
+    const porId = new Map<string, ProductoInventarioOpcion>()
+    for (const opcion of [
+      ...opcionesIniciales,
+      ...opcionesConsultadas,
+      selectedOption,
+      opcionInterna,
+    ]) {
+      if (opcion) porId.set(opcion.id, opcion)
+    }
+    return [...porId.values()]
+  }, [opcionInterna, opcionesConsultadas, opcionesIniciales, selectedOption])
+
+  const opciones = useMemo(() => productos.map(convertirOpcionProducto), [productos])
+
+  const cargarProductos = useCallback(async (busqueda: string) => {
+    const termino = busqueda.trim()
+    const respuesta = await queryClient.fetchQuery({
+      queryKey: ['inventory-product-options', organizationId, termino],
+      queryFn: () => listarOpcionesProductoInventario(organizationId, termino, 50, 0),
+      staleTime: 30_000,
+    })
+    setOpcionesConsultadas(respuesta.items)
+    return respuesta.items.map(convertirOpcionProducto)
+  }, [organizationId, queryClient])
 
   useEffect(() => {
-    if (opciones.length === 0 || !autoSeleccionarPrimeraOpcion) return
-    if (!opciones.some((opcion) => opcion.id === seleccion)) {
-      const siguiente = opciones[0]
+    if (
+      opcionesInicialesQuery.isLoading ||
+      opcionesInicialesQuery.error ||
+      opcionesIniciales.length === 0 ||
+      !autoSeleccionarPrimeraOpcion
+    ) return
+
+    if (!productos.some((opcion) => opcion.id === seleccion)) {
+      const siguiente = opcionesIniciales[0]
       if (value === undefined) setSeleccionInterna(siguiente.id)
+      setOpcionInterna(siguiente)
       onValueChange?.(siguiente.id, siguiente)
     }
-  }, [autoSeleccionarPrimeraOpcion, onValueChange, opciones, seleccion, value])
+  }, [
+    autoSeleccionarPrimeraOpcion,
+    onValueChange,
+    opcionesIniciales,
+    opcionesInicialesQuery.error,
+    opcionesInicialesQuery.isLoading,
+    productos,
+    seleccion,
+    value,
+  ])
 
   const cambiarSeleccion = (nextValue: string) => {
+    const opcion = productos.find((item) => item.id === nextValue)
     if (value === undefined) setSeleccionInterna(nextValue)
-    onValueChange?.(nextValue, opciones.find((opcion) => opcion.id === nextValue))
+    setOpcionInterna(opcion ?? null)
+    onValueChange?.(nextValue, opcion)
   }
+
+  const errorInicial = opcionesInicialesQuery.error instanceof Error
+    ? 'No se pudo cargar la lista de productos. Vuelve a intentarlo.'
+    : undefined
 
   return (
     <div>
-      <label className="field-label" htmlFor={`${id}-busqueda`}>
-        Buscar {etiqueta.toLocaleLowerCase('es-PE')}
-      </label>
-      <span className="relative block">
-        <Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          id={`${id}-busqueda`}
-          type="search"
-          value={busqueda}
-          onChange={(evento) => setBusqueda(evento.target.value)}
-          className="field-control ps-9"
-          placeholder="Código, descripción o barcode"
-          disabled={deshabilitado}
-        />
-      </span>
-      <label className="field-label mt-2" htmlFor={id}>{etiqueta}</label>
-      <select
+      <input type="hidden" name={name} value={seleccion} />
+      <Combobox
         id={id}
-        name={name}
+        label={etiqueta}
         value={seleccion}
-        onChange={(evento) => cambiarSeleccion(evento.target.value)}
-        className="field-control"
-        required
-        disabled={deshabilitado || sinOpciones}
-      >
-        {sinOpciones ? <option value="">{opcionesQuery.isLoading ? 'Consultando productos...' : 'No hay productos disponibles'}</option> : null}
-        {!sinOpciones && !seleccion && !autoSeleccionarPrimeraOpcion ? (
-          <option value="">Selecciona un producto</option>
-        ) : null}
-        {opciones.map((opcion) => (
-          <option key={opcion.id} value={opcion.id}>
-            {opcion.codigo} · {opcion.descripcion}
-          </option>
-        ))}
-      </select>
-      {opcionesQuery.error ? (
-        <span className="field-error mt-1 block" role="alert">
-          {opcionesQuery.error instanceof Error
-            ? opcionesQuery.error.message
-            : 'No se pudieron consultar los productos de Inventario'}
-        </span>
-      ) : null}
-      {!sinOpciones ? (
-        <span className="mt-1 block text-xs text-muted-foreground" aria-live="polite">
-          {opciones.length} opciones encontradas{opcionesQuery.data ? ` de ${opcionesQuery.data.totalCount}` : ''}
-        </span>
-      ) : null}
+        options={opciones}
+        onChange={cambiarSeleccion}
+        loadOptions={cargarProductos}
+        placeholder="Código, descripción o código de barras"
+        helperText="Busca por código, nombre o código de barras."
+        error={error ?? errorInicial}
+        required={requerido}
+        disabled={deshabilitado}
+        noOptionsMessage="No hay productos disponibles."
+        noResultsMessage="No se encontraron productos con esos datos."
+        loadingMessage="Buscando productos…"
+      />
     </div>
   )
 }

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ConsultaExistenciasInventario, DatosMovimientoInventario } from '@/modulos/inventario/modelo/inventario'
 import {
+  listarAlmacenesAjusteStock,
+  buscarAlmacenesMovimientoInventario,
   listarBucketsAjusteStock,
   listarExistenciasInventario,
   listarMovimientosInventario,
@@ -205,6 +207,20 @@ describe('listarExistenciasInventario', () => {
 describe('listarMovimientosInventario', () => {
   beforeEach(() => from.mockReset())
 
+  it('conserva la unidad original y su equivalencia histórica al leer el movimiento', async () => {
+    const query = crearQuery({ data: [{
+      id: 'mov-1', unit_of_measure: 'Unidad', quantity: '200',
+      entered_quantity: '10.000000000', entered_unit_of_measure: 'Caja', unit_conversion_factor: '20.000000',
+    }], error: null, count: 1 })
+    const resultado = await listarMovimientosInventario('org-1', {
+      pagina: 1, tamanioPagina: 25, busqueda: '', almacenId: '', tipo: '', fechaDesde: '', fechaHasta: '', orden: 'fecha-desc',
+    })
+    expect(query.select.mock.calls[0][0]).toContain('entered_quantity,entered_unit_of_measure,unit_conversion_factor')
+    expect(resultado.elementos[0]).toMatchObject({
+      cantidad: 200, unidadMedida: 'Unidad', cantidadCapturada: 10, unidadCapturada: 'Caja', factorConversion: 20,
+    })
+  })
+
   it('pagina, filtra y ordena movimientos completamente en Supabase', async () => {
     const query = crearQuery({ data: [], error: null, count: 1_250 })
     const resultado = await listarMovimientosInventario('org-1', {
@@ -219,11 +235,89 @@ describe('listarMovimientosInventario', () => {
     })
     expect(query.eq).toHaveBeenCalledWith('warehouse_id', 'almacen-1')
     expect(query.eq).toHaveBeenCalledWith('movement_type', 'salida')
+    expect(query.or).toHaveBeenCalledWith(
+      'product_code.ilike.%LOTE-1%,product_description.ilike.%LOTE-1%,lot.ilike.%LOTE-1%,document_reference.ilike.%LOTE-1%',
+    )
     expect(query.gte).toHaveBeenCalledWith('operation_date', '2026-01-01')
     expect(query.lte).toHaveBeenCalledWith('operation_date', '2026-12-31')
     expect(query.order).toHaveBeenNthCalledWith(1, 'operation_date', { ascending: false })
     expect(query.range).toHaveBeenCalledWith(300, 399)
     expect(resultado.total).toBe(1_250)
+  })
+})
+
+describe('listarAlmacenesAjusteStock', () => {
+  beforeEach(() => rpc.mockReset())
+
+  it('consulta candidatos autorizados por producto y normaliza su cantidad', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        items: [{
+          warehouse_id: 'almacen-1',
+          warehouse_code: 'CENTRAL',
+          warehouse_name: 'Almacén central',
+          adjustable_quantity: '12.500',
+        }],
+        total_count: 1,
+      },
+      error: null,
+    })
+
+    await expect(listarAlmacenesAjusteStock('org-1', 'producto-1', '  CENTRAL ')).resolves.toEqual({
+      totalCount: 1,
+      items: [{ id: 'almacen-1', codigo: 'CENTRAL', nombre: 'Almacén central', cantidadDescontable: 12.5 }],
+    })
+    expect(rpc).toHaveBeenCalledWith('inventory_adjustment_warehouses_read', {
+      requested_organization_id: 'org-1',
+      requested_product_id: 'producto-1',
+      search_term: 'CENTRAL',
+      requested_limit: 50,
+      requested_offset: 0,
+    })
+  })
+
+  it('falla cerrado si no se pueden consultar los almacenes candidatos', async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: '42501', message: 'forbidden' } })
+
+    await expect(listarAlmacenesAjusteStock('org-1', 'producto-1', '')).rejects.toThrow(
+      'No se pudieron consultar los almacenes con stock para ajustar',
+    )
+  })
+})
+
+describe('buscarAlmacenesMovimientoInventario', () => {
+  beforeEach(() => rpc.mockReset())
+
+  it('busca hasta 50 almacenes activos para entradas sin cargar el catálogo completo', async () => {
+    rpc.mockResolvedValue({
+      data: { items: [{
+        warehouse_id: 'almacen-1',
+        warehouse_code: 'CENTRAL',
+        warehouse_name: 'Almacén central',
+        eligible_quantity: null,
+      }], total_count: 1 },
+      error: null,
+    })
+
+    await expect(buscarAlmacenesMovimientoInventario('org-1', 'producto-1', null, 'cent')).resolves.toEqual([
+      { id: 'almacen-1', codigo: 'CENTRAL', nombre: 'Almacén central', cantidadDisponible: 0 },
+    ])
+    expect(rpc).toHaveBeenCalledWith('inventory_movement_warehouses_read', {
+      requested_organization_id: 'org-1',
+      requested_product_id: 'producto-1',
+      requested_stock_status: null,
+      search_term: 'cent',
+      requested_limit: 50,
+      requested_offset: 0,
+    })
+  })
+
+  it('filtra los almacenes de salida por condición del stock', async () => {
+    rpc.mockResolvedValue({ data: { items: [], total_count: 0 }, error: null })
+    await buscarAlmacenesMovimientoInventario('org-1', 'producto-1', 'available', '')
+    expect(rpc).toHaveBeenCalledWith('inventory_movement_warehouses_read', expect.objectContaining({
+      requested_stock_status: 'available',
+    }))
   })
 })
 
@@ -282,8 +376,11 @@ describe('listarBucketsAjusteStock', () => {
 describe('registrarMovimientoInventario', () => {
   const datos: DatosMovimientoInventario = {
     productoId: 'product-1', tipo: 'entrada', cantidad: '2', almacen: 'Principal',
+    costoUnitario: '12.5',
     lote: '', fechaVencimiento: '', fechaOperacion: '2026-09-26',
-    motivo: 'Diferencia de conteo', documentoReferencia: 'ACTA-001',
+    unidadEntradaId: 'a6000000-0000-4000-8000-000000000001',
+    factorConversionEsperado: 1,
+    motivo: 'Donación', documentoReferencia: 'ACTA-001',
   }
 
   beforeEach(() => rpc.mockReset())
@@ -295,13 +392,49 @@ describe('registrarMovimientoInventario', () => {
     rpc.mockResolvedValue({ error: null })
     await registrarMovimientoInventario('org-1', { ...datos, tipo })
     expect(rpc).toHaveBeenCalledWith(nombreRpc, {
-      payload: expect.objectContaining({ reason: 'Diferencia de conteo', document_reference: 'ACTA-001' }),
+      payload: expect.objectContaining({
+        reason: 'Donación',
+        document_reference: 'ACTA-001',
+        input_unit_id: datos.unidadEntradaId,
+        expected_conversion_factor: 1,
+      }),
     })
   })
 
   it('explica el rechazo del documento desde el servidor', async () => {
     rpc.mockResolvedValue({ error: { message: 'INVENTORY_DOCUMENT_REFERENCE_INVALID' } })
-    await expect(registrarMovimientoInventario('org-1', datos)).rejects.toThrow('documento de sustento')
+    await expect(registrarMovimientoInventario('org-1', datos)).rejects.toThrow('referencia del documento')
+  })
+
+  it('traduce la falta de costo y el exceso de stock FEFO', async () => {
+    rpc.mockResolvedValueOnce({ error: { message: 'INVENTORY_MOVEMENT_COST_REQUIRED' } })
+    await expect(registrarMovimientoInventario('org-1', datos)).rejects.toThrow('costo unitario')
+
+    rpc.mockResolvedValueOnce({ error: { message: 'INVENTORY_FEFO_INSUFFICIENT_STOCK' } })
+    await expect(registrarMovimientoInventario('org-1', { ...datos, tipo: 'salida' }))
+      .rejects.toThrow('stock asignable disponible según FEFO')
+  })
+
+  it('explica errores de unidad y conversión con instrucciones recuperables', async () => {
+    rpc.mockResolvedValueOnce({ error: { message: 'INVENTORY_INPUT_UNIT_INVALID' } })
+    await expect(registrarMovimientoInventario('org-1', datos))
+      .rejects.toThrow('La unidad seleccionada ya no está disponible para este producto')
+
+    rpc.mockResolvedValueOnce({ error: { message: 'INVENTORY_QUANTITY_CONVERSION_INVALID' } })
+    await expect(registrarMovimientoInventario('org-1', datos))
+      .rejects.toThrow('La cantidad no puede convertirse exactamente a la unidad base')
+
+    rpc.mockResolvedValueOnce({ error: { message: 'INVENTORY_INPUT_UNIT_STALE' } })
+    await expect(registrarMovimientoInventario('org-1', datos))
+      .rejects.toThrow('La equivalencia de esta unidad cambió')
+  })
+
+  it('envía null cuando no hay documento externo', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await registrarMovimientoInventario('org-1', { ...datos, documentoReferencia: undefined })
+    expect(rpc).toHaveBeenCalledWith('record_inventory_movement', {
+      payload: expect.objectContaining({ document_reference: null }),
+    })
   })
 
   it('envía los ajustes negativos a la RPC canónica sin FEFO', async () => {
@@ -318,8 +451,7 @@ describe('registrarMovimientoInventario', () => {
       lote: 'LOTE-1',
       fechaVencimiento: '2027-12-31',
       fechaOperacion: '2026-09-27',
-      motivo: 'Ajuste manual [damaged] Producto deteriorado — Envase roto',
-      documentoReferencia: 'ACTA-001',
+      motivo: 'Ajuste de stock: Producto deteriorado — Envase roto',
     })
 
     expect(rpc).toHaveBeenCalledWith('record_inventory_movement', {
@@ -330,6 +462,26 @@ describe('registrarMovimientoInventario', () => {
         location_id: 'ubicacion-1',
         lot: 'LOTE-1',
         expiration_date: '2027-12-31',
+      }),
+    })
+  })
+
+  it('envía los ajustes positivos a la RPC serializada sin documento externo obligatorio', async () => {
+    rpc.mockResolvedValue({ data: null, error: null })
+    await registrarMovimientoInventario('org-1', {
+      ...datos,
+      tipo: 'ajuste-positivo',
+      almacenId: 'almacen-1',
+      ubicacionId: 'ubicacion-1',
+      lote: 'LOTE-NUEVO',
+      fechaVencimiento: '2027-12-31',
+      documentoReferencia: undefined,
+    })
+    expect(rpc).toHaveBeenCalledWith('record_inventory_movement', {
+      payload: expect.objectContaining({
+        movement_type: 'ajuste-positivo',
+        unit_cost: '12.5',
+        document_reference: null,
       }),
     })
   })
@@ -348,7 +500,7 @@ describe('registrarMovimientoInventario', () => {
       lote: '',
       fechaVencimiento: '',
       fechaOperacion: '2026-09-27',
-      motivo: 'Ajuste manual [lost] Pérdida',
+      motivo: 'Ajuste de stock: Pérdida',
       documentoReferencia: 'ACTA-002',
     })).rejects.toThrow('La ubicación seleccionada ya no está activa')
   })

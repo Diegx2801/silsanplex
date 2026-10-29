@@ -2,9 +2,11 @@ import { z } from 'zod'
 
 import {
   esquemaDatosCotizacion,
+  esquemaDatosConsumoParte,
   esquemaDatosReparacion,
   esquemaDatosReservaParte,
   type DatosCotizacion,
+  type DatosConsumoParte,
   type DatosReparacion,
   type DatosReservaParte,
 } from '../modelo/reparacion'
@@ -25,6 +27,10 @@ const esquemaReservaPendiente = z.object({
   datos: esquemaDatosReservaParte,
   expectedLockVersion: z.number().int().nonnegative(),
 })
+const esquemaConsumoPendiente = z.object({
+  datos: esquemaDatosConsumoParte,
+  expectedLockVersion: z.number().int().nonnegative(),
+})
 
 export interface CotizacionPendiente {
   datos: DatosCotizacion
@@ -40,6 +46,12 @@ export interface ReservaPartePendiente {
   clave: string
 }
 
+export interface ConsumoPartePendiente {
+  datos: DatosConsumoParte
+  expectedLockVersion: number
+  clave: string
+}
+
 function validarClave(clave: unknown, mensaje: string) {
   if (typeof clave !== 'string' || !patronUuid.test(clave)) throw new Error(mensaje)
   return clave
@@ -50,7 +62,7 @@ function esRechazoDefinitivo(error: unknown) {
     && (/^(22|23|42501)/.test(error.codigo!) || error.codigo!.startsWith('REPAIR_'))
 }
 
-function leerComandoPendiente<T>(
+export function leerComandoPendiente<T>(
   ambito: string,
   esquema: z.ZodType<T>,
   mensaje: string,
@@ -68,7 +80,7 @@ function leerComandoPendiente<T>(
   }
 }
 
-async function ejecutarComandoConReintentoPersistente<T>(
+export async function ejecutarComandoConReintentoPersistente<T>(
   ambito: string,
   intencion: T,
   clave: string,
@@ -129,7 +141,13 @@ export async function crearConReintentoPersistente(
 ) {
   const anterior = leerCreacionPendiente(ambito)
   const normalizados = esquemaDatosReparacion.parse(datos)
-  if (anterior && JSON.stringify(anterior.datos) !== JSON.stringify(normalizados)) {
+  const firma = (valor: DatosReparacion) => {
+    const { tipoSolicitante, areaSolicitante, tipoEquipo, descripcionEquipoExterno, ...base } = valor
+    return JSON.stringify({ ...base, tipoSolicitante: tipoSolicitante ?? 'customer',
+      areaSolicitante: areaSolicitante ?? '', tipoEquipo: tipoEquipo ?? 'catalog',
+      descripcionEquipoExterno: descripcionEquipoExterno ?? '' })
+  }
+  if (anterior && firma(anterior.datos) !== firma(normalizados)) {
     throw new Error('Hay un registro pendiente de confirmar. Cierra y vuelve a abrir el formulario para recuperar sus datos y reintentarlo antes de crear otra reparación.')
   }
   const pendiente = anterior ?? { datos: normalizados, clave }
@@ -193,5 +211,25 @@ export function reservarParteConReintentoPersistente(
     esquemaReservaPendiente,
     (pendiente) => pendiente.datos,
     enviar,
+  )
+}
+
+export function leerConsumoPartePendiente(ambito: string): ConsumoPartePendiente | null {
+  return leerComandoPendiente(
+    ambito,
+    esquemaConsumoPendiente,
+    'No se pudo recuperar el consumo pendiente. No se enviará otro consumo.',
+  )
+}
+
+export function consumirParteConReintentoPersistente(
+  ambito: string,
+  intencion: Omit<ConsumoPartePendiente, 'clave'>,
+  clave: string,
+  enviar: (intencion: Omit<ConsumoPartePendiente, 'clave'>, clave: string) => Promise<unknown>,
+) {
+  return ejecutarComandoConReintentoPersistente(
+    ambito, intencion, clave, esquemaConsumoPendiente,
+    (pendiente) => pendiente.datos, enviar,
   )
 }

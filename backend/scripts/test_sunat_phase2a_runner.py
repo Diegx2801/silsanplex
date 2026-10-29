@@ -29,11 +29,14 @@ class TransactionalRunnerTests(unittest.TestCase):
     def setUp(self):
         self.files = sorted(p.name.split('_')[0]
                             for p in runner.MIGRATIONS[0].parent.glob('*.sql'))
-        self.base = self.files[:-2]
+        self.candidate_start = runner.candidate_start(self.files)
+        self.base = self.files[:self.candidate_start]
 
     def test_exact_candidate_versions_and_base(self):
         self.assertEqual(runner.VERSIONS, ('20261023061225', '20261023135019'))
-        self.assertEqual(len(self.base), 148)
+        self.assertEqual(tuple(self.files[self.candidate_start:self.candidate_start + len(runner.VERSIONS)]),
+                         runner.VERSIONS)
+        self.assertGreater(len(self.files), self.candidate_start + len(runner.VERSIONS))
 
     def test_accepts_only_expected_history_for_each_mode(self):
         runner.validate_history(self.base, self.files, True)
@@ -77,8 +80,9 @@ class TransactionalRunnerTests(unittest.TestCase):
         self.assertLess(source.index(second), source.index(runner.SUITE.read_text(encoding='utf8')))
         self.assertEqual(source.count(first), 1)
         self.assertEqual(source.count(second), 1)
-        for stage in ('149', '150', 'serial'):
-            self.assertIn(runner.transaction_probe(stage), source)
+        self.assertIn(runner.transaction_probe('candidate-1'), source)
+        self.assertIn(runner.transaction_probe('candidate-2', verify_helpers=True), source)
+        self.assertIn(runner.transaction_probe('serial', verify_helpers=True), source)
         self.assertIn('txid_current()', source)
         self.assertIn('pg_backend_pid()', source)
         controls = re.findall(r'^\s*(begin|commit|rollback)\s*;', source, re.I | re.M)
@@ -110,7 +114,7 @@ class TransactionalRunnerTests(unittest.TestCase):
                         runner.candidate_sql(runner.MIGRATIONS[0])
         for source in ['select 1;', 'begin;\nselect 1;', 'select 1;\ncommit;',
                        'begin;\ncommit;\nselect 1;\ncommit;']:
-            with self.subTest(candidate='150', source=source):
+            with self.subTest(candidate='second', source=source):
                 with patch.object(Path, 'read_text', return_value=source):
                     with self.assertRaisesRegex(ValueError, 'CPE_TEST_CANDIDATE_TRANSACTION_CONTROL'):
                         runner.candidate_sql(runner.MIGRATIONS[1])
@@ -132,12 +136,12 @@ class TransactionalRunnerTests(unittest.TestCase):
     def test_serial_requires_all_assertions_and_postgres_stage_markers(self):
         notices = ''.join(f'NOTICE:  PASS: case-{n}\n' for n in range(97))
         markers = ''.join(f'NOTICE:  CPE_TRANSACTIONAL:{stage}\n'
-                          for stage in ('149', '150', 'serial'))
+                          for stage in ('candidate-1', 'candidate-2', 'serial'))
         with patch.object(runner, 'sql', return_value=SimpleNamespace(stderr=notices + markers)), \
                 patch.object(runner, 'check') as checked:
             runner.serial(True)
             self.assertEqual(checked.call_count, 97)
-        for stderr in (notices, notices + markers.replace('150', '149'),
+        for stderr in (notices, notices + markers.replace('candidate-2', 'candidate-1'),
                        notices.replace('NOTICE:  PASS: case-0\n', '') + markers):
             with self.subTest(stderr_length=len(stderr)), \
                     patch.object(runner, 'sql', return_value=SimpleNamespace(stderr=stderr)):
@@ -195,7 +199,7 @@ class HostedCIGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'CPE_CI_DOCKER_ENDPOINT'):
                 ci.docker_guard()
 
-    def test_preparation_copies_only_148_without_reset_seed_or_repo_changes(self):
+    def test_preparation_copies_only_pre_candidate_history_without_reset_or_repo_changes(self):
         manifest = ci.repository_manifest()
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary) / 'unique-job'
@@ -211,7 +215,8 @@ class HostedCIGuardTests(unittest.TestCase):
                     patch('builtins.print'):
                 ci.prepare()
                 ci.verify_copy('unique-job', directory)
-            self.assertEqual(len(list((directory / 'supabase/migrations').iterdir())), 148)
+            self.assertEqual(len(list((directory / 'supabase/migrations').iterdir())),
+                             len(ci.pre_candidate_migrations(manifest)))
             self.assertEqual(ci.repository_manifest(), manifest)
             cli_commands = [args[1:] for args in observed if args[0] != 'docker']
             self.assertEqual(len(cli_commands), 2)
@@ -325,7 +330,9 @@ class HostedCIGuardTests(unittest.TestCase):
                         rows={'table': ['row-hash']}, candidates={'relations': 0},
                         manifest={'migration': 'original-hash'},
                         history=sorted(p.name.split('_')[0]
-                                       for p in runner.MIGRATIONS[0].parent.glob('*.sql'))[:-2])
+                                       for p in runner.MIGRATIONS[0].parent.glob('*.sql'))[:runner.candidate_start(
+                                           sorted(p.name.split('_')[0]
+                                                  for p in runner.MIGRATIONS[0].parent.glob('*.sql')))])
         for changed in (None, *baseline.keys()):
             after = {**baseline}
             if changed:
@@ -347,7 +354,9 @@ class HostedCIGuardTests(unittest.TestCase):
     def test_rollback_snapshot_still_checked_after_sql_failure(self):
         baseline = dict(schema='schema-hash', security={}, rows={}, candidates={}, manifest={},
                         history=sorted(p.name.split('_')[0]
-                                       for p in runner.MIGRATIONS[0].parent.glob('*.sql'))[:-2])
+                                       for p in runner.MIGRATIONS[0].parent.glob('*.sql'))[:runner.candidate_start(
+                                           sorted(p.name.split('_')[0]
+                                                  for p in runner.MIGRATIONS[0].parent.glob('*.sql')))])
         fake_ci = SimpleNamespace(verify_target=lambda: 'verified-ci-only',
                                   snapshot=unittest.mock.Mock(return_value=baseline))
         with patch.object(runner, 'CONTAINER', runner.CONTAINER), patch.object(runner, 'CHECKS', []), \

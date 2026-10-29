@@ -15,13 +15,45 @@ describe('modelo de almacenes', () => {
     expect(resultado.codigo).toBe('CENTRAL-1')
   })
 
-  it('impide transferir al mismo almacen', () => {
+  it('permite reubicar entre ubicaciones diferentes del mismo almacén sin referencia manual', () => {
     const resultado = esquemaTransferencia.safeParse({
-      referencia: 'TR-001', almacenOrigenId: id(1), ubicacionOrigenId: id(2), almacenDestinoId: id(1),
+      almacenOrigenId: id(1), ubicacionOrigenId: id(2), almacenDestinoId: id(1),
       ubicacionDestinoId: id(3), productoId: id(4), cantidad: '2', lote: '', fechaVencimiento: '',
-      estado: 'available', notas: '',
+      estado: 'available',
+    })
+    expect(resultado.success).toBe(true)
+  })
+
+  const transferencia = {
+    almacenOrigenId: id(1), ubicacionOrigenId: id(2), almacenDestinoId: id(3),
+    ubicacionDestinoId: id(4), productoId: id(5), cantidad: '2', lote: 'L-01',
+    fechaVencimiento: '2029-01-01', estado: 'available',
+  }
+
+  it('no incorpora observaciones al contrato de nuevas transferencias', () => {
+    expect(esquemaTransferencia.parse({ ...transferencia, notas: 'Dato anterior' })).not.toHaveProperty('notas')
+  })
+
+  it('impide transferir a la misma posición de origen', () => {
+    const resultado = esquemaTransferencia.safeParse({
+      ...transferencia, almacenDestinoId: id(1), ubicacionDestinoId: id(2),
     })
     expect(resultado.success).toBe(false)
+    if (!resultado.success) expect(resultado.error.issues[0].path).toEqual(['ubicacionDestinoId'])
+  })
+
+  it('admite unidad alternativa y equivalencia para validar en el servidor', () => {
+    expect(esquemaTransferencia.parse({
+      ...transferencia, unidadEntradaId: id(6), factorConversionEsperado: 20,
+    })).toMatchObject({ unidadEntradaId: id(6), factorConversionEsperado: 20 })
+  })
+
+  it.each(['0', '-1', '2.1234', '1e3', ''])('rechaza cantidades de transferencia inválidas: %s', (cantidad) => {
+    expect(esquemaTransferencia.safeParse({ ...transferencia, cantidad }).success).toBe(false)
+  })
+
+  it.each([0, -1, Infinity, NaN])('rechaza equivalencias inválidas: %s', (factorConversionEsperado) => {
+    expect(esquemaTransferencia.safeParse({ ...transferencia, factorConversionEsperado }).success).toBe(false)
   })
 
   it('impide reclasificar al mismo estado', () => {
@@ -30,6 +62,22 @@ describe('modelo de almacenes', () => {
       estadoDestino: 'damaged', cantidad: '1', lote: 'L-01', fechaVencimiento: '', motivo: 'Revision',
     })
     expect(resultado.success).toBe(false)
+  })
+
+  it('admite unidad alternativa en reclasificación y conserva la cantidad capturada', () => {
+    expect(esquemaReclasificacion.parse({
+      productoId: id(1), almacenId: id(2), ubicacionId: id(3), estadoOrigen: 'available',
+      estadoDestino: 'quarantine', cantidad: '2', lote: 'L-01', fechaVencimiento: '', motivo: 'Inspección',
+      unidadEntradaId: id(4), factorConversionEsperado: 20,
+    })).toMatchObject({ cantidad: '2', unidadEntradaId: id(4), factorConversionEsperado: 20 })
+  })
+
+  it.each([0, -1, Infinity, NaN])('rechaza equivalencia de reclasificación inválida: %s', (factorConversionEsperado) => {
+    expect(esquemaReclasificacion.safeParse({
+      productoId: id(1), almacenId: id(2), ubicacionId: id(3), estadoOrigen: 'available',
+      estadoDestino: 'quarantine', cantidad: '2', lote: 'L-01', fechaVencimiento: '', motivo: 'Inspección',
+      factorConversionEsperado,
+    }).success).toBe(false)
   })
 
   it('acepta stock mínimo cero para alertar cuando se agote', () => {
