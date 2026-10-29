@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { payloadAccesorio } from '../modelo/accesorios'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
 import type {
   ConsultaReparaciones,
@@ -1093,6 +1094,7 @@ export async function crearReparacion(
     payload: {
       ...payloadGeneralReparacion(organizationId, datos),
       ...payloadIdentidadReparacion(datos, true),
+      ...(datos.accesorios !== undefined ? { accessories: datos.accesorios.map(payloadAccesorio) } : {}),
       status: datos.esGarantia ? 'warranty' : 'received',
       operation_key: operationKey,
     },

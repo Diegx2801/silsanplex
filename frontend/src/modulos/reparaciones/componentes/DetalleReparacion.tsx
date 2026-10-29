@@ -1,6 +1,9 @@
 import { ResultadosPruebas } from './ResultadosPruebas'
 import { AdjuntosReparacion } from './AdjuntosReparacion'
 import { AtencionComplementariaReparacion } from './AtencionComplementariaReparacion'
+import { AccesoriosReparacion } from './AccesoriosReparacion'
+import { DialogoEntregaAccesorios, RecuperarEntregaAccesorios } from './DialogoEntregaAccesorios'
+import { DetalleEventoAccesorio } from './DetalleEventoAccesorio'
 import {
   Ban,
   CheckCircle2,
@@ -104,6 +107,11 @@ function nombreUbicacion(ubicaciones: readonly UbicacionAlmacen[], id: string) {
 function etiquetaEvento(tipo: string) {
   const etiquetas: Record<string, string> = {
     ATTACHMENT_ADDED: 'Evidencia adjuntada',
+    ACCESSORY_RECEIVED: 'Accesorio recibido',
+    ACCESSORY_UPDATED: 'Accesorio corregido',
+    ACCESSORY_VOIDED: 'Accesorio anulado',
+    ACCESSORY_RETURNED: 'Accesorio devuelto',
+    ACCESSORY_DELIVERY_EXCEPTION: 'Entrega autorizada con accesorios pendientes',
     EXTERNAL_SERVICE_SENT: 'Equipo enviado a proveedor',
     EXTERNAL_SERVICE_RECEIVED: 'Equipo retornado del proveedor',
     SERVICE_WARRANTY_CONFIGURED: 'Garantía del servicio configurada',
@@ -266,7 +274,6 @@ export function DetalleReparacion({
   alConsumirParte,
   alCancelarParte,
   alRegistrarPrueba,
-  alEntregar,
   alCancelar,
   recuperarCotizacionPendiente = () => null,
   recuperarReservaPartePendiente = () => null,
@@ -534,13 +541,10 @@ export function DetalleReparacion({
             alCambiarApertura={cerrarDialogo}
             alGuardar={(datos) => ejecutar(() => alRegistrarPrueba(accion.reparacion.id, datos, accion.reparacion.lockVersion), 'Prueba registrada.')}
           />
-          <DialogoObservacion
+          <DialogoEntregaAccesorios
             abierto={accion.tipo === 'entregar'}
-            titulo="Entregar reparación"
-            descripcion="El servidor verificará técnico asignado, pruebas aprobadas y reservas pendientes antes de confirmar."
-            etiquetaAccion="Confirmar entrega"
+            reparacion={accion.reparacion}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(datos) => ejecutar(() => alEntregar(accion.reparacion.id, datos, accion.reparacion.lockVersion), 'Reparación entregada.')}
           />
           <DialogoObservacion
             abierto={accion.tipo === 'cancelar'}
@@ -868,12 +872,14 @@ function DetalleContenido({
       <section aria-labelledby="reparacion-pruebas" className="border-b px-5 py-6 sm:px-7">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-pruebas" className="flex items-center gap-2 font-semibold"><ClipboardCheck aria-hidden="true" className="size-4 text-primary" /> Pruebas</h2><p className="mt-1 text-sm text-muted-foreground">Validaciones antes de la entrega</p></div>{puedeRegistrarPrueba ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('prueba')}><Plus aria-hidden="true" /> Registrar prueba</Button> : null}</div><ResultadosPruebas pruebas={detalle.pruebas} cicloActual={detalle.cicloPruebasActual} /></section>
 
+      <AccesoriosReparacion key={`accessories:${reparacion.organizationId}:${reparacion.id}`} reparacion={reparacion} puedeEditar={puedeEditar} puedeDevolver={puedeEntregar} />
+      <RecuperarEntregaAccesorios reparacion={reparacion} />
       <AtencionComplementariaReparacion key={`${reparacion.organizationId}:${reparacion.id}`} reparacion={reparacion} puedeEditar={puedeEditar} puedeGarantia={puedeEntregar} />
       <AdjuntosReparacion reparacionId={reparacion.id} puedeAdjuntar={puedeEditar || puedeRealizarTecnica} />
       <details id="reparacion-seccion-historial" tabIndex={-1} className="px-5 py-6 outline-none sm:px-7">
         <summary className="cursor-pointer rounded-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Historial de la orden · {detalle.eventos.length} eventos</summary>
       <section aria-labelledby="reparacion-linea-tiempo" className="pt-5">
-        <div className="flex items-end justify-between gap-3"><div><h2 id="reparacion-linea-tiempo" className="flex items-center gap-2 font-semibold"><Clock3 aria-hidden="true" className="size-4 text-primary" /> Línea de tiempo</h2><p className="mt-1 text-sm text-muted-foreground">Registro inmutable de la orden</p></div><span className="font-mono text-xs text-muted-foreground">{detalle.eventos.length} EVENTOS</span></div>{detalle.eventos.length ? <ol className="mt-5 space-y-0 ps-2">{detalle.eventos.map((evento) => <li key={evento.id} className="relative border-s ps-5 pb-6 last:pb-0"><span className="absolute -start-1.5 top-1.5 size-3 rounded-full border-2 border-background bg-primary" /><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-medium">{etiquetaEvento(evento.tipo)}</p>{evento.estadoAnterior || evento.estadoNuevo ? <p className="mt-1 font-mono text-[0.68rem] text-muted-foreground uppercase">{evento.estadoAnterior ? etiquetasEstadoReparacion[evento.estadoAnterior as EstadoReparacion] ?? evento.estadoAnterior : 'Inicio'}{evento.estadoNuevo ? ` → ${etiquetasEstadoReparacion[evento.estadoNuevo as EstadoReparacion] ?? evento.estadoNuevo}` : ''}</p> : null}</div><time className="text-xs text-muted-foreground" dateTime={evento.creadoEn}>{formatoFecha.format(new Date(evento.creadoEn))}</time></div>{evento.observacion ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{evento.observacion}</p> : null}</li>)}</ol> : <p className="mt-5 text-sm text-muted-foreground">La actividad aparecerá aquí al avanzar la orden.</p>}</section>
+        <div className="flex items-end justify-between gap-3"><div><h2 id="reparacion-linea-tiempo" className="flex items-center gap-2 font-semibold"><Clock3 aria-hidden="true" className="size-4 text-primary" /> Línea de tiempo</h2><p className="mt-1 text-sm text-muted-foreground">Registro inmutable de la orden</p></div><span className="font-mono text-xs text-muted-foreground">{detalle.eventos.length} EVENTOS</span></div>{detalle.eventos.length ? <ol className="mt-5 space-y-0 ps-2">{detalle.eventos.map((evento) => <li key={evento.id} className="relative border-s ps-5 pb-6 last:pb-0"><span className="absolute -start-1.5 top-1.5 size-3 rounded-full border-2 border-background bg-primary" /><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-medium">{etiquetaEvento(evento.tipo)}</p>{evento.estadoAnterior || evento.estadoNuevo ? <p className="mt-1 font-mono text-[0.68rem] text-muted-foreground uppercase">{evento.estadoAnterior ? etiquetasEstadoReparacion[evento.estadoAnterior as EstadoReparacion] ?? evento.estadoAnterior : 'Inicio'}{evento.estadoNuevo ? ` → ${etiquetasEstadoReparacion[evento.estadoNuevo as EstadoReparacion] ?? evento.estadoNuevo}` : ''}</p> : null}</div><time className="text-xs text-muted-foreground" dateTime={evento.creadoEn}>{formatoFecha.format(new Date(evento.creadoEn))}</time></div>{evento.observacion ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{evento.observacion}</p> : null}<DetalleEventoAccesorio evento={evento} /></li>)}</ol> : <p className="mt-5 text-sm text-muted-foreground">La actividad aparecerá aquí al avanzar la orden.</p>}</section>
       </details>
     </div>
   )
