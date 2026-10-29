@@ -128,44 +128,23 @@ async function seleccionarAlmacen() {
   fireEvent.click(await screen.findByRole('option', { name: /CENTRAL · Almacén central/ }))
 }
 
-async function prepararAjustePositivo(lote: string, existingLot = false) {
-  fireEvent.change(screen.getByLabelText('Tipo de ajuste *'), { target: { value: 'ajuste-positivo' } })
+async function completarFormulario(tipo: 'ajuste-positivo' | 'ajuste-negativo' = 'ajuste-negativo', cantidad = '2') {
   fireEvent.change(screen.getByLabelText('Producto'), { target: { value: mocks.producto.id } })
-  await seleccionarAlmacen()
-
-  const comboUbicacion = screen.getByRole('combobox', { name: 'Ubicación' })
-  fireEvent.focus(comboUbicacion)
-  fireEvent.change(comboUbicacion, { target: { value: 'A-01' } })
-  fireEvent.click(await screen.findByRole('option', { name: /A-01 · Anaquel A/ }))
-
-  const comboLote = screen.getByRole('combobox', { name: 'Lote del fabricante' })
-  fireEvent.focus(comboLote)
-  if (existingLot) {
-    fireEvent.click(await screen.findByRole('option', { name: /LOTE-1/ }))
-  } else {
-    fireEvent.change(comboLote, { target: { value: lote } })
-    fireEvent.click(await screen.findByRole('option', { name: `Usar «${lote}»` }))
-    fireEvent.change(screen.getByLabelText(/Fecha de vencimiento/), { target: { value: '2028-06-30' } })
-    fireEvent.change(screen.getByLabelText('Costo unitario *'), { target: { value: '7.25' } })
+  if (tipo === 'ajuste-positivo') {
+    fireEvent.change(screen.getByLabelText('Tipo de ajuste *'), { target: { value: tipo } })
   }
-  fireEvent.change(screen.getByLabelText(/Cantidad a aumentar/), { target: { value: '2' } })
-}
-
-async function completarFormulario() {
-  fireEvent.change(screen.getByLabelText('Producto'), { target: { value: mocks.producto.id } })
   await seleccionarAlmacen()
-  const comboBucket = screen.getByRole('combobox', { name: 'Ubicación y lote' })
+  const comboBucket = screen.getByRole('combobox', { name: 'Ubicación, lote y condición' })
   fireEvent.focus(comboBucket)
   fireEvent.click(screen.getByRole('option', { name: /A-01.*LOTE-1/ }))
-  fireEvent.change(screen.getByLabelText(/Cantidad a descontar/), { target: { value: '2' } })
+  fireEvent.change(screen.getByLabelText(/Cantidad a/), { target: { value: cantidad } })
 }
 
 describe('DialogoAjusteStock', () => {
   beforeEach(() => {
-    mocks.useBucketsAjusteStock.mockReset()
-    mocks.useBucketsAjusteStock.mockReturnValue({ buckets: [bucket], cargando: false, consultando: false, error: '' })
+    mocks.useBucketsAjusteStock.mockReset().mockReturnValue({ buckets: [bucket], cargando: false, consultando: false, error: '' })
     mocks.listarAlmacenesAjusteStock.mockReset().mockResolvedValue({
-      items: [{ id: almacen.id, codigo: almacen.codigo, nombre: almacen.nombre, cantidadDescontable: 8 }],
+      items: [{ id: almacen.id, codigo: almacen.codigo, nombre: almacen.nombre, cantidadDescontable: 5 }],
       totalCount: 1,
     })
     mocks.buscarAlmacenesMovimientoInventario.mockReset().mockResolvedValue([
@@ -173,101 +152,44 @@ describe('DialogoAjusteStock', () => {
     ])
   })
 
-  it('no selecciona un producto ni almacén arbitrarios y muestra el bucket exacto', async () => {
+  it('selecciona producto, almacén y posición exacta, mostrando cantidades y condición heredada', async () => {
     renderDialog()
 
     expect(screen.getByLabelText('Producto')).toHaveValue('')
     expect(screen.getByRole('combobox', { name: 'Almacén' })).toBeDisabled()
-    expect(screen.getByRole('combobox', { name: 'Almacén' })).toHaveValue('')
     fireEvent.change(screen.getByLabelText('Producto'), { target: { value: mocks.producto.id } })
     await seleccionarAlmacen()
-    const comboBucket = screen.getByRole('combobox', { name: 'Ubicación y lote' })
-    fireEvent.focus(comboBucket)
-    expect(screen.getByText(/5 UND descontables/)).toBeVisible()
-    fireEvent.click(screen.getByRole('option', { name: /A-01.*LOTE-1/ }))
 
-    expect(screen.queryByText(/bucket seleccionado/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/backend/i)).not.toBeInTheDocument()
+    const comboBucket = screen.getByRole('combobox', { name: 'Ubicación, lote y condición' })
+    fireEvent.focus(comboBucket)
+    expect(screen.getByText(/5 UND disponibles para descontar/)).toBeVisible()
+    fireEvent.click(screen.getByRole('option', { name: /A-01.*LOTE-1.*Disponible/ }))
+
     expect(screen.getByText('Stock físico')).toBeVisible()
     expect(screen.getByText('Stock reservado')).toBeVisible()
+    expect(screen.getByText('Disponible para descontar')).toBeVisible()
     expect(screen.getByText('5')).toBeVisible()
+    expect(screen.queryByLabelText('Condición del stock *')).not.toBeInTheDocument()
   })
 
-  it('valida producto, posición y cantidad antes de revisar sin exigir documento externo', async () => {
+  it('exige producto, almacén, posición y cantidad antes de revisar', async () => {
     renderDialog()
-    expect(screen.queryByLabelText(/Documento de origen/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
 
     expect(await screen.findByText('Selecciona un producto')).toBeVisible()
-    expect(screen.getByText('Selecciona la posición de stock que vas a descontar')).toBeVisible()
+    expect(screen.getByText('Selecciona la posición de stock que vas a ajustar')).toBeVisible()
     expect(screen.getByText('Ingresa una cantidad mayor a cero con hasta 3 decimales')).toBeVisible()
-    expect(screen.queryByText(/Ingresa una referencia/)).not.toBeInTheDocument()
   })
 
-  it('exige observación cuando el motivo es Otro', async () => {
-    renderDialog()
-    expect(screen.getByLabelText('Observación (opcional)')).not.toBeRequired()
-    await completarFormulario()
-    fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'other' } })
-    expect(screen.getByLabelText('Describe el motivo *')).toBeRequired()
-    expect(screen.getByText('Obligatorio al elegir «Otro»: entre 3 y 120 caracteres.')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
-
-    expect(await screen.findByText('Describe el motivo cuando selecciones "Otro"')).toBeVisible()
-  })
-
-  it('retira el error de Otro al volver a un motivo definido y permite omitir la observación', async () => {
-    renderDialog()
-    await completarFormulario()
-    fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'other' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
-    expect(await screen.findByText('Describe el motivo cuando selecciones "Otro"')).toBeVisible()
-
-    fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'physical_count_difference' } })
-    const observacion = screen.getByLabelText('Observación (opcional)')
-    expect(observacion).not.toBeRequired()
-    await waitFor(() => expect(observacion).toHaveAttribute('aria-invalid', 'false'))
-    expect(screen.queryByText('Describe el motivo cuando selecciones "Otro"')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
-    expect(await screen.findByRole('button', { name: 'Confirmar ajuste' })).toBeVisible()
-  })
-
-  it('conserva el detalle escrito y su límite de longitud al cambiar de motivo', async () => {
-    renderDialog()
-    await completarFormulario()
-    fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'other' } })
-    fireEvent.change(screen.getByLabelText('Describe el motivo *'), { target: { value: 'x'.repeat(121) } })
-    fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
-    expect(await screen.findByText('Máximo 120 caracteres')).toBeVisible()
-
-    fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'physical_count_difference' } })
-    expect(screen.getByLabelText('Observación (opcional)')).toHaveValue('x'.repeat(121))
-    expect(await screen.findByText('Máximo 120 caracteres')).toBeVisible()
-  })
-
-  it('restaura la observación opcional y retira su error al cambiar el tipo de ajuste', async () => {
-    renderDialog()
-    await completarFormulario()
-    fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'other' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
-    expect(await screen.findByText('Describe el motivo cuando selecciones "Otro"')).toBeVisible()
-
-    fireEvent.change(screen.getByLabelText('Tipo de ajuste *'), { target: { value: 'ajuste-positivo' } })
-    const observacion = screen.getByLabelText('Observación (opcional)')
-    expect(observacion).not.toBeRequired()
-    await waitFor(() => expect(observacion).toHaveAttribute('aria-invalid', 'false'))
-    expect(screen.queryByText('Describe el motivo cuando selecciones "Otro"')).not.toBeInTheDocument()
-  })
-
-  it('muestra el resumen y envía el ajuste negativo con motivo y bucket', async () => {
+  it('mantiene la observación opcional y el motivo fijo de auditoría al descontar', async () => {
     const { alGuardar, alCambiarApertura } = renderDialog()
     await completarFormulario()
-    fireEvent.change(screen.getByLabelText(/Motivo del ajuste/), { target: { value: 'damaged' } })
-    fireEvent.change(screen.getByLabelText(/Observación/), { target: { value: 'Envase roto' } })
+    expect(screen.getByLabelText('Observación (opcional)')).not.toBeRequired()
+    fireEvent.change(screen.getByLabelText('Observación (opcional)'), { target: { value: 'Envase roto' } })
     fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
 
     expect(await screen.findByText(/Se descontarán/)).toBeVisible()
-    expect(screen.getByText(/Stock esperado/)).toBeVisible()
+    expect(screen.getByText(/LOTE-1.*vence.*Disponible/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar ajuste' }))
 
     await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(expect.objectContaining({
@@ -279,12 +201,13 @@ describe('DialogoAjusteStock', () => {
       estadoStock: 'available',
       lote: 'LOTE-1',
       fechaVencimiento: '2027-12-31',
-      motivo: 'Ajuste de stock: Producto deteriorado — Envase roto',
+      motivo: 'Ajuste de stock: Diferencia de inventario físico — Envase roto',
     })))
+    expect(alGuardar.mock.calls[0][0]).not.toHaveProperty('costoUnitario')
     expect(alCambiarApertura).toHaveBeenCalledWith(false)
   })
 
-  it('convierte la unidad elegida a la unidad base antes de mostrar el efecto del ajuste', async () => {
+  it('convierte la unidad elegida a unidad base al mostrar y registrar la diferencia', async () => {
     const { alGuardar } = renderDialog()
     await completarFormulario()
     fireEvent.change(screen.getByLabelText('Unidad de medida *'), {
@@ -304,69 +227,53 @@ describe('DialogoAjusteStock', () => {
     })))
   })
 
-  it('registra un aumento positivo con lote nuevo, costo requerido y sin referencia externa', async () => {
+  it('aumenta una posición existente heredando lote, vencimiento, condición y costo del backend', async () => {
     const { alGuardar } = renderDialog()
-    await prepararAjustePositivo('LOTE-NUEVO')
-    expect(screen.getByLabelText('Costo unitario *')).toHaveValue(7.25)
+    await completarFormulario('ajuste-positivo')
+
+    expect(screen.queryByLabelText('Ubicación')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Condición del stock *')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Lote del fabricante')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Fecha de vencimiento/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Costo unitario *')).not.toBeInTheDocument()
+    expect(screen.getByText('Saldo no reservado')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
 
     expect(await screen.findByText(/Se aumentarán/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar ajuste' }))
-
     await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(expect.objectContaining({
-      productoId: mocks.producto.id,
       tipo: 'ajuste-positivo',
-      cantidad: '2',
       almacenId: almacen.id,
       ubicacionId: ubicacion.id,
       estadoStock: 'available',
-      lote: 'LOTE-NUEVO',
-      fechaVencimiento: '2028-06-30',
-      costoUnitario: '7.25',
-    })))
-  })
-
-  it('ofrece solo motivos de aumento y reemplaza un motivo de baja al cambiar el sentido', () => {
-    renderDialog()
-    const motivo = screen.getByLabelText('Motivo del ajuste *') as HTMLSelectElement
-    fireEvent.change(motivo, { target: { value: 'expired' } })
-    fireEvent.change(screen.getByLabelText('Tipo de ajuste *'), { target: { value: 'ajuste-positivo' } })
-
-    expect(motivo.value).toBe('physical_count_difference')
-    expect(Array.from(motivo.options).map((option) => option.textContent)).toEqual([
-      'Diferencia de inventario físico',
-      'Otro',
-    ])
-  })
-
-  it('conserva el costo promedio al aumentar una posición existente', async () => {
-    const { alGuardar } = renderDialog()
-    await prepararAjustePositivo('LOTE-1', true)
-
-    expect(screen.queryByLabelText('Costo unitario *')).not.toBeInTheDocument()
-    expect(screen.getByText(/Se conservará el costo promedio de la posición existente: 12\.5000/)).toBeVisible()
-    expect(screen.getByText('Disponible actual')).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar ajuste' }))
-
-    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(expect.objectContaining({
-      tipo: 'ajuste-positivo',
       lote: 'LOTE-1',
       fechaVencimiento: '2027-12-31',
-      costoUnitario: '12.5000',
+      motivo: 'Ajuste de stock: Diferencia de inventario físico',
     })))
+    expect(alGuardar.mock.calls[0][0]).not.toHaveProperty('costoUnitario')
   })
 
-  it('no permite revisar más que el disponible después de reservas', async () => {
+  it('permite aumentar un bucket totalmente reservado, pero no descontarlo', async () => {
+    mocks.useBucketsAjusteStock.mockReturnValue({
+      buckets: [{ ...bucket, cantidadReservada: bucket.cantidadFisica }],
+      cargando: false,
+      consultando: false,
+      error: '',
+    })
     renderDialog()
-    await completarFormulario()
-    fireEvent.change(screen.getByLabelText(/Cantidad a descontar/), { target: { value: '6' } })
+    await completarFormulario('ajuste-positivo', '1')
     fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
+    expect(await screen.findByRole('button', { name: 'Confirmar ajuste' })).toBeVisible()
+  })
 
+  it('no permite descontar más que el saldo físico no reservado', async () => {
+    renderDialog()
+    await completarFormulario('ajuste-negativo', '6')
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
     expect(await screen.findByText(/no puede superar el disponible actual \(5\)/i)).toBeVisible()
   })
 
-  it('conserva la confirmación y muestra el error del backend', async () => {
+  it('conserva la confirmación y muestra el error de negocio del backend', async () => {
     const { alGuardar, alCambiarApertura } = renderDialog(vi.fn().mockResolvedValue('La cantidad supera el stock disponible'))
     await completarFormulario()
     fireEvent.click(screen.getByRole('button', { name: 'Revisar ajuste' }))
@@ -387,7 +294,7 @@ describe('DialogoAjusteStock', () => {
     expect(alCambiarApertura).not.toHaveBeenCalledWith(false)
   })
 
-  it('deshabilita el bucket mientras consulta stock', () => {
+  it('deshabilita la selección mientras consulta stock', () => {
     mocks.useBucketsAjusteStock.mockReturnValue({ buckets: [], cargando: true, consultando: true, error: '' })
     renderDialog(vi.fn(), {
       producto: mocks.producto,
@@ -400,14 +307,14 @@ describe('DialogoAjusteStock', () => {
       },
     })
 
-    expect(screen.getByRole('combobox', { name: 'Ubicación y lote' })).toBeDisabled()
-    expect(screen.getByRole('combobox', { name: 'Ubicación y lote' })).toHaveAttribute(
+    expect(screen.getByRole('combobox', { name: 'Ubicación, lote y condición' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Ubicación, lote y condición' })).toHaveAttribute(
       'placeholder',
       'Consultando existencias…',
     )
   })
 
-  it('precarga el producto y el bucket exacto cuando se abre desde una posición', () => {
+  it('precarga el producto y la posición exacta al abrir desde existencias', () => {
     renderDialog(vi.fn(), {
       producto: mocks.producto,
       posicion: {
@@ -421,11 +328,11 @@ describe('DialogoAjusteStock', () => {
 
     expect(screen.getByLabelText('Producto')).toHaveValue(mocks.producto.id)
     expect(screen.getByRole('combobox', { name: 'Almacén' })).toHaveValue(`${almacen.codigo} · ${almacen.nombre}`)
-    expect(screen.getByRole('combobox', { name: 'Ubicación y lote' })).toHaveValue('A-01 · Lote LOTE-1 · vence 31 dic. 2027 · Disponible')
+    expect(screen.getByRole('combobox', { name: 'Ubicación, lote y condición' })).toHaveValue('A-01 · Lote LOTE-1 · vence 31 dic. 2027 · Disponible')
     expect(screen.getByText('Disponible para descontar')).toBeVisible()
   })
 
-  it('conserva el bucket preseleccionado mientras actualiza datos en caché', () => {
+  it('conserva la posición precargada mientras actualiza los datos en caché', () => {
     mocks.useBucketsAjusteStock.mockReturnValue({ buckets: [bucket], cargando: false, consultando: true, error: '' })
     renderDialog(vi.fn(), {
       producto: mocks.producto,
@@ -438,47 +345,17 @@ describe('DialogoAjusteStock', () => {
       },
     })
 
-    expect(screen.getByRole('combobox', { name: 'Ubicación y lote' })).toHaveValue('A-01 · Lote LOTE-1 · vence 31 dic. 2027 · Disponible')
+    expect(screen.getByRole('combobox', { name: 'Ubicación, lote y condición' })).toHaveValue('A-01 · Lote LOTE-1 · vence 31 dic. 2027 · Disponible')
   })
 
-  it('deja pedir almacén cuando el contexto procede de un agregado por producto', () => {
-    renderDialog(vi.fn(), { producto: mocks.producto })
-
-    expect(screen.getByLabelText('Producto')).toHaveValue(mocks.producto.id)
-    expect(screen.getByRole('combobox', { name: 'Almacén' })).toHaveValue('')
-    expect(screen.getByRole('combobox', { name: 'Ubicación y lote' }))
-      .toHaveAttribute('placeholder', 'Selecciona un almacén para consultar stock')
-    expect(screen.getByRole('combobox', { name: 'Ubicación y lote' })).toBeDisabled()
-  })
-
-  it('explica cuándo el producto no tiene stock físico en el almacén', async () => {
+  it('explica cómo proceder si no existe saldo físico para ajustar', async () => {
     mocks.useBucketsAjusteStock.mockReturnValue({ buckets: [], cargando: false, error: '' })
     renderDialog()
     fireEvent.change(screen.getByLabelText('Producto'), { target: { value: mocks.producto.id } })
     await seleccionarAlmacen()
 
-    const comboBucket = screen.getByRole('combobox', { name: 'Ubicación y lote' })
-    expect(comboBucket).toBeDisabled()
-    expect(comboBucket).toHaveAttribute('placeholder', 'No hay stock físico en este almacén')
-    expect(screen.getByText('Busca otro almacén si el producto tiene stock en otra ubicación.')).toBeVisible()
-  })
-
-  it('oculta buckets totalmente reservados y explica por qué no son descontables', async () => {
-    mocks.useBucketsAjusteStock.mockReturnValue({
-      buckets: [{ ...bucket, cantidadReservada: bucket.cantidadFisica }],
-      cargando: false,
-      consultando: false,
-      error: '',
-    })
-    renderDialog()
-    fireEvent.change(screen.getByLabelText('Producto'), { target: { value: mocks.producto.id } })
-    await seleccionarAlmacen()
-
-    const comboBucket = screen.getByRole('combobox', { name: 'Ubicación y lote' })
-    expect(comboBucket).toBeDisabled()
-    expect(comboBucket).toHaveAttribute('placeholder', 'Todo el stock está reservado')
-    expect(screen.getByText('Todo el stock de este almacén está reservado.')).toBeVisible()
-    expect(screen.queryByText(/LOTE-1/)).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Ubicación, lote y condición' })).toBeDisabled()
+    expect(screen.getByText(/Si encontraste stock donde el sistema registra cero/)).toBeVisible()
   })
 
   it('busca almacenes en el servidor limitados por organización y producto', async () => {
@@ -490,7 +367,7 @@ describe('DialogoAjusteStock', () => {
     expect(screen.getByRole('combobox', { name: 'Almacén' })).toHaveValue('CENTRAL · Almacén central')
   })
 
-  it('evita el doble envío mientras registra el movimiento', async () => {
+  it('evita el doble envío mientras registra el ajuste', async () => {
     let resolver: (() => void) | undefined
     const alGuardar = vi.fn(() => new Promise<void>((resolve) => { resolver = resolve }))
     renderDialog(alGuardar)
