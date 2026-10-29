@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { randomBytes, randomUUID, createHash } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
+import { assertSupabaseDbLintSucceeded } from './lib/supabase-db-lint.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const cli = path.join(root, 'backend/node_modules', process.platform === 'win32'
@@ -29,12 +30,20 @@ const checksOnly = process.argv.includes('--checks-only')
 const workflowE2e = process.argv.includes('--workflow-e2e')
 const runLog = []
 let started = false
-function run(executable, args, options = {}) {
+function runCaptured(executable, args, options = {}) {
   const result = spawnSync(executable, args, { encoding: 'utf8', timeout: 600_000, ...options })
-  const output = (result.stdout || '') + (result.stderr || '')
-  if (options.log) fs.writeFileSync(path.join(evidence, options.log), output.replace(/("(?:SECRET_KEY|JWT_SECRET|ANON_KEY|SERVICE_ROLE_KEY)"\s*:\s*")[^"]*"/g, '$1[REDACTED]"'))
+  const stdout = result.stdout || ''
+  const stderr = result.stderr || ''
+  const output = stdout + stderr
+  const redact = value => value.replace(/("(?:SECRET_KEY|JWT_SECRET|ANON_KEY|SERVICE_ROLE_KEY)"\s*:\s*")[^"]*"/g, '$1[REDACTED]"')
+  if (options.log) fs.writeFileSync(path.join(evidence, options.log), redact(output))
   if (options.print !== false) process.stdout.write(output)
-  assert.equal(result.status, 0, `${path.basename(executable)} ${args[0]} failed; ${options.log || ''}`)
+  return { status: result.status, stdout, stderr, error: result.error }
+}
+function run(executable, args, options = {}) {
+  const result = runCaptured(executable, args, options)
+  assert.equal(result.status, 0,
+    `${path.basename(executable)} ${args[0]} failed; ${options.log || ''}${result.error ? `; ${result.error.message}` : ''}`)
   return result.stdout
 }
 function verify() {
@@ -179,8 +188,32 @@ try {
     const tests = fs.readdirSync(path.join(backend, 'supabase/tests/database')).filter(n => process.argv.includes('--all-sql') || /^repairs?[_.].*\.sql$/.test(n) || n === 'authorization_permissions.test.sql')
       .filter(n => n.endsWith('.test.sql')).sort()
     // Check the migrated application before installing test-only pgTAP routines.
-    const lint = JSON.parse(run(cli, ['db', 'lint', '--level', 'warning'], { cwd: backend, log: 'sql-lint.log' }))
-    assert.deepEqual(lint.results, [], 'Database lint must have no warnings/errors')
+    const lintArgs = ['db', 'lint', '--level', 'warning', '--fail-on', 'warning', '--output-format', 'json']
+    const lintProbe = `ci_lint_probe_${randomBytes(5).toString('hex')}`
+    const missingColumn = `ci_lint_missing_${randomBytes(5).toString('hex')}`
+    sql(`create function public.${lintProbe}() returns integer language plpgsql as $lint$
+      begin return (select ${missingColumn} from public.organizations limit 1); end
+      $lint$;`)
+    const lintFailureProbe = runCaptured(cli, lintArgs, { cwd: backend, log: 'sql-lint-failure-probe.log', print: false })
+    fs.writeFileSync(path.join(evidence, 'sql-lint-failure-probe-streams.json'), JSON.stringify({
+      executable: 'supabase', args: lintArgs, expectedFinding: { function: lintProbe, missingColumn },
+      status: lintFailureProbe.status, stdout: lintFailureProbe.stdout, stderr: lintFailureProbe.stderr,
+      spawnError: lintFailureProbe.error?.message ?? null,
+    }, null, 2))
+    assert.notEqual(lintFailureProbe.status, 0,
+      'db lint --fail-on warning must fail for a real PL/pgSQL function referencing a missing column')
+    assert.ok(`${lintFailureProbe.stdout}\n${lintFailureProbe.stderr}`.includes(lintProbe)
+      || `${lintFailureProbe.stdout}\n${lintFailureProbe.stderr}`.includes(missingColumn),
+    'The lint failure evidence must identify the deliberately invalid function or missing column')
+    assert.throws(() => assertSupabaseDbLintSucceeded(lintFailureProbe), /SUPABASE_DB_LINT_EXIT/)
+    sql(`drop function public.${lintProbe}()`)
+
+    const lintResult = runCaptured(cli, lintArgs, { cwd: backend, log: 'sql-lint.log' })
+    fs.writeFileSync(path.join(evidence, 'sql-lint-streams.json'), JSON.stringify({
+      executable: 'supabase', args: lintArgs, status: lintResult.status,
+      stdout: lintResult.stdout, stderr: lintResult.stderr, spawnError: lintResult.error?.message ?? null,
+    }, null, 2))
+    assertSupabaseDbLintSucceeded(lintResult)
     sql('create extension if not exists pgtap with schema extensions;')
     const tap = run('docker', ['run','--rm','--network',`supabase_network_${project}`,
       '--mount',`type=bind,source=${path.join(backend,'supabase/tests/database')},target=/tests,readonly`,
