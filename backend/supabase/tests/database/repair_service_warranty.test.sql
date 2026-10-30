@@ -117,8 +117,8 @@ select throws_ok($$select public.configure_repair_service_warranty(pg_temp.warra
  '22023', 'REPAIR_SERVICE_WARRANTY_INVALID', 'explicit coverage is required');
 select lives_ok($$select public.configure_repair_service_warranty(pg_temp.warranty_payload())$$, 'explicit warranty may be configured before delivery');
 select lives_ok($$select public.configure_repair_service_warranty(pg_temp.warranty_payload())$$, 'warranty retry is idempotent');
-select is((select count(*) from public.repair_service_warranties), 1::bigint, 'retry creates no duplicate warranty');
-select ok((select starts_at is null and ends_at is null from public.repair_service_warranty_details),
+select is((select count(*) from public.repair_service_warranties where organization_id='bc100000-0000-4000-8000-000000000001'), 1::bigint, 'retry creates no duplicate warranty');
+select ok((select starts_at is null and ends_at is null from public.repair_service_warranty_details where repair_id='bc800000-0000-4000-8000-000000000002'),
  'warranty does not run before actual delivery');
 select is((select status from public.repairs where id = 'bc800000-0000-4000-8000-000000000002'), 'ready_for_delivery',
  'post-service warranty does not change existing incoming warranty state');
@@ -129,7 +129,9 @@ reset role;
 select set_config('app.repairs_status_write', 'true', true);
 select lives_ok($$update public.repairs set status='delivered', delivered_at=now()
  where id='bc800000-0000-4000-8000-000000000002'$$, 'fixture reaches actual delivery');
-select is((select ends_at - starts_at from public.repair_service_warranty_details), interval '90 days',
+-- Scope the privileged read to this suite's fixture; an upgrade database can
+-- already contain delivered warranties belonging to other organizations.
+select is((select ends_at - starts_at from public.repair_service_warranty_details where repair_id='bc800000-0000-4000-8000-000000000002'), interval '90 days',
  'coverage expiration is derived from actual delivered_at');
 set local role authenticated;
 select throws_ok($$select public.configure_repair_service_warranty(pg_temp.warranty_payload('{"expected_lock_version":2,"operation_key":"bc900000-0000-4000-8000-000000000005"}'))$$,

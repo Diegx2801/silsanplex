@@ -11,6 +11,23 @@ const reparacion={id:'repair',organizationId:'org',estado:'ready_for_delivery',l
 const cable={id,name:'Cable',quantity_received:3,quantity_returned:1,quantity_pending:2,received_condition:null,observations:null,voided_at:null} as AccesorioReparacion
 beforeEach(()=>{vi.clearAllMocks();estado.data={reviewed_at:'date',lock_version:7,accessories:[cable]};estado.error=null;estado.isLoading=false;estado.excepcion=true;estado.entregar=true;estado.recuperar.mockReturnValue(null);estado.guardar.mockResolvedValue(undefined)})
 describe('Entrega ordinaria y excepción explícita',()=>{
+  it('devolución sin reparar utiliza su RPC y conserva el contrato de accesorios',async()=>{
+    render(<DialogoEntregaAccesorios abierto sinReparar reparacion={{...reparacion,estado:'non_repairable',decisionNoReparable:{id:'9007199254740993'} as Reparacion['decisionNoReparable']}} alCambiarApertura={vi.fn()} />)
+    expect(screen.getByText(/no inicia garantía de reparación/)).toBeVisible()
+    fireEvent.click(screen.getByText('Devolver todos los accesorios junto al equipo sin reparar'))
+    fireEvent.click(screen.getByText('Confirmar devolución sin reparar'))
+    await waitFor(()=>expect(estado.guardar).toHaveBeenCalledWith(expect.objectContaining({tipo:'return_unrepaired_repair',expectedLockVersion:7,
+      datos:expect.objectContaining({decision_event_id:'9007199254740993',returns:[{accessory_id:id,quantity:2,observation:'Devuelto junto al equipo sin reparar'}]})}),expect.any(String)))
+  })
+  it('distingue la confirmación de excepción y recuperación del modo sin reparar',async()=>{
+    estado.recuperar.mockReturnValue({tipo:'return_unrepaired_repair',expectedLockVersion:6,
+      datos:{decision_event_id:'123',returns:[],authorize_exception:true,exception_reason:'Pendientes reales'},clave:id})
+    render(<DialogoEntregaAccesorios abierto sinReparar reparacion={{...reparacion,estado:'returned_unrepaired'}} alCambiarApertura={vi.fn()} />)
+    expect(screen.getByRole('checkbox',{name:'Confirmo la devolución sin reparar con los accesorios pendientes indicados'})).toBeChecked()
+    expect(screen.queryByText('Volver a entrega ordinaria')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button',{name:'Reintentar devolución sin reparar'}))
+    await waitFor(()=>expect(estado.guardar).toHaveBeenCalledWith(expect.objectContaining({tipo:'return_unrepaired_repair',expectedLockVersion:6}),id))
+  })
   it('sin accesorios conserva entrega habitual',async()=>{
     estado.data={reviewed_at:'date',lock_version:7,accessories:[]};const cerrar=vi.fn()
     render(<DialogoEntregaAccesorios abierto reparacion={reparacion} alCambiarApertura={cerrar} />)

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { esquemaAccesorioRecepcion } from './accesorios'
+import type { DecisionNoReparable } from './noReparable'
 
 export const estadosReparacion = [
   'received',
@@ -15,6 +16,8 @@ export const estadosReparacion = [
   'cancelled',
   'rejected',
   'warranty',
+  'non_repairable',
+  'returned_unrepaired',
 ] as const
 
 export type EstadoReparacion = (typeof estadosReparacion)[number]
@@ -33,6 +36,8 @@ export const etiquetasEstadoReparacion: Record<EstadoReparacion, string> = {
   cancelled: 'Cancelada',
   rejected: 'Rechazada',
   warranty: 'Garantía',
+  non_repairable: 'No reparable — Pendiente de devolución',
+  returned_unrepaired: 'Devuelto sin reparar',
 }
 
 export const tonosEstadoReparacion: Record<EstadoReparacion, string> = {
@@ -49,6 +54,8 @@ export const tonosEstadoReparacion: Record<EstadoReparacion, string> = {
   cancelled: 'neutral',
   rejected: 'neutral',
   warranty: 'activo',
+  non_repairable: 'espera',
+  returned_unrepaired: 'neutral',
 }
 
 export const prioridadesReparacion = [
@@ -127,6 +134,8 @@ export interface ResultadoCatalogoReparacion<T> {
 }
 
 export interface Reparacion {
+  decisionNoReparable?: DecisionNoReparable | null
+  devueltaSinRepararEn?: string
   tipoSolicitante?: 'customer' | 'internal'
   areaSolicitante?: string
   tipoEquipo?: 'catalog' | 'external'
@@ -279,7 +288,7 @@ export interface PruebaReparacion {
 }
 
 export interface EventoReparacion {
-  id: number
+  id: string | number
   organizationId: string
   reparacionId: string
   tipo: string
@@ -518,6 +527,8 @@ const transicionesGenericas: Record<EstadoReparacion, EstadoReparacion[]> = {
   cancelled: [],
   rejected: [],
   warranty: ['diagnosis', 'in_repair'],
+  non_repairable: [],
+  returned_unrepaired: [],
 }
 
 export function obtenerTransicionesGenericas(estado: EstadoReparacion) {
@@ -525,11 +536,11 @@ export function obtenerTransicionesGenericas(estado: EstadoReparacion) {
 }
 
 export function estadoEsTerminal(estado: EstadoReparacion) {
-  return estado === 'delivered' || estado === 'cancelled' || estado === 'rejected'
+  return estado === 'delivered' || estado === 'cancelled' || estado === 'rejected' || estado === 'returned_unrepaired'
 }
 
 export function estadoEsEditable(estado: EstadoReparacion) {
-  return !estadoEsTerminal(estado)
+  return !estadoEsTerminal(estado) && estado !== 'non_repairable'
 }
 
 const eventosSustantivosIdentidadReparacion = new Set([
@@ -561,7 +572,7 @@ export function identidadReparacionEsEditable(
   for (const evento of detalle.eventos) {
     if (
       evento.tipo === 'CREATED'
-      && (!eventoCreacion || evento.id < eventoCreacion.id)
+      && (!eventoCreacion || BigInt(evento.id) < BigInt(eventoCreacion.id))
     ) {
       eventoCreacion = evento
     }

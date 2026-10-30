@@ -2,8 +2,10 @@ import { supabase } from '@/lib/supabase'
 import { ejecutarComandoConReintentoPersistente, leerComandoPendiente } from '../estado/creacionPendiente'
 import { esquemaComandoAccesorios, esquemaDetalleAccesorios, type ComandoAccesorios } from '../modelo/accesorios'
 import { ErrorReparacion } from './reparacionesService'
+import { erroresNoReparable } from './noReparableService'
 
 const mensajes: Record<string, string> = {
+  ...erroresNoReparable,
   REPAIR_ACCESSORIES_PENDING: 'La entrega ordinaria está bloqueada: hay accesorios pendientes. Registra su devolución o solicita una excepción autorizada.',
   REPAIR_ACCESSORY_QUANTITY_INVALID: 'Ingresa una cantidad entera entre 1 y 1000000.',
   REPAIR_ACCESSORY_RETURN_EXCEEDED: 'La cantidad supera el saldo pendiente de devolver.',

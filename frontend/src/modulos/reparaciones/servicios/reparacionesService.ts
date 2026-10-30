@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { payloadAccesorio } from '../modelo/accesorios'
+import { esquemaDecisionNoReparable } from '../modelo/noReparable'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
 import type {
   ConsultaReparaciones,
@@ -41,6 +42,8 @@ interface ErrorSupabase {
 }
 
 interface FilaReparacion {
+  non_repairable_decision?: unknown
+  returned_unrepaired_at?: string | null
   requester_type?: 'customer' | 'internal'
   requesting_area?: string | null
   equipment_type?: 'catalog' | 'external'
@@ -209,7 +212,7 @@ interface FilaPrueba {
 }
 
 interface FilaEvento {
-  id: number
+  id: string | number
   organization_id: string
   repair_id: string
   event_type: string
@@ -245,7 +248,7 @@ interface FilaUbicacion {
 }
 
 const columnasReparacion =
-  'id,organization_id,lock_version,repair_code,customer_id,product_id,serial_number,received_at,estimated_delivery_date,delivered_at,status,priority,problem_description,diagnosis,applied_solution,notes,customer_reference,sale_document_id,warranty_reference,assigned_technician_id,customer_name_snapshot,customer_document_snapshot,product_code_snapshot,product_description_snapshot,created_by,updated_by,created_at,updated_at,serial_control_snapshot,requester_type,requesting_area,equipment_type,external_equipment_description,external_service_pending' as const
+  'id,organization_id,lock_version,repair_code,customer_id,product_id,serial_number,received_at,estimated_delivery_date,delivered_at,status,priority,problem_description,diagnosis,applied_solution,notes,customer_reference,sale_document_id,warranty_reference,assigned_technician_id,customer_name_snapshot,customer_document_snapshot,product_code_snapshot,product_description_snapshot,created_by,updated_by,created_at,updated_at,serial_control_snapshot,requester_type,requesting_area,equipment_type,external_equipment_description,external_service_pending,non_repairable_decision,returned_unrepaired_at' as const
 
 const tamanioPaginaMaximo = 50
 const paginaMaxima = 100_000
@@ -428,6 +431,8 @@ function validarLockVersion(lockVersion: number) {
 function mapearReparacion(fila: FilaReparacion): Reparacion {
   return {
     id: fila.id,
+    decisionNoReparable: fila.non_repairable_decision == null ? null : esquemaDecisionNoReparable.parse(fila.non_repairable_decision),
+    devueltaSinRepararEn: fila.returned_unrepaired_at ?? '',
     organizationId: fila.organization_id,
     lockVersion: validarLockVersion(fila.lock_version),
     codigo: fila.repair_code,
@@ -691,7 +696,7 @@ export async function obtenerResumenReparaciones(organizationId: string) {
 
   const [total, abiertas, esperandoAprobacion, listasParaEntrega] = await Promise.all([
     contar(),
-    contar().neq('status', 'delivered').neq('status', 'cancelled').neq('status', 'rejected'),
+    contar().neq('status', 'delivered').neq('status', 'cancelled').neq('status', 'rejected').neq('status', 'returned_unrepaired'),
     contar().eq('status', 'waiting_customer_approval'),
     contar().eq('status', 'ready_for_delivery'),
   ])
@@ -829,9 +834,9 @@ export async function obtenerDetalleReparacion(
         .eq('organization_id', organizationId).eq('repair_id', repairId)
         .order('completed_at', { ascending: false }).order('id', { ascending: false })
         .range(inicio, fin), 'pruebas'),
-      consultarPaginasDetalle<FilaEvento>((inicio, fin) => supabase
-        .from('repair_events')
-        .select('id,organization_id,repair_id,event_type,from_status,to_status,actor_user_id,observation,metadata,created_at', { count: 'exact' })
+       consultarPaginasDetalle<FilaEvento>((inicio, fin) => supabase
+         .from('repair_events')
+         .select('id::text,organization_id,repair_id,event_type,from_status,to_status,actor_user_id,observation,metadata,created_at', { count: 'exact' })
         .eq('organization_id', organizationId).eq('repair_id', repairId)
         .order('created_at', { ascending: false }).order('id', { ascending: false })
         .range(inicio, fin), 'eventos'),
