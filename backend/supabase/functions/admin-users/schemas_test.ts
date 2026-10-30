@@ -19,6 +19,13 @@ Deno.test('acepta una creación con permisos operativos explícitos', () => {
   assert(result.data.email === 'usuario@silsan.com', 'El correo no se normalizó')
 })
 
+Deno.test('permite asignación económica explícita a una cuenta operativa sin convertirla en administrador', () => {
+  const request = { action: 'create', email: 'costos@example.invalid', fullName: 'Responsable de costos', isAdmin: false,
+    permissionCodes: ['REPAIRS_MANAGE_ACTUAL_COST', 'REPAIRS_CONFIRM_ACTUAL_COST'] }
+  assert(adminUserRequestSchema.safeParse(request).success, 'Se rechazaron las capacidades económicas explícitas')
+  assert(!adminUserRequestSchema.safeParse({ ...request, isAdmin: true }).success, 'Se debilitó la separación entre ADMIN y permisos operativos directos')
+})
+
 Deno.test('acepta crear un administrador sin permisos directos', () => {
   const result = adminUserRequestSchema.safeParse({
     action: 'create',

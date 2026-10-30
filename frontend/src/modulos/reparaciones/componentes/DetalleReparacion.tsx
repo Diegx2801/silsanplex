@@ -1,4 +1,5 @@
 import { ResultadosPruebas } from './ResultadosPruebas'
+import { CostoRealReparacion } from './CostoRealReparacion'
 import { FechasReparacion } from './FechasReparacion'
 import { fechaTecnica, type CambioEstadoPendiente } from '../modelo/finalizacionTecnica'
 import { AdjuntosReparacion } from './AdjuntosReparacion'
@@ -905,6 +906,7 @@ function DetalleContenido({
        <AccesoriosReparacion key={`accessories:${reparacion.organizationId}:${reparacion.id}`} reparacion={reparacion} puedeEditar={puedeEditar} puedeDevolver={puedeEntregar} />
       <RecuperarEntregaAccesorios reparacion={reparacion} />
       <AtencionComplementariaReparacion key={`${reparacion.organizationId}:${reparacion.id}`} reparacion={reparacion} puedeEditar={puedeEditar} puedeGarantia={puedeEntregar} />
+      <CostoRealReparacion reparacion={reparacion} />
       <AdjuntosReparacion reparacionId={reparacion.id} puedeAdjuntar={puedeEditar || puedeRealizarTecnica} />
       <details id="reparacion-seccion-historial" tabIndex={-1} className="px-5 py-6 outline-none sm:px-7">
         <summary className="cursor-pointer rounded-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Historial de la orden · {detalle.eventos.length} eventos</summary>
