@@ -1157,8 +1157,63 @@ class NetworkTopologyProbeTests(unittest.TestCase):
                     self.assertEqual(directory.name, project)
                     self.assertEqual(doc['project_id'], project)
         self.assertEqual(len(set(projects)), 3)
-        self.assertTrue(projects[1].endswith('-ab-internal'))
-        self.assertTrue(projects[2].endswith('-ab-bridge'))
+        self.assertTrue(projects[1].endswith('-i'))
+        self.assertTrue(projects[2].endswith('-b'))
+        self.assertTrue(all(len(project) <= 40 for project in projects))
+
+    def test_probe_identity_is_deterministic_unique_and_consistent_everywhere(self):
+        config_path = self.workspace / 'backend/supabase/config.toml'
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text('[db]\nmajor_version = 17\n', encoding='utf8')
+        projects = set()
+        for run_id in ('41111723586', '41111723587'):
+            for attempt in ('1', '2'):
+                for case in ('internal', 'bridge'):
+                    env = {**self.env, 'GITHUB_RUN_ID': run_id, 'GITHUB_RUN_ATTEMPT': attempt}
+                    with patch.dict(os.environ, env, clear=True), \
+                            patch.object(normal_ci.sys, 'platform', 'linux'), \
+                            patch.object(normal_ci, 'ROOT', self.workspace), \
+                            patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                            patch.object(normal_ci, 'RUNNER_WORK_ROOT', self.runner_work), \
+                            patch.object(normal_ci, '_PROBE_CASE', case):
+                        target = normal_ci.identity()
+                        self.assertEqual(target, normal_ci.identity())
+                        project, directory, doc = target
+                        self.assertNotIn(project, projects)
+                        projects.add(project)
+                        self.assertLessEqual(len(project), 40)
+                        self.assertEqual(directory.name, project)
+                        self.assertEqual(doc['project_id'], project)
+                        self.assertEqual(tomllib.loads(normal_ci.config(project))['project_id'], project)
+                        args = normal_ci.network_create_args(project)
+                        self.assertIn('com.supabase.cli.project=' + project, args)
+                        self.assertIn('com.docker.compose.project=' + project, args)
+                        self.assertEqual(args[-1], 'supabase_network_' + project)
+                        container = {'Name': '/supabase_db_' + project, 'Config': {'Labels': {
+                            'com.supabase.cli.project': project, 'com.docker.compose.project': project}}}
+                        diagnostic = normal_ci.container_owner_diagnostic(container, project,
+                                                                           'RESOURCE_VERIFICATION')
+                        self.assertEqual(diagnostic['supabase_project_label'], 'MATCH')
+                        self.assertEqual(diagnostic['compose_project_label'], 'MATCH')
+                        self.assertTrue(diagnostic['name_matches_expected_pattern'])
+        self.assertEqual(len(projects), 8)
+
+    def test_project_validator_rejects_cli_sanitization_or_truncation(self):
+        normal_ci.validate_project_id('a' * 40)
+        for project in ('a' * 41, '', '-abc', '_abc', '.abc', 'a/b', 'a b', 'ábc', None):
+            with self.subTest(project=project), self.assertRaisesRegex(ValueError, 'PROJECT_ID'):
+                normal_ci.validate_project_id(project)
+        with patch.dict(os.environ, self.env, clear=True), \
+                patch.object(normal_ci.sys, 'platform', 'linux'), \
+                patch.object(normal_ci, 'ROOT', self.workspace), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'RUNNER_WORK_ROOT', self.runner_work), \
+                patch.object(normal_ci, '_PROBE_CASE', 'internal'):
+            with patch.dict(os.environ, {'GITHUB_RUN_ID': '1' * 40}), \
+                    patch.object(normal_ci, 'docker_guard') as docker_guard:
+                with self.assertRaisesRegex(ValueError, 'PROJECT_ID'):
+                    normal_ci.prepare()
+                docker_guard.assert_not_called()
 
     @staticmethod
     def proof(case):

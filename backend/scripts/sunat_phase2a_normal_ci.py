@@ -86,6 +86,12 @@ def require(condition, code):
         raise ValueError('CPE_NORMAL_CI_' + code)
 
 
+def validate_project_id(project):
+    # CLI 2.115.0 sanitizes/truncates project_id to 40 characters. Never rely on it.
+    require(isinstance(project, str) and 1 <= len(project) <= 40
+            and re.fullmatch(r'[a-z0-9][a-z0-9-]*', project), 'PROJECT_ID')
+
+
 def identity(env=None, platform=None, root=None):
     """Return the sole approved hosted runner identity and derived target."""
     env = os.environ if env is None else env
@@ -122,8 +128,8 @@ def identity(env=None, platform=None, root=None):
     project = f'silsan-py-{run_id}-{attempt}-{job_fingerprint}'
     require(_PROBE_CASE in (None, 'internal', 'bridge'), 'PROBE_CASE')
     if _PROBE_CASE is not None:
-        project += '-ab-' + _PROBE_CASE
-    require(len(project) <= 63 and re.fullmatch(r'[a-z0-9-]+', project), 'PROJECT_ID')
+        project += {'internal': '-i', 'bridge': '-b'}[_PROBE_CASE]
+    validate_project_id(project)
     runner_temp = Path(env['RUNNER_TEMP']).resolve()
     directory = runner_temp / project
     require(directory.parent == runner_temp and directory.name == project
