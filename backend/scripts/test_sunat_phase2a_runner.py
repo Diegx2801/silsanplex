@@ -1261,6 +1261,30 @@ class NetworkTopologyProbeTests(unittest.TestCase):
                 normal_ci.start_and_observe(['approved-command'])
         self.assertFalse(any(t.name == 'owned-supabase-network-probe' for t in normal_ci.threading.enumerate()))
 
+    def test_observer_reports_only_fixed_guard_codes(self):
+        for message in ('CPE_NORMAL_CI_PROBE_REQUESTED_BIND', 'private credential sentinel'):
+            observed = normal_ci.threading.Event()
+            evidence = {}
+
+            def sample():
+                observed.set()
+                raise ValueError(message)
+
+            def start(*args, **kwargs):
+                self.assertTrue(observed.wait(2))
+                return ''
+
+            with patch.object(normal_ci, '_PROBE_EVIDENCE', evidence), \
+                    patch.object(normal_ci, 'sample_network_probe', side_effect=sample), \
+                    patch.object(normal_ci, 'command', side_effect=start):
+                normal_ci.start_and_observe(['approved-command'])
+            self.assertEqual(evidence['observer_error'], 'ValueError')
+            if message.startswith('CPE_NORMAL_CI_'):
+                self.assertEqual(evidence['observer_guard'], message)
+            else:
+                self.assertNotIn('observer_guard', evidence)
+                self.assertNotIn(message, json.dumps(evidence))
+
     def test_finalizer_attempts_all_fixed_cases_after_one_cleanup_failure(self):
         events = []
         for case in ('internal', 'bridge', 'normal'):

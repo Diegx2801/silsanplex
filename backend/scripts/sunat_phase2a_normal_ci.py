@@ -607,6 +607,9 @@ def start_and_observe(args):
                 pass
             except Exception as error:
                 evidence['observer_error'] = type(error).__name__
+                # Emit only our fixed guard identifier, never arbitrary exception text.
+                if re.fullmatch(r'CPE_NORMAL_CI_[A-Z_]{1,80}', str(error)):
+                    evidence['observer_guard'] = str(error)
                 return
             finished.wait(0.5)
 
