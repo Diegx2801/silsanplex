@@ -1248,7 +1248,7 @@ class NetworkTopologyProbeTests(unittest.TestCase):
     def test_probe_sample_uses_owned_internal_health_and_loopback_only(self):
         resources = self.owned_inventory()
         db = resources['containers'][0]
-        db['Config']['Healthcheck'] = {'Test': ['CMD', 'pg_isready', '-h', '127.0.0.1']}
+        db['Config']['Healthcheck'] = {'Test': list(normal_ci.UPSTREAM_POSTGRES_HEALTHCHECK)}
         db['State']['Health'] = {'Status': 'healthy'}
         db['HostConfig'] = {'PortBindings': {'5432/tcp': [{'HostIp': '', 'HostPort': str(normal_ci.PORTS['db'])}]}}
         resources['networks'][-1]['IPAM'] = {'Config': [{'Subnet': '172.22.0.0/16', 'Gateway': '172.22.0.1'}]}
@@ -1293,7 +1293,7 @@ class NetworkTopologyProbeTests(unittest.TestCase):
                 status = {'unhealthy': 'unhealthy', 'unknown': 'unexpected',
                           'missing-ports': 'healthy', 'missing-healthcheck': 'healthy'}.get(scenario, 'starting')
                 db['State']['Health'] = {'Status': status}
-                db['Config']['Healthcheck'] = {'Test': ['CMD', 'pg_isready', '-h', '127.0.0.1']}
+                db['Config']['Healthcheck'] = {'Test': list(normal_ci.UPSTREAM_POSTGRES_HEALTHCHECK)}
                 if scenario == 'missing-healthcheck':
                     db['Config'].pop('Healthcheck')
             with self.subTest(scenario=scenario), \
@@ -1313,7 +1313,7 @@ class NetworkTopologyProbeTests(unittest.TestCase):
         for published in (False, True):
             resources = self.owned_inventory()
             db = resources['containers'][0]
-            db['Config']['Healthcheck'] = {'Test': ['CMD', 'pg_isready', '-h', '127.0.0.1']}
+            db['Config']['Healthcheck'] = {'Test': list(normal_ci.UPSTREAM_POSTGRES_HEALTHCHECK)}
             db['State']['Health'] = {'Status': 'healthy'}
             db['HostConfig'] = {'PortBindings': {'5432/tcp': [{'HostIp': '', 'HostPort': str(normal_ci.PORTS['db'])}]}}
             if not published:
@@ -1458,6 +1458,116 @@ class NetworkTopologyProbeTests(unittest.TestCase):
                 normal_ci.stop_all()
         self.assertEqual(events, ['internal', 'bridge', None])
         self.assertIsNone(normal_ci._PROBE_CASE)
+
+
+class PostgresHealthcheckDiagnosticTests(unittest.TestCase):
+    setUp = NormalCIIdentityTests.setUp
+    fixed_target = NormalCIIdentityTests.fixed_target
+    owned_inventory = NormalCIIdentityTests.owned_inventory
+
+    def test_official_cmd_signature_requires_exact_full_array(self):
+        expected = ['CMD', 'pg_isready', '-U', 'postgres', '-h', '127.0.0.1', '-p', '5432']
+        result = normal_ci.classify_postgres_healthcheck({'Healthcheck': {'Test': expected}})
+        self.assertTrue(result['matches_upstream_expected_signature'])
+        self.assertEqual(result['healthcheck_format'], 'CMD')
+        self.assertEqual(result['argument_count'], 7)
+        self.assertTrue(result['pg_isready_exact_argument'])
+        self.assertTrue(result['localhost_exact_argument'])
+        self.assertTrue(result['port_5432_present'])
+        self.assertFalse(result['pg_isready_embedded'])
+        self.assertFalse(result['localhost_embedded'])
+        for test in (expected + ['private-sentinel'],
+                     ['CMD', 'pg_isready', '-h', '127.0.0.1'],
+                     ['CMD', 'private-sentinel', 'pg_isready', '127.0.0.1', '5432']):
+            self.assertFalse(normal_ci.classify_postgres_healthcheck(
+                {'Healthcheck': {'Test': test}})['matches_upstream_expected_signature'])
+
+    def test_shell_known_and_unknown_are_diagnostic_only(self):
+        for command, embedded in (
+                ('pg_isready -U postgres -h 127.0.0.1 -p 5432', True),
+                ('private-sentinel', False)):
+            result = normal_ci.classify_postgres_healthcheck({'Healthcheck': {'Test': ['CMD-SHELL', command]}})
+            self.assertEqual(result['healthcheck_format'], 'CMD-SHELL')
+            self.assertEqual(result['argument_count'], 1)
+            self.assertEqual(result['pg_isready_embedded'], embedded)
+            self.assertEqual(result['localhost_embedded'], embedded)
+            self.assertFalse(result['pg_isready_exact_argument'])
+            self.assertFalse(result['localhost_exact_argument'])
+            self.assertFalse(result['matches_upstream_expected_signature'])
+            self.assertNotIn('private-sentinel', json.dumps(result))
+
+    def test_missing_null_disabled_and_invalid_shapes_are_safe(self):
+        cases = [(None, 'MISSING'), ({}, 'MISSING'), ({'Healthcheck': None}, 'MISSING'),
+                 ({'Healthcheck': {}}, 'MISSING'), ({'Healthcheck': {'Test': None}}, 'MISSING'),
+                 ({'Healthcheck': {'Test': []}}, 'MISSING'),
+                 ({'Healthcheck': {'Test': ['NONE']}}, 'NONE'),
+                 ({'Healthcheck': 'private-sentinel'}, 'INVALID')]
+        cases += [({'Healthcheck': {'Test': test}}, 'INVALID') for test in (
+            'private-sentinel', [None], ['CMD'], ['CMD-SHELL'], ['CMD-SHELL', 'a', 'b'],
+            ['NONE', 'a'], ['UNKNOWN', 'a'], ['CMD', None], ['CMD'] + ['a'] * 40,
+            ['CMD', 'private-sentinel' * 4096])]
+        for config, mode in cases:
+            with self.subTest(mode=mode):
+                result = normal_ci.classify_postgres_healthcheck(config)
+                self.assertEqual(result['healthcheck_format'], mode)
+                self.assertLessEqual(result['argument_count'], 32)
+                self.assertFalse(result['matches_upstream_expected_signature'])
+                self.assertNotIn('private-sentinel', json.dumps(result))
+
+    def test_healthy_unknown_and_unhealthy_known_never_become_conclusive(self):
+        for status, test in (
+                ('healthy', ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -p 5432']),
+                ('unhealthy', list(normal_ci.UPSTREAM_POSTGRES_HEALTHCHECK))):
+            resources = self.owned_inventory()
+            db = resources['containers'][0]
+            db['Config']['Healthcheck'] = {'Test': test}
+            db['State']['Health'] = {'Status': status}
+            with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                    patch.object(normal_ci, 'assert_owner'), \
+                    patch.object(normal_ci, 'inventory', return_value=resources):
+                sample = normal_ci.sample_network_probe()
+            self.assertEqual(sample['partial']['health_status'], status.upper())
+            self.assertNotIn('postgres_internal_healthy', sample)
+            with self.assertRaisesRegex(ValueError, 'INCOMPLETE_EVIDENCE'):
+                normal_ci.validate_network_probe('internal', {'sample': sample, 'cleanup_verified': True})
+
+    def test_healthy_snapshot_is_retained_even_with_unknown_signature(self):
+        evidence = {}
+        observed = normal_ci.threading.Event()
+        partial = {'postgres_found': True, 'health_status': 'HEALTHY',
+                   'initialization_phase': 'WAITING_EXPECTED_HEALTHCHECK',
+                   'healthcheck': normal_ci.classify_postgres_healthcheck(
+                       {'Healthcheck': {'Test': ['CMD-SHELL', 'private-sentinel']}})}
+
+        def sample():
+            observed.set()
+            return {'partial': partial}
+
+        def command(*args, **kwargs):
+            self.assertTrue(observed.wait(2))
+            return ''
+
+        with patch.object(normal_ci, '_PROBE_EVIDENCE', evidence), \
+                patch.object(normal_ci, 'sample_network_probe', side_effect=sample), \
+                patch.object(normal_ci, 'command', side_effect=command):
+            normal_ci.start_and_observe(['approved-command'])
+        self.assertEqual(evidence['healthy_postgres_observation'], partial)
+        self.assertEqual(evidence['complete_observations'], 0)
+        self.assertNotIn('sample', evidence)
+        self.assertNotIn('private-sentinel', json.dumps(evidence))
+
+    def test_unverified_container_is_rejected_before_healthcheck_classification(self):
+        resources = self.owned_inventory()
+        resources['containers'][0]['Config']['Labels'] = {}
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'assert_owner'), \
+                patch.object(normal_ci, 'inventory', return_value=resources), \
+                patch.object(normal_ci, 'classify_postgres_healthcheck') as classify, \
+                patch.object(normal_ci.socket, 'create_connection') as connect, patch('builtins.print'):
+            with self.assertRaisesRegex(ValueError, 'CONTAINER_OWNER'):
+                normal_ci.sample_network_probe()
+            classify.assert_not_called()
+            connect.assert_not_called()
 
 
 class ContainerOwnerDiagnosticTests(unittest.TestCase):

@@ -587,6 +587,56 @@ def cli_version():
     return locked
 
 
+UPSTREAM_POSTGRES_HEALTHCHECK = (
+    'CMD', 'pg_isready', '-U', 'postgres', '-h', '127.0.0.1', '-p', '5432')
+
+
+def classify_postgres_healthcheck(config_doc):
+    """Bounded diagnostic only; no command text or arbitrary values leave this function.
+
+    Expected signature: CLI v2.115.0/apps/cli-go/internal/db/start/start.go.
+    argument_count excludes the CMD/CMD-SHELL/NONE mode and saturates at 32.
+    Embedded-token flags are observational and never authorize a signature.
+    """
+    healthcheck = config_doc.get('Healthcheck') if isinstance(config_doc, dict) else None
+    result = {'healthcheck_present': healthcheck is not None, 'healthcheck_format': 'MISSING',
+              'argument_count': 0, 'pg_isready_exact_argument': False, 'pg_isready_embedded': False,
+              'localhost_exact_argument': False, 'localhost_embedded': False,
+              'port_5432_present': False, 'matches_upstream_expected_signature': False}
+    if healthcheck is None:
+        return result
+    if not isinstance(healthcheck, dict):
+        result['healthcheck_format'] = 'INVALID'
+        return result
+    test = healthcheck.get('Test')
+    if test is None or test == []:
+        return result
+    if not isinstance(test, list):
+        result['healthcheck_format'] = 'INVALID'
+        return result
+    result['argument_count'] = min(max(len(test) - 1, 0), 32)
+    if (not 1 <= len(test) <= 33
+            or not all(isinstance(arg, str) and len(arg) <= 4096 for arg in test)):
+        result['healthcheck_format'] = 'INVALID'
+        return result
+    mode, args = test[0], test[1:]
+    if (mode not in ('CMD', 'CMD-SHELL', 'NONE')
+            or (mode == 'CMD' and not args)
+            or (mode == 'CMD-SHELL' and len(args) != 1)
+            or (mode == 'NONE' and args)):
+        result['healthcheck_format'] = 'INVALID'
+        return result
+    result.update(
+        healthcheck_format=mode,
+        pg_isready_exact_argument='pg_isready' in args,
+        pg_isready_embedded=any('pg_isready' in arg and arg != 'pg_isready' for arg in args),
+        localhost_exact_argument='127.0.0.1' in args,
+        localhost_embedded=any('127.0.0.1' in arg and arg != '127.0.0.1' for arg in args),
+        port_5432_present=any(re.search(r'(?<!\d)5432(?!\d)', arg) is not None for arg in args),
+        matches_upstream_expected_signature=tuple(test) == UPSTREAM_POSTGRES_HEALTHCHECK)
+    return result
+
+
 def sample_network_probe():
     """Observe only owned resources; return no configuration, env or credentials."""
     project, directory, identity_doc = identity()
@@ -604,11 +654,13 @@ def sample_network_probe():
         partial['initialization_phase'] = 'WAITING_NETWORK'
     if database is None:
         return {'partial': partial}
-    status = database.get('State', {}).get('Health', {}).get('Status')
+    state = database.get('State')
+    health = state.get('Health') if isinstance(state, dict) else None
+    status = health.get('Status') if isinstance(health, dict) else None
     partial['health_status'] = {'starting': 'STARTING', 'healthy': 'HEALTHY',
-                                'unhealthy': 'UNHEALTHY'}.get(status, 'UNKNOWN')
-    healthcheck = database.get('Config', {}).get('Healthcheck', {}).get('Test', [])
-    partial['expected_healthcheck'] = ('pg_isready' in healthcheck and '127.0.0.1' in healthcheck)
+                                'unhealthy': 'UNHEALTHY'}.get(status, 'UNKNOWN') if isinstance(status, str) else 'UNKNOWN'
+    partial['healthcheck'] = classify_postgres_healthcheck(database.get('Config'))
+    partial['expected_healthcheck'] = partial['healthcheck']['matches_upstream_expected_signature']
     requested = database.get('HostConfig', {}).get('PortBindings', {}).get('5432/tcp') or []
     effective = database.get('NetworkSettings', {}).get('Ports', {}).get('5432/tcp') or []
     partial['requested_bindings_present'] = bool(requested)
@@ -679,6 +731,8 @@ def start_and_observe(args):
                     evidence['last_observation'] = partial
                     if partial['postgres_found']:
                         evidence['last_postgres_observation'] = partial
+                        if partial['health_status'] == 'HEALTHY':
+                            evidence['healthy_postgres_observation'] = partial
                     phase = partial['initialization_phase']
                     if phase not in evidence['phases_observed']:
                         evidence['phases_observed'].append(phase)
