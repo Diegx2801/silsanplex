@@ -1277,6 +1277,104 @@ class NetworkTopologyProbeTests(unittest.TestCase):
                     normal_ci.sample_network_probe()
                 connect.assert_not_called()
 
+    def test_partial_states_never_claim_complete_evidence(self):
+        for scenario, expected_health, expected_phase in (
+                ('missing-db', 'NOT_FOUND', 'WAITING_POSTGRES'),
+                ('missing-network', 'STARTING', 'WAITING_NETWORK'),
+                ('starting', 'STARTING', 'POSTGRES_STARTING'),
+                ('unhealthy', 'UNHEALTHY', 'POSTGRES_UNHEALTHY'),
+                ('unknown', 'UNKNOWN', 'POSTGRES_UNKNOWN'),
+                ('missing-ports', 'HEALTHY', 'WAITING_REQUESTED_BINDINGS'),
+                ('missing-healthcheck', 'HEALTHY', 'WAITING_EXPECTED_HEALTHCHECK')):
+            resources = self.owned_inventory(include_db=scenario != 'missing-db',
+                                             include_network=scenario != 'missing-network')
+            if scenario != 'missing-db':
+                db = resources['containers'][0]
+                status = {'unhealthy': 'unhealthy', 'unknown': 'unexpected',
+                          'missing-ports': 'healthy', 'missing-healthcheck': 'healthy'}.get(scenario, 'starting')
+                db['State']['Health'] = {'Status': status}
+                db['Config']['Healthcheck'] = {'Test': ['CMD', 'pg_isready', '-h', '127.0.0.1']}
+                if scenario == 'missing-healthcheck':
+                    db['Config'].pop('Healthcheck')
+            with self.subTest(scenario=scenario), \
+                    patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                    patch.object(normal_ci, 'assert_owner'), \
+                    patch.object(normal_ci, 'inventory', return_value=resources), \
+                    patch.object(normal_ci.socket, 'create_connection') as connect:
+                sample = normal_ci.sample_network_probe()
+                self.assertEqual(sample['partial']['health_status'], expected_health)
+                self.assertEqual(sample['partial']['initialization_phase'], expected_phase)
+                self.assertNotIn('postgres_internal_healthy', sample)
+                connect.assert_not_called()
+                with self.assertRaisesRegex(ValueError, 'INCOMPLETE_EVIDENCE'):
+                    normal_ci.validate_network_probe('internal', {'sample': sample, 'cleanup_verified': True})
+
+    def test_requested_unpublished_and_published_refused_ports_are_observable(self):
+        for published in (False, True):
+            resources = self.owned_inventory()
+            db = resources['containers'][0]
+            db['Config']['Healthcheck'] = {'Test': ['CMD', 'pg_isready', '-h', '127.0.0.1']}
+            db['State']['Health'] = {'Status': 'healthy'}
+            db['HostConfig'] = {'PortBindings': {'5432/tcp': [{'HostIp': '', 'HostPort': str(normal_ci.PORTS['db'])}]}}
+            if not published:
+                db['NetworkSettings']['Ports']['5432/tcp'] = []
+            with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                    patch.object(normal_ci, 'assert_owner'), \
+                    patch.object(normal_ci, 'inventory', return_value=resources), \
+                    patch.object(normal_ci.socket, 'create_connection', side_effect=OSError('private-sentinel')):
+                sample = normal_ci.sample_network_probe()
+            partial = sample['partial']
+            self.assertTrue(partial['requested_bindings_present'])
+            self.assertEqual(partial['effective_bindings_present'], published)
+            self.assertFalse(partial['localhost_tcp_connected'])
+            self.assertEqual(partial['initialization_phase'],
+                             'LOCALHOST_TCP_REFUSED' if published else 'HOST_PORT_NOT_PUBLISHED')
+            self.assertNotIn('private-sentinel', json.dumps(sample))
+            with self.assertRaises(ValueError):
+                normal_ci.validate_network_probe('bridge', {'sample': sample, 'cleanup_verified': True,
+                                                            'cli_start_success': False})
+
+    def test_observer_counts_inventory_timeout_and_command_failure_without_raw_errors(self):
+        for error, counter in ((subprocess.TimeoutExpired('private-sentinel', 3), 'inventory_timeouts'),
+                               (RuntimeError('private-sentinel'), 'inventory_command_failures')):
+            observed = normal_ci.threading.Event()
+            evidence = {}
+
+            def sample():
+                observed.set()
+                raise error
+
+            def start(*args, **kwargs):
+                self.assertTrue(observed.wait(2))
+                return ''
+
+            with patch.object(normal_ci, '_PROBE_EVIDENCE', evidence), \
+                    patch.object(normal_ci, 'sample_network_probe', side_effect=sample), \
+                    patch.object(normal_ci, 'command', side_effect=start):
+                normal_ci.start_and_observe(['approved-command'])
+            self.assertGreater(evidence[counter], 0)
+            self.assertGreater(evidence['failed_observations'], 0)
+            self.assertEqual(evidence['complete_observations'], 0)
+            self.assertNotIn('private-sentinel', json.dumps(evidence))
+
+    def test_inconclusive_and_failed_cleanup_stop_before_second_case(self):
+        for cleanup_fails in (False, True):
+            def prepare():
+                normal_ci._PROBE_EVIDENCE.update(cli_start_success=False, partial_observations=1)
+                raise RuntimeError('CPE_NORMAL_CI_COMMAND_FAILED:supabase')
+
+            with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                    patch.object(normal_ci, 'prepare', side_effect=prepare) as start, \
+                    patch.object(normal_ci, 'stop', side_effect=(ValueError('cleanup failed') if cleanup_fails else None)), \
+                    patch('builtins.print') as log:
+                with self.assertRaises(ValueError):
+                    normal_ci.network_ab()
+                self.assertEqual(start.call_count, 1)
+            records = [json.loads(call.args[0]) for call in log.call_args_list]
+            self.assertEqual(records[-1]['outcome'], 'INCONCLUSIVE')
+            self.assertNotIn('network-ab-result', [record['phase'] for record in records])
+            self.assertEqual(records[-1].get('cleanup_verified'), None if cleanup_fails else True)
+
     def test_cases_are_sequential_and_cleanup_precedes_next_case(self):
         events = []
 

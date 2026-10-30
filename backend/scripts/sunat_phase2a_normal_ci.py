@@ -596,19 +596,30 @@ def sample_network_probe():
                                       stage='SUPABASE_START_OBSERVATION')
     database = next((c for c in resources['containers']
                      if c.get('Name') == f'/supabase_db_{project}'), None)
-    if database is None or not networks:
-        return None
+    partial = {'postgres_found': database is not None, 'exclusive_network_found': bool(networks),
+               'health_status': 'NOT_FOUND', 'expected_healthcheck': False,
+               'requested_bindings_present': False, 'effective_bindings_present': False,
+               'localhost_tcp_connected': None, 'initialization_phase': 'WAITING_POSTGRES'}
+    if not networks:
+        partial['initialization_phase'] = 'WAITING_NETWORK'
+    if database is None:
+        return {'partial': partial}
+    status = database.get('State', {}).get('Health', {}).get('Status')
+    partial['health_status'] = {'starting': 'STARTING', 'healthy': 'HEALTHY',
+                                'unhealthy': 'UNHEALTHY'}.get(status, 'UNKNOWN')
+    healthcheck = database.get('Config', {}).get('Healthcheck', {}).get('Test', [])
+    partial['expected_healthcheck'] = ('pg_isready' in healthcheck and '127.0.0.1' in healthcheck)
+    requested = database.get('HostConfig', {}).get('PortBindings', {}).get('5432/tcp') or []
+    effective = database.get('NetworkSettings', {}).get('Ports', {}).get('5432/tcp') or []
+    partial['requested_bindings_present'] = bool(requested)
+    partial['effective_bindings_present'] = bool(effective)
+    if not networks:
+        return {'partial': partial}
     require(set(database.get('NetworkSettings', {}).get('Networks', {}))
             == {network_name(project)}, 'PROBE_DATABASE_NETWORK')
-    healthcheck = database.get('Config', {}).get('Healthcheck', {}).get('Test', [])
-    healthy = (database.get('State', {}).get('Health', {}).get('Status') == 'healthy'
-               and 'pg_isready' in healthcheck and '127.0.0.1' in healthcheck)
-    if not healthy:
-        return None
-    requested = database.get('HostConfig', {}).get('PortBindings', {}).get('5432/tcp') or []
-    require(len(requested) == 1 and requested[0].get('HostPort') == str(PORTS['db'])
-            and requested[0].get('HostIp', '') in ('', '127.0.0.1'), 'PROBE_REQUESTED_BIND')
-    effective = database.get('NetworkSettings', {}).get('Ports', {}).get('5432/tcp') or []
+    if requested:
+        require(len(requested) == 1 and requested[0].get('HostPort') == str(PORTS['db'])
+                and requested[0].get('HostIp', '') in ('', '127.0.0.1'), 'PROBE_REQUESTED_BIND')
     for container in resources['containers']:
         for bindings in (container.get('NetworkSettings', {}).get('Ports') or {}).values():
             for binding in bindings or []:
@@ -616,16 +627,32 @@ def sample_network_probe():
                 require(binding.get('HostPort') in (str(PORTS['api']), str(PORTS['db'])),
                         'PROBE_UNEXPECTED_PORT')
     connected = False
-    try:
-        with socket.create_connection(('127.0.0.1', PORTS['db']), timeout=0.25):
-            connected = True
-    except OSError:
-        pass
+    if requested:
+        try:
+            with socket.create_connection(('127.0.0.1', PORTS['db']), timeout=0.25):
+                connected = True
+        except OSError:
+            pass
+    partial['localhost_tcp_connected'] = connected if requested else None
+    if partial['health_status'] != 'HEALTHY':
+        partial['initialization_phase'] = 'POSTGRES_' + partial['health_status']
+    elif not partial['expected_healthcheck']:
+        partial['initialization_phase'] = 'WAITING_EXPECTED_HEALTHCHECK'
+    elif not requested:
+        partial['initialization_phase'] = 'WAITING_REQUESTED_BINDINGS'
+    elif not effective:
+        partial['initialization_phase'] = 'HOST_PORT_NOT_PUBLISHED'
+    elif not connected:
+        partial['initialization_phase'] = 'LOCALHOST_TCP_REFUSED'
+    else:
+        partial['initialization_phase'] = 'LOCALHOST_TCP_CONNECTED'
+    if (partial['health_status'] != 'HEALTHY' or not partial['expected_healthcheck'] or not requested):
+        return {'partial': partial}
     network = networks[0]
     ipam = [{'subnet': str(ipaddress.ip_network(entry['Subnet'])),
              'gateway': str(ipaddress.ip_address(entry['Gateway'])) if entry.get('Gateway') else None}
             for entry in network.get('IPAM', {}).get('Config', []) if entry.get('Subnet')]
-    return {'network': network_name(project), 'owner_labels_verified': True,
+    return {'partial': partial, 'owner_labels_verified': True,
             'internal': network['Internal'], 'ipam': ipam,
             'postgres_internal_healthy': True,
             'requested_bindings': [{'HostIp': b.get('HostIp', ''), 'HostPort': b['HostPort']}
@@ -640,17 +667,35 @@ def start_and_observe(args):
         return command(args, timeout=1200)
     finished = threading.Event()
     evidence = _PROBE_EVIDENCE
+    evidence.update(complete_observations=0, partial_observations=0, failed_observations=0,
+                    inventory_timeouts=0, inventory_command_failures=0, phases_observed=[])
 
     def observe():
         while not finished.is_set():
             try:
                 sample = sample_network_probe()
                 if sample is not None:
-                    evidence['sample'] = sample
-            except (RuntimeError, subprocess.TimeoutExpired):
+                    partial = sample['partial']
+                    evidence['last_observation'] = partial
+                    if partial['postgres_found']:
+                        evidence['last_postgres_observation'] = partial
+                    phase = partial['initialization_phase']
+                    if phase not in evidence['phases_observed']:
+                        evidence['phases_observed'].append(phase)
+                    if sample.get('postgres_internal_healthy') is True:
+                        evidence['sample'] = sample
+                        evidence['complete_observations'] += 1
+                    else:
+                        evidence['partial_observations'] += 1
+            except subprocess.TimeoutExpired:
+                evidence['failed_observations'] += 1
+                evidence['inventory_timeouts'] += 1
+            except RuntimeError:
                 # The CLI can remove partial containers between list and inspect.
-                pass
+                evidence['failed_observations'] += 1
+                evidence['inventory_command_failures'] += 1
             except Exception as error:
+                evidence['failed_observations'] += 1
                 evidence['observer_error'] = type(error).__name__
                 # Emit only our fixed guard identifier, never arbitrary exception text.
                 if re.fullmatch(r'CPE_NORMAL_CI_[A-Z_]{1,80}', str(error)):
@@ -715,6 +760,14 @@ def network_ab():
                     stop()
                     evidence['cleanup_verified'] = True
                 finally:
+                    try:
+                        validate_network_probe(case, evidence)
+                    except ValueError as error:
+                        evidence['outcome'] = 'INCONCLUSIVE'
+                        evidence['conclusion_guard'] = (str(error) if re.fullmatch(
+                            r'CPE_NORMAL_CI_[A-Z_]{1,80}', str(error)) else 'CPE_NORMAL_CI_PROBE_OBSERVATION')
+                    else:
+                        evidence['outcome'] = 'DEMONSTRATED'
                     print(json.dumps({'phase': 'network-ab', 'case': case, **evidence}), flush=True)
             validate_network_probe(case, evidence)
         print(json.dumps({'phase': 'network-ab-result', 'internal_blocks_host_port': True,
