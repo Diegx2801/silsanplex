@@ -46,7 +46,13 @@ jobs:
       - name: Validar guards y contrato del runner sin conexiones
         run: python -B -m unittest discover -s backend/scripts -p test_sunat_phase2a_runner.py -v
 
-      - name: Crear proyecto fiscal efímero propio
+      - name: Comprobar topología Docker con Supabase real A/B
+        # The diagnostic step precedes any change to the normal runner topology.
+        # Both cases use full Supabase, distinct identities and sequential cleanup.
+        # Removed from the steady-state job after the A/B result is recorded.
+        run: python -B backend/scripts/sunat_phase2a_normal_ci.py network-ab
+
+      - name: Crear proyecto fiscal efímero propio para concurrencia
         run: python -B backend/scripts/sunat_phase2a_normal_ci.py prepare
 
       - name: Ejecutar runner fiscal Python completo y 11 carreras PostgreSQL

@@ -1139,6 +1139,150 @@ class NormalCIIdentityTests(unittest.TestCase):
         self.assertTrue(all(re.fullmatch(r'[a-f0-9]{64}', digest) for digest in manifest.values()))
 
 
+class NetworkTopologyProbeTests(unittest.TestCase):
+    setUp = NormalCIIdentityTests.setUp
+    fixed_target = NormalCIIdentityTests.fixed_target
+    owned_inventory = NormalCIIdentityTests.owned_inventory
+    def test_probe_cases_have_distinct_fixed_derived_identities(self):
+        projects = []
+        with patch.dict(os.environ, self.env, clear=True), \
+                patch.object(normal_ci.sys, 'platform', 'linux'), \
+                patch.object(normal_ci, 'ROOT', self.workspace), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'RUNNER_WORK_ROOT', self.runner_work):
+            for case in (None, 'internal', 'bridge'):
+                with patch.object(normal_ci, '_PROBE_CASE', case):
+                    project, directory, doc = normal_ci.identity()
+                    projects.append(project)
+                    self.assertEqual(directory.name, project)
+                    self.assertEqual(doc['project_id'], project)
+        self.assertEqual(len(set(projects)), 3)
+        self.assertTrue(projects[1].endswith('-ab-internal'))
+        self.assertTrue(projects[2].endswith('-ab-bridge'))
+
+    @staticmethod
+    def proof(case):
+        return {'cli_start_success': case == 'bridge', 'cleanup_verified': True,
+                'sample': {'owner_labels_verified': True, 'postgres_internal_healthy': True,
+                           'internal': case == 'internal',
+                           'ipam': [{'subnet': '172.22.0.0/16', 'gateway': '172.22.0.1'}],
+                           'requested_bindings': [{'HostIp': '', 'HostPort': str(normal_ci.PORTS['db'])}],
+                           'effective_bindings': ([{'HostIp': '127.0.0.1',
+                                                    'HostPort': str(normal_ci.PORTS['db'])}]
+                                                  if case == 'bridge' else []),
+                           'localhost_tcp_connected': case == 'bridge'}}
+
+    def test_proof_requires_actual_health_ports_tcp_cli_and_cleanup(self):
+        for case in ('internal', 'bridge'):
+            normal_ci.validate_network_probe(case, self.proof(case))
+            mutations = (
+                lambda p: p.update(cleanup_verified=False),
+                lambda p: p.update(observer_error='ValueError'),
+                lambda p: p['sample'].update(postgres_internal_healthy=False),
+                lambda p: p['sample'].update(internal=case != 'internal'),
+                lambda p: p['sample'].update(localhost_tcp_connected=case != 'bridge'),
+                lambda p: p.update(cli_start_success=case != 'bridge'),
+                lambda p: p['sample'].update(ipam=[]),
+            )
+            for mutate in mutations:
+                proof = self.proof(case)
+                mutate(proof)
+                with self.assertRaises(ValueError):
+                    normal_ci.validate_network_probe(case, proof)
+
+    def test_probe_sample_uses_owned_internal_health_and_loopback_only(self):
+        resources = self.owned_inventory()
+        db = resources['containers'][0]
+        db['Config']['Healthcheck'] = {'Test': ['CMD', 'pg_isready', '-h', '127.0.0.1']}
+        db['State']['Health'] = {'Status': 'healthy'}
+        db['HostConfig'] = {'PortBindings': {'5432/tcp': [{'HostIp': '', 'HostPort': str(normal_ci.PORTS['db'])}]}}
+        resources['networks'][-1]['IPAM'] = {'Config': [{'Subnet': '172.22.0.0/16', 'Gateway': '172.22.0.1'}]}
+        for case in ('internal', 'bridge'):
+            resources['networks'][-1]['Internal'] = case == 'internal'
+            db['NetworkSettings']['Ports']['5432/tcp'] = self.proof(case)['sample']['effective_bindings']
+            with patch.object(normal_ci, '_PROBE_CASE', case), \
+                    patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                    patch.object(normal_ci, 'assert_owner'), \
+                    patch.object(normal_ci, 'inventory', return_value=resources), \
+                    patch.object(normal_ci.socket, 'create_connection') as connect:
+                if case == 'internal':
+                    connect.side_effect = OSError('unpublished')
+                sample = normal_ci.sample_network_probe()
+                self.assertTrue(sample['postgres_internal_healthy'])
+                self.assertEqual(sample['localhost_tcp_connected'], case == 'bridge')
+                connect.assert_called_once_with(('127.0.0.1', normal_ci.PORTS['db']), timeout=0.25)
+        for host in ('0.0.0.0', '::', '::1', '192.0.2.1'):
+            db['NetworkSettings']['Ports']['5432/tcp'][0]['HostIp'] = host
+            with patch.object(normal_ci, '_PROBE_CASE', 'bridge'), \
+                    patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                    patch.object(normal_ci, 'assert_owner'), \
+                    patch.object(normal_ci, 'inventory', return_value=resources), \
+                    patch.object(normal_ci.socket, 'create_connection') as connect:
+                with self.assertRaisesRegex(ValueError, 'PROBE_NON_LOOPBACK_BIND'):
+                    normal_ci.sample_network_probe()
+                connect.assert_not_called()
+
+    def test_cases_are_sequential_and_cleanup_precedes_next_case(self):
+        events = []
+
+        def prepare():
+            case = normal_ci._PROBE_CASE
+            events.append(('prepare', case))
+            normal_ci._PROBE_EVIDENCE.update(self.proof(case))
+            normal_ci._PROBE_EVIDENCE.pop('cleanup_verified')
+            if case == 'internal':
+                raise RuntimeError('CPE_NORMAL_CI_COMMAND_FAILED:supabase')
+
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'prepare', side_effect=prepare), \
+                patch.object(normal_ci, 'stop', side_effect=lambda: events.append(('stop', normal_ci._PROBE_CASE))), \
+                patch('builtins.print'):
+            normal_ci.network_ab()
+        self.assertEqual(events, [('prepare', 'internal'), ('stop', 'internal'),
+                                  ('prepare', 'bridge'), ('stop', 'bridge')])
+        self.assertIsNone(normal_ci._PROBE_CASE)
+        self.assertIsNone(normal_ci._PROBE_EVIDENCE)
+
+    def test_probe_failure_still_cleans_and_cannot_claim_reproduction(self):
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'prepare', side_effect=ValueError('identity failure')), \
+                patch.object(normal_ci, 'stop') as stop, patch('builtins.print'):
+            with self.assertRaisesRegex(ValueError, 'identity failure'):
+                normal_ci.network_ab()
+            stop.assert_called_once()
+        self.assertIsNone(normal_ci._PROBE_CASE)
+        self.assertIsNone(normal_ci._PROBE_EVIDENCE)
+
+    def test_observer_closes_after_start_failure(self):
+        with patch.object(normal_ci, '_PROBE_EVIDENCE', {}), \
+                patch.object(normal_ci, 'sample_network_probe', return_value=None), \
+                patch.object(normal_ci, 'command', side_effect=RuntimeError('start failed')):
+            with self.assertRaisesRegex(RuntimeError, 'start failed'):
+                normal_ci.start_and_observe(['approved-command'])
+        self.assertFalse(any(t.name == 'owned-supabase-network-probe' for t in normal_ci.threading.enumerate()))
+
+    def test_finalizer_attempts_all_fixed_cases_after_one_cleanup_failure(self):
+        events = []
+        for case in ('internal', 'bridge', 'normal'):
+            (self.base / case).mkdir()
+
+        def target():
+            case = normal_ci._PROBE_CASE or 'normal'
+            return case, self.base / case, {}
+
+        def stop():
+            events.append(normal_ci._PROBE_CASE)
+            if normal_ci._PROBE_CASE == 'internal':
+                raise ValueError('unowned resource')
+
+        with patch.object(normal_ci, 'identity', side_effect=target), \
+                patch.object(normal_ci, 'stop', side_effect=stop):
+            with self.assertRaisesRegex(ValueError, 'FINALIZER_FAILED_CLOSED'):
+                normal_ci.stop_all()
+        self.assertEqual(events, ['internal', 'bridge', None])
+        self.assertIsNone(normal_ci._PROBE_CASE)
+
+
 class NormalRunnerCoverageTests(unittest.TestCase):
     def test_declared_race_manifest_matches_all_real_runner_call_sites(self):
         source = Path(runner.__file__).read_text(encoding='utf8')
