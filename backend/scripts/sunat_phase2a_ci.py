@@ -22,6 +22,8 @@ CANDIDATE_HASHES = {
     '20261023135019_electronic_fiscal_helper_sql_lint.sql':
         'ff0d192543f389de8391a72507de5f217407287e60a4b8295fae4606f9bcb670',
 }
+FOLLOWUP_MIGRATION = '20261025190353_restrict_electronic_document_direct_select.sql'
+FOLLOWUP_HASH = '7613198f6c8152d1e4838c057c308ebb35413ef853087fa2b831358f43155aff'
 RPC_NAMES = (
     'save_electronic_issuer_profile', 'configure_electronic_series',
     'prepare_electronic_document', 'revise_electronic_document',
@@ -117,10 +119,15 @@ def candidate_start(names):
 def repository_manifest():
     paths = sorted((ROOT / 'backend/supabase/migrations').glob('*.sql'))
     names = [path.name for path in paths]
-    candidate_start(names)
+    first_candidate = candidate_start(names)
+    followup_index = first_candidate + len(CANDIDATE_HASHES)
+    require(followup_index < len(names) and names[followup_index] == FOLLOWUP_MIGRATION
+            and names.count(FOLLOWUP_MIGRATION) == 1,
+            'MIGRATION_FOLLOWUP')
     values = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
     require(all(values[name] == digest for name, digest in CANDIDATE_HASHES.items()),
             'CANDIDATE_HASH')
+    require(values[FOLLOWUP_MIGRATION] == FOLLOWUP_HASH, 'CANDIDATE_HASH')
     return values
 
 

@@ -12,6 +12,7 @@ const digest = value => createHash('sha256').update(value).digest('hex')
 const candidateHashes = {
   '20261023061225_electronic_fiscal_sandbox_persistence.sql': 'df0c339852499b2717a5cfd00d822b06128ff970610fb0f74db08a15c242de01',
   '20261023135019_electronic_fiscal_helper_sql_lint.sql': 'ff0d192543f389de8391a72507de5f217407287e60a4b8295fae4606f9bcb670',
+  '20261025190353_restrict_electronic_document_direct_select.sql': '7613198f6c8152d1e4838c057c308ebb35413ef853087fa2b831358f43155aff',
 }
 const allowedCommands = new Set(['docker', 'supabase'])
 
@@ -115,6 +116,8 @@ enable_confirmations = false
       'FISCAL_TEST_CANDIDATE_ORDER')
     assert.equal(names.filter(name => candidateNames.includes(name)).length, candidateNames.length,
       'FISCAL_TEST_CANDIDATE_DUPLICATE')
+    assert.ok(firstCandidate + candidateNames.length < names.length,
+      'FISCAL_TEST_POST_CANDIDATE_MIGRATIONS_MISSING')
     const result = Object.fromEntries(names.map(n => [n, digest(fs.readFileSync(path.join(base, n)))]))
     for (const [name, hash] of Object.entries(candidateHashes)) assert.equal(result[name], hash)
     return result
@@ -124,7 +127,9 @@ enable_confirmations = false
     const containers = ids.length ? inspect('inspect', ...ids) : []
     const names = list('volume', 'ls', '-q')
     const volumes = names.length ? inspect('volume', 'inspect', ...names) : []
-    return { containers, volumes }
+    const networkIds = list('network', 'ls', '-q')
+    const networks = networkIds.length ? inspect('network', 'inspect', ...networkIds) : []
+    return { containers, volumes, networks }
   }
   async prepare() {
     assert.equal(process.env.DOCKER_HOST, undefined, 'FISCAL_TEST_NO_DOCKER_OVERRIDE')
@@ -132,8 +137,15 @@ enable_confirmations = false
     const endpoint = inspect('context', 'inspect')[0].Endpoints.docker.Host
     assert.ok(['npipe:////./pipe/dockerDesktopLinuxEngine', 'unix:///var/run/docker.sock'].includes(endpoint))
     this.before = this.inventory()
-    assert.ok(!this.before.containers.some(c => c.Name.includes(this.project)))
-    assert.ok(!this.before.volumes.some(v => v.Name.includes(this.project)))
+    assert.ok(!this.before.containers.some(c => c.Name.includes(this.project)
+      || c.Config?.Labels?.['com.supabase.cli.project'] === this.project
+      || c.Config?.Labels?.['com.docker.compose.project'] === this.project))
+    assert.ok(!this.before.volumes.some(v => v.Name.includes(this.project)
+      || v.Labels?.['com.supabase.cli.project'] === this.project
+      || v.Labels?.['com.docker.compose.project'] === this.project))
+    assert.ok(!this.before.networks.some(n => n.Name.includes(this.project)
+      || n.Labels?.['com.supabase.cli.project'] === this.project
+      || n.Labels?.['com.docker.compose.project'] === this.project))
     for (const port of Object.values(ports)) {
       await new Promise((resolve, reject) => {
         const probe = net.createServer()
@@ -175,12 +187,15 @@ enable_confirmations = false
     assert.equal(fs.readFileSync(path.join(this.directory, 'supabase/config.toml'), 'utf8'), this.config())
     assert.ok(!fs.existsSync(path.join(this.directory, 'supabase/.temp/project-ref')))
   }
-  owned() {
+  owned(requireReady = false) {
     const inventory = this.inventory()
     const containers = inventory.containers.filter(c => c.Name.endsWith(`_${this.project}`)
       || c.Config.Labels?.['com.supabase.cli.project'] === this.project)
     const volumes = inventory.volumes.filter(v => v.Name.endsWith(`_${this.project}`)
       || v.Labels?.['com.supabase.cli.project'] === this.project)
+    const networks = inventory.networks.filter(n => n.Name.includes(this.project)
+      || n.Labels?.['com.supabase.cli.project'] === this.project
+      || n.Labels?.['com.docker.compose.project'] === this.project)
     for (const c of containers) {
       assertLabels(c, this.project)
       assert.ok(c.Name.endsWith(`_${this.project}`))
@@ -192,12 +207,24 @@ enable_confirmations = false
       assert.ok(v.Name.endsWith(`_${this.project}`))
       assert.ok(!this.before.volumes.some(b => b.Name === v.Name))
     }
-    return { containers, volumes }
+    for (const n of networks) {
+      assert.equal(n.Labels?.['com.docker.compose.project'], this.project, 'FISCAL_TEST_NETWORK_PROJECT')
+      if (n.Labels?.['com.supabase.cli.project']) assert.equal(n.Labels['com.supabase.cli.project'], this.project)
+      assert.ok(n.Name.includes(this.project), 'FISCAL_TEST_NETWORK_NAME')
+      assert.ok(!this.before.networks.some(b => b.Id === n.Id), 'FISCAL_TEST_PREEXISTING_NETWORK')
+    }
+    const ownedNetworkNames = new Set(networks.map(n => n.Name))
+    for (const c of containers) {
+      const attached = Object.keys(c.NetworkSettings.Networks ?? {})
+      assert.ok(attached.every(name => ownedNetworkNames.has(name)), 'FISCAL_TEST_NO_FOREIGN_NETWORKS')
+      if (requireReady) assert.ok(attached.length > 0, 'FISCAL_TEST_CONTAINER_NETWORK')
+    }
+    return { containers, volumes, networks }
   }
   verify() {
     this.assertDirectory()
     assert.deepEqual(this.manifest(), this.sourceManifest)
-    const { containers, volumes } = this.owned()
+    const { containers, volumes } = this.owned(true)
     for (const [kind, internal, port] of [['db', '5432/tcp', ports.db], ['kong', '8000/tcp', ports.api]]) {
       const c = containers.find(c => c.Name === `/supabase_${kind}_${this.project}`)
       assert.ok(c?.State.Running)
@@ -212,14 +239,28 @@ enable_confirmations = false
     return docker('exec', '-i', `supabase_db_${this.project}`, 'psql', '-X', '-qAt',
       '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'postgres', '-c', query)
   }
+  testDatabase(file) {
+    this.verify()
+    assert.ok(path.isAbsolute(file), 'FISCAL_TEST_SQL_PATH_MUST_BE_EXPLICIT')
+    return command('supabase', ['test', 'db', '--local', '--workdir', this.directory, file])
+  }
   cleanup() {
     if (!this.directory) return
     this.assertDirectory()
+    let stopFailed = false
     if (this.started) {
-      this.owned()
-      command('supabase', ['stop', '--project-id', this.project, '--workdir', this.directory, '--no-backup'])
-      const remaining = this.owned()
-      assert.equal(remaining.containers.length + remaining.volumes.length, 0)
+      // The project ID and temporary config were proven unique before start. A
+      // failed `start` can leave containers before their network is attached,
+      // so do not require a fully ready topology before asking Supabase to stop
+      // its own project. Always inspect afterward and never delete Docker IDs.
+      this.owned(false)
+      try {
+        this.stop()
+      } catch {
+        stopFailed = true
+      }
+      const remaining = this.owned(false)
+      assert.equal(remaining.containers.length + remaining.volumes.length + remaining.networks.length, 0)
     }
     const after = this.inventory()
     for (const c of this.before.containers) {
@@ -230,8 +271,18 @@ enable_confirmations = false
       assert.deepEqual(mounts(current.Mounts), mounts(c.Mounts))
     }
     for (const v of this.before.volumes) assert.deepEqual(after.volumes.find(x => x.Name === v.Name), v)
+    const networkIdentity = ({ Containers: _containers, ...network }) => network
+    for (const n of this.before.networks) {
+      const current = after.networks.find(x => x.Id === n.Id)
+      assert.ok(current, 'FISCAL_TEST_FOREIGN_NETWORK_MISSING')
+      assert.deepEqual(networkIdentity(current), networkIdentity(n))
+    }
     this.assertDirectory()
     fs.rmSync(this.directory, { recursive: true })
     assert.ok(!fs.existsSync(this.directory))
+    if (stopFailed) throw new Error('FISCAL_TEST_STOP_FAILED')
+  }
+  stop() {
+    return command('supabase', ['stop', '--project-id', this.project, '--workdir', this.directory, '--no-backup'])
   }
 }

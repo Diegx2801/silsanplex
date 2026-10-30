@@ -3,7 +3,8 @@
 --transactional requires the history preceding the fiscal candidate migrations,
 compiles those candidates in order, and runs serial tests inside one ROLLBACK
 transaction. Default requires the complete installed history and also runs
-independent races.
+independent races; a normal history may omit only the separately identified
+minimum-privilege follow-up migration when validating the pre-follow-up schema.
 --ci-transactional uses only a verified GitHub-hosted disposable project.
 No resets, cleanup, existing fixture reuse, credentials, transport, or backend writes.
 """
@@ -26,6 +27,7 @@ MIGRATIONS = (
     ROOT / 'backend/supabase/migrations/20261023135019_electronic_fiscal_helper_sql_lint.sql',
 )
 VERSIONS = tuple(path.name.split('_')[0] for path in MIGRATIONS)
+FOLLOWUP_MIGRATION_VERSION = '20261025190353'
 CANDIDATE_HASHES = {
     '20261023061225_electronic_fiscal_sandbox_persistence.sql':
         'df0c339852499b2717a5cfd00d822b06128ff970610fb0f74db08a15c242de01',
@@ -93,14 +95,20 @@ def candidate_start(files):
     starts = [index for index, version in enumerate(files) if version == VERSIONS[0]]
     if len(starts) != 1 or tuple(files[starts[0]:starts[0] + len(VERSIONS)]) != VERSIONS:
         raise ValueError('CPE_TEST_MIGRATION_FILES_MISMATCH')
+    followup_index = starts[0] + len(VERSIONS)
+    if (followup_index >= len(files) or files[followup_index] != FOLLOWUP_MIGRATION_VERSION
+            or files.count(FOLLOWUP_MIGRATION_VERSION) != 1):
+        raise ValueError('CPE_TEST_MIGRATION_FILES_MISMATCH')
     return starts[0]
 
 
 def validate_history(migrations, files, transactional):
     """Reject missing, extra, reordered or duplicate versions before fixtures."""
     first_candidate = candidate_start(files)
-    expected = files[:first_candidate] if transactional else files
-    if migrations != expected:
+    historical = files[:first_candidate]
+    without_followup = [version for version in files if version != FOLLOWUP_MIGRATION_VERSION]
+    expected = (historical,) if transactional else (files, without_followup)
+    if migrations not in expected:
         raise ValueError('CPE_TEST_MIGRATION_HISTORY_MISMATCH')
 
 
@@ -214,7 +222,7 @@ def fingerprints():
 def serial(transactional):
     result = sql(serial_script(transactional))
     assertions = re.findall(r'NOTICE:  PASS: (.+)', result.stderr)
-    if len(assertions) != 97:
+    if len(assertions) != 98:
         raise AssertionError('CPE_TEST_SERIAL_ASSERTION_COUNT')
     if transactional:
         markers = re.findall(r'NOTICE:  CPE_TRANSACTIONAL:([a-z0-9-]+)', result.stderr)

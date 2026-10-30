@@ -34,12 +34,18 @@ class TransactionalRunnerTests(unittest.TestCase):
 
     def test_exact_candidate_versions_and_base(self):
         self.assertEqual(runner.VERSIONS, ('20261023061225', '20261023135019'))
+        self.assertEqual(runner.FOLLOWUP_MIGRATION_VERSION, '20261025190353')
         self.assertEqual(tuple(self.files[self.candidate_start:self.candidate_start + len(runner.VERSIONS)]),
                          runner.VERSIONS)
+        self.assertEqual(self.files[self.candidate_start + len(runner.VERSIONS)],
+                         runner.FOLLOWUP_MIGRATION_VERSION)
         self.assertGreater(len(self.files), self.candidate_start + len(runner.VERSIONS))
 
     def test_accepts_only_expected_history_for_each_mode(self):
         runner.validate_history(self.base, self.files, True)
+        without_followup = [version for version in self.files
+                            if version != runner.FOLLOWUP_MIGRATION_VERSION]
+        runner.validate_history(without_followup, self.files, False)
         runner.validate_history(self.files, self.files, False)
 
     def test_rejects_unexpected_transactional_histories(self):
@@ -53,9 +59,11 @@ class TransactionalRunnerTests(unittest.TestCase):
                     runner.validate_history(history, self.files, True)
 
     def test_rejects_unexpected_normal_histories(self):
-        histories = [self.base, self.files[:-1], self.files + ['20990101000000'],
+        histories = [self.base, self.files[:-1], self.files[:-2],
+                     self.files + ['20990101000000'],
                      self.files + [self.files[-1]], list(reversed(self.files)),
-                     ['19000101000000'] + self.files[1:]]
+                     ['19000101000000'] + self.files[1:],
+                     self.files[:self.candidate_start] + self.files[self.candidate_start + 1:]]
         for history in histories:
             with self.subTest(history_size=len(history)):
                 with self.assertRaisesRegex(ValueError, 'CPE_TEST_MIGRATION_HISTORY_MISMATCH'):
@@ -64,7 +72,7 @@ class TransactionalRunnerTests(unittest.TestCase):
     def test_rejects_unexpected_repository_manifest(self):
         manifests = [self.files[:-1], self.files + ['20990101000000'],
                      self.files[:-1] + [self.files[-2]], list(reversed(self.files)),
-                     self.base + [runner.VERSIONS[0], '20261023135020']]
+                     self.base + [runner.VERSIONS[0], runner.VERSIONS[1], '20261025190354']]
         for files in manifests:
             with self.subTest(manifest_size=len(files)):
                 with self.assertRaisesRegex(ValueError, 'CPE_TEST_MIGRATION_FILES_MISMATCH'):
@@ -134,19 +142,32 @@ class TransactionalRunnerTests(unittest.TestCase):
             runner.candidate_sql(Path('unexpected.sql'))
 
     def test_serial_requires_all_assertions_and_postgres_stage_markers(self):
-        notices = ''.join(f'NOTICE:  PASS: case-{n}\n' for n in range(97))
+        notices = ''.join(f'NOTICE:  PASS: case-{n}\n' for n in range(98))
         markers = ''.join(f'NOTICE:  CPE_TRANSACTIONAL:{stage}\n'
                           for stage in ('candidate-1', 'candidate-2', 'serial'))
         with patch.object(runner, 'sql', return_value=SimpleNamespace(stderr=notices + markers)), \
                 patch.object(runner, 'check') as checked:
             runner.serial(True)
-            self.assertEqual(checked.call_count, 97)
+            self.assertEqual(checked.call_count, 98)
         for stderr in (notices, notices + markers.replace('candidate-2', 'candidate-1'),
                        notices.replace('NOTICE:  PASS: case-0\n', '') + markers):
             with self.subTest(stderr_length=len(stderr)), \
                     patch.object(runner, 'sql', return_value=SimpleNamespace(stderr=stderr)):
                 with self.assertRaises(AssertionError):
                     runner.serial(True)
+
+    def test_normal_serial_requires_the_complete_updated_assertion_count(self):
+        for count in (97, 98, 99):
+            notices = ''.join(f'NOTICE:  PASS: case-{n}\n' for n in range(count))
+            with self.subTest(count=count), \
+                    patch.object(runner, 'sql', return_value=SimpleNamespace(stderr=notices)), \
+                    patch.object(runner, 'check') as checked:
+                if count == 98:
+                    runner.serial(False)
+                    self.assertEqual(checked.call_count, 98)
+                else:
+                    with self.assertRaisesRegex(AssertionError, 'CPE_TEST_SERIAL_ASSERTION_COUNT'):
+                        runner.serial(False)
 
 
 class HostedCIGuardTests(unittest.TestCase):
@@ -326,13 +347,13 @@ class HostedCIGuardTests(unittest.TestCase):
             command.assert_not_called()
 
     def test_rollback_evidence_requires_exact_equality_for_every_category(self):
+        source_files = sorted(p.name.split('_')[0]
+                              for p in runner.MIGRATIONS[0].parent.glob('*.sql'))
+        initial_history = source_files[:runner.candidate_start(source_files)]
         baseline = dict(schema='schema-hash', security={'acl': 'acl-hash'},
                         rows={'table': ['row-hash']}, candidates={'relations': 0},
                         manifest={'migration': 'original-hash'},
-                        history=sorted(p.name.split('_')[0]
-                                       for p in runner.MIGRATIONS[0].parent.glob('*.sql'))[:runner.candidate_start(
-                                           sorted(p.name.split('_')[0]
-                                                  for p in runner.MIGRATIONS[0].parent.glob('*.sql')))])
+                        history=initial_history)
         for changed in (None, *baseline.keys()):
             after = {**baseline}
             if changed:
@@ -352,11 +373,11 @@ class HostedCIGuardTests(unittest.TestCase):
                 self.assertEqual(fake_ci.snapshot.call_count, 2)
 
     def test_rollback_snapshot_still_checked_after_sql_failure(self):
+        source_files = sorted(p.name.split('_')[0]
+                              for p in runner.MIGRATIONS[0].parent.glob('*.sql'))
+        initial_history = source_files[:runner.candidate_start(source_files)]
         baseline = dict(schema='schema-hash', security={}, rows={}, candidates={}, manifest={},
-                        history=sorted(p.name.split('_')[0]
-                                       for p in runner.MIGRATIONS[0].parent.glob('*.sql'))[:runner.candidate_start(
-                                           sorted(p.name.split('_')[0]
-                                                  for p in runner.MIGRATIONS[0].parent.glob('*.sql')))])
+                        history=initial_history)
         fake_ci = SimpleNamespace(verify_target=lambda: 'verified-ci-only',
                                   snapshot=unittest.mock.Mock(return_value=baseline))
         with patch.object(runner, 'CONTAINER', runner.CONTAINER), patch.object(runner, 'CHECKS', []), \
