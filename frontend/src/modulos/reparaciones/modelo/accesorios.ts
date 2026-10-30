@@ -28,6 +28,12 @@ export const esquemaComandoAccesorios = z.discriminatedUnion('tipo', [
   }).superRefine((datos, contexto) => {
     if (datos.authorize_exception && !datos.exception_reason) contexto.addIssue({ code: 'custom', path: ['exception_reason'], message: 'Indica el motivo de la excepción' })
   }), expectedLockVersion: z.number().int().positive() }),
+  z.object({ tipo: z.literal('return_unrepaired_repair'), datos: z.object({
+    decision_event_id: z.string().regex(/^[1-9]\d*$/),
+    returns: z.array(esquemaDevolucionAccesorio).max(100), authorize_exception: z.boolean(), exception_reason: z.string().trim().max(2000),
+  }).superRefine((datos, contexto) => {
+    if (datos.authorize_exception && !datos.exception_reason) contexto.addIssue({ code: 'custom', path: ['exception_reason'], message: 'Indica el motivo de la excepción' })
+  }), expectedLockVersion: z.number().int().positive() }),
 ])
 export type ComandoAccesorios = z.infer<typeof esquemaComandoAccesorios>
 

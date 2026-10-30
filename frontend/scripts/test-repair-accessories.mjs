@@ -23,9 +23,11 @@ fs.mkdirSync(evidence)
 const project = `silsanacc${randomBytes(5).toString('hex')}`
 const ports = { api: 59321, db: 59322, web: 59325 }
 const api = `http://127.0.0.1:${ports.api}`
-const upgrade = process.argv.includes('--upgrade')
+const upgradeNonRepairable = process.argv.includes('--upgrade-non-repairable')
+const upgrade = process.argv.includes('--upgrade') || upgradeNonRepairable
 const sqlOnly = process.argv.includes('--sql-only')
-const evidenceOnly = process.argv.includes('--e2e-only')
+const nonRepairableOnly = process.argv.includes('--non-repairable-only')
+const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly
 const checksOnly = process.argv.includes('--checks-only')
 const workflowE2e = process.argv.includes('--workflow-e2e')
 const runLog = []
@@ -116,14 +118,16 @@ try {
   }
   fs.writeFileSync(configPath, config)
   const migrationDirectory = path.join(backend, 'supabase/migrations')
-  const candidates = fs.readdirSync(migrationDirectory).filter(n => n.includes('repair_accessory_control'))
+  const candidates = fs.readdirSync(migrationDirectory).filter(n => n.includes(upgradeNonRepairable ? 'repair_non_repairable' : 'repair_accessory_control'))
   assert.equal(candidates.length, 1)
   const candidate = candidates[0]
-  const candidateSource = fs.readFileSync(path.join(migrationDirectory, candidate))
+  // Postpone the candidate AND later dependent migrations, only in this copy.
+  const upgradeSources = fs.readdirSync(migrationDirectory).filter(n => n >= candidate)
+    .map(name => [name, fs.readFileSync(path.join(migrationDirectory, name))])
   const manifest = Object.fromEntries(fs.readdirSync(migrationDirectory).map(n => [n,
     createHash('sha256').update(fs.readFileSync(path.join(migrationDirectory, n))).digest('hex')]))
   fs.writeFileSync(path.join(evidence, 'migration-manifest.json'), JSON.stringify(manifest, null, 2))
-  if (upgrade) fs.unlinkSync(path.join(migrationDirectory, candidate))
+  if (upgrade) for (const [name] of upgradeSources) fs.unlinkSync(path.join(migrationDirectory, name))
   // start may fail after creating resources; cleanup still verifies exclusive identity.
   started = true
   run(cli, ['start', '-x', 'realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor'],
@@ -139,13 +143,25 @@ try {
         'Historical problem','Fixture area','INTERNO','EXTERNO','Fixture equipment','Accesorios: cable y estuche',
         case when s='delivered' then now() else null end
       from unnest(array['received','delivered','cancelled','rejected']) s;
-      select jsonb_agg(to_jsonb(r) order by id) from repairs r where organization_id='a6290000-0000-4000-8000-000000000002'; commit;`)
-    fs.writeFileSync(path.join(migrationDirectory, candidate), candidateSource)
+       select jsonb_agg(to_jsonb(r) order by id) from repairs r where organization_id='a6290000-0000-4000-8000-000000000002'; commit;`)
+    const historicalWarranty = sql(`insert into repair_service_warranties(organization_id,repair_id,warranty_days,coverage)
+      select organization_id,id,90,'Cobertura histórica original' from repairs
+      where organization_id='a6290000-0000-4000-8000-000000000002' and status='delivered';
+      select jsonb_agg(to_jsonb(w) order by id) from repair_service_warranty_details w
+      where organization_id='a6290000-0000-4000-8000-000000000002';`)
+    for (const [name, source] of upgradeSources) fs.writeFileSync(path.join(migrationDirectory, name), source)
     run(cli, ['migration', 'up'], { cwd: backend, log: 'migrations-upgrade.log' })
-    const after = sql(`select jsonb_agg(to_jsonb(r)-'accessories_reviewed_at' order by id) from repairs r where organization_id='a6290000-0000-4000-8000-000000000002'`)
-    assert.equal(after, historical)
+    const after = JSON.parse(sql(`select jsonb_agg(to_jsonb(r) order by id) from repairs r where organization_id='a6290000-0000-4000-8000-000000000002'`))
+    const before = JSON.parse(historical)
+    assert.deepEqual(after.map(row => Object.fromEntries(Object.keys(before[0]).map(key => [key, row[key]]))), before,
+      'Every pre-existing historical field remains unchanged')
+    assert.ok(after.every(row => row.non_repairable_decision_event_id === null && row.returned_unrepaired_at === null))
+    assert.equal(sql(`select jsonb_agg(to_jsonb(w) order by id) from repair_service_warranty_details w
+      where organization_id='a6290000-0000-4000-8000-000000000002'`), historicalWarranty,
+    'Historical delivered warranty, including start/end dates, remains unchanged')
     assert.equal(sql('select count(*) from repair_accessories'), '0')
-    fs.writeFileSync(path.join(evidence, 'historical-upgrade.json'), JSON.stringify({ unchanged: true, historicalRepairs: 4, inferredAccessories: 0 }))
+    fs.writeFileSync(path.join(evidence, 'historical-upgrade.json'), JSON.stringify({ candidate, unchanged: true, historicalRepairs: 4,
+      unchangedDeliveredWarranties: 1, inferredAccessories: 0, inferredDecisions: 0 }))
   }
   const organizationsBeforeSql = JSON.parse(sql("select coalesce(json_agg(json_build_object('id',id,'slug',slug,'name',name) order by slug),'[]'::json) from public.organizations"))
   if (!upgrade) {
@@ -221,7 +237,7 @@ try {
     const organizationId = organizations[0].id
     const identities = {}
     for (const [name, role] of [['admin','ADMIN'], ['ordinary','VENTAS'], ['member','VENTAS'],
-      ['recovery','VENTAS'], ['repairs','ADMIN'], ['foreign','ADMIN']]) {
+      ['recovery','VENTAS'], ['repairs','ADMIN'], ['technician','TECNICO_REPARACIONES'], ['foreign','ADMIN']]) {
       const org = name === 'foreign' ? randomUUID() : organizationId
       const email = `${name}.${randomUUID()}@example.invalid`, password = randomBytes(24).toString('base64url')
       const { user } = await checked(admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: `Accessory E2E ${name}` } }))
@@ -251,7 +267,7 @@ try {
       .replaceAll('127.0.0.1:5173', `127.0.0.1:${ports.web}`)
       .replace("command: 'npm run dev -- --host 127.0.0.1'", `command: 'npm run dev -- --host 127.0.0.1 --port ${ports.web} --strictPort'`)
       .replace('reuseExistingServer: !isCI', 'reuseExistingServer: false')
-      .replace("reporter: 'list'", `reporter: [['list'], ['json', { outputFile: ${JSON.stringify(path.join(evidence, 'e2e-results.json'))} }]],\n  outputDir: ${JSON.stringify(path.join(evidence, 'playwright'))}`)
+      .replace("reporter: 'list'", `reporter: [['list'], ['json', { outputFile: process.env.E2E_RESULTS_FILE || ${JSON.stringify(path.join(evidence, 'e2e-results.json'))} }]],\n  outputDir: ${JSON.stringify(path.join(evidence, 'playwright'))}`)
       .replace("trace: 'on-first-retry'", "trace: 'retain-on-failure', screenshot: 'only-on-failure', timezoneId: 'America/Lima'")
       .replace('baseURL:', 'actionTimeout: 15000, navigationTimeout: 20000, baseURL:')
     fs.writeFileSync(path.join(frontend, 'playwright.config.ts'), playwright)
@@ -287,15 +303,18 @@ try {
     } else {
       playwrightCommand.push('tests/e2e/repairs.spec.ts')
     }
-    run(process.execPath, playwrightCommand,
+    if (!nonRepairableOnly) run(process.execPath, playwrightCommand,
       { cwd: frontend, env, log: 'e2e.log' })
     // Both modes keep SILSAN exclusive until the strict operational preflight
     // has finished; only the accessory suite needs a second organization.
     await createForeignTenant()
-    run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!nonRepairableOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-accessories.spec.ts'],
-    {cwd:frontend,env,log:'e2e-accessory-multitenant.log'})
-    runLog.push({ e2e: 'passed', suite: workflowE2e ? 'all workflow E2E plus isolated accessory tenant case' : 'repairs and accessories', api, web: ports.web })
+    {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-accessories-results.json')},log:'e2e-accessory-multitenant.log'})
+    run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+      'accessory-e2e/repair-non-repairable.spec.ts'],
+    {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-non-repairable-results.json')},log:'e2e-non-repairable.log'})
+    runLog.push({ e2e: 'passed', suite: nonRepairableOnly ? 'non-repairable only' : workflowE2e ? 'all workflow E2E, accessories and non-repairable' : 'repairs, accessories and non-repairable', api, web: ports.web })
   }
   }
   if (checksOnly || process.argv.includes('--checks')) {

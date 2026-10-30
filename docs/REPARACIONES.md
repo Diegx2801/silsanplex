@@ -246,3 +246,78 @@ también los seis escenarios originales de `tests/e2e/repairs.spec.ts`.
 
 El resultado y las evidencias locales están en
 `RESULTADO_R06_R33_ACCESORIOS.md`.
+
+## No reparable — R28
+
+`20261030010000_repair_non_repairable.sql` añade `non_repairable` (pendiente de
+devolución) y `returned_unrepaired` (devuelto sin reparar). La conclusión técnica
+se conserva en un evento inmutable, con diagnóstico/snapshot, motivo, técnico y
+actor de sesión. `repairs.non_repairable_decision_event_id` identifica la decisión
+vigente; su ID se expone como texto para no perder precisión bigint en el navegador.
+
+Contratos JSON, todos con `organization_id`, `repair_id`, `operation_key` y
+`expected_lock_version`:
+
+- `declare_repair_non_repairable`: exige `diagnosis_id` de la orden y `reason`.
+  Solo el técnico asignado activo, con `REPAIRS_CHANGE_STATUS` y
+  `REPAIRS_PERFORM_TECHNICAL`, puede confirmar. ADMIN no tiene bypass por rol.
+  Las reservas con saldo bloquean; se resuelven mediante los comandos existentes.
+- `return_unrepaired_repair`: exige `decision_event_id`; reutiliza `returns`,
+  `authorize_exception` y `exception_reason` de accesorios. Requiere
+  `REPAIRS_DELIVER`; la excepción exige además el permiso especial de R06/R33.
+  Bloquea custodia externa y reservas. No exige pruebas exitosas ni solución
+  ficticia: registra `returned_unrepaired_at` sin establecer `delivered_at`.
+- `reopen_repair_non_repairable_assessment`: exige `decision_event_id` y `reason`,
+  con el mismo técnico/capacidades de declaración. Solo antes de devolver,
+  conserva diagnóstico y conclusión anteriores, registra su revocación y vuelve
+  a `diagnosis`. Las pruebas anteriores no habilitan un nuevo ciclo.
+
+Las nuevas RPC requieren sesión autenticada real; `anon` y `service_role` no
+tienen EXECUTE. Reutilizan el ledger, replay y bloqueo/versionado del agregado.
+Las funciones antiguas no permiten entrar por un cambio genérico ni editar una
+orden devuelta. La reasignación autorizada sigue disponible antes de devolver,
+por ejemplo si el técnico previo se desactiva; no reescribe el técnico original
+de la decisión.
+
+La declaración puede coexistir con un envío externo pendiente; el informe del
+proveedor requiere adopción por el técnico interno. Su retorno sigue usando la
+RPC actual. La devolución de equipo/accesorios es atómica; los pendientes de una
+excepción se regularizan después sin reabrir la orden. No se añaden movimientos
+de inventario del equipo, devoluciones de stock ni costos totales nuevos.
+
+Una devolución sin reparar no inicia garantía de reparación exitosa. Una promesa
+previa se conserva y se muestra como no iniciada por este resultado. Las órdenes
+históricas no se reclasifican; los dos campos nuevos quedan nulos. Después de
+devolver, una segunda evaluación requiere una nueva recepción.
+
+El detalle permite declarar, reevaluar y devolver según capacidades/asignación;
+recupera intenciones y claves tras respuestas ambiguas. Los filtros incluyen ambos
+estados y el resumen excluye `returned_unrepaired` de abiertas.
+
+Recuperar no inicia una intención nueva: sin pendiente informa su ausencia. Un
+usuario con las capacidades técnicas conserva la posibilidad de confirmar el
+replay original después de una reasignación; el servidor sigue exigiendo técnico
+asignado para cualquier operación nueva. El historial B1 muestra el diagnóstico
+y técnico persistidos, el actor, los motivos y la referencia de revocación,
+independientemente del técnico asignado actualmente. Sus IDs se leen como texto
+desde PostgREST para conservar la precisión bigint.
+
+Los tres motivos B1 (declaración, reevaluación y excepción) recortan únicamente
+blancos de los extremos con el conjunto de `String.trim()` de JavaScript, también
+en PostgreSQL. Rechazan motivos visualmente vacíos y mantienen el formato interno
+y el límite de 2000 caracteres. No se normalizan ni reescriben motivos históricos.
+
+Validación aislada, desde `frontend/` (Docker y dependencias instalados):
+
+```text
+npm run test:repairs:isolated
+npm run test:repairs:isolated -- --all-sql --workflow-e2e
+npm run test:repairs:isolated -- --sql-only --upgrade-non-repairable
+npm run test:repairs:isolated -- --non-repairable-only
+```
+
+El comando ordinario del workflow conserva SQL/Reparaciones/accesorios y añade
+los nueve recorridos B1. La última opción ejecuta únicamente B1 sobre un proyecto
+nuevo, para diagnóstico dirigido. Los informes JSON de cada fase son independientes.
+Las pruebas de concurrencia usan sesiones `dblink` solapadas, con teardown acotado
+a sus fixtures confirmados; verifican que las organizaciones iniciales no cambien.

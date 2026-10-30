@@ -4,6 +4,8 @@ import { AtencionComplementariaReparacion } from './AtencionComplementariaRepara
 import { AccesoriosReparacion } from './AccesoriosReparacion'
 import { DialogoEntregaAccesorios, RecuperarEntregaAccesorios } from './DialogoEntregaAccesorios'
 import { DetalleEventoAccesorio } from './DetalleEventoAccesorio'
+import { NoReparableReparacion } from './NoReparableReparacion'
+import { DetalleEventoNoReparable } from './DetalleEventoNoReparable'
 import {
   Ban,
   CheckCircle2,
@@ -106,6 +108,9 @@ function nombreUbicacion(ubicaciones: readonly UbicacionAlmacen[], id: string) {
 
 function etiquetaEvento(tipo: string) {
   const etiquetas: Record<string, string> = {
+    NON_REPAIRABLE_DECLARED: 'Equipo declarado No reparable',
+    NON_REPAIRABLE_REOPENED: 'Decisión No reparable revocada para reevaluación',
+    RETURNED_UNREPAIRED: 'Equipo devuelto sin reparar',
     ATTACHMENT_ADDED: 'Evidencia adjuntada',
     ACCESSORY_RECEIVED: 'Accesorio recibido',
     ACCESSORY_UPDATED: 'Accesorio corregido',
@@ -717,7 +722,7 @@ function DetalleContenido({
   const transiciones = puedeCambiarEstado
     ? obtenerTransicionesGenericas(reparacion.estado)
     : []
-  const puedeCancelar = puedeCambiarEstado && !estadoEsTerminal(reparacion.estado)
+   const puedeCancelar = puedeCambiarEstado && !estadoEsTerminal(reparacion.estado) && reparacion.estado !== 'non_repairable'
   const puedeCotizar = puedeEditar && (reparacion.estado === 'diagnosis' || reparacion.estado === 'quote_pending')
   const puedeRevisar = puedeEditar && reparacion.estado === 'rejected' && cotizacionActiva?.estado === 'rejected'
   const puedeAprobar = puedeAprobarCotizacion && reparacion.estado === 'waiting_customer_approval' && cotizacionActiva?.estado === 'pending'
@@ -726,7 +731,7 @@ function DetalleContenido({
   const puedeRegistrarDiagnostico = puedeActuarComoTecnico && reparacion.estado === 'diagnosis'
   const puedeRegistrarSolucion = puedeActuarComoTecnico
     && !estadoEsTerminal(reparacion.estado)
-    && !['testing', 'ready_for_delivery'].includes(reparacion.estado)
+     && !['testing', 'ready_for_delivery', 'non_repairable'].includes(reparacion.estado)
   const puedeRegistrarPrueba = puedeActuarComoTecnico && reparacion.estado === 'testing'
   const puedeEntregarAhora = puedeEntregar && reparacion.estado === 'ready_for_delivery'
   const pruebasVigentes = detalle.pruebas.filter((prueba) => detalle.cicloPruebasActual > 0 && prueba.ciclo === detalle.cicloPruebasActual)
@@ -752,7 +757,9 @@ function DetalleContenido({
     delivered: 'La orden está entregada. Puedes consultar el trabajo realizado, el presupuesto y el historial.',
     cancelled: 'La orden está cancelada. Su información y trazabilidad se conservan para consulta.',
     rejected: 'El presupuesto fue rechazado. Puedes consultar el motivo o preparar una revisión si corresponde.',
-    warranty: 'Revisa la atención en garantía y continúa con el diagnóstico o la reparación según corresponda.',
+     warranty: 'Revisa la atención en garantía y continúa con el diagnóstico o la reparación según corresponda.',
+     non_repairable: 'La conclusión técnica está registrada. Devuelve el equipo sin reparar o reabre su evaluación con motivo.',
+     returned_unrepaired: 'Equipo devuelto sin reparar. Una nueva evaluación requiere una nueva recepción; los accesorios pendientes conservan su custodia.',
   }
   let siguienteAccion: { tipo: TipoDialogoActivo; etiqueta: string } | null = null
   if (!estadoEsTerminal(reparacion.estado) && !reparacion.tecnicoAsignadoId && puedeAsignar) {
@@ -872,14 +879,15 @@ function DetalleContenido({
       <section aria-labelledby="reparacion-pruebas" className="border-b px-5 py-6 sm:px-7">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-pruebas" className="flex items-center gap-2 font-semibold"><ClipboardCheck aria-hidden="true" className="size-4 text-primary" /> Pruebas</h2><p className="mt-1 text-sm text-muted-foreground">Validaciones antes de la entrega</p></div>{puedeRegistrarPrueba ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('prueba')}><Plus aria-hidden="true" /> Registrar prueba</Button> : null}</div><ResultadosPruebas pruebas={detalle.pruebas} cicloActual={detalle.cicloPruebasActual} /></section>
 
-      <AccesoriosReparacion key={`accessories:${reparacion.organizationId}:${reparacion.id}`} reparacion={reparacion} puedeEditar={puedeEditar} puedeDevolver={puedeEntregar} />
+       <NoReparableReparacion key={`non-repairable:${reparacion.organizationId}:${reparacion.id}`} detalle={detalle} />
+       <AccesoriosReparacion key={`accessories:${reparacion.organizationId}:${reparacion.id}`} reparacion={reparacion} puedeEditar={puedeEditar} puedeDevolver={puedeEntregar} />
       <RecuperarEntregaAccesorios reparacion={reparacion} />
       <AtencionComplementariaReparacion key={`${reparacion.organizationId}:${reparacion.id}`} reparacion={reparacion} puedeEditar={puedeEditar} puedeGarantia={puedeEntregar} />
       <AdjuntosReparacion reparacionId={reparacion.id} puedeAdjuntar={puedeEditar || puedeRealizarTecnica} />
       <details id="reparacion-seccion-historial" tabIndex={-1} className="px-5 py-6 outline-none sm:px-7">
         <summary className="cursor-pointer rounded-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Historial de la orden · {detalle.eventos.length} eventos</summary>
       <section aria-labelledby="reparacion-linea-tiempo" className="pt-5">
-        <div className="flex items-end justify-between gap-3"><div><h2 id="reparacion-linea-tiempo" className="flex items-center gap-2 font-semibold"><Clock3 aria-hidden="true" className="size-4 text-primary" /> Línea de tiempo</h2><p className="mt-1 text-sm text-muted-foreground">Registro inmutable de la orden</p></div><span className="font-mono text-xs text-muted-foreground">{detalle.eventos.length} EVENTOS</span></div>{detalle.eventos.length ? <ol className="mt-5 space-y-0 ps-2">{detalle.eventos.map((evento) => <li key={evento.id} className="relative border-s ps-5 pb-6 last:pb-0"><span className="absolute -start-1.5 top-1.5 size-3 rounded-full border-2 border-background bg-primary" /><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-medium">{etiquetaEvento(evento.tipo)}</p>{evento.estadoAnterior || evento.estadoNuevo ? <p className="mt-1 font-mono text-[0.68rem] text-muted-foreground uppercase">{evento.estadoAnterior ? etiquetasEstadoReparacion[evento.estadoAnterior as EstadoReparacion] ?? evento.estadoAnterior : 'Inicio'}{evento.estadoNuevo ? ` → ${etiquetasEstadoReparacion[evento.estadoNuevo as EstadoReparacion] ?? evento.estadoNuevo}` : ''}</p> : null}</div><time className="text-xs text-muted-foreground" dateTime={evento.creadoEn}>{formatoFecha.format(new Date(evento.creadoEn))}</time></div>{evento.observacion ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{evento.observacion}</p> : null}<DetalleEventoAccesorio evento={evento} /></li>)}</ol> : <p className="mt-5 text-sm text-muted-foreground">La actividad aparecerá aquí al avanzar la orden.</p>}</section>
+         <div className="flex items-end justify-between gap-3"><div><h2 id="reparacion-linea-tiempo" className="flex items-center gap-2 font-semibold"><Clock3 aria-hidden="true" className="size-4 text-primary" /> Línea de tiempo</h2><p className="mt-1 text-sm text-muted-foreground">Registro inmutable de la orden</p></div><span className="font-mono text-xs text-muted-foreground">{detalle.eventos.length} EVENTOS</span></div>{detalle.eventos.length ? <ol className="mt-5 space-y-0 ps-2">{detalle.eventos.map((evento) => <li key={evento.id} className="relative border-s ps-5 pb-6 last:pb-0"><span className="absolute -start-1.5 top-1.5 size-3 rounded-full border-2 border-background bg-primary" /><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-medium">{etiquetaEvento(evento.tipo)}</p>{evento.estadoAnterior || evento.estadoNuevo ? <p className="mt-1 font-mono text-[0.68rem] text-muted-foreground uppercase">{evento.estadoAnterior ? etiquetasEstadoReparacion[evento.estadoAnterior as EstadoReparacion] ?? evento.estadoAnterior : 'Inicio'}{evento.estadoNuevo ? ` → ${etiquetasEstadoReparacion[evento.estadoNuevo as EstadoReparacion] ?? evento.estadoNuevo}` : ''}</p> : null}</div><time className="text-xs text-muted-foreground" dateTime={evento.creadoEn}>{formatoFecha.format(new Date(evento.creadoEn))}</time></div>{evento.observacion ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{evento.observacion}</p> : null}<DetalleEventoAccesorio evento={evento} /><DetalleEventoNoReparable evento={evento} eventos={detalle.eventos} /></li>)}</ol> : <p className="mt-5 text-sm text-muted-foreground">La actividad aparecerá aquí al avanzar la orden.</p>}</section>
       </details>
     </div>
   )

@@ -26,6 +26,7 @@ import {
   listarOpcionesUbicacionesReparacion,
   listarReparacionesPaginadas,
   obtenerDetalleReparacion,
+  obtenerResumenReparaciones,
   obtenerOpcionAlmacenReparacion,
   obtenerOpcionClienteReparacion,
   obtenerOpcionProductoReparacion,
@@ -51,6 +52,7 @@ function crearCadena(respuestaActual: () => RespuestaSupabase) {
   const cadena = {
     select: vi.fn(),
     eq: vi.fn(),
+    neq: vi.fn(),
     or: vi.fn(),
     order: vi.fn(),
     range: vi.fn(),
@@ -65,6 +67,7 @@ function crearCadena(respuestaActual: () => RespuestaSupabase) {
 
   cadena.select.mockReturnValue(cadena)
   cadena.eq.mockReturnValue(cadena)
+  cadena.neq.mockReturnValue(cadena)
   cadena.or.mockReturnValue(cadena)
   cadena.order.mockReturnValue(cadena)
   cadena.range.mockReturnValue(cadena)
@@ -137,6 +140,19 @@ describe('reparacionesService', () => {
     supabaseMock.from.mockReset()
     supabaseMock.from.mockReturnValue(cadena)
     supabaseMock.rpc.mockReset()
+  })
+
+  it('excluye devueltas sin reparar del resumen de abiertas sin excluir pendientes de devolución', async () => {
+    await obtenerResumenReparaciones('org-1')
+    expect(cadena.neq).toHaveBeenCalledWith('status', 'returned_unrepaired')
+    expect(cadena.neq).not.toHaveBeenCalledWith('status', 'non_repairable')
+    expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
+  })
+
+  it('filtra devueltas sin reparar en servidor con conteo exacto', async () => {
+    await listarReparacionesPaginadas('org-1', { busqueda: '', estado: 'returned_unrepaired', prioridad: 'todas', pagina: 1, tamanioPagina: 10 })
+    expect(cadena.eq).toHaveBeenCalledWith('status', 'returned_unrepaired')
+    expect(cadena.select).toHaveBeenCalledWith(expect.stringContaining('returned_unrepaired_at'), { count: 'exact' })
   })
 
   it('consulta la vista de lista con organización, filtros y rango server-side', async () => {
@@ -599,7 +615,7 @@ describe('reparacionesService', () => {
       created_by: null, created_at: fecha,
     }))
     const eventos = Array.from({ length: cantidad }, (_, indice) => ({
-      id: indice + 1, organization_id: 'org-1', repair_id: 'repair-1',
+      id: indice === cantidad - 1 ? '9007199254740993' : indice + 1, organization_id: 'org-1', repair_id: 'repair-1',
       event_type: 'UPDATED', from_status: 'received', to_status: 'received',
       actor_user_id: null, observation: `Evento ${indice}`, metadata: {}, created_at: fecha,
     }))
@@ -665,6 +681,9 @@ describe('reparacionesService', () => {
     expect(detalle.partes[0].consumos.at(-1)?.id).toBe('consumption-1000')
     expect(detalle.pruebas).toHaveLength(cantidad)
     expect(detalle.eventos).toHaveLength(cantidad)
+    expect(detalle.eventos.at(-1)?.id).toBe('9007199254740993')
+    expect(cadenasPorTabla.get('repair_events')?.[0].select)
+      .toHaveBeenCalledWith(expect.stringContaining('id::text'), { count: 'exact' })
     expect(detalle.cotizacionActiva?.lineas).toHaveLength(cantidad)
     expect(detalle.cotizacionActiva?.lineas.at(-1)?.id).toBe('line-1000')
     expect(detalle.cotizaciones.find((item) => item.id === 'quote-history')?.lineas).toEqual([])
