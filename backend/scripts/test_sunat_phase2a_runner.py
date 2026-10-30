@@ -560,6 +560,18 @@ class NormalCIIdentityTests(unittest.TestCase):
         command.assert_not_called()
         self.assertFalse(self.directory.exists())
 
+    def test_inventory_uses_allowlisted_compact_docker_ps_flags(self):
+        result = subprocess.CompletedProcess(
+            ['docker', 'ps', '-aq'], 0, stdout='container-id\n', stderr='')
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci.subprocess, 'run', return_value=result) as run:
+            self.assertEqual(normal_ci.command(['docker', 'ps', '-aq']).strip(), 'container-id')
+
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0], ['docker', 'ps', '-aq'])
+        self.assertFalse(Path(run.call_args.kwargs['env']['DOCKER_CONFIG']).exists())
+
     def test_docker_guard_requires_default_context_and_local_socket(self):
         with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
                 patch.object(normal_ci, 'command', side_effect=['default', json.dumps([

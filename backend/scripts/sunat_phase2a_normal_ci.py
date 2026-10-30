@@ -198,7 +198,8 @@ def command(args, timeout=900):
             if args[2] == 'ls':
                 require('-q' in args, 'DOCKER_COMMAND')
         if args[1] == 'ps':
-            require('-a' in args and '-q' in args, 'DOCKER_COMMAND')
+            require(args == ['docker', 'ps', '-aq']
+                    or args == ['docker', 'ps', '-a', '-q'], 'DOCKER_COMMAND')
         if args[1] == 'network' and args[2] == 'create':
             project, _, _ = identity()
             expected = ['network', 'create', '--driver', 'bridge', '--internal',
