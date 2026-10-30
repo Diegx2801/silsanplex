@@ -51,6 +51,17 @@ START_FAILURE_PATTERNS = (
     ('RESOURCE_LIMIT', re.compile(r'no space left|not enough memory|insufficient memory', re.I)),
     ('PERMISSION', re.compile(r'permission denied|operation not permitted|access denied', re.I)),
 )
+SAFE_START_FAILURE_HINTS = frozenset({
+    'error', 'failed', 'failure', 'cannot', 'because', 'unable', 'unsupported', 'start', 'started', 'starting', 'startup',
+    'stop', 'stopping', 'supabase', 'docker', 'daemon', 'container', 'containers', 'service', 'services',
+    'network', 'network-id', 'port', 'ports', 'bind', 'address', 'already', 'use', 'not', 'found',
+    'missing', 'required', 'invalid', 'config', 'toml', 'parse', 'health', 'check', 'healthy',
+    'unhealthy', 'timeout', 'timed', 'out', 'deadline', 'exceeded', 'image', 'pull', 'manifest',
+    'registry', 'denied', 'unauthorized', 'forbidden', 'volume', 'resource', 'disk', 'space',
+    'memory', 'permission', 'access', 'connection', 'refused', 'connect', 'lookup', 'dns', 'resolve',
+    'external', 'internal', 'postgres', 'kong', 'gotrue', 'storage', 'postgrest', 'supavisor',
+    'logflare', 'mailpit', 'studio', 'exists', 'create', 'creating', 'listen', 'listening', 'bound',
+})
 SYSTEM_NETWORKS = {'bridge': 'bridge', 'host': 'host', 'none': 'null'}
 REMOTE_ENVIRONMENT_KEYS = (
     'DATABASE_URL', 'PGHOST', 'PGDATABASE', 'PGPORT', 'PGPASSWORD',
@@ -186,6 +197,13 @@ def safe_start_failure_categories(result):
     return categories or ['UNCLASSIFIED']
 
 
+def safe_start_failure_hints(result):
+    """Return only fixed, non-sensitive vocabulary found in CLI output."""
+    output = f'{result.stdout or ""}\n{result.stderr or ""}'.lower()
+    tokens = re.findall(r'[a-z][a-z0-9-]{0,31}', output)
+    return list(dict.fromkeys(token for token in tokens if token in SAFE_START_FAILURE_HINTS))[:20]
+
+
 def command(args, timeout=900):
     """Run allowlisted Docker inspection, project-network, and local CLI commands."""
     require(isinstance(args, list) and args, 'COMMAND_ARGUMENTS')
@@ -291,7 +309,8 @@ def command(args, timeout=900):
         if program == 'supabase' and args[1:2] == ['start']:
             print(json.dumps({'phase': 'supabase-start-failed',
                               'exit_code': result.returncode,
-                              'categories': safe_start_failure_categories(result)}), flush=True)
+                              'categories': safe_start_failure_categories(result),
+                              'hints': safe_start_failure_hints(result)}), flush=True)
         raise RuntimeError('CPE_NORMAL_CI_COMMAND_FAILED:' + program)
     return result.stdout
 

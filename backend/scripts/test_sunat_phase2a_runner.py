@@ -583,7 +583,7 @@ class NormalCIIdentityTests(unittest.TestCase):
                    '--network-id', normal_ci.network_name(self.project)]
         result = subprocess.CompletedProcess(
             command, 1, stdout='private-sentinel',
-            stderr='failed to pull image from registry: private-sentinel')
+            stderr='Cannot start Supabase because container startup failed: private-sentinel')
         with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
                 patch.object(normal_ci, 'cli_path', return_value=str(fake_cli)), \
                 patch.object(normal_ci.subprocess, 'run', return_value=result), \
@@ -594,7 +594,8 @@ class NormalCIIdentityTests(unittest.TestCase):
         diagnostic = json.loads(log.call_args.args[0])
         self.assertEqual(diagnostic, {
             'phase': 'supabase-start-failed', 'exit_code': 1,
-            'categories': ['IMAGE_PULL_OR_REGISTRY'],
+            'categories': ['UNCLASSIFIED'],
+            'hints': ['cannot', 'start', 'supabase', 'because', 'container', 'startup', 'failed'],
         })
         self.assertNotIn('private-sentinel', json.dumps(diagnostic))
 
