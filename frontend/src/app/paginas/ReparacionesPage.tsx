@@ -50,6 +50,7 @@ const formatoFecha = new Intl.DateTimeFormat('es-PE', {
 const formatoFechaHora = new Intl.DateTimeFormat('es-PE', {
   dateStyle: 'medium',
   timeStyle: 'short',
+  timeZone: 'America/Lima',
 })
 
 function fechaDia(valor: string) {
@@ -132,6 +133,7 @@ function TarjetaReparacion({
         <div><dt className="text-xs text-muted-foreground">Prioridad</dt><dd className="mt-1">{prioridadLabel(reparacion.prioridad)}</dd></div>
         <div><dt className="text-xs text-muted-foreground">Recibida</dt><dd className="mt-1">{fechaHora(reparacion.recibidaEn)}</dd></div>
         <div><dt className="text-xs text-muted-foreground">Entrega estimada</dt><dd className="mt-1">{fechaDia(reparacion.fechaEntregaEstimada)}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Finalización técnica</dt><dd className="mt-1">{reparacion.finalizacionTecnica ? fechaHora(reparacion.finalizacionTecnica.completed_at) : 'No registrada'}</dd></div>
       </dl>
       <Button type="button" variant="secondary" size="lg" className="mt-5 w-full" onClick={alVer}>Ver reparación</Button>
     </article>
@@ -152,7 +154,7 @@ function FilaReparacion({
       <td className="px-4 py-4 text-sm text-muted-foreground">{reparacion.numeroSerie || 'Sin serie'}</td>
       <td className="px-4 py-4"><EtiquetaEstado estado={reparacion.estado} /></td>
       <td className="px-4 py-4"><span className={reparacion.prioridad === 'urgent' ? 'font-semibold text-destructive' : undefined}>{prioridadLabel(reparacion.prioridad)}</span></td>
-      <td className="px-4 py-4 text-xs text-muted-foreground">{fechaDia(reparacion.fechaEntregaEstimada)}</td>
+      <td className="px-4 py-4 text-xs text-muted-foreground">{fechaDia(reparacion.fechaEntregaEstimada)}{reparacion.finalizacionTecnica ? <span className="mt-1 block">Técnica: {fechaHora(reparacion.finalizacionTecnica.completed_at)}</span> : null}</td>
       <td className="px-5 py-4 text-end sm:px-6"><Button type="button" variant="ghost" onClick={alVer}>Ver detalle</Button></td>
     </tr>
   )
@@ -327,7 +329,7 @@ export function ReparacionesPage() {
         alRestaurarFoco={() => disparadorDetalle.current?.focus()}
         alEditar={abrirEdicionDesdeDetalle}
         alAsignar={(repairId, tecnicoId, lockVersion) => operaciones.asignar(repairId, tecnicoId, lockVersion)}
-        alCambiarEstado={(repairId, estado, observacion, lockVersion) => operaciones.cambiarEstado(repairId, estado, observacion, lockVersion)}
+        alCambiarEstado={(repairId, estado, observacion, lockVersion, clave) => operaciones.cambiarEstado(repairId, estado, observacion, lockVersion, clave)}
         alRegistrarDiagnostico={(repairId, datos: DatosDiagnostico, lockVersion) => operaciones.registrarDiagnostico(repairId, datos, lockVersion)}
         alRegistrarSolucion={(repairId, datos, lockVersion) => operaciones.registrarSolucion(repairId, datos, lockVersion)}
         alGuardarCotizacion={(repairId, datos: DatosCotizacion, enviar: boolean, operationKey, lockVersion) => operaciones.guardarCotizacion(repairId, datos, enviar, operationKey, lockVersion)}
@@ -341,6 +343,7 @@ export function ReparacionesPage() {
         alEntregar={(repairId, datos: DatosObservacionReparacion, lockVersion) => operaciones.entregar(repairId, datos, lockVersion)}
         alCancelar={(repairId, datos: DatosObservacionReparacion, lockVersion) => operaciones.cancelar(repairId, datos, lockVersion)}
         recuperarCotizacionPendiente={operaciones.recuperarCotizacionPendiente}
+        recuperarEstadoPendiente={operaciones.recuperarEstadoPendiente}
         recuperarReservaPartePendiente={operaciones.recuperarReservaPartePendiente}
         recuperarConsumoPartePendiente={operaciones.recuperarConsumoPartePendiente}
       /> : null}

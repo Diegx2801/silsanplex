@@ -155,6 +155,7 @@ function renderizarDetalle({
   resolverUbicacion,
   detallePersonalizado,
   cargarLineasCotizacion,
+  recuperarEstadoPendiente,
 }: {
   estado?: EstadoReparacion
   puedeEditar?: boolean
@@ -170,6 +171,7 @@ function renderizarDetalle({
   resolverUbicacion?: (id: string) => Promise<import('@/modulos/inventario/modelo/almacen').UbicacionAlmacen | null>
   detallePersonalizado?: DatosDetalleReparacion
   cargarLineasCotizacion?: (id: string) => Promise<CotizacionReparacion['lineas']>
+  recuperarEstadoPendiente?: (id: string) => import('../modelo/finalizacionTecnica').CambioEstadoPendiente | null
 } = {}) {
   const operacion = vi.fn().mockResolvedValue(resultadoOperacion)
   const editar = vi.fn()
@@ -196,6 +198,7 @@ function renderizarDetalle({
       resolverAlmacen={resolverAlmacen}
       resolverUbicacion={resolverUbicacion}
       cargarLineasCotizacion={cargarLineasCotizacion}
+      recuperarEstadoPendiente={recuperarEstadoPendiente}
       puedeEditar={puedeEditar}
       puedeAsignar={false}
       puedeCambiarEstado={puedeCambiarEstado}
@@ -233,6 +236,67 @@ function renderizarDetalle({
 }
 
 describe('DetalleReparacion acciones técnicas', () => {
+  it.each([
+    { technical_completion_version: 1, test_cycle_number: -1 },
+    { technical_completion_version: 1 },
+    { technical_completion_version: 2, test_cycle_number: 1 },
+    { technical_completion_version: 1, test_cycle_number: 1 }, // Structurally plausible, rejected by SQL due to contradictory history.
+    {}, // Unverified legacy transition.
+  ])('no certifica eventos crudos fuera del contrato validado: %j', metadata => {
+    const detalle = crearDetalle('ready_for_delivery')
+    detalle.eventos = [{ id: '9007199254740993', organizationId: 'org-1', reparacionId: 'repair-1', tipo: 'STATUS_CHANGED',
+      estadoAnterior: 'testing', estadoNuevo: 'ready_for_delivery', actorId: null, observacion: 'Transición importada', metadata, creadoEn: '2026-11-01T05:00:00Z' }]
+    detalle.reparacion.finalizacionesTecnicas = []
+    renderizarDetalle({ detallePersonalizado: detalle })
+    fireEvent.click(screen.getByRole('link', { name: 'Historial' }))
+    expect(screen.getByText('Transición importada')).toBeVisible()
+    expect(screen.queryByText(/Finalización técnica verificable · ciclo/)).not.toBeInTheDocument()
+    expect(screen.getByText('Primera finalización histórica verificable: No registrada')).toBeVisible()
+  })
+
+  it('presenta solo las sucesivas finalizaciones verificadas por SQL, incluso legacy', () => {
+    const detalle = crearDetalle('ready_for_delivery')
+    const primera = { event_id: '9007199254740993', completed_at: '2026-11-01T04:59:00Z', test_cycle_number: 1,
+      actor_user_id: null, actor_name: null, assigned_technician_id: null, assigned_technician_name: null }
+    const actual = { ...primera, event_id: '9007199254740995', test_cycle_number: 2, completed_at: '2026-11-01T05:00:00Z' }
+    detalle.reparacion = { ...detalle.reparacion, primeraFinalizacionTecnica: primera, finalizacionTecnica: actual, finalizacionesTecnicas: [primera, actual] }
+    renderizarDetalle({ detallePersonalizado: detalle })
+    fireEvent.click(screen.getByRole('link', { name: 'Historial' }))
+    expect(screen.getAllByText(/Finalización técnica verificable · ciclo/)).toHaveLength(2)
+    expect(screen.getByText(/Primera finalización histórica verificable:/)).toHaveTextContent(primera.event_id)
+  })
+
+  it.each(['2026-11-01T04:59:00Z', '2026-11-01T05:00:00Z'])('mantiene la estimación calendario independiente de %s', recibidaEn => {
+    const detalle = crearDetalle()
+    detalle.reparacion = { ...detalle.reparacion, recibidaEn, fechaEntregaEstimada: '2026-11-02' }
+    renderizarDetalle({ detallePersonalizado: detalle })
+    expect(document.querySelector('time[datetime="2026-11-02"]')).toHaveTextContent('2 nov')
+  })
+
+  it('separa recepción timestamp en Lima de la estimación calendario', () => {
+    const detalle = crearDetalle()
+    detalle.reparacion = { ...detalle.reparacion, recibidaEn: '2026-11-01T02:30:00Z', fechaEntregaEstimada: '2026-11-02' }
+    renderizarDetalle({ detallePersonalizado: detalle })
+    expect(document.querySelector('time[datetime="2026-11-01T02:30:00Z"]')).toHaveTextContent('31 oct')
+    expect(document.querySelector('time[datetime="2026-11-02"]')).toHaveTextContent('2 nov')
+  })
+
+  it.each(['testing', 'ready_for_delivery', 'delivered', 'cancelled', 'non_repairable', 'returned_unrepaired'] as const)('recuperar sin pendiente en %s no abre otra intención', estado => {
+    const { operacion } = renderizarDetalle({ estado })
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar cambio de estado pendiente' }))
+    expect(screen.getByText('No hay un cambio de estado pendiente de confirmar en esta pestaña.')).toBeVisible()
+    expect(screen.queryByRole('dialog', { name: 'Cambiar estado' })).not.toBeInTheDocument()
+    expect(operacion).not.toHaveBeenCalled()
+  })
+
+  it('recupera transición ya confirmada con clave y versión originales desde lista para entrega', async () => {
+    const pendiente = { estado: 'ready_for_delivery' as const, observacion: 'Validado anteriormente', expectedLockVersion: 3, clave: crypto.randomUUID() }
+    const { operacion } = renderizarDetalle({ estado: 'ready_for_delivery', recuperarEstadoPendiente: () => pendiente })
+    fireEvent.click(screen.getByRole('button', { name: 'Recuperar cambio de estado pendiente' }))
+    expect(screen.getByLabelText('Observación (opcional)')).toHaveValue(pendiente.observacion)
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar cambio de estado' }))
+    await waitFor(() => expect(operacion).toHaveBeenCalledWith('repair-1', pendiente.estado, pendiente.observacion, 3, pendiente.clave))
+  })
   it('guía el próximo trabajo sin ofrecer acciones técnicas sin permiso', () => {
     renderizarDetalle({ estado: 'testing', puedeCambiarEstado: false, puedeRealizarTecnica: false })
     expect(screen.getByRole('heading', { name: 'Siguiente paso' })).toBeVisible()
@@ -475,7 +539,7 @@ describe('DetalleReparacion acciones técnicas', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cambiar estado' }))
 
     await waitFor(() => {
-      expect(operacion).toHaveBeenCalledWith('repair-1', 'quote_pending', '', 4)
+      expect(operacion).toHaveBeenCalledWith('repair-1', 'quote_pending', '', 4, expect.stringMatching(/^[0-9a-f-]{36}$/))
     })
     expect(screen.getByRole('heading', { name: 'Cambiar estado' })).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('La reparación cambió mientras realizabas esta acción.')
