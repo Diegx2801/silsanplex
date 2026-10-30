@@ -1,5 +1,89 @@
 # Gestión de Reparaciones
 
+## Finalización técnica — R13
+
+La finalización técnica se registra al pasar válidamente de `testing` a
+`ready_for_delivery`, después de superar el gate técnico existente. Aprobar una
+prueba no finaliza por sí solo la reparación. La fecha canónica es `created_at`
+del mismo evento `STATUS_CHANGED`, generado por PostgreSQL; no existe una fecha
+editable ni una columna duplicada en `repairs`.
+
+La metadata versión 1 conserva ciclo, técnico asignado y nombres históricos
+disponibles del técnico y del actor. El actor se conserva en `actor_user_id` y el
+identificador en el propio `repair_events.id`; no se crea otro evento de cierre.
+La auditoría de cambio de estado conserva esa misma metadata.
+
+`repair_list`, con `security_invoker`, expone `technical_completion` y
+`first_technical_completion`. La proyección invoker `repair_technical_completions`
+respeta RLS y recorre eventos por ID, no por timestamps. Devuelve IDs bigint como
+texto. En listo/entregado conserva la finalización verificable; al volver a
+reparación retira su vigencia inmediatamente, aunque todavía no haya aumentado
+el contador del ciclo. La primera finalización verificable permanece histórica.
+Eventos sin cambio de estado no invalidan la finalización. Los históricos sin
+evidencia suficiente, con ciclos contradictorios o pruebas ambiguas devuelven
+NULL. No se reconstruyen fechas desde entrega, devolución, actualización o pruebas.
+Los responsables históricos desconocidos nunca se rellenan con el técnico actual.
+
+Una discontinuidad conocida queda marcada para toda reconstrucción legacy; entrar
+de nuevo a `testing` no borra esa marca. Una certificación explícita versión 1,
+generada por el servidor al superar el gate, puede anclar un ciclo posterior
+internamente continuo. No valida retrospectivamente el ciclo contradictorio.
+Para cierres legacy, una consulta por conjunto exige que todas las pruebas del
+ciclo estén aprobadas, tengan exactamente un evento coherente dentro del intervalo
+y no existan asociaciones huérfanas o duplicadas, incluso fuera del intervalo.
+No se vuelve a exigir que el técnico histórico permanezca activo hoy.
+
+La proyección filtra los eventos sin cambio de estado en SQL y no recorre las
+actualizaciones ajenas a R13. Si no existe una entrada a listo, termina sin
+reconstruir historia. Las pruebas se verifican por conjunto únicamente cuando se
+necesita reconstruir evidencia legacy; no hay una consulta individual por prueba.
+No se añaden índices ni cachés de fechas.
+
+La RPC anterior `change_repair_status(uuid,uuid,text,text,bigint)` sigue disponible
+sin cambios de firma. El frontend actualizado usa
+`change_repair_status_idempotent(jsonb)` para evitar ambigüedades de sobrecarga en
+PostgREST. Recibe únicamente organización, reparación, estado, observación,
+versión y `operation_key`. Revalida permisos/sesión antes del replay, reutiliza
+el ledger y bloquea el agregado: un replay exacto no cambia versión, evento ni
+fecha. Claves diferentes con versión obsoleta generan conflicto. La intención
+se persiste por organización/usuario/reparación antes del envío y se recupera
+con datos, versión y clave originales incluso después de un retrabajo.
+
+El detalle diferencia recepción, estimación calendario, finalización y entrega;
+los timestamps se muestran en `America/Lima`. El listado recibe la finalización
+en su consulta paginada, sin peticiones de historial por fila. El detalle selecciona
+solo `technical_completion_summary`: un objeto con vigente, primera e historial
+`verified_technical_completions` calculados una vez. Conserva su comprobación de
+versión al terminar la carga. La UI etiqueta como verificables únicamente las
+finalizaciones de este contrato SQL, incluidas las legacy; las transiciones
+rechazadas permanecen visibles como eventos ordinarios. Los campos anteriores
+de la vista siguen disponibles. Los conteos no evalúan las proyecciones.
+
+No reparable y devolución sin reparar no constituyen una reparación completada.
+R28 conserva decisión, fecha y responsables propios. Su reevaluación requiere
+nuevas pruebas y una nueva entrada válida a listo. La garantía sigue comenzando
+exclusivamente en `delivered_at`, nunca en la finalización técnica.
+
+La migración aditiva es `20261031010000_repair_technical_completion.sql`. El runner
+descartable ejecuta también las nuevas suites R13. Admite
+`--upgrade-technical-completion --sql-only` para aplicar R13 sobre el esquema
+anterior con historia real de finalización y comprobar que no se reescriben los
+eventos ni se inventan finalizaciones; `--technical-completion-only` ejecuta sus
+E2E. Conserva planes `EXPLAIN ANALYZE` con RLS sobre 1.200 órdenes / 6.000 eventos,
+dentro de una transacción que se revierte, y mantiene el aislamiento de las suites
+operativas, R06/R33 y R28.
+
+`npm run test:repairs:isolated -- --sql-only --benchmark-technical-completion`
+compara, con idénticos datos y RLS, la vista anterior a R13, una referencia congelada
+de R13 sin corregir y la proyección actual. Mide tres repeticiones de listado
+completo (10 filas/OFFSET 10), conteo y detalle con 5, 100 y 500 eventos por orden
+recorrida; también mide cierres reales con 500 actualizaciones previas, filtros y
+paginación sin OFFSET. Guarda los 104 planes con buffers y sus medianas. Comprueba
+igualdad de resultados en los datos válidos, cero reconstrucciones para conteos,
+una para el nuevo detalle y un máximo de página más OFFSET para el listado.
+La referencia de prueba se instala solo en una transacción descartable. Esta
+medición sintética no define un SLA ni modifica la autorización transversal.
+
 ## Alcance
 
 El módulo `Reparaciones` permite registrar órdenes de servicio y seguirlas desde
@@ -153,3 +237,171 @@ npm run build
 
 La migración y las pruebas SQL del backend son el contrato de datos del módulo y
 no deben modificarse desde el frontend.
+
+## Accesorios del equipo — R06/R33
+
+Los accesorios son pertenencias en custodia, independientes del inventario y de
+los repuestos. La migración `20261029010000_repair_accessory_control.sql` incorpora
+`repair_accessories` y `repair_accessory_returns`. Los saldos se derivan de las
+devoluciones append-only; nunca se modifica stock ni FEFO al recibir o devolver
+accesorios.
+
+En **Datos adicionales de recepción** se pueden registrar hasta 100 accesorios,
+con nombre y cantidad entera positiva (máximo 1.000.000 por fila), condición y
+observaciones opcionales. La orden y su listado se crean en la misma transacción
+idempotente. `Notas de recepción` conserva observaciones generales del equipo.
+
+Las notas históricas no se interpretan. `accessories_reviewed_at IS NULL` indica
+que no hay revisión estructurada; una recepción explícita con lista vacía es
+válida y no crea obligaciones. Los pendientes antiguos en `sessionStorage`
+conservan la omisión del campo y su fingerprint original.
+
+En **Accesorios recibidos y devolución**, `REPAIRS_UPDATE` permite altas,
+correcciones y anulaciones explícitas con motivo antes de cualquier devolución y
+en estados no terminales. No se reemplaza toda la colección ni se borran filas.
+Después de devolver, las correcciones ordinarias de recepción quedan bloqueadas.
+Una devolución confirmada no dispone de eliminación ni rectificación implícita.
+
+`REPAIRS_DELIVER` permite devoluciones parciales o totales, también en órdenes
+canceladas/rechazadas y después de una entrega excepcional, sin reabrir la orden.
+Los responsables y fechas provienen de la sesión y del servidor. Estos comandos
+nuevos requieren un usuario autenticado; no aceptan actores delegados mediante
+`service_role`.
+
+### Contratos
+
+- `create_repair(jsonb)` admite `accessories` opcional con filas
+  `{name, quantity_received, received_condition?, observations?}`. Omitir el campo
+  conserva el contrato anterior; `[]` registra una recepción revisada sin filas.
+- `save_repair_accessories(jsonb)` recibe organización, reparación, versión,
+  `operation_key` y un **patch** `accessories`. Sin `id` agrega; con `id` corrige;
+  `{id, void: true, reason}` anula. `[]` no borra accesorios existentes.
+- `update_repair(jsonb)` conserva la edición anterior. Si incluye `accessories`,
+  exige también `operation_key` y audita/guarda todo atómicamente.
+- `record_repair_accessory_return(jsonb)` recibe `returns` con
+  `{accessory_id, quantity, observation?}`. Rechaza sobredevoluciones y conserva
+  cada devolución real.
+- `deliver_repair_with_accessories(jsonb)` admite devoluciones simultáneas y
+  entrega ordinaria o excepción. Reutiliza los gates técnicos actuales.
+- `get_repair_accessories(uuid, uuid)` devuelve revisión, versión, accesorios,
+  saldos y devoluciones completas bajo el permiso de consulta.
+
+Los comandos nuevos tienen replay persistente por organización y operación. Un
+payload distinto con la misma clave se rechaza. Todos bloquean el agregado y
+avanzan `lock_version` una sola vez por operación; el frontend conserva intención,
+clave y versión antes del envío. Hay recuperación de entrega pendiente incluso
+cuando el primer intento ya dejó la orden entregada.
+
+### Política de entrega
+
+La entrega ordinaria, incluida la RPC anterior `deliver_repair`, rechaza
+accesorios estructurados pendientes. Esto no cambia el gate compartido para
+marcar la orden lista para entrega.
+
+La excepción exige simultáneamente `REPAIRS_DELIVER` y
+`REPAIRS_AUTHORIZE_ACCESSORY_EXCEPTION`, un motivo no vacío y confirmación
+explícita en la interfaz. El permiso especial se concede inicialmente solo a
+`ADMIN` y no es asignable mediante la selección operativa ordinaria de usuarios.
+La autorización comprueba permisos efectivos, nunca nombres de rol en React.
+
+`ACCESSORY_DELIVERY_EXCEPTION` conserva motivo, actor y snapshot de pendientes.
+No simula devoluciones. La regularización posterior usa la RPC de custodia,
+mantiene `delivered` y conserva tanto el evento original como el posterior.
+
+### Pruebas aisladas
+
+Desde `frontend/`, con Docker y dependencias instaladas:
+
+```text
+npm run test:repairs:isolated
+npm run test:repairs:isolated -- --sql-only --upgrade
+npm run test:repairs:isolated -- --sql-only --all-sql
+npm run test:repairs:isolated -- --checks-only
+```
+
+El runner crea un proyecto exclusivo, verifica su contenedor/volumen y usa los
+puertos 59321/59322/59325. No carga `.env` empresariales, no reutiliza el servidor
+5173 y no resetea bases existentes. Conserva logs, TAP, JSON y capturas en un
+directorio temporal; elimina solo sus recursos desechables verificados.
+
+Las pruebas nuevas de navegador viven en `frontend/tests/accessory-e2e/` y se
+ejecutan mediante este runner y el workflow E2E, separadas de Vitest. Se ejecutan
+también los seis escenarios originales de `tests/e2e/repairs.spec.ts`.
+
+El resultado y las evidencias locales están en
+`RESULTADO_R06_R33_ACCESORIOS.md`.
+
+## No reparable — R28
+
+`20261030010000_repair_non_repairable.sql` añade `non_repairable` (pendiente de
+devolución) y `returned_unrepaired` (devuelto sin reparar). La conclusión técnica
+se conserva en un evento inmutable, con diagnóstico/snapshot, motivo, técnico y
+actor de sesión. `repairs.non_repairable_decision_event_id` identifica la decisión
+vigente; su ID se expone como texto para no perder precisión bigint en el navegador.
+
+Contratos JSON, todos con `organization_id`, `repair_id`, `operation_key` y
+`expected_lock_version`:
+
+- `declare_repair_non_repairable`: exige `diagnosis_id` de la orden y `reason`.
+  Solo el técnico asignado activo, con `REPAIRS_CHANGE_STATUS` y
+  `REPAIRS_PERFORM_TECHNICAL`, puede confirmar. ADMIN no tiene bypass por rol.
+  Las reservas con saldo bloquean; se resuelven mediante los comandos existentes.
+- `return_unrepaired_repair`: exige `decision_event_id`; reutiliza `returns`,
+  `authorize_exception` y `exception_reason` de accesorios. Requiere
+  `REPAIRS_DELIVER`; la excepción exige además el permiso especial de R06/R33.
+  Bloquea custodia externa y reservas. No exige pruebas exitosas ni solución
+  ficticia: registra `returned_unrepaired_at` sin establecer `delivered_at`.
+- `reopen_repair_non_repairable_assessment`: exige `decision_event_id` y `reason`,
+  con el mismo técnico/capacidades de declaración. Solo antes de devolver,
+  conserva diagnóstico y conclusión anteriores, registra su revocación y vuelve
+  a `diagnosis`. Las pruebas anteriores no habilitan un nuevo ciclo.
+
+Las nuevas RPC requieren sesión autenticada real; `anon` y `service_role` no
+tienen EXECUTE. Reutilizan el ledger, replay y bloqueo/versionado del agregado.
+Las funciones antiguas no permiten entrar por un cambio genérico ni editar una
+orden devuelta. La reasignación autorizada sigue disponible antes de devolver,
+por ejemplo si el técnico previo se desactiva; no reescribe el técnico original
+de la decisión.
+
+La declaración puede coexistir con un envío externo pendiente; el informe del
+proveedor requiere adopción por el técnico interno. Su retorno sigue usando la
+RPC actual. La devolución de equipo/accesorios es atómica; los pendientes de una
+excepción se regularizan después sin reabrir la orden. No se añaden movimientos
+de inventario del equipo, devoluciones de stock ni costos totales nuevos.
+
+Una devolución sin reparar no inicia garantía de reparación exitosa. Una promesa
+previa se conserva y se muestra como no iniciada por este resultado. Las órdenes
+históricas no se reclasifican; los dos campos nuevos quedan nulos. Después de
+devolver, una segunda evaluación requiere una nueva recepción.
+
+El detalle permite declarar, reevaluar y devolver según capacidades/asignación;
+recupera intenciones y claves tras respuestas ambiguas. Los filtros incluyen ambos
+estados y el resumen excluye `returned_unrepaired` de abiertas.
+
+Recuperar no inicia una intención nueva: sin pendiente informa su ausencia. Un
+usuario con las capacidades técnicas conserva la posibilidad de confirmar el
+replay original después de una reasignación; el servidor sigue exigiendo técnico
+asignado para cualquier operación nueva. El historial B1 muestra el diagnóstico
+y técnico persistidos, el actor, los motivos y la referencia de revocación,
+independientemente del técnico asignado actualmente. Sus IDs se leen como texto
+desde PostgREST para conservar la precisión bigint.
+
+Los tres motivos B1 (declaración, reevaluación y excepción) recortan únicamente
+blancos de los extremos con el conjunto de `String.trim()` de JavaScript, también
+en PostgreSQL. Rechazan motivos visualmente vacíos y mantienen el formato interno
+y el límite de 2000 caracteres. No se normalizan ni reescriben motivos históricos.
+
+Validación aislada, desde `frontend/` (Docker y dependencias instalados):
+
+```text
+npm run test:repairs:isolated
+npm run test:repairs:isolated -- --all-sql --workflow-e2e
+npm run test:repairs:isolated -- --sql-only --upgrade-non-repairable
+npm run test:repairs:isolated -- --non-repairable-only
+```
+
+El comando ordinario del workflow conserva SQL/Reparaciones/accesorios y añade
+los nueve recorridos B1. La última opción ejecuta únicamente B1 sobre un proyecto
+nuevo, para diagnóstico dirigido. Los informes JSON de cada fase son independientes.
+Las pruebas de concurrencia usan sesiones `dblink` solapadas, con teardown acotado
+a sus fixtures confirmados; verifican que las organizaciones iniciales no cambien.

@@ -18,6 +18,7 @@ import {
   type Reparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
 import { SelectorCatalogoReparacion } from './SelectorCatalogoReparacion'
+import { FormularioAccesoriosRecepcion } from './FormularioAccesoriosRecepcion'
 
 interface CampoTextoProps extends ComponentProps<'input'> {
   etiqueta: string
@@ -159,6 +160,10 @@ export function DialogoReparacion({
   const [productoSeleccionadoExplicitamente, setProductoSeleccionadoExplicitamente] = useState(false)
   const [productoRemoto, setProductoRemoto] = useState<OpcionProductoReparacion | null>(null)
   const operacionCreacion = useRef<{ firma: string; clave: string } | null>(null)
+  const formulario = useForm<DatosReparacion>({
+    resolver: zodResolver(esquemaDatosReparacion),
+    defaultValues: reparacion ? datosReparacionInicial(reparacion) : datosCreacionPendiente ?? { ...datosReparacionInicial(null), accesorios: [] },
+  })
   const {
     register,
     handleSubmit,
@@ -167,10 +172,7 @@ export function DialogoReparacion({
     setValue,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<DatosReparacion>({
-    resolver: zodResolver(esquemaDatosReparacion),
-    defaultValues: reparacion ? datosReparacionInicial(reparacion) : datosCreacionPendiente ?? datosReparacionInicial(null),
-  })
+  } = formulario
   const productoId = watch('productoId')
   const tipoSolicitante = watch('tipoSolicitante') ?? 'customer'
   const tipoEquipo = watch('tipoEquipo') ?? 'catalog'
@@ -229,7 +231,7 @@ export function DialogoReparacion({
 
   useEffect(() => {
     if (errors.prioridad || errors.fechaEstimadaEntrega || errors.notas
-      || errors.referenciaCliente || errors.referenciaGarantia || errors.esGarantia) {
+      || errors.referenciaCliente || errors.referenciaGarantia || errors.esGarantia || errors.accesorios) {
       setDatosAdicionalesAbiertos(true)
     }
   }, [errors])
@@ -248,8 +250,10 @@ export function DialogoReparacion({
     }
 
     setMensaje('')
+    // Old pending intents must keep the exact absence of the new collection.
+    const { accesorios, ...datosSinAccesorios } = datos
     const datosNormalizados = {
-      ...datos,
+      ...(datosCreacionPendiente && !Object.hasOwn(datosCreacionPendiente, 'accesorios') ? datosSinAccesorios : { ...datosSinAccesorios, ...(accesorios !== undefined ? { accesorios } : {}) }),
       numeroSerie:
         identidadEditable && tipoEquipo !== 'external' && productoSeleccionadoExplicitamente && !controlaSerie
           ? ''
@@ -461,7 +465,7 @@ export function DialogoReparacion({
                 <CampoArea
                   etiqueta="Notas de recepción"
                   rows={3}
-                  placeholder="Accesorios recibidos, condición física u observaciones"
+                  placeholder="Condición física del equipo u observaciones generales"
                   error={errors.notas?.message}
                   {...register('notas')}
                 />
@@ -491,6 +495,7 @@ export function DialogoReparacion({
                 ) : <input type="hidden" {...register('referenciaGarantia')} />}
               </div>
               </div>
+              {!reparacion ? <FormularioAccesoriosRecepcion formulario={formulario} bloqueado={Boolean(datosCreacionPendiente)} /> : <p className="mt-4 text-sm text-muted-foreground">Los accesorios se corrigen desde su sección en el detalle de la reparación.</p>}
             </details>
 
           </form>

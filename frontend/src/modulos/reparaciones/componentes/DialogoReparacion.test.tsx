@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { Reparacion } from '@/modulos/reparaciones/modelo/reparacion'
+import { datosReparacionInicial } from '@/modulos/reparaciones/modelo/reparacion'
 
 import { DialogoReparacion } from './DialogoReparacion'
 
@@ -82,6 +83,16 @@ function renderizarDialogo(
 }
 
 describe('DialogoReparacion', () => {
+  it('recupera una creación antigua sin añadir una colección vacía al fingerprint', async () => {
+    const datos = { ...datosReparacionInicial(), clienteId, productoId, problema: 'No enciende', notas: 'Incluye cable histórico' }
+    const alGuardar = vi.fn().mockResolvedValue(undefined)
+    render(<DialogoReparacion abierto reparacion={null} identidadEditable clientes={clientes} productos={productos}
+      datosCreacionPendiente={datos} alCambiarApertura={vi.fn()} alGuardar={alGuardar} alRestaurarFoco={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar reparación' }))
+    await waitFor(() => expect(alGuardar).toHaveBeenCalled())
+    expect(alGuardar.mock.calls[0][0]).toEqual(datos)
+    expect(alGuardar.mock.calls[0][0]).not.toHaveProperty('accesorios')
+  })
   it('registra un equipo externo de un área interna sin crear referencias ficticias', async () => {
     const alGuardar = renderizarDialogo(null, true, [], [])
     fireEvent.change(screen.getByLabelText('Solicitante *'), { target: { value: 'internal' } })

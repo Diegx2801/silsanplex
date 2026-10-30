@@ -76,7 +76,8 @@ export function AtencionComplementariaReparacion({ reparacion, puedeEditar, pued
       </section>
       <section aria-label="Garantía del servicio" className="mt-4 border-t pt-4">
         <h3 className="font-medium">Garantía del trabajo realizado</h3>
-        {garantia ? <><p className="mt-2 text-sm">{garantia.warranty_days} días desde la entrega · {garantia.coverage}</p><p className="mt-1 text-sm text-muted-foreground">Inicio: {fecha(garantia.starts_at)} · Fin: {fecha(garantia.ends_at)}</p></> : <p className="mt-2 text-sm text-muted-foreground">No se ha otorgado una garantía de servicio.</p>}
+         {['non_repairable', 'returned_unrepaired'].includes(reparacion.estado) ? <p className="mt-2 text-sm">La devolución sin reparar no inicia garantía de reparación exitosa.{garantia ? ` Promesa previa conservada: ${garantia.warranty_days} días · ${garantia.coverage}. No iniciada por este resultado.` : ''}</p>
+           : garantia ? <><p className="mt-2 text-sm">{garantia.warranty_days} días desde la entrega · {garantia.coverage}</p><p className="mt-1 text-sm text-muted-foreground">Inicio: {fecha(garantia.starts_at)} · Fin: {fecha(garantia.ends_at)}</p></> : <p className="mt-2 text-sm text-muted-foreground">No se ha otorgado una garantía de servicio.</p>}
         {puedeConfigurarGarantia && !editor ? <Button type="button" variant="outline" className="mt-3" onClick={() => iniciar('configure_repair_service_warranty', { warranty_days: String(garantia?.warranty_days ?? ''), coverage: garantia?.coverage ?? '' })}>{garantia ? 'Editar garantía antes de entregar' : 'Configurar garantía'}</Button> : null}
       </section>
     </> : null}

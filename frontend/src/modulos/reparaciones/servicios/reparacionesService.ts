@@ -1,4 +1,7 @@
 import { supabase } from '@/lib/supabase'
+import { payloadAccesorio } from '../modelo/accesorios'
+import { esquemaDecisionNoReparable } from '../modelo/noReparable'
+import { leerFinalizacionTecnica, leerResumenFinalizacion } from '../modelo/finalizacionTecnica'
 import type { Almacen, UbicacionAlmacen } from '@/modulos/inventario/modelo/almacen'
 import type {
   ConsultaReparaciones,
@@ -40,6 +43,11 @@ interface ErrorSupabase {
 }
 
 interface FilaReparacion {
+  technical_completion_summary?: unknown
+  technical_completion?: unknown
+  first_technical_completion?: unknown
+  non_repairable_decision?: unknown
+  returned_unrepaired_at?: string | null
   requester_type?: 'customer' | 'internal'
   requesting_area?: string | null
   equipment_type?: 'catalog' | 'external'
@@ -208,7 +216,7 @@ interface FilaPrueba {
 }
 
 interface FilaEvento {
-  id: number
+  id: string | number
   organization_id: string
   repair_id: string
   event_type: string
@@ -243,8 +251,9 @@ interface FilaUbicacion {
   is_active: boolean
 }
 
-const columnasReparacion =
-  'id,organization_id,lock_version,repair_code,customer_id,product_id,serial_number,received_at,estimated_delivery_date,delivered_at,status,priority,problem_description,diagnosis,applied_solution,notes,customer_reference,sale_document_id,warranty_reference,assigned_technician_id,customer_name_snapshot,customer_document_snapshot,product_code_snapshot,product_description_snapshot,created_by,updated_by,created_at,updated_at,serial_control_snapshot,requester_type,requesting_area,equipment_type,external_equipment_description,external_service_pending' as const
+const columnasReparacionBase =
+  'id,organization_id,lock_version,repair_code,customer_id,product_id,serial_number,received_at,estimated_delivery_date,delivered_at,status,priority,problem_description,diagnosis,applied_solution,notes,customer_reference,sale_document_id,warranty_reference,assigned_technician_id,customer_name_snapshot,customer_document_snapshot,product_code_snapshot,product_description_snapshot,created_by,updated_by,created_at,updated_at,serial_control_snapshot,requester_type,requesting_area,equipment_type,external_equipment_description,external_service_pending,non_repairable_decision,returned_unrepaired_at' as const
+const columnasReparacion = `${columnasReparacionBase},technical_completion` as const
 
 const tamanioPaginaMaximo = 50
 const paginaMaxima = 100_000
@@ -425,8 +434,15 @@ function validarLockVersion(lockVersion: number) {
 }
 
 function mapearReparacion(fila: FilaReparacion): Reparacion {
+  const resumen = leerResumenFinalizacion(fila.technical_completion_summary)
+  const esResumen = fila.technical_completion_summary !== undefined
   return {
     id: fila.id,
+    finalizacionTecnica: esResumen ? resumen?.technical_completion ?? null : leerFinalizacionTecnica(fila.technical_completion),
+    primeraFinalizacionTecnica: esResumen ? resumen?.first_technical_completion ?? null : leerFinalizacionTecnica(fila.first_technical_completion),
+    finalizacionesTecnicas: resumen?.verified_technical_completions ?? [],
+    decisionNoReparable: fila.non_repairable_decision == null ? null : esquemaDecisionNoReparable.parse(fila.non_repairable_decision),
+    devueltaSinRepararEn: fila.returned_unrepaired_at ?? '',
     organizationId: fila.organization_id,
     lockVersion: validarLockVersion(fila.lock_version),
     codigo: fila.repair_code,
@@ -690,7 +706,7 @@ export async function obtenerResumenReparaciones(organizationId: string) {
 
   const [total, abiertas, esperandoAprobacion, listasParaEntrega] = await Promise.all([
     contar(),
-    contar().neq('status', 'delivered').neq('status', 'cancelled').neq('status', 'rejected'),
+    contar().neq('status', 'delivered').neq('status', 'cancelled').neq('status', 'rejected').neq('status', 'returned_unrepaired'),
     contar().eq('status', 'waiting_customer_approval'),
     contar().eq('status', 'ready_for_delivery'),
   ])
@@ -792,7 +808,7 @@ export async function obtenerDetalleReparacion(
   for (let intento = 0; intento < intentosMaximos; intento += 1) {
     const repairResult = await supabase
       .from('repair_list')
-      .select(columnasReparacion)
+      .select(`${columnasReparacionBase},technical_completion_summary`)
       .eq('organization_id', organizationId)
       .eq('id', repairId)
       .maybeSingle()
@@ -828,9 +844,9 @@ export async function obtenerDetalleReparacion(
         .eq('organization_id', organizationId).eq('repair_id', repairId)
         .order('completed_at', { ascending: false }).order('id', { ascending: false })
         .range(inicio, fin), 'pruebas'),
-      consultarPaginasDetalle<FilaEvento>((inicio, fin) => supabase
-        .from('repair_events')
-        .select('id,organization_id,repair_id,event_type,from_status,to_status,actor_user_id,observation,metadata,created_at', { count: 'exact' })
+       consultarPaginasDetalle<FilaEvento>((inicio, fin) => supabase
+         .from('repair_events')
+         .select('id::text,organization_id,repair_id,event_type,from_status,to_status,actor_user_id,observation,metadata,created_at', { count: 'exact' })
         .eq('organization_id', organizationId).eq('repair_id', repairId)
         .order('created_at', { ascending: false }).order('id', { ascending: false })
         .range(inicio, fin), 'eventos'),
@@ -1093,6 +1109,7 @@ export async function crearReparacion(
     payload: {
       ...payloadGeneralReparacion(organizationId, datos),
       ...payloadIdentidadReparacion(datos, true),
+      ...(datos.accesorios !== undefined ? { accessories: datos.accesorios.map(payloadAccesorio) } : {}),
       status: datos.esGarantia ? 'warranty' : 'received',
       operation_key: operationKey,
     },
@@ -1140,8 +1157,12 @@ export async function cambiarEstadoReparacion(
   estado: string,
   observacion: string,
   expectedLockVersion: number,
+  operationKey?: string,
 ) {
-  const { error } = await supabase.rpc('change_repair_status', {
+  const { error } = operationKey ? await supabase.rpc('change_repair_status_idempotent', { payload: {
+    organization_id: organizationId, repair_id: reparacionId, status: estado,
+    observation: normalizarTextoOpcional(observacion), expected_lock_version: expectedLockVersion, operation_key: operationKey,
+  } }) : await supabase.rpc('change_repair_status', {
     requested_organization_id: organizationId,
     requested_repair_id: reparacionId,
     requested_status: estado,
