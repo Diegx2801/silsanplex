@@ -501,8 +501,46 @@ def label_owner(labels, project, kind):
             kind + '_OWNER')
 
 
-def assert_owned_resources(project, resources, directory, require_complete=True):
+def container_owner_diagnostic(container, project, stage):
+    """Classify untrusted metadata without returning names, labels or config values."""
+    config_doc = container.get('Config')
+    labels = config_doc.get('Labels') if isinstance(config_doc, dict) else []
+
+    def label_state(key):
+        if labels is None:
+            return 'MISSING'
+        if not isinstance(labels, dict):
+            return 'INVALID'
+        if key not in labels:
+            return 'MISSING'
+        value = labels[key]
+        if not isinstance(value, str):
+            return 'INVALID'
+        return 'MATCH' if value == project else 'MISMATCH'
+
+    name = container.get('Name')
+    roles = {'db': 'POSTGRESQL', 'kong': 'KONG', 'auth': 'AUTH', 'rest': 'POSTGREST',
+             'storage': 'STORAGE'}
+    role = next((role for prefix, role in roles.items()
+                 if isinstance(name, str) and name.startswith('/supabase_' + prefix + '_')), 'OTHER')
+    # A name-derived role is only a hint; it never establishes ownership.
+    return {'phase': 'resource-owner-rejected', 'resource_type': 'CONTAINER', 'role': role,
+            'supabase_project_label': label_state('com.supabase.cli.project'),
+            'compose_project_label': label_state('com.docker.compose.project'),
+            'name_matches_expected_pattern': (isinstance(name, str) and name.startswith('/supabase_')
+                                              and name.endswith('_' + project)),
+            'lifecycle_stage': (stage if stage in ('RESOURCE_VERIFICATION', 'SUPABASE_START_OBSERVATION',
+                                                  'CLEANUP') else 'RESOURCE_VERIFICATION'),
+            'failed_check': 'CPE_NORMAL_CI_CONTAINER_OWNER'}
+
+
+def assert_owned_resources(project, resources, directory, require_complete=True,
+                           stage='RESOURCE_VERIFICATION'):
     for container in resources['containers']:
+        diagnostic = container_owner_diagnostic(container, project, stage)
+        if (diagnostic['supabase_project_label'] != 'MATCH'
+                or diagnostic['compose_project_label'] != 'MATCH'):
+            print(json.dumps(diagnostic), flush=True)
         label_owner(container.get('Config', {}).get('Labels') or {}, project, 'CONTAINER')
         require(container.get('Name', '').startswith('/supabase_')
                 and container.get('Name', '').endswith('_' + project), 'CONTAINER_NAME')
@@ -548,7 +586,8 @@ def sample_network_probe():
     project, directory, identity_doc = identity()
     assert_owner(project, directory, identity_doc)
     resources = inventory(timeout=3)
-    networks = assert_owned_resources(project, resources, directory, require_complete=False)
+    networks = assert_owned_resources(project, resources, directory, require_complete=False,
+                                      stage='SUPABASE_START_OBSERVATION')
     database = next((c for c in resources['containers']
                      if c.get('Name') == f'/supabase_db_{project}'), None)
     if database is None or not networks:
@@ -826,11 +865,11 @@ def stop():
                           'resources_absent': True}), flush=True)
         return
     assert_directory(project, directory, identity_doc, require_copy=True)
-    assert_owned_resources(project, resources, directory, require_complete=False)
+    assert_owned_resources(project, resources, directory, require_complete=False, stage='CLEANUP')
     if resources['containers']:
         command([cli_path(), 'stop', '--no-backup', '--workdir', str(directory)], timeout=180)
     resources = inventory()
-    assert_owned_resources(project, resources, directory, require_complete=False)
+    assert_owned_resources(project, resources, directory, require_complete=False, stage='CLEANUP')
     require(not resources['containers'], 'CLEANUP_PROJECT_CONTAINERS_REMAIN')
     if resources['volumes']:
         # `stop --no-backup` should delete project data volumes. If any remain,
@@ -838,7 +877,7 @@ def stop():
         volume_names = sorted(volume['Name'] for volume in resources['volumes'])
         command(['docker', 'volume', 'rm', *volume_names])
     resources = inventory()
-    assert_owned_resources(project, resources, directory, require_complete=False)
+    assert_owned_resources(project, resources, directory, require_complete=False, stage='CLEANUP')
     require(not resources['containers'] and not resources['volumes'], 'CLEANUP_PROJECT_RESOURCES_REMAIN')
     custom_networks = [n for n in resources['networks'] if n.get('Name') not in SYSTEM_NETWORKS]
     if custom_networks:

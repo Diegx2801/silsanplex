@@ -1307,6 +1307,97 @@ class NetworkTopologyProbeTests(unittest.TestCase):
         self.assertIsNone(normal_ci._PROBE_CASE)
 
 
+class ContainerOwnerDiagnosticTests(unittest.TestCase):
+    setUp = NormalCIIdentityTests.setUp
+    fixed_target = NormalCIIdentityTests.fixed_target
+    owned_inventory = NormalCIIdentityTests.owned_inventory
+
+    def test_valid_labels_preserve_verification_without_rejection_log(self):
+        resources = self.owned_inventory()
+        with patch('builtins.print') as log:
+            normal_ci.assert_owned_resources(self.project, resources, self.directory)
+        log.assert_not_called()
+        diagnostic = normal_ci.container_owner_diagnostic(resources['containers'][0], self.project,
+                                                           'SUPABASE_START_OBSERVATION')
+        self.assertEqual(diagnostic['supabase_project_label'], 'MATCH')
+        self.assertEqual(diagnostic['compose_project_label'], 'MATCH')
+
+    def test_each_label_failure_is_sanitized_and_still_rejected(self):
+        first, second = 'com.supabase.cli.project', 'com.docker.compose.project'
+        cases = [
+            ({second: self.project}, ('MISSING', 'MATCH')),
+            ({first: self.project}, ('MATCH', 'MISSING')),
+            ({first: 'private-sentinel', second: self.project}, ('MISMATCH', 'MATCH')),
+            ({first: self.project, second: 'private-sentinel'}, ('MATCH', 'MISMATCH')),
+            ({first: None, second: 7}, ('INVALID', 'INVALID')),
+            ('private-sentinel', ('INVALID', 'INVALID')),
+            (None, ('MISSING', 'MISSING')),
+        ]
+        for labels, expected in cases:
+            with self.subTest(expected=expected):
+                resources = self.owned_inventory()
+                resources['containers'][0]['Config']['Labels'] = labels
+                with patch('builtins.print') as log, \
+                        self.assertRaisesRegex(ValueError, '^CPE_NORMAL_CI_CONTAINER_OWNER$'):
+                    normal_ci.assert_owned_resources(self.project, resources, self.directory,
+                                                     stage='SUPABASE_START_OBSERVATION')
+                diagnostic = json.loads(log.call_args.args[0])
+                self.assertEqual((diagnostic['supabase_project_label'],
+                                  diagnostic['compose_project_label']), expected)
+                self.assertEqual(diagnostic['lifecycle_stage'], 'SUPABASE_START_OBSERVATION')
+                self.assertEqual(diagnostic['failed_check'], 'CPE_NORMAL_CI_CONTAINER_OWNER')
+                self.assertNotIn('private-sentinel', json.dumps(diagnostic))
+                self.assertNotIn(self.project, json.dumps(diagnostic))
+
+    def test_foreign_auxiliary_and_incomplete_resources_never_allow_probe_connection(self):
+        for name, labels, role, name_matches in (
+                ('/supabase_db_private-sentinel', {}, 'POSTGRESQL', False),
+                ('/temporary-private-sentinel', {}, 'OTHER', False),
+                ('/supabase_db_' + self.project, None, 'POSTGRESQL', True)):
+            resources = self.owned_inventory()
+            resources['containers'][0].update(Name=name, Config={'Labels': labels})
+            with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                    patch.object(normal_ci, 'assert_owner'), \
+                    patch.object(normal_ci, 'inventory', return_value=resources), \
+                    patch.object(normal_ci.socket, 'create_connection') as connect, \
+                    patch('builtins.print') as log:
+                with self.assertRaisesRegex(ValueError, 'CONTAINER_OWNER'):
+                    normal_ci.sample_network_probe()
+                connect.assert_not_called()
+            diagnostic = json.loads(log.call_args.args[0])
+            self.assertEqual(diagnostic['role'], role)
+            self.assertIs(diagnostic['name_matches_expected_pattern'], name_matches)
+            self.assertNotIn('private-sentinel', json.dumps(diagnostic))
+
+    def test_unverified_container_blocks_cleanup_without_deletion(self):
+        resources = self.owned_inventory()
+        resources['containers'][0]['Config']['Labels'] = {}
+        self.directory.mkdir()
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'assert_owner'), \
+                patch.object(normal_ci, 'assert_directory'), \
+                patch.object(normal_ci, 'inventory', return_value=resources), \
+                patch.object(normal_ci, 'command') as command, \
+                patch.object(normal_ci, 'safe_remove_directory') as remove, \
+                patch('builtins.print') as log:
+            with self.assertRaisesRegex(ValueError, 'CONTAINER_OWNER'):
+                normal_ci.stop()
+            command.assert_not_called()
+            remove.assert_not_called()
+        self.assertTrue(self.directory.exists())
+        self.assertEqual(json.loads(log.call_args.args[0])['lifecycle_stage'], 'CLEANUP')
+
+    def test_metadata_cannot_inject_diagnostic_fields_or_values(self):
+        result = normal_ci.container_owner_diagnostic(
+            {'Name': 'private-sentinel', 'Config': {'Labels': []},
+             'Env': ['private-sentinel']}, self.project, 'private-sentinel')
+        self.assertEqual(set(result), {'phase', 'resource_type', 'role', 'supabase_project_label',
+                                      'compose_project_label', 'name_matches_expected_pattern',
+                                      'lifecycle_stage', 'failed_check'})
+        self.assertNotIn('private-sentinel', json.dumps(result))
+
+
 class NormalRunnerCoverageTests(unittest.TestCase):
     def test_declared_race_manifest_matches_all_real_runner_call_sites(self):
         source = Path(runner.__file__).read_text(encoding='utf8')
