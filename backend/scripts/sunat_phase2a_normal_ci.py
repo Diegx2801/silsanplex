@@ -42,6 +42,15 @@ FORBIDDEN_LOCAL_CLI_STATE = {'project-ref', 'linked-project.json', 'profile', 'p
 EXCLUDED_SERVICES = (
     'studio,mailpit,realtime,logflare,vector,edge-runtime,imgproxy,postgres-meta,supavisor'
 )
+START_FAILURE_PATTERNS = (
+    ('CLI_CONFIG', re.compile(r'unknown flag|unknown shorthand|invalid config|failed to parse.*config|toml.*error', re.I)),
+    ('PORT_BIND', re.compile(r'address already in use|port is already allocated|failed to bind|bind .* failed', re.I)),
+    ('DOCKER_NETWORK', re.compile(r'network .* not found|network .* already exists|could not find network|failed to create endpoint|invalid network', re.I)),
+    ('IMAGE_PULL_OR_REGISTRY', re.compile(r'pull access denied|manifest unknown|no matching manifest|failed to pull|i/o timeout|tls handshake timeout', re.I)),
+    ('CONTAINER_HEALTH', re.compile(r'health check|unhealthy|timed out waiting|context deadline exceeded|service .* not ready', re.I)),
+    ('RESOURCE_LIMIT', re.compile(r'no space left|not enough memory|insufficient memory', re.I)),
+    ('PERMISSION', re.compile(r'permission denied|operation not permitted|access denied', re.I)),
+)
 SYSTEM_NETWORKS = {'bridge': 'bridge', 'host': 'host', 'none': 'null'}
 REMOTE_ENVIRONMENT_KEYS = (
     'DATABASE_URL', 'PGHOST', 'PGDATABASE', 'PGPORT', 'PGPASSWORD',
@@ -170,6 +179,13 @@ def cli_path():
     return str(cli)
 
 
+def safe_start_failure_categories(result):
+    """Classify known startup failures without exposing CLI output or credentials."""
+    output = f'{result.stdout or ""}\n{result.stderr or ""}'
+    categories = [name for name, pattern in START_FAILURE_PATTERNS if pattern.search(output)]
+    return categories or ['UNCLASSIFIED']
+
+
 def command(args, timeout=900):
     """Run allowlisted Docker inspection, project-network, and local CLI commands."""
     require(isinstance(args, list) and args, 'COMMAND_ARGUMENTS')
@@ -272,6 +288,10 @@ def command(args, timeout=900):
             docker_config_context.cleanup()
     if result.returncode:
         # Supabase start/status output can contain local API keys; never emit it.
+        if program == 'supabase' and args[1:2] == ['start']:
+            print(json.dumps({'phase': 'supabase-start-failed',
+                              'exit_code': result.returncode,
+                              'categories': safe_start_failure_categories(result)}), flush=True)
         raise RuntimeError('CPE_NORMAL_CI_COMMAND_FAILED:' + program)
     return result.stdout
 

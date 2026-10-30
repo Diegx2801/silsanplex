@@ -572,6 +572,32 @@ class NormalCIIdentityTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0], ['docker', 'ps', '-aq'])
         self.assertFalse(Path(run.call_args.kwargs['env']['DOCKER_CONFIG']).exists())
 
+    def test_supabase_start_failure_logs_only_allowlisted_diagnostic_category(self):
+        self.directory.mkdir(mode=0o700)
+        home = self.directory / normal_ci.SUPABASE_HOME_NAME
+        home.mkdir(mode=0o700)
+        (home / normal_ci.DOCKER_CONFIG_NAME).mkdir(mode=0o700)
+        fake_cli = self.base / 'supabase'
+        command = [str(fake_cli), 'start', '--workdir', str(self.directory),
+                   '--exclude', normal_ci.EXCLUDED_SERVICES,
+                   '--network-id', normal_ci.network_name(self.project)]
+        result = subprocess.CompletedProcess(
+            command, 1, stdout='private-sentinel',
+            stderr='failed to pull image from registry: private-sentinel')
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'cli_path', return_value=str(fake_cli)), \
+                patch.object(normal_ci.subprocess, 'run', return_value=result), \
+                patch('builtins.print') as log:
+            with self.assertRaisesRegex(RuntimeError, '^CPE_NORMAL_CI_COMMAND_FAILED:supabase$'):
+                normal_ci.command(command)
+
+        diagnostic = json.loads(log.call_args.args[0])
+        self.assertEqual(diagnostic, {
+            'phase': 'supabase-start-failed', 'exit_code': 1,
+            'categories': ['IMAGE_PULL_OR_REGISTRY'],
+        })
+        self.assertNotIn('private-sentinel', json.dumps(diagnostic))
+
     def test_docker_guard_requires_default_context_and_local_socket(self):
         with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
                 patch.object(normal_ci, 'command', side_effect=['default', json.dumps([
