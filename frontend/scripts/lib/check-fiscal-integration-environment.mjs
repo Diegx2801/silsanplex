@@ -1,5 +1,7 @@
 // Explicit node:test entry, kept outside Vitest's *.test.* discovery.
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -7,17 +9,21 @@ import {
   FiscalEnvironment, assertLabels, commandInvocation, isGitHubHostedLinux, ports, closeFiscalTestResources,
 } from './fiscal-integration-environment.mjs'
 
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 test('manifest incluye migraciones posteriores a las candidatas fiscales', () => {
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
-  const names = Object.keys(new FiscalEnvironment(root).manifest())
+  const manifest = new FiscalEnvironment(repositoryRoot).manifest()
+  const names = Object.keys(manifest)
   const candidates = [
     '20261023061225_electronic_fiscal_sandbox_persistence.sql',
     '20261023135019_electronic_fiscal_helper_sql_lint.sql',
+    '20261025190353_restrict_electronic_document_direct_select.sql',
   ]
   const firstCandidate = names.indexOf(candidates[0])
   assert.ok(firstCandidate >= 0)
   assert.deepEqual(names.slice(firstCandidate, firstCandidate + candidates.length), candidates)
   assert.ok(firstCandidate + candidates.length < names.length)
+  assert.equal(manifest[candidates[2]],
+    '7613198f6c8152d1e4838c057c308ebb35413ef853087fa2b831358f43155aff')
 })
 
 test('puertos exclusivos sin destinos persistentes', () => {
@@ -99,17 +105,65 @@ test('sin preparación no ejecuta limpieza ni comandos Docker', () => {
 })
 test('propiedad rechaza recursos preexistentes y montajes de host', () => {
   const e = new FiscalEnvironment('/unused')
+  const networkName = `supabase_network_${e.project}`
+  const network = { Id: 'owned-network', Name: networkName, Labels: {
+    'com.supabase.cli.project': e.project, 'com.docker.compose.project': e.project,
+  } }
   const c = { Id: 'fixture', Name: `/supabase_db_${e.project}`, Config: { Labels: {
     'com.supabase.cli.project': e.project, 'com.docker.compose.project': e.project,
-  } }, Mounts: [] }
-  e.inventory = () => ({ containers: [c], volumes: [] })
-  e.before = { containers: [c], volumes: [] }
+  } }, Mounts: [], NetworkSettings: { Networks: { [networkName]: {} } } }
+  e.inventory = () => ({ containers: [c], volumes: [], networks: [network] })
+  e.before = { containers: [c], volumes: [], networks: [network] }
   assert.throws(() => e.owned())
-  e.before = { containers: [], volumes: [] }
+  e.before = { containers: [], volumes: [], networks: [] }
   c.Mounts = [{ Type: 'bind', Destination: '/foreign' }]
   assert.throws(() => e.owned())
   c.Mounts = []
   assert.equal(e.owned().containers.length, 1)
+})
+
+test('la red fiscal usa etiquetas propias y ningún contenedor se une a redes existentes', () => {
+  const e = new FiscalEnvironment('/unused')
+  const networkName = `supabase_network_${e.project}`
+  const network = { Id: 'new-network', Name: networkName, Labels: {
+    'com.supabase.cli.project': e.project, 'com.docker.compose.project': e.project,
+  } }
+  const container = { Id: 'new-container', Name: `/supabase_db_${e.project}`, Config: { Labels: {
+    'com.supabase.cli.project': e.project, 'com.docker.compose.project': e.project,
+  } }, Mounts: [{ Type: 'volume' }], NetworkSettings: { Networks: { [networkName]: {} } } }
+  e.before = { containers: [], volumes: [], networks: [] }
+  e.inventory = () => ({ containers: [container], volumes: [], networks: [network] })
+  assert.equal(e.owned().networks[0].Id, 'new-network')
+  container.NetworkSettings.Networks = { supabase_network_backend: {} }
+  assert.throws(() => e.owned(), /FISCAL_TEST_NO_FOREIGN_NETWORKS/)
+  container.NetworkSettings.Networks = { [networkName]: {} }
+  network.Labels['com.docker.compose.project'] = 'backend'
+  assert.throws(() => e.owned(), /FISCAL_TEST_NETWORK_PROJECT/)
+})
+
+test('detiene el proyecto propio si start dejó un contenedor sin red', () => {
+  const e = new FiscalEnvironment('/unused')
+  e.directory = fs.mkdtempSync(path.join(os.tmpdir(), `${e.project}-`))
+  fs.mkdirSync(path.join(e.directory, 'supabase'), { recursive: true })
+  fs.writeFileSync(path.join(e.directory, 'owner.json'), JSON.stringify({ project: e.project }))
+  fs.writeFileSync(path.join(e.directory, 'supabase/config.toml'), e.config())
+  e.before = { containers: [], volumes: [], networks: [] }
+  const partial = { Id: 'partial-container', Name: `/supabase_db_${e.project}`, Config: { Labels: {
+    'com.supabase.cli.project': e.project, 'com.docker.compose.project': e.project,
+  } }, Mounts: [], NetworkSettings: { Networks: {} } }
+  let stopped = false
+  e.started = true
+  e.inventory = () => stopped
+    ? { containers: [], volumes: [], networks: [] }
+    : { containers: [partial], volumes: [], networks: [] }
+  e.stop = () => { stopped = true }
+  try {
+    e.cleanup()
+    assert.equal(stopped, true)
+    assert.equal(fs.existsSync(e.directory), false)
+  } finally {
+    if (e.directory && fs.existsSync(e.directory)) fs.rmSync(e.directory, { recursive: true })
+  }
 })
 
 for (const failing of ['browser', 'server', 'session']) {
