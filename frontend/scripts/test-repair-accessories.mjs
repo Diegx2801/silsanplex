@@ -9,6 +9,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { randomBytes, randomUUID, createHash } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { assertSupabaseDbLintSucceeded } from './lib/supabase-db-lint.mjs'
+import { benchmarkTechnicalCompletion } from './lib/repair-technical-completion-benchmark.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const cli = path.join(root, 'backend/node_modules', process.platform === 'win32'
@@ -24,10 +25,12 @@ const project = `silsanacc${randomBytes(5).toString('hex')}`
 const ports = { api: 59321, db: 59322, web: 59325 }
 const api = `http://127.0.0.1:${ports.api}`
 const upgradeNonRepairable = process.argv.includes('--upgrade-non-repairable')
-const upgrade = process.argv.includes('--upgrade') || upgradeNonRepairable
+const upgradeTechnicalCompletion = process.argv.includes('--upgrade-technical-completion')
+const upgrade = process.argv.includes('--upgrade') || upgradeNonRepairable || upgradeTechnicalCompletion
 const sqlOnly = process.argv.includes('--sql-only')
 const nonRepairableOnly = process.argv.includes('--non-repairable-only')
-const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly
+const technicalCompletionOnly = process.argv.includes('--technical-completion-only')
+const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly || technicalCompletionOnly
 const checksOnly = process.argv.includes('--checks-only')
 const workflowE2e = process.argv.includes('--workflow-e2e')
 const runLog = []
@@ -118,7 +121,7 @@ try {
   }
   fs.writeFileSync(configPath, config)
   const migrationDirectory = path.join(backend, 'supabase/migrations')
-  const candidates = fs.readdirSync(migrationDirectory).filter(n => n.includes(upgradeNonRepairable ? 'repair_non_repairable' : 'repair_accessory_control'))
+   const candidates = fs.readdirSync(migrationDirectory).filter(n => n.includes(upgradeTechnicalCompletion ? 'repair_technical_completion' : upgradeNonRepairable ? 'repair_non_repairable' : 'repair_accessory_control'))
   assert.equal(candidates.length, 1)
   const candidate = candidates[0]
   // Postpone the candidate AND later dependent migrations, only in this copy.
@@ -149,19 +152,47 @@ try {
       where organization_id='a6290000-0000-4000-8000-000000000002' and status='delivered';
       select jsonb_agg(to_jsonb(w) order by id) from repair_service_warranty_details w
       where organization_id='a6290000-0000-4000-8000-000000000002';`)
+    let technicalBefore
+    if (upgradeTechnicalCompletion) {
+      sql(`begin;
+        insert into organization_memberships(organization_id,user_id) values('a6290000-0000-4000-8000-000000000002','a6290000-0000-4000-8000-000000000001');
+        insert into user_roles(organization_id,user_id,role_code) values('a6290000-0000-4000-8000-000000000002','a6290000-0000-4000-8000-000000000001','ADMIN');
+        insert into auth.sessions(id,user_id,created_at,updated_at) values('a6290000-0000-4000-8000-000000000001','a6290000-0000-4000-8000-000000000001',now(),now());
+        select set_config('request.jwt.claims','{"role":"authenticated","sub":"a6290000-0000-4000-8000-000000000001","session_id":"a6290000-0000-4000-8000-000000000001"}',true);
+        do $$ declare r uuid; o uuid:='a6290000-0000-4000-8000-000000000002'; a uuid:='a6290000-0000-4000-8000-000000000001'; begin
+          r:=create_repair(jsonb_build_object('organization_id',o,'operation_key',gen_random_uuid(),'requester_type','internal','requesting_area','Upgrade',
+            'equipment_type','external','external_equipment_description','Upgrade equipment','problem_description','Upgrade problem','customer_reference','R13 upgrade valid'));
+          perform assign_repair(o,r,a,1); perform change_repair_status(o,r,'diagnosis',null,2);
+          perform change_repair_status(o,r,'in_repair',null,3); perform change_repair_status(o,r,'testing',null,4);
+          perform record_repair_test(jsonb_build_object('organization_id',o,'repair_id',r,'expected_lock_version',5,'test_type','Encendido','result','Aprobada','passed',true));
+          perform change_repair_status(o,r,'ready_for_delivery',null,6);
+        end $$; commit;`)
+      technicalBefore = sql(`select jsonb_agg(to_jsonb(e) order by id) from repair_events e
+        where repair_id=(select id from repairs where customer_reference='R13 upgrade valid')`)
+    }
     for (const [name, source] of upgradeSources) fs.writeFileSync(path.join(migrationDirectory, name), source)
     run(cli, ['migration', 'up'], { cwd: backend, log: 'migrations-upgrade.log' })
     const after = JSON.parse(sql(`select jsonb_agg(to_jsonb(r) order by id) from repairs r where organization_id='a6290000-0000-4000-8000-000000000002'`))
     const before = JSON.parse(historical)
-    assert.deepEqual(after.map(row => Object.fromEntries(Object.keys(before[0]).map(key => [key, row[key]]))), before,
+    assert.deepEqual(after.filter(row => before.some(old => old.id===row.id)).map(row => Object.fromEntries(Object.keys(before[0]).map(key => [key, row[key]]))), before,
       'Every pre-existing historical field remains unchanged')
     assert.ok(after.every(row => row.non_repairable_decision_event_id === null && row.returned_unrepaired_at === null))
     assert.equal(sql(`select jsonb_agg(to_jsonb(w) order by id) from repair_service_warranty_details w
       where organization_id='a6290000-0000-4000-8000-000000000002'`), historicalWarranty,
     'Historical delivered warranty, including start/end dates, remains unchanged')
     assert.equal(sql('select count(*) from repair_accessories'), '0')
+    assert.equal(sql(`select count(*) from repair_list where organization_id='a6290000-0000-4000-8000-000000000002' and customer_reference is distinct from 'R13 upgrade valid'
+      and (technical_completion is not null or first_technical_completion is not null)`), '0', 'No speculative historical completion backfill')
+    if (upgradeTechnicalCompletion) {
+      assert.equal(sql(`select jsonb_agg(to_jsonb(e) order by id) from repair_events e where repair_id=(select id from repairs where customer_reference='R13 upgrade valid')`),technicalBefore,
+        'Upgrade does not rewrite historical events')
+      assert.equal(sql(`select count(*) from repair_list where customer_reference='R13 upgrade valid' and technical_completion is not null
+        and technical_completion=first_technical_completion and technical_completion->>'assigned_technician_id' is null`),'1','Real pre-R13 completion reconstructed without inventing its technician')
+    }
     fs.writeFileSync(path.join(evidence, 'historical-upgrade.json'), JSON.stringify({ candidate, unchanged: true, historicalRepairs: 4,
-      unchangedDeliveredWarranties: 1, inferredAccessories: 0, inferredDecisions: 0 }))
+      unchangedDeliveredWarranties: 1, inferredAccessories: 0, inferredDecisions: 0, inferredCompletions: 0,
+      reconstructedTechnicalCompletions: upgradeTechnicalCompletion ? 1 : 0,
+      unchangedTechnicalEvents: upgradeTechnicalCompletion ? true : null }))
   }
   const organizationsBeforeSql = JSON.parse(sql("select coalesce(json_agg(json_build_object('id',id,'slug',slug,'name',name) order by slug),'[]'::json) from public.organizations"))
   if (!upgrade) {
@@ -172,7 +203,34 @@ try {
   // Original concurrency suites use a fixed hostname. Alias ONLY this new DB on an exclusive network.
   const network = `${project}-race`
   run('docker', ['network', 'create', network], { print: false })
-  run('docker', ['network', 'connect', '--alias', 'supabase_db_backend', network, `supabase_db_${project}`], { print: false })
+   run('docker', ['network', 'connect', '--alias', 'supabase_db_backend', network, `supabase_db_${project}`], { print: false })
+   // Disposable transaction: capture actual count/pagination plans with 1,200
+   // aggregates and 6,000 same-state events, then roll everything back.
+   const plans = sql(`begin;
+     create temporary table r13_plan_ids(id uuid primary key);
+     with inserted as (insert into repairs(organization_id,requester_type,requesting_area,equipment_type,external_equipment_description,
+       problem_description,customer_name_snapshot,customer_document_snapshot,product_code_snapshot,product_description_snapshot)
+       select (select id from organizations where slug='drogueria-silsan'),'internal','R13 plan','external','R13 plan equipment',
+         'R13 benchmark','R13 plan','INTERNO','EXTERNO','R13 plan equipment' from generate_series(1,1200) returning id)
+       insert into r13_plan_ids select id from inserted;
+     insert into repair_events(organization_id,repair_id,event_type,from_status,to_status)
+       select r.organization_id,r.id,'UPDATED','received','received' from repairs r join r13_plan_ids p on p.id=r.id cross join generate_series(1,5);
+     analyze repairs; analyze repair_events;
+     create temporary table r13_plan_actor as select gen_random_uuid() id;
+     insert into auth.users(id,email) select id,id||'@example.invalid' from r13_plan_actor;
+     insert into auth.sessions(id,user_id,created_at,updated_at) select id,id,now(),now() from r13_plan_actor;
+     insert into organization_memberships(organization_id,user_id) select o.id,a.id from organizations o cross join r13_plan_actor a where o.slug='drogueria-silsan';
+     insert into user_roles(organization_id,user_id,role_code) select o.id,a.id,'ADMIN' from organizations o cross join r13_plan_actor a where o.slug='drogueria-silsan';
+     select set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',id,'session_id',id)::text,true) from r13_plan_actor;
+     set local role authenticated;
+     explain (analyze,buffers,format json) select id,technical_completion from repair_list
+       where organization_id=(select id from organizations where slug='drogueria-silsan') order by received_at desc,id desc limit 10 offset 10;
+     explain (analyze,buffers,format json) select count(*) from repair_list where organization_id=(select id from organizations where slug='drogueria-silsan');
+     rollback;`)
+   fs.writeFileSync(path.join(evidence,'technical-completion-plans.log'),plans)
+   if (process.argv.includes('--benchmark-technical-completion')) {
+     runLog.push({ technicalCompletionBenchmark: benchmarkTechnicalCompletion({ sql, backend, evidence }) })
+   }
   if (!evidenceOnly) {
     const tests = fs.readdirSync(path.join(backend, 'supabase/tests/database')).filter(n => process.argv.includes('--all-sql') || /^repairs?[_.].*\.sql$/.test(n) || n === 'authorization_permissions.test.sql')
       .filter(n => n.endsWith('.test.sql')).sort()
@@ -303,18 +361,22 @@ try {
     } else {
       playwrightCommand.push('tests/e2e/repairs.spec.ts')
     }
-    if (!nonRepairableOnly) run(process.execPath, playwrightCommand,
+    if (!nonRepairableOnly && !technicalCompletionOnly) run(process.execPath, playwrightCommand,
       { cwd: frontend, env, log: 'e2e.log' })
     // Both modes keep SILSAN exclusive until the strict operational preflight
     // has finished; only the accessory suite needs a second organization.
     await createForeignTenant()
-    if (!nonRepairableOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!nonRepairableOnly && !technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-accessories.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-accessories-results.json')},log:'e2e-accessory-multitenant.log'})
-    run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-non-repairable.spec.ts'],
-    {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-non-repairable-results.json')},log:'e2e-non-repairable.log'})
-    runLog.push({ e2e: 'passed', suite: nonRepairableOnly ? 'non-repairable only' : workflowE2e ? 'all workflow E2E, accessories and non-repairable' : 'repairs, accessories and non-repairable', api, web: ports.web })
+     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-non-repairable-results.json')},log:'e2e-non-repairable.log'})
+    if (!nonRepairableOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+      'accessory-e2e/repair-technical-completion.spec.ts'],
+    {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-technical-completion-results.json')},log:'e2e-technical-completion.log'})
+    runLog.push({ e2e: 'passed', suite: technicalCompletionOnly ? 'technical-completion only' : nonRepairableOnly ? 'non-repairable only'
+      : workflowE2e ? 'all workflow E2E, accessories, non-repairable and technical-completion' : 'repairs, accessories, non-repairable and technical-completion', api, web: ports.web })
   }
   }
   if (checksOnly || process.argv.includes('--checks')) {

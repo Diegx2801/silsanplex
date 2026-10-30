@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { esquemaAccesorioRecepcion } from './accesorios'
 import type { DecisionNoReparable } from './noReparable'
+import type { FinalizacionTecnica } from './finalizacionTecnica'
 
 export const estadosReparacion = [
   'received',
@@ -134,6 +135,9 @@ export interface ResultadoCatalogoReparacion<T> {
 }
 
 export interface Reparacion {
+  finalizacionTecnica?: FinalizacionTecnica | null
+  primeraFinalizacionTecnica?: FinalizacionTecnica | null
+  finalizacionesTecnicas?: FinalizacionTecnica[]
   decisionNoReparable?: DecisionNoReparable | null
   devueltaSinRepararEn?: string
   tipoSolicitante?: 'customer' | 'internal'

@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
+import { esquemaCambioEstadoPendiente } from '../modelo/finalizacionTecnica'
 import {
   crearConReintentoPersistente,
+  leerComandoPendiente,
+  ejecutarComandoConReintentoPersistente,
   consumirParteConReintentoPersistente,
   guardarCotizacionConReintentoPersistente,
   leerCotizacionPendiente,
@@ -82,6 +85,7 @@ export function useReparaciones(
   const ambitoCotizacion = (repairId: string, esRevision: boolean) =>
     `${ambitoCreacion}:${repairId}:quote:${esRevision ? 'revision' : 'save'}`
   const ambitoReserva = (repairId: string) => `${ambitoCreacion}:${repairId}:part-reservation`
+  const ambitoEstado = (repairId: string) => `${ambitoCreacion}:${repairId}:status`
   const ambitoConsumo = (repairId: string, partId: string) =>
     `${ambitoCreacion}:${repairId}:${partId}:part-consumption`
   const consulta = configuracion.consulta ?? consultaInicial
@@ -151,12 +155,14 @@ export function useReparaciones(
       estado,
       observacion,
       expectedLockVersion,
+      operationKey,
     }: {
       id: string
       estado: string
       observacion: string
       expectedLockVersion: number
-    }) => cambiarEstadoReparacion(organizationId, id, estado, observacion, expectedLockVersion),
+      operationKey: string
+    }) => cambiarEstadoReparacion(organizationId, id, estado, observacion, expectedLockVersion, operationKey),
     onSuccess: invalidar,
     onError: invalidarSiHayConflicto,
   })
@@ -328,6 +334,8 @@ export function useReparaciones(
     entregando: entregaMutation.isPending,
     cancelando: cancelacionMutation.isPending,
     recuperarCreacionPendiente: () => leerCreacionPendiente(ambitoCreacion)?.datos,
+    recuperarEstadoPendiente: (repairId: string) => leerComandoPendiente(ambitoEstado(repairId), esquemaCambioEstadoPendiente,
+      'No se pudo recuperar el cambio de estado pendiente. No se enviará otra intención.'),
     recuperarCotizacionPendiente: (repairId: string, esRevision: boolean) =>
       leerCotizacionPendiente(ambitoCotizacion(repairId, esRevision))
       ?? leerCotizacionPendiente(ambitoCotizacion(repairId, !esRevision)),
@@ -360,9 +368,11 @@ export function useReparaciones(
         return mensajeDeError(error, 'No se pudo asignar el técnico.')
       }
     },
-    cambiarEstado: async (id: string, estado: string, observacion: string, expectedLockVersion: number) => {
+    cambiarEstado: async (id: string, estado: string, observacion: string, expectedLockVersion: number, operationKey: string) => {
       try {
-        await estadoMutation.mutateAsync({ id, estado, observacion, expectedLockVersion })
+        await ejecutarComandoConReintentoPersistente(ambitoEstado(id), { estado, observacion, expectedLockVersion }, operationKey,
+          esquemaCambioEstadoPendiente, c => ({ estado: c.estado, observacion: c.observacion }),
+          (c, clave) => estadoMutation.mutateAsync({ id, ...c, operationKey: clave }))
         return undefined
       } catch (error) {
         return mensajeDeError(error, 'No se pudo cambiar el estado.')

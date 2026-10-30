@@ -1,5 +1,89 @@
 # Gestión de Reparaciones
 
+## Finalización técnica — R13
+
+La finalización técnica se registra al pasar válidamente de `testing` a
+`ready_for_delivery`, después de superar el gate técnico existente. Aprobar una
+prueba no finaliza por sí solo la reparación. La fecha canónica es `created_at`
+del mismo evento `STATUS_CHANGED`, generado por PostgreSQL; no existe una fecha
+editable ni una columna duplicada en `repairs`.
+
+La metadata versión 1 conserva ciclo, técnico asignado y nombres históricos
+disponibles del técnico y del actor. El actor se conserva en `actor_user_id` y el
+identificador en el propio `repair_events.id`; no se crea otro evento de cierre.
+La auditoría de cambio de estado conserva esa misma metadata.
+
+`repair_list`, con `security_invoker`, expone `technical_completion` y
+`first_technical_completion`. La proyección invoker `repair_technical_completions`
+respeta RLS y recorre eventos por ID, no por timestamps. Devuelve IDs bigint como
+texto. En listo/entregado conserva la finalización verificable; al volver a
+reparación retira su vigencia inmediatamente, aunque todavía no haya aumentado
+el contador del ciclo. La primera finalización verificable permanece histórica.
+Eventos sin cambio de estado no invalidan la finalización. Los históricos sin
+evidencia suficiente, con ciclos contradictorios o pruebas ambiguas devuelven
+NULL. No se reconstruyen fechas desde entrega, devolución, actualización o pruebas.
+Los responsables históricos desconocidos nunca se rellenan con el técnico actual.
+
+Una discontinuidad conocida queda marcada para toda reconstrucción legacy; entrar
+de nuevo a `testing` no borra esa marca. Una certificación explícita versión 1,
+generada por el servidor al superar el gate, puede anclar un ciclo posterior
+internamente continuo. No valida retrospectivamente el ciclo contradictorio.
+Para cierres legacy, una consulta por conjunto exige que todas las pruebas del
+ciclo estén aprobadas, tengan exactamente un evento coherente dentro del intervalo
+y no existan asociaciones huérfanas o duplicadas, incluso fuera del intervalo.
+No se vuelve a exigir que el técnico histórico permanezca activo hoy.
+
+La proyección filtra los eventos sin cambio de estado en SQL y no recorre las
+actualizaciones ajenas a R13. Si no existe una entrada a listo, termina sin
+reconstruir historia. Las pruebas se verifican por conjunto únicamente cuando se
+necesita reconstruir evidencia legacy; no hay una consulta individual por prueba.
+No se añaden índices ni cachés de fechas.
+
+La RPC anterior `change_repair_status(uuid,uuid,text,text,bigint)` sigue disponible
+sin cambios de firma. El frontend actualizado usa
+`change_repair_status_idempotent(jsonb)` para evitar ambigüedades de sobrecarga en
+PostgREST. Recibe únicamente organización, reparación, estado, observación,
+versión y `operation_key`. Revalida permisos/sesión antes del replay, reutiliza
+el ledger y bloquea el agregado: un replay exacto no cambia versión, evento ni
+fecha. Claves diferentes con versión obsoleta generan conflicto. La intención
+se persiste por organización/usuario/reparación antes del envío y se recupera
+con datos, versión y clave originales incluso después de un retrabajo.
+
+El detalle diferencia recepción, estimación calendario, finalización y entrega;
+los timestamps se muestran en `America/Lima`. El listado recibe la finalización
+en su consulta paginada, sin peticiones de historial por fila. El detalle selecciona
+solo `technical_completion_summary`: un objeto con vigente, primera e historial
+`verified_technical_completions` calculados una vez. Conserva su comprobación de
+versión al terminar la carga. La UI etiqueta como verificables únicamente las
+finalizaciones de este contrato SQL, incluidas las legacy; las transiciones
+rechazadas permanecen visibles como eventos ordinarios. Los campos anteriores
+de la vista siguen disponibles. Los conteos no evalúan las proyecciones.
+
+No reparable y devolución sin reparar no constituyen una reparación completada.
+R28 conserva decisión, fecha y responsables propios. Su reevaluación requiere
+nuevas pruebas y una nueva entrada válida a listo. La garantía sigue comenzando
+exclusivamente en `delivered_at`, nunca en la finalización técnica.
+
+La migración aditiva es `20261031010000_repair_technical_completion.sql`. El runner
+descartable ejecuta también las nuevas suites R13. Admite
+`--upgrade-technical-completion --sql-only` para aplicar R13 sobre el esquema
+anterior con historia real de finalización y comprobar que no se reescriben los
+eventos ni se inventan finalizaciones; `--technical-completion-only` ejecuta sus
+E2E. Conserva planes `EXPLAIN ANALYZE` con RLS sobre 1.200 órdenes / 6.000 eventos,
+dentro de una transacción que se revierte, y mantiene el aislamiento de las suites
+operativas, R06/R33 y R28.
+
+`npm run test:repairs:isolated -- --sql-only --benchmark-technical-completion`
+compara, con idénticos datos y RLS, la vista anterior a R13, una referencia congelada
+de R13 sin corregir y la proyección actual. Mide tres repeticiones de listado
+completo (10 filas/OFFSET 10), conteo y detalle con 5, 100 y 500 eventos por orden
+recorrida; también mide cierres reales con 500 actualizaciones previas, filtros y
+paginación sin OFFSET. Guarda los 104 planes con buffers y sus medianas. Comprueba
+igualdad de resultados en los datos válidos, cero reconstrucciones para conteos,
+una para el nuevo detalle y un máximo de página más OFFSET para el listado.
+La referencia de prueba se instala solo en una transacción descartable. Esta
+medición sintética no define un SLA ni modifica la autorización transversal.
+
 ## Alcance
 
 El módulo `Reparaciones` permite registrar órdenes de servicio y seguirlas desde

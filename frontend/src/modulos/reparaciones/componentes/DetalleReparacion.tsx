@@ -1,4 +1,6 @@
 import { ResultadosPruebas } from './ResultadosPruebas'
+import { FechasReparacion } from './FechasReparacion'
+import { fechaTecnica, type CambioEstadoPendiente } from '../modelo/finalizacionTecnica'
 import { AdjuntosReparacion } from './AdjuntosReparacion'
 import { AtencionComplementariaReparacion } from './AtencionComplementariaReparacion'
 import { AccesoriosReparacion } from './AccesoriosReparacion'
@@ -76,6 +78,7 @@ import {
 const formatoFecha = new Intl.DateTimeFormat('es-PE', {
   dateStyle: 'medium',
   timeStyle: 'short',
+  timeZone: 'America/Lima',
 })
 const formatoFechaDia = new Intl.DateTimeFormat('es-PE', {
   dateStyle: 'medium',
@@ -182,7 +185,7 @@ interface DetalleReparacionProps {
   alRestaurarFoco: () => void
   alEditar: () => void
   alAsignar: (reparacionId: string, tecnicoId: string, expectedLockVersion: number) => Promise<string | undefined>
-  alCambiarEstado: (reparacionId: string, estado: EstadoReparacion, observacion: string, expectedLockVersion: number) => Promise<string | undefined>
+  alCambiarEstado: (reparacionId: string, estado: EstadoReparacion, observacion: string, expectedLockVersion: number, operationKey: string) => Promise<string | undefined>
   alRegistrarDiagnostico: (reparacionId: string, datos: DatosDiagnostico, expectedLockVersion: number) => Promise<string | undefined>
   alRegistrarSolucion: (reparacionId: string, datos: DatosSolucionReparacion, expectedLockVersion: number) => Promise<string | undefined>
   alGuardarCotizacion: (reparacionId: string, datos: DatosCotizacion, enviar: boolean, operationKey: string, expectedLockVersion: number) => Promise<string | undefined>
@@ -196,6 +199,7 @@ interface DetalleReparacionProps {
   alEntregar: (reparacionId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
   alCancelar: (reparacionId: string, datos: DatosObservacionReparacion, expectedLockVersion: number) => Promise<string | undefined>
   recuperarCotizacionPendiente?: (reparacionId: string, esRevision: boolean) => CotizacionPendiente | null
+  recuperarEstadoPendiente?: (reparacionId: string) => CambioEstadoPendiente | null
   recuperarReservaPartePendiente?: (reparacionId: string) => ReservaPartePendiente | null
   recuperarConsumoPartePendiente?: (reparacionId: string, parteId: string) => ConsumoPartePendiente | null
 }
@@ -216,6 +220,7 @@ type TipoDialogoActivo =
   | 'cancelar'
 
 interface ContextoAccion {
+  estadoPendiente?: CambioEstadoPendiente | null
   tipo: TipoDialogoActivo
   reparacion: Reparacion
   cotizacion: CotizacionReparacion | null
@@ -281,6 +286,7 @@ export function DetalleReparacion({
   alRegistrarPrueba,
   alCancelar,
   recuperarCotizacionPendiente = () => null,
+  recuperarEstadoPendiente = () => null,
   recuperarReservaPartePendiente = () => null,
   recuperarConsumoPartePendiente = () => null,
 }: DetalleReparacionProps) {
@@ -356,6 +362,7 @@ export function DetalleReparacion({
     if (!detalle) return
     try {
       const contexto = crearContextoAccion(tipo, detalle)
+      if (tipo === 'estado') contexto.estadoPendiente = recuperarEstadoPendiente(detalle.reparacion.id)
       if (tipo === 'cotizacion') {
         contexto.cotizacionPendiente = recuperarCotizacionPendiente(
           detalle.reparacion.id,
@@ -371,6 +378,15 @@ export function DetalleReparacion({
         ? errorRecuperacion.message
         : 'No se pudo recuperar la operación pendiente.')
     }
+  }
+
+  const recuperarEstado = () => {
+    if (!detalle || !puedeCambiarEstado) return
+    try {
+      const pendiente = recuperarEstadoPendiente(detalle.reparacion.id)
+      if (!pendiente) { setMensaje('No hay un cambio de estado pendiente de confirmar en esta pestaña.'); return }
+      setAccion({ ...crearContextoAccion('estado', detalle), estadoPendiente: pendiente })
+    } catch (e) { setMensaje(e instanceof Error ? e.message : 'No se pudo recuperar el cambio pendiente.') }
   }
 
   const abrirParte = (tipo: 'consumo' | 'cancelarParte', parte: ParteReparacion) => {
@@ -430,6 +446,7 @@ export function DetalleReparacion({
               puedeEntregar={puedeEntregar}
               alEditar={alEditar}
               alAbrirDialogo={abrirDialogo}
+              alRecuperarEstado={recuperarEstado}
               alAbrirParte={abrirParte}
             />
           )}
@@ -443,8 +460,9 @@ export function DetalleReparacion({
           <DialogoCambioEstado
             abierto={accion.tipo === 'estado'}
             reparacion={accion.reparacion}
+            pendiente={accion.estadoPendiente}
             alCambiarApertura={cerrarDialogo}
-            alGuardar={(estado, observacion) => ejecutar(() => alCambiarEstado(accion.reparacion.id, estado, observacion, accion.reparacion.lockVersion), 'Estado actualizado.')}
+            alGuardar={(estado, observacion, clave) => ejecutar(() => alCambiarEstado(accion.reparacion.id, estado, observacion, accion.estadoPendiente?.expectedLockVersion ?? accion.reparacion.lockVersion, clave), 'Estado actualizado.')}
           />
           <DialogoAsignacion
             key={`asignacion-${accion.reparacion.tecnicoAsignadoId ?? 'sin-tecnico'}`}
@@ -568,6 +586,7 @@ export function DetalleReparacion({
 }
 
 interface DetalleContenidoProps {
+  alRecuperarEstado: () => void
   detalle: DatosDetalleReparacion
   productos: readonly OpcionProductoReparacion[]
   almacenes: readonly Almacen[]
@@ -700,6 +719,7 @@ function CotizacionesDetalle({
 }
 
 function DetalleContenido({
+  alRecuperarEstado,
   detalle,
   productos,
   almacenes,
@@ -794,6 +814,7 @@ function DetalleContenido({
            <span className="status-label" data-tone={tonosEstadoReparacion[reparacion.estado] === 'listo' ? 'listo' : tonosEstadoReparacion[reparacion.estado] === 'pendiente' || tonosEstadoReparacion[reparacion.estado] === 'espera' ? 'pendiente' : 'revision'}>{etiquetasEstadoReparacion[reparacion.estado]}</span>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
+          {puedeCambiarEstado ? <Button type="button" variant="ghost" onClick={alRecuperarEstado}>Recuperar cambio de estado pendiente</Button> : null}
           {editable ? <Button type="button" variant="outline" onClick={alEditar}><Pencil aria-hidden="true" /> Editar</Button> : null}
           {puedeAsignar && !estadoEsTerminal(reparacion.estado) && siguienteAccion?.tipo !== 'asignacion' ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('asignacion')}><UserRound aria-hidden="true" /> {reparacion.tecnicoAsignadoId ? 'Reasignar técnico' : 'Asignar técnico'}</Button> : null}
           {transiciones.length && siguienteAccion?.tipo !== 'estado' ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('estado')}><Wrench aria-hidden="true" /> Cambiar estado</Button> : null}
@@ -843,6 +864,7 @@ function DetalleContenido({
           <Dato etiqueta="Técnico asignado" valor={reparacion.tecnicoAsignadoId ? abreviarId(reparacion.tecnicoAsignadoId) : 'Pendiente de asignación'} />
           {reparacion.referenciaCliente ? <Dato etiqueta="Referencia del cliente" valor={reparacion.referenciaCliente} /> : null}
         </dl>
+        <FechasReparacion reparacion={reparacion} requiereNuevaValidacion={(reparacion.estado === 'in_repair' && detalle.cicloPruebasActual > 0) || (reparacion.estado === 'testing' && detalle.cicloPruebasActual > 1)} />
         <div className="mt-3 border-t pt-4"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Problema reportado</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{reparacion.problema}</p></div>
         {reparacion.notas ? <div className="mt-4 border-t pt-4"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Notas de recepción</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{reparacion.notas}</p></div> : null}
       </section>
@@ -886,6 +908,8 @@ function DetalleContenido({
       <AdjuntosReparacion reparacionId={reparacion.id} puedeAdjuntar={puedeEditar || puedeRealizarTecnica} />
       <details id="reparacion-seccion-historial" tabIndex={-1} className="px-5 py-6 outline-none sm:px-7">
         <summary className="cursor-pointer rounded-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Historial de la orden · {detalle.eventos.length} eventos</summary>
+        {reparacion.primeraFinalizacionTecnica ? <p className="mt-4 text-sm">Primera finalización histórica verificable: <time dateTime={reparacion.primeraFinalizacionTecnica.completed_at}>{fechaTecnica(reparacion.primeraFinalizacionTecnica.completed_at)}</time> · ciclo {reparacion.primeraFinalizacionTecnica.test_cycle_number} · evento {reparacion.primeraFinalizacionTecnica.event_id}</p> : <p className="mt-4 text-sm text-muted-foreground">Primera finalización histórica verificable: No registrada</p>}
+        {reparacion.finalizacionesTecnicas?.map(c => <p key={`completion-${c.event_id}`} className="mt-2 text-sm">Finalización técnica verificable · ciclo {c.test_cycle_number} · <time dateTime={c.completed_at}>{fechaTecnica(c.completed_at)}</time> · Confirmada por {c.actor_name || c.actor_user_id || 'No registrado'} · Técnico al finalizar: {c.assigned_technician_name || c.assigned_technician_id || 'No registrado'} · evento {c.event_id}</p>)}
       <section aria-labelledby="reparacion-linea-tiempo" className="pt-5">
          <div className="flex items-end justify-between gap-3"><div><h2 id="reparacion-linea-tiempo" className="flex items-center gap-2 font-semibold"><Clock3 aria-hidden="true" className="size-4 text-primary" /> Línea de tiempo</h2><p className="mt-1 text-sm text-muted-foreground">Registro inmutable de la orden</p></div><span className="font-mono text-xs text-muted-foreground">{detalle.eventos.length} EVENTOS</span></div>{detalle.eventos.length ? <ol className="mt-5 space-y-0 ps-2">{detalle.eventos.map((evento) => <li key={evento.id} className="relative border-s ps-5 pb-6 last:pb-0"><span className="absolute -start-1.5 top-1.5 size-3 rounded-full border-2 border-background bg-primary" /><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-medium">{etiquetaEvento(evento.tipo)}</p>{evento.estadoAnterior || evento.estadoNuevo ? <p className="mt-1 font-mono text-[0.68rem] text-muted-foreground uppercase">{evento.estadoAnterior ? etiquetasEstadoReparacion[evento.estadoAnterior as EstadoReparacion] ?? evento.estadoAnterior : 'Inicio'}{evento.estadoNuevo ? ` → ${etiquetasEstadoReparacion[evento.estadoNuevo as EstadoReparacion] ?? evento.estadoNuevo}` : ''}</p> : null}</div><time className="text-xs text-muted-foreground" dateTime={evento.creadoEn}>{formatoFecha.format(new Date(evento.creadoEn))}</time></div>{evento.observacion ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{evento.observacion}</p> : null}<DetalleEventoAccesorio evento={evento} /><DetalleEventoNoReparable evento={evento} eventos={detalle.eventos} /></li>)}</ol> : <p className="mt-5 text-sm text-muted-foreground">La actividad aparecerá aquí al avanzar la orden.</p>}</section>
       </details>
