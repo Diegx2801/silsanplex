@@ -23,6 +23,11 @@ CI_SPEC = importlib.util.spec_from_file_location(
     'sunat_phase2a_ci', Path(__file__).with_name('sunat_phase2a_ci.py'))
 ci = importlib.util.module_from_spec(CI_SPEC)
 CI_SPEC.loader.exec_module(ci)
+NORMAL_CI_SPEC = importlib.util.spec_from_file_location(
+    'sunat_phase2a_normal_ci', Path(__file__).with_name('sunat_phase2a_normal_ci.py'))
+normal_ci = importlib.util.module_from_spec(NORMAL_CI_SPEC)
+sys.modules[NORMAL_CI_SPEC.name] = normal_ci
+NORMAL_CI_SPEC.loader.exec_module(normal_ci)
 
 
 class TransactionalRunnerTests(unittest.TestCase):
@@ -366,6 +371,808 @@ class HostedCIGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'SQL failure'):
                 runner.ci_transactional(fake_ci)
             self.assertEqual(fake_ci.snapshot.call_count, 2)
+
+
+class NormalCIIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory(prefix='silsan-normal-ci-test-')
+        self.addCleanup(self.scratch.cleanup)
+        self.base = Path(self.scratch.name).resolve()
+        self.runner_temp = self.base / 'runner-temp'
+        self.runner_temp.mkdir()
+        self.runner_work = self.base / 'runner-work'
+        self.workspace = self.runner_work / 'silsanplex' / 'silsanplex'
+        self.workspace.mkdir(parents=True)
+        self.env = {
+            'CI': 'true', 'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux',
+            'RUNNER_ENVIRONMENT': 'github-hosted', 'GITHUB_REPOSITORY': 'Diegx2801/silsanplex',
+            'GITHUB_WORKFLOW': 'Flujos E2E',
+            'GITHUB_WORKFLOW_REF': 'Diegx2801/silsanplex/.github/workflows/inventory-e2e.yml@refs/pull/72/merge',
+            'GITHUB_JOB': 'sunat-python-normal', 'GITHUB_EVENT_NAME': 'pull_request',
+            'GITHUB_RUN_ID': '123456', 'GITHUB_RUN_ATTEMPT': '2',
+            'RUNNER_TEMP': str(self.runner_temp), 'GITHUB_WORKSPACE': str(self.workspace),
+        }
+        self.identity = {
+            'repository': 'Diegx2801/silsanplex',
+            'workflow_path': '.github/workflows/inventory-e2e.yml',
+            'workflow_name': 'Flujos E2E',
+            'workflow_ref': self.env['GITHUB_WORKFLOW_REF'],
+            'job': 'sunat-python-normal', 'run_id': '123456', 'attempt': '2',
+            'project_id': 'silsan-py-test-project',
+        }
+        self.project = self.identity['project_id']
+        self.directory = self.runner_temp / self.project
+
+    def fixed_target(self):
+        return self.project, self.directory, self.identity
+
+    @staticmethod
+    def empty_inventory():
+        return {'containers': [], 'volumes': [], 'networks': [
+            {'Name': name, 'Driver': driver}
+            for name, driver in normal_ci.SYSTEM_NETWORKS.items()]}
+
+    def owned_inventory(self, include_db=True, include_kong=True, include_volume=True,
+                        include_network=True):
+        labels = {'com.supabase.cli.project': self.project,
+                  'com.docker.compose.project': self.project}
+        network_name = f'supabase_network_{self.project}'
+        containers = []
+        if include_db:
+            containers.append({
+                'Name': f'/supabase_db_{self.project}',
+                'Config': {'Labels': labels}, 'State': {'Running': True},
+                'NetworkSettings': {'Ports': {'5432/tcp': [{'HostIp': '127.0.0.1',
+                                                             'HostPort': str(normal_ci.PORTS['db'])}]},
+                                    'Networks': {network_name: {}}},
+                'Mounts': [{'Type': 'volume', 'Name': f'supabase_db_{self.project}',
+                            'Destination': '/var/lib/postgresql/data'}],
+            })
+        if include_kong:
+            containers.append({
+                'Name': f'/supabase_kong_{self.project}',
+                'Config': {'Labels': labels}, 'State': {'Running': True},
+                'NetworkSettings': {'Ports': {'8000/tcp': [{'HostIp': '127.0.0.1',
+                                                             'HostPort': str(normal_ci.PORTS['api'])}]},
+                                    'Networks': {network_name: {}}},
+                'Mounts': [],
+            })
+        volumes = ([{'Name': f'supabase_db_{self.project}',
+                     'Labels': {'com.supabase.cli.project': self.project}}]
+                   if include_volume else [])
+        networks = [{'Name': name, 'Driver': driver}
+                    for name, driver in normal_ci.SYSTEM_NETWORKS.items()]
+        if include_network:
+            networks.append({'Name': network_name, 'Driver': 'bridge', 'Internal': True,
+                             'Options': dict(normal_ci.NETWORK_OPTIONS), 'Labels': labels})
+        return {'containers': containers, 'volumes': volumes, 'networks': networks}
+
+    def test_identity_uses_hosted_workflow_run_attempt_and_job(self):
+        with patch.dict(os.environ, self.env, clear=True), \
+                patch.object(normal_ci.sys, 'platform', 'linux'), \
+                patch.object(normal_ci, 'ROOT', self.workspace), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'RUNNER_WORK_ROOT', self.runner_work):
+            project, directory, identity = normal_ci.identity()
+            self.assertEqual(directory.parent, self.runner_temp)
+            self.assertEqual(directory.name, project)
+            self.assertEqual(identity['workflow_path'], normal_ci.WORKFLOW_PATH)
+            self.assertEqual(identity['job'], normal_ci.JOB_ID)
+            self.assertRegex(project, r'^silsan-py-123456-2-[a-f0-9]{10}$')
+            changed = {**self.env, 'GITHUB_RUN_ATTEMPT': '3'}
+            with patch.dict(os.environ, changed, clear=True):
+                other_project, _, _ = normal_ci.identity()
+            self.assertNotEqual(project, other_project)
+
+    def test_workflow_runs_normal_runner_and_gates_existing_required_fiscal_check(self):
+        workflow = (normal_ci.ROOT / '.github/workflows/inventory-e2e.yml').read_text(encoding='utf8')
+        normal_match = re.search(r'(?ms)^  sunat-python-normal:\n(.*?)(?=^  [a-z0-9-]+:|\Z)', workflow)
+        fiscal_match = re.search(r'(?ms)^  sunat-fiscal-integration:\n(.*?)(?=^  [a-z0-9-]+:|\Z)', workflow)
+        self.assertIsNotNone(normal_match)
+        self.assertIsNotNone(fiscal_match)
+        normal_job, fiscal_job = normal_match.group(1), fiscal_match.group(1)
+        for required in (
+            'name: SUNAT runner Python normal — concurrencia PostgreSQL aislada',
+            'runs-on: ubuntu-24.04',
+            'contents: read',
+            'persist-credentials: false',
+            'backend/scripts/sunat_phase2a_normal_ci.py prepare',
+            'backend/scripts/test-sunat-phase2a.py --ci-normal',
+            'if: always()',
+            'backend/scripts/sunat_phase2a_normal_ci.py stop',
+        ):
+            self.assertIn(required, normal_job)
+        self.assertIn('needs: sunat-python-normal', fiscal_job)
+        self.assertIn('if: ${{ always() }}', fiscal_job)
+        self.assertIn('needs.sunat-python-normal.result', fiscal_job)
+        self.assertIn('if [ "${{ needs.sunat-python-normal.result }}" != "success" ]', fiscal_job)
+        for existing_check in (
+            'name: Inventario y Reparaciones E2E',
+            'name: SUNAT Fase 2B — consulta fiscal aislada real',
+            'name: SUNAT 149 y 150 — compilación y rollback real',
+        ):
+            self.assertIn(existing_check, workflow)
+        cli_services = {
+            'gotrue', 'realtime', 'storage-api', 'imgproxy', 'kong', 'mailpit',
+            'postgrest', 'postgres-meta', 'studio', 'edge-runtime', 'logflare',
+            'vector', 'supavisor',
+        }
+        excluded_services = set(normal_ci.EXCLUDED_SERVICES.split(','))
+        self.assertTrue(excluded_services <= cli_services)
+        self.assertNotIn('kong', excluded_services)
+
+    def test_identity_rejects_unauthorized_hosts_workflows_and_destinations(self):
+        invalid = [
+            ('platform', None, 'HOSTED_LINUX_REQUIRED'),
+            ('environment', {'RUNNER_ENVIRONMENT': 'self-hosted'}, 'HOSTED_RUNNER_REQUIRED'),
+            ('repository', {'GITHUB_REPOSITORY': 'another/repository'}, 'REPOSITORY'),
+            ('workflow', {'GITHUB_WORKFLOW': 'Other workflow'}, 'WORKFLOW_NAME'),
+            ('workflow-ref', {'GITHUB_WORKFLOW_REF': 'other/repo/.github/workflows/x.yml@refs/heads/main'}, 'WORKFLOW_REF'),
+            ('job', {'GITHUB_JOB': 'playwright'}, 'JOB_ID'),
+            ('event', {'GITHUB_EVENT_NAME': 'workflow_dispatch'}, 'EVENT_REF'),
+            ('event-main-ref', {'GITHUB_EVENT_NAME': 'pull_request', 'GITHUB_WORKFLOW_REF': 'Diegx2801/silsanplex/.github/workflows/inventory-e2e.yml@refs/heads/main'}, 'EVENT_REF'),
+            ('event-pull-ref', {'GITHUB_EVENT_NAME': 'push', 'GITHUB_WORKFLOW_REF': 'Diegx2801/silsanplex/.github/workflows/inventory-e2e.yml@refs/pull/72/merge'}, 'EVENT_REF'),
+            ('run-id', {'GITHUB_RUN_ID': '../persistent'}, 'RUN_ID'),
+            ('attempt', {'GITHUB_RUN_ATTEMPT': '0'}, 'RUN_ID'),
+            ('temp-root', {'RUNNER_TEMP': '/tmp/untrusted'}, 'TEMP_ROOT'),
+            ('workspace', {'GITHUB_WORKSPACE': str(self.base)}, 'WORKSPACE'),
+            ('docker-host', {'DOCKER_HOST': 'tcp://remote:2375'}, 'DOCKER_OVERRIDE'),
+            ('docker-context', {'DOCKER_CONTEXT': 'remote'}, 'DOCKER_OVERRIDE'),
+            ('docker-config', {'DOCKER_CONFIG': '/tmp/remote-docker'}, 'DOCKER_OVERRIDE'),
+            ('docker-tls', {'DOCKER_TLS_VERIFY': '1'}, 'DOCKER_OVERRIDE'),
+            ('docker-api-version', {'DOCKER_API_VERSION': '1.42'}, 'DOCKER_OVERRIDE'),
+            ('database-url', {'DATABASE_URL': 'postgres://private'}, 'REMOTE_CREDENTIAL_OR_URL'),
+            ('service-role', {'SUPABASE_SERVICE_ROLE_KEY': 'private'}, 'REMOTE_CREDENTIAL_OR_URL'),
+            ('supabase-url', {'SUPABASE_URL': 'https://project.supabase.co'}, 'REMOTE_CREDENTIAL_OR_URL'),
+        ]
+        for name, change, expected in invalid:
+            with self.subTest(name=name):
+                values = dict(self.env)
+                if change:
+                    values.update(change)
+                platform = 'win32' if name == 'platform' else 'linux'
+                with patch.dict(os.environ, values, clear=True), \
+                        patch.object(normal_ci.sys, 'platform', platform), \
+                        patch.object(normal_ci, 'ROOT', self.workspace), \
+                        patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                        patch.object(normal_ci, 'RUNNER_WORK_ROOT', self.runner_work):
+                    with self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_' + expected):
+                        normal_ci.identity()
+
+    def test_prepare_rejects_identity_before_touching_docker_or_filesystem(self):
+        with patch.dict(os.environ, {}, clear=True), \
+                patch.object(normal_ci.sys, 'platform', 'linux'), \
+                patch.object(normal_ci, 'docker_guard') as docker_guard:
+            with self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_'):
+                normal_ci.prepare()
+        docker_guard.assert_not_called()
+        self.assertFalse(self.directory.exists())
+
+    def test_prepare_aborts_on_any_preexisting_docker_resource(self):
+        foreign = {'containers': [{'Name': '/supabase_db_backend'}], 'volumes': [],
+                   'networks': self.empty_inventory()['networks']}
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', return_value=foreign), \
+                patch.object(normal_ci, 'command') as command:
+            with self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_EXISTING_RESOURCES_CONTAINERS'):
+                normal_ci.prepare()
+        command.assert_not_called()
+        self.assertFalse(self.directory.exists())
+
+    def test_docker_guard_requires_default_context_and_local_socket(self):
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'command', side_effect=['default', json.dumps([
+                    {'Endpoints': {'docker': {'Host': 'tcp://remote.example:2375'}}}])]):
+            with self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_DOCKER_ENDPOINT'):
+                normal_ci.docker_guard()
+
+    def test_docker_network_mutations_are_limited_to_the_derived_loopback_network(self):
+        expected_create = ['docker', 'network', 'create', '--driver', 'bridge', '--internal',
+                           '--opt', 'com.docker.network.bridge.host_binding_ipv4=127.0.0.1',
+                           '--label', 'com.docker.compose.project=' + self.project,
+                           '--label', 'com.supabase.cli.project=' + self.project,
+                           normal_ci.network_name(self.project)]
+        expected_remove = ['docker', 'network', 'rm', normal_ci.network_name(self.project)]
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                    ['docker'], 0, stdout='network-id', stderr='')) as run:
+            self.assertEqual(normal_ci.command(expected_create), 'network-id')
+            self.assertEqual(normal_ci.command(expected_remove), 'network-id')
+            self.assertEqual(run.call_count, 2)
+
+    def test_docker_volume_removal_accepts_only_unique_names_bound_to_derived_project(self):
+        own_volume = f'supabase_db_{self.project}'
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                    ['docker'], 0, stdout=own_volume, stderr='')) as run:
+            self.assertEqual(normal_ci.command(['docker', 'volume', 'rm', own_volume]), own_volume)
+            storage_volume = f'supabase_storage_{self.project}'
+            self.assertEqual(normal_ci.command(['docker', 'volume', 'rm', storage_volume]), own_volume)
+            self.assertEqual(run.call_count, 2)
+            for args in (
+                ['docker', 'volume', 'rm', 'supabase_db_backend'],
+                ['docker', 'volume', 'rm', own_volume, own_volume],
+                ['docker', 'volume', 'rm'],
+                ['docker', 'volume', 'rm', f'supabase_unknown_{self.project}'],
+            ):
+                with self.subTest(args=args), self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_'):
+                    normal_ci.command(args)
+            self.assertEqual(run.call_count, 2)
+            unsafe = [
+                ['docker', 'network', 'create', '--driver', 'bridge', 'foreign'],
+                ['docker', 'network', 'rm', 'foreign'],
+                ['docker', 'network', 'create', '--driver', 'bridge', '--internal',
+                 '--opt', 'com.docker.network.bridge.host_binding_ipv4=0.0.0.0',
+                 '--label', 'com.docker.compose.project=' + self.project,
+                 '--label', 'com.supabase.cli.project=' + self.project,
+                 normal_ci.network_name(self.project)],
+            ]
+            for args in unsafe:
+                with self.subTest(args=args), self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_'):
+                    normal_ci.command(args)
+            self.assertEqual(run.call_count, 2)
+
+    def test_cli_version_must_match_the_backend_lockfile(self):
+        lock = json.loads((normal_ci.ROOT / 'backend/package-lock.json').read_text(encoding='utf8'))
+        expected = lock['packages']['node_modules/supabase']['version']
+        with patch.object(normal_ci, 'command', return_value=expected):
+            self.assertEqual(normal_ci.cli_version(), expected)
+        with patch.object(normal_ci, 'command', return_value='0.0.0'):
+            with self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_CLI_VERSION'):
+                normal_ci.cli_version()
+
+    def test_cli_version_command_uses_only_isolated_state_and_disables_telemetry(self):
+        self.directory.mkdir(mode=0o700)
+        home = self.directory / normal_ci.SUPABASE_HOME_NAME
+        home.mkdir(mode=0o700)
+        (home / normal_ci.DOCKER_CONFIG_NAME).mkdir(mode=0o700)
+        fake_cli = self.base / 'supabase'
+        ambient = {
+            'PATH': os.environ.get('PATH', ''), 'HOME': str(self.base),
+            'SUPABASE_PROJECT_ID': 'untrusted-project',
+            'SUPABASE_ACCESS_TOKEN': 'untrusted-token',
+            'SUPABASE_HOME': str(self.base / 'foreign-home'),
+            'DOCKER_AUTH_CONFIG': '{"auths":{"registry.invalid":{}}}',
+            'HTTP_PROXY': 'http://proxy.invalid:8080',
+        }
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'cli_path', return_value=str(fake_cli)), \
+                patch.dict(os.environ, ambient, clear=True), \
+                patch.object(normal_ci.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                    [str(fake_cli), '--version'], 0, stdout='2.115.0', stderr='')) as run:
+            self.assertEqual(normal_ci.command([str(fake_cli), '--version']), '2.115.0')
+
+        child_env = run.call_args.kwargs['env']
+        self.assertEqual(child_env['SUPABASE_HOME'], str(home))
+        self.assertEqual(child_env['HOME'], str(home))
+        self.assertEqual(child_env['DOCKER_CONFIG'], str(home / normal_ci.DOCKER_CONFIG_NAME))
+        self.assertEqual(child_env['SUPABASE_NO_UPDATE_NOTIFIER'], '1')
+        self.assertEqual(child_env['SUPABASE_TELEMETRY_DISABLED'], '1')
+        self.assertEqual(child_env['DO_NOT_TRACK'], '1')
+        self.assertNotIn('SUPABASE_PROJECT_ID', child_env)
+        self.assertNotIn('SUPABASE_ACCESS_TOKEN', child_env)
+        self.assertNotIn('DOCKER_AUTH_CONFIG', child_env)
+        self.assertNotEqual(child_env['SUPABASE_HOME'], ambient['SUPABASE_HOME'])
+        self.assertNotIn('HTTP_PROXY', child_env)
+
+    def test_docker_commands_use_ephemeral_empty_config_not_ambient_registry_credentials(self):
+        ambient = {
+            'PATH': os.environ.get('PATH', ''), 'HOME': str(self.base),
+            'DOCKER_AUTH_CONFIG': '{"auths":{"registry.invalid":{"auth":"private"}}}',
+            'HTTP_PROXY': 'http://proxy.invalid:8080',
+        }
+        captured = {}
+
+        def inspect_env(args, **kwargs):
+            captured.update(kwargs['env'])
+            config_dir = Path(kwargs['env']['DOCKER_CONFIG'])
+            self.assertTrue(config_dir.is_dir())
+            self.assertEqual(list(config_dir.iterdir()), [])
+            return subprocess.CompletedProcess(args, 0, stdout='default', stderr='')
+
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci.subprocess, 'run', side_effect=inspect_env), \
+                patch.dict(os.environ, ambient, clear=True):
+            self.assertEqual(normal_ci.command(['docker', 'context', 'show']), 'default')
+
+        self.assertEqual(set(captured), {'PATH', 'HOME', 'DOCKER_CONFIG'})
+        self.assertNotIn('DOCKER_AUTH_CONFIG', captured)
+        self.assertNotIn('HTTP_PROXY', captured)
+        self.assertFalse(Path(captured['DOCKER_CONFIG']).exists())
+
+    def test_runner_psql_client_uses_only_its_empty_docker_context(self):
+        with patch.dict(os.environ, {**self.env, 'PATH': 'hosted-path', 'GITHUB_TOKEN': 'unused-secret'}, clear=True), \
+                patch.object(normal_ci.sys, 'platform', 'linux'), \
+                patch.object(normal_ci, 'ROOT', self.workspace), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'RUNNER_WORK_ROOT', self.runner_work):
+            project, directory, identity_doc = normal_ci.identity()
+            directory.mkdir(mode=0o700)
+            (directory / 'owner.json').write_text(json.dumps(normal_ci.owner_doc(identity_doc)), encoding='utf8')
+            home = directory / normal_ci.SUPABASE_HOME_NAME
+            home.mkdir(mode=0o700)
+            docker_config = home / normal_ci.DOCKER_CONFIG_NAME
+            docker_config.mkdir(mode=0o700)
+            child_env = normal_ci.docker_client_env()
+        self.assertEqual(child_env['HOME'], str(home))
+        self.assertEqual(child_env['DOCKER_CONFIG'], str(docker_config))
+        self.assertNotIn('DOCKER_HOST', child_env)
+        self.assertNotIn('DOCKER_CONTEXT', child_env)
+        self.assertNotIn('GITHUB_TOKEN', child_env)
+        self.assertEqual(child_env['PATH'], 'hosted-path')
+        self.assertEqual(list(docker_config.iterdir()), [])
+
+    def test_prepare_installs_dynamic_manifest_in_exclusive_directory(self):
+        observed = []
+        inventories = [self.empty_inventory(), self.owned_inventory(include_db=False,
+                                                                      include_kong=False,
+                                                                      include_volume=False)]
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', side_effect=inventories), \
+                patch.object(normal_ci, 'assert_ports_free'), \
+                patch.object(normal_ci, 'cli_version', return_value='2.115.0'), \
+                patch.object(normal_ci, 'command', side_effect=lambda args, **kwargs: observed.append(args) or ''), \
+                patch.object(normal_ci, 'verify_target', return_value=f'supabase_db_{self.project}'), \
+                patch('builtins.print'):
+            normal_ci.prepare()
+        manifest = normal_ci.repository_manifest()
+        copied = sorted(path.name for path in (self.directory / 'supabase/migrations').glob('*.sql'))
+        self.assertEqual(copied, list(manifest))
+        self.assertEqual(json.loads((self.directory / 'manifest.json').read_text())['migrations'], manifest)
+        self.assertEqual([Path(args[0]).name for args in observed], ['docker', 'supabase', 'supabase'])
+        self.assertEqual([args[1] for args in observed], ['network', 'start', 'migration'])
+        self.assertEqual(observed[0][2:], ['create', '--driver', 'bridge', '--internal',
+                                           '--opt', 'com.docker.network.bridge.host_binding_ipv4=127.0.0.1',
+                                           '--label', 'com.docker.compose.project=' + self.project,
+                                           '--label', 'com.supabase.cli.project=' + self.project,
+                                           normal_ci.network_name(self.project)])
+        self.assertEqual(observed[1][observed[1].index('--network-id') + 1],
+                         normal_ci.network_name(self.project))
+        self.assertTrue(all(args[args.index('--workdir') + 1] == str(self.directory)
+                            for args in observed[1:]))
+        self.assertNotIn('reset', str(observed))
+        self.assertNotIn('--linked', str(observed))
+        local_temp = self.directory / 'supabase/.temp'
+        local_temp.mkdir()
+        (local_temp / 'cli-latest').write_text('2.115.0', encoding='utf8')
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp):
+            normal_ci.assert_directory(self.project, self.directory, self.identity)
+            (local_temp / 'project-ref').write_text('remote-project', encoding='utf8')
+            with self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_LINK_SEED_OR_FUNCTIONS'):
+                normal_ci.assert_directory(self.project, self.directory, self.identity)
+            (local_temp / 'project-ref').unlink()
+            (local_temp / 'cli-latest').unlink()
+        local_temp.rmdir()
+
+    def test_verify_target_requires_owned_db_api_ports_volumes_and_internal_binds(self):
+        valid = self.owned_inventory()
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'docker_guard'), patch.object(normal_ci, 'assert_directory'), \
+                patch.object(normal_ci, 'inventory', return_value=valid):
+            self.assertEqual(normal_ci.verify_target(), f'supabase_db_{self.project}')
+
+        cases = [
+            ('missing volume', self.owned_inventory(include_volume=False), 'PROJECT_VOLUMES_MISSING'),
+            ('missing network', self.owned_inventory(include_network=False), 'PROJECT_NETWORK_MISSING'),
+        ]
+        wrong_port = self.owned_inventory()
+        wrong_port['containers'][0]['NetworkSettings']['Ports']['5432/tcp'][0]['HostPort'] = '54322'
+        cases.append(('wrong port', wrong_port, 'CONTAINER_PORT_OR_BIND'))
+        non_loopback = self.owned_inventory()
+        non_loopback['containers'][0]['NetworkSettings']['Ports']['5432/tcp'][0]['HostIp'] = '0.0.0.0'
+        cases.append(('wildcard host binding', non_loopback, 'CONTAINER_PORT_OR_BIND'))
+        external = self.owned_inventory()
+        external['networks'][-1]['Internal'] = False
+        cases.append(('non-internal network', external, 'NETWORK_ISOLATION'))
+        wrong_option = self.owned_inventory()
+        wrong_option['networks'][-1]['Options']['com.docker.network.bridge.host_binding_ipv4'] = '0.0.0.0'
+        cases.append(('wildcard network binding', wrong_option, 'NETWORK_BIND_ADDRESS'))
+        foreign_network = self.owned_inventory()
+        foreign_network['networks'].append({'Name': 'foreign', 'Driver': 'bridge', 'Internal': False,
+                                            'Options': {}, 'Labels': {}})
+        cases.append(('additional network', foreign_network, 'NETWORK_OWNER'))
+        outside_bind = self.owned_inventory()
+        outside_bind['containers'][0]['Mounts'].append(
+            {'Type': 'bind', 'Source': str(self.base), 'Destination': '/foreign'})
+        cases.append(('outside bind', outside_bind, 'HOST_BIND_OUTSIDE_TEMP'))
+        for name, resources, expected in cases:
+            with self.subTest(name=name), \
+                    patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                    patch.object(normal_ci, 'docker_guard'), patch.object(normal_ci, 'assert_directory'), \
+                    patch.object(normal_ci, 'inventory', return_value=resources):
+                with self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_' + expected):
+                    normal_ci.verify_target()
+
+    def test_prepare_failure_before_start_removes_only_its_created_directory(self):
+        original_write = normal_ci.write_exclusive
+
+        def fail_on_config(path, content):
+            if Path(path).name == 'config.toml':
+                raise OSError('injected config write failure')
+            return original_write(path, content)
+
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', return_value=self.empty_inventory()), \
+                patch.object(normal_ci, 'assert_ports_free'), \
+                patch.object(normal_ci, 'write_exclusive', side_effect=fail_on_config), \
+                patch('builtins.print'):
+            with self.assertRaisesRegex(OSError, 'injected config'):
+                normal_ci.prepare()
+            self.assertFalse(self.directory.exists())
+            normal_ci.stop()
+        self.assertFalse(self.directory.exists())
+
+    def test_finalizer_removes_owned_partial_directory_when_no_docker_resources_exist(self):
+        self.directory.mkdir(mode=0o700)
+        (self.directory / 'owner.json').write_text(
+            json.dumps(normal_ci.owner_doc(self.identity), sort_keys=True), encoding='utf8')
+        (self.directory / 'supabase').mkdir()
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', return_value=self.empty_inventory()), \
+                patch('builtins.print'):
+            normal_ci.stop()
+        self.assertFalse(self.directory.exists())
+
+    def test_partial_start_failure_stops_only_its_owned_project_and_removes_it(self):
+        network_only = self.owned_inventory(include_db=False, include_kong=False, include_volume=False)
+        network_and_volume = self.owned_inventory(include_db=False, include_kong=False)
+        partial = self.owned_inventory(include_kong=False)
+        inventories = [self.empty_inventory(), network_only, partial, network_and_volume,
+                       network_only, self.empty_inventory()]
+        called = []
+
+        def command(args, **kwargs):
+            called.append(args)
+            if args[1] == 'start':
+                raise RuntimeError('injected partial start failure')
+            return ''
+
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', side_effect=inventories), \
+                patch.object(normal_ci, 'assert_ports_free'), \
+                patch.object(normal_ci, 'cli_version', return_value='2.115.0'), \
+                patch.object(normal_ci, 'command', side_effect=command), \
+                patch('builtins.print'):
+            with self.assertRaisesRegex(RuntimeError, 'injected partial start'):
+                normal_ci.prepare()
+            self.assertTrue(self.directory.exists())
+            normal_ci.stop()
+        stop_calls = [args for args in called if len(args) > 1 and args[1] == 'stop']
+        self.assertEqual(len(stop_calls), 1)
+        self.assertIn('--no-backup', stop_calls[0])
+        self.assertEqual(stop_calls[0][stop_calls[0].index('--workdir') + 1], str(self.directory))
+        self.assertEqual([args for args in called if args[1:3] == ['volume', 'rm']],
+                         [['docker', 'volume', 'rm', f'supabase_db_{self.project}']])
+        network_rm_calls = [args for args in called if args[1:3] == ['network', 'rm']]
+        self.assertEqual(network_rm_calls, [['docker', 'network', 'rm', normal_ci.network_name(self.project)]])
+        self.assertFalse(self.directory.exists())
+
+    def test_start_failure_before_containers_removes_only_the_owned_network(self):
+        network_only = self.owned_inventory(include_db=False, include_kong=False, include_volume=False)
+        inventories = [self.empty_inventory(), network_only, network_only, network_only, network_only,
+                       self.empty_inventory()]
+        called = []
+
+        def command(args, **kwargs):
+            called.append(args)
+            if args[1] == 'start':
+                raise RuntimeError('injected start failure before containers')
+            return ''
+
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', side_effect=inventories), \
+                patch.object(normal_ci, 'assert_ports_free'), \
+                patch.object(normal_ci, 'cli_version', return_value='2.115.0'), \
+                patch.object(normal_ci, 'command', side_effect=command), \
+                patch('builtins.print'):
+            with self.assertRaisesRegex(RuntimeError, 'injected start failure'):
+                normal_ci.prepare()
+            normal_ci.stop()
+
+        self.assertFalse(any(args[1] == 'stop' for args in called))
+        self.assertEqual([args for args in called if args[1:3] == ['network', 'rm']],
+                         [['docker', 'network', 'rm', normal_ci.network_name(self.project)]])
+        self.assertFalse(self.directory.exists())
+
+    def test_migration_failure_after_start_is_cleaned_by_finalizer(self):
+        network_only = self.owned_inventory(include_db=False, include_kong=False, include_volume=False)
+        network_and_volume = self.owned_inventory(include_db=False, include_kong=False)
+        inventories = [self.empty_inventory(), network_only, self.owned_inventory(),
+                       network_and_volume, network_only, self.empty_inventory()]
+        called = []
+
+        def command(args, **kwargs):
+            called.append(args)
+            if args[1:3] == ['migration', 'up']:
+                raise RuntimeError('injected migration failure')
+            return ''
+
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', side_effect=inventories), \
+                patch.object(normal_ci, 'assert_ports_free'), \
+                patch.object(normal_ci, 'cli_version', return_value='2.115.0'), \
+                patch.object(normal_ci, 'command', side_effect=command), \
+                patch.object(normal_ci, 'verify_target', return_value=f'supabase_db_{self.project}'), \
+                patch('builtins.print'):
+            with self.assertRaisesRegex(RuntimeError, 'injected migration failure'):
+                normal_ci.prepare()
+            normal_ci.stop()
+
+        self.assertEqual(len([args for args in called if args[1] == 'stop']), 1)
+        self.assertEqual([args for args in called if args[1:3] == ['volume', 'rm']],
+                         [['docker', 'volume', 'rm', f'supabase_db_{self.project}']])
+        self.assertEqual([args for args in called if args[1:3] == ['network', 'rm']],
+                         [['docker', 'network', 'rm', normal_ci.network_name(self.project)]])
+        self.assertFalse(self.directory.exists())
+
+    def test_cleanup_failure_keeps_owner_directory_and_does_not_claim_success(self):
+        inventories = [self.empty_inventory(),
+                       self.owned_inventory(include_db=False, include_kong=False, include_volume=False)]
+        called = []
+
+        def fail_stop(args, **kwargs):
+            called.append(args)
+            if args[1] == 'stop':
+                raise RuntimeError('injected stop failure')
+            return ''
+
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', side_effect=inventories), \
+                patch.object(normal_ci, 'assert_ports_free'), \
+                patch.object(normal_ci, 'cli_version', return_value='2.115.0'), \
+                patch.object(normal_ci, 'command', side_effect=fail_stop), \
+                patch.object(normal_ci, 'verify_target', return_value=f'supabase_db_{self.project}'), \
+                patch('builtins.print'):
+            normal_ci.prepare()
+            with patch.object(normal_ci, 'inventory', return_value=self.owned_inventory()):
+                with self.assertRaisesRegex(RuntimeError, 'injected stop failure'):
+                    normal_ci.stop()
+        self.assertFalse(any(args[1:3] == ['network', 'rm'] for args in called))
+        self.assertTrue(self.directory.exists())
+
+    def test_finalizer_removes_only_its_verified_network_after_cli_resources_are_gone(self):
+        inventories = [self.empty_inventory(),
+                       self.owned_inventory(include_db=False, include_kong=False, include_volume=False),
+                       self.owned_inventory(include_db=False, include_kong=False, include_volume=False),
+                       self.owned_inventory(include_db=False, include_kong=False, include_volume=False),
+                       self.owned_inventory(include_db=False, include_kong=False, include_volume=False),
+                       self.empty_inventory()]
+        called = []
+
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', side_effect=inventories), \
+                patch.object(normal_ci, 'assert_ports_free'), \
+                patch.object(normal_ci, 'cli_version', return_value='2.115.0'), \
+                patch.object(normal_ci, 'command', side_effect=lambda args, **kwargs: called.append(args) or ''), \
+                patch.object(normal_ci, 'verify_target', return_value=f'supabase_db_{self.project}'), \
+                patch('builtins.print'):
+            normal_ci.prepare()
+            normal_ci.stop()
+
+        self.assertEqual([args for args in called if args[1:3] == ['network', 'rm']],
+                         [['docker', 'network', 'rm', normal_ci.network_name(self.project)]])
+        self.assertFalse(self.directory.exists())
+
+    def test_finalizer_removes_residual_owned_volume_before_network_and_directory(self):
+        network_only = self.owned_inventory(include_db=False, include_kong=False, include_volume=False)
+        volume_only = self.owned_inventory(include_db=False, include_kong=False)
+        inventories = [self.empty_inventory(), network_only, volume_only, volume_only,
+                       network_only, self.empty_inventory()]
+        called = []
+
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', side_effect=inventories), \
+                patch.object(normal_ci, 'assert_ports_free'), \
+                patch.object(normal_ci, 'cli_version', return_value='2.115.0'), \
+                patch.object(normal_ci, 'command', side_effect=lambda args, **kwargs: called.append(args) or ''), \
+                patch.object(normal_ci, 'verify_target', return_value=f'supabase_db_{self.project}'), \
+                patch('builtins.print'):
+            normal_ci.prepare()
+            normal_ci.stop()
+
+        self.assertFalse(any(args[1] == 'stop' for args in called))
+        volume_rm_index = next(i for i, args in enumerate(called) if args[1:3] == ['volume', 'rm'])
+        network_rm_index = next(i for i, args in enumerate(called) if args[1:3] == ['network', 'rm'])
+        self.assertLess(volume_rm_index, network_rm_index)
+        self.assertEqual(called[volume_rm_index],
+                         ['docker', 'volume', 'rm', f'supabase_db_{self.project}'])
+        self.assertFalse(self.directory.exists())
+
+    def test_finalizer_preserves_directory_when_residual_volume_ownership_is_uncertain(self):
+        network_only = self.owned_inventory(include_db=False, include_kong=False, include_volume=False)
+        foreign_volume = self.owned_inventory(include_db=False, include_kong=False,
+                                              include_network=False)
+        foreign_volume['volumes'][0]['Labels']['com.supabase.cli.project'] = 'another-project'
+        inventories = [self.empty_inventory(), network_only, foreign_volume]
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', side_effect=inventories), \
+                patch.object(normal_ci, 'assert_ports_free'), \
+                patch.object(normal_ci, 'cli_version', return_value='2.115.0'), \
+                patch.object(normal_ci, 'command') as command, \
+                patch.object(normal_ci, 'verify_target', return_value=f'supabase_db_{self.project}'), \
+                patch('builtins.print'):
+            normal_ci.prepare()
+            command.reset_mock()
+            with self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_VOLUME_OWNER'):
+                normal_ci.stop()
+        command.assert_not_called()
+        self.assertTrue(self.directory.exists())
+
+    def test_finalizer_volume_removal_failure_preserves_network_and_owner_directory(self):
+        network_only = self.owned_inventory(include_db=False, include_kong=False, include_volume=False)
+        network_and_volume = self.owned_inventory(include_db=False, include_kong=False)
+        inventories = [self.empty_inventory(), network_only, network_and_volume, network_and_volume]
+        called = []
+
+        def fail_volume_removal(args, **kwargs):
+            called.append(args)
+            if args[1:3] == ['volume', 'rm']:
+                raise RuntimeError('injected volume removal failure')
+            return ''
+
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', side_effect=inventories), \
+                patch.object(normal_ci, 'assert_ports_free'), \
+                patch.object(normal_ci, 'cli_version', return_value='2.115.0'), \
+                patch.object(normal_ci, 'command', side_effect=fail_volume_removal), \
+                patch.object(normal_ci, 'verify_target', return_value=f'supabase_db_{self.project}'), \
+                patch('builtins.print'):
+            normal_ci.prepare()
+            with self.assertRaisesRegex(RuntimeError, 'injected volume removal'):
+                normal_ci.stop()
+
+        self.assertTrue(self.directory.exists())
+        self.assertFalse(any(args[1:3] == ['network', 'rm'] for args in called))
+        self.assertEqual([args for args in called if args[1:3] == ['volume', 'rm']],
+                         [['docker', 'volume', 'rm', f'supabase_db_{self.project}']])
+
+    def test_cleanup_refuses_ambiguous_resources_without_stopping_or_deleting(self):
+        foreign = {'containers': [{'Name': '/supabase_db_backend'}], 'volumes': [],
+                   'networks': self.empty_inventory()['networks']}
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
+                patch.object(normal_ci, 'docker_guard'), \
+                patch.object(normal_ci, 'inventory', return_value=self.empty_inventory()), \
+                patch.object(normal_ci, 'assert_ports_free'), \
+                patch.object(normal_ci, 'cli_version', return_value='2.115.0'), \
+                patch.object(normal_ci, 'command') as command, \
+                patch.object(normal_ci, 'verify_target', return_value=f'supabase_db_{self.project}'), \
+                patch('builtins.print'):
+            normal_ci.prepare()
+            command.reset_mock()
+            with patch.object(normal_ci, 'inventory', return_value=foreign):
+                with self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_CONTAINER_OWNER'):
+                    normal_ci.stop()
+            command.assert_not_called()
+        self.assertTrue(self.directory.exists())
+        # Test teardown owns this TemporaryDirectory; no recursive repository cleanup is used.
+
+    def test_supabase_commands_reject_reset_link_and_arbitrary_workdir(self):
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target):
+            for args in (
+                ['supabase', 'db', 'reset', '--workdir', str(self.directory)],
+                ['supabase', 'migration', 'up', '--linked', '--workdir', str(self.directory)],
+                ['supabase', 'migration', 'up', '--local', '--workdir', '/tmp/persistent'],
+                ['supabase', 'start', '--workdir', str(self.directory), '--exclude',
+                 normal_ci.EXCLUDED_SERVICES, '--network-id', 'foreign'],
+            ):
+                with self.subTest(args=args), self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_'):
+                    normal_ci.command(args)
+            for args in (['docker', 'rm', 'supabase_db_backend'],
+                         ['docker', 'network', 'rm', 'supabase_network_backend'],
+                         ['docker', 'network', 'create', '--driver', 'bridge', 'foreign']):
+                with self.subTest(args=args), self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_'):
+                    normal_ci.command(args)
+
+    def test_repository_manifest_is_complete_unique_and_hashed(self):
+        manifest = normal_ci.repository_manifest()
+        versions = [name.split('_')[0] for name in manifest]
+        files = sorted(path.name for path in (normal_ci.ROOT / 'backend/supabase/migrations').glob('*.sql'))
+        self.assertEqual(list(manifest), files)
+        self.assertEqual(versions, sorted(set(versions)))
+        self.assertTrue(all(re.fullmatch(r'[a-f0-9]{64}', digest) for digest in manifest.values()))
+
+
+class NormalRunnerCoverageTests(unittest.TestCase):
+    def test_declared_race_manifest_matches_all_real_runner_call_sites(self):
+        source = Path(runner.__file__).read_text(encoding='utf8')
+        actual = re.findall(r"\brace\('([^']+)'", source)
+        self.assertEqual(tuple(actual), runner.EXPECTED_RACES)
+        self.assertEqual(len(runner.EXPECTED_RACES), 11)
+
+    def test_ci_mode_rejects_sql_outside_verified_container(self):
+        safe_env = {'PATH': 'hosted-path', 'HOME': '/job/home', 'DOCKER_CONFIG': '/job/home/docker-config'}
+        with patch.object(runner, 'CI_CONTAINER', 'supabase_db_owned') as target, \
+                patch.object(runner, 'CI_RUNNER_ENV', safe_env), \
+                patch.object(runner.subprocess, 'run', return_value=SimpleNamespace(
+                    returncode=0, stderr='', stdout='')) as process:
+            with self.assertRaisesRegex(ValueError, 'CPE_TEST_CI_CONTAINER_TARGET'):
+                runner.run(['docker', 'exec', '-i', 'supabase_db_backend', 'psql'])
+            with self.assertRaisesRegex(ValueError, 'CPE_TEST_CI_CONTAINER_TARGET'):
+                runner.run(['docker', 'exec', '-i', target, '/bin/sh'])
+            process.assert_not_called()
+            runner.run(['docker', 'exec', '-i', target, 'psql'])
+            process.assert_called_once()
+            self.assertEqual(process.call_args.kwargs['env'], safe_env)
+
+    def test_ci_normal_fails_if_all_eleven_races_do_not_run(self):
+        fake_ci = SimpleNamespace(verify_target=unittest.mock.Mock(return_value='supabase_db_owned'),
+                                  docker_client_env=lambda: {'PATH': 'hosted-path',
+                                                             'DOCKER_CONFIG': '/job/home/docker-config'})
+        with patch.object(runner, 'verify_ci_normal'), \
+                patch.object(runner, 'fingerprints', side_effect=[{}, {}]), \
+                patch.object(runner, 'serial') as serial, patch.object(runner, 'races'), \
+                patch.object(runner, 'CHECKS', []), patch.object(runner, 'RACES_COMPLETED', []), \
+                patch('builtins.print'):
+            with self.assertRaisesRegex(AssertionError, 'CPE_TEST_CI_RACE_COVERAGE'):
+                runner.ci_normal(fake_ci)
+        serial.assert_called_once_with(False)
+        self.assertIsNone(runner.CI_CONTAINER)
+        self.assertIsNone(runner.CI_RUNNER_ENV)
+
+    def test_ci_normal_succeeds_only_after_all_races_and_revalidates_target(self):
+        fake_ci = SimpleNamespace(verify_target=unittest.mock.Mock(return_value='supabase_db_owned'),
+                                  docker_client_env=lambda: {'PATH': 'hosted-path',
+                                                             'DOCKER_CONFIG': '/job/home/docker-config'})
+
+        def run_races():
+            runner.RACES_COMPLETED.extend(runner.EXPECTED_RACES)
+
+        with patch.object(runner, 'verify_ci_normal'), \
+                patch.object(runner, 'fingerprints', side_effect=[{}, {}]), \
+                patch.object(runner, 'serial') as serial, patch.object(runner, 'races', side_effect=run_races), \
+                patch.object(runner, 'CHECKS', []), patch.object(runner, 'RACES_COMPLETED', []), \
+                patch('builtins.print'):
+            runner.ci_normal(fake_ci)
+        serial.assert_called_once_with(False)
+        self.assertEqual(fake_ci.verify_target.call_count, 2)
+        self.assertIsNone(runner.CI_CONTAINER)
+        self.assertIsNone(runner.CI_RUNNER_ENV)
+
+    def test_ci_normal_accepts_only_exact_full_repository_history(self):
+        files = runner.repository_versions()
+        valid_results = [SimpleNamespace(stdout='postgres|5432'),
+                         SimpleNamespace(stdout='pg_advisory_xact_lock DISTRIBUTION_OUTCOME_OPERATION_KEY_REUSED'),
+                         SimpleNamespace(stdout='CPE-PE-DOM-PEN-1')]
+        with patch.object(runner, 'sql', side_effect=valid_results), \
+                patch.object(runner, 'read', return_value=files), patch.object(runner, 'check') as check:
+            runner.verify_ci_normal()
+        check.assert_called_once_with('CI full migration history and fiscal contracts', True,
+                                      {'migrations': len(files), 'database': 'postgres|5432'})
+
+        for wrong in (files[:-1], files + ['20990101000000'], list(reversed(files))):
+            with self.subTest(history_length=len(wrong)), \
+                    patch.object(runner, 'sql', return_value=SimpleNamespace(stdout='postgres|5432')), \
+                    patch.object(runner, 'read', return_value=wrong):
+                with self.assertRaisesRegex(ValueError, 'CPE_TEST_MIGRATION_HISTORY_MISMATCH'):
+                    runner.verify_ci_normal()
 
 
 if __name__ == '__main__':

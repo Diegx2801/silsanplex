@@ -14,7 +14,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  sunat-python-normal:
+    name: SUNAT runner Python normal — concurrencia PostgreSQL aislada
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    permissions:
+      contents: read
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Instalar CLI Supabase versionada
+        run: npm ci
+        working-directory: backend
+
+      - name: Validar guards y contrato del runner sin conexiones
+        run: python -B -m unittest discover -s backend/scripts -p test_sunat_phase2a_runner.py -v
+
+      - name: Crear proyecto fiscal efímero propio
+        run: python -B backend/scripts/sunat_phase2a_normal_ci.py prepare
+
+      - name: Ejecutar runner fiscal Python completo y 11 carreras PostgreSQL
+        run: python -B backend/scripts/test-sunat-phase2a.py --ci-normal
+
+      - name: Detener y verificar únicamente recursos del job
+        if: always()
+        run: python -B backend/scripts/sunat_phase2a_normal_ci.py stop
+
   sunat-fiscal-integration:
+    # Gate the existing required fiscal check on the full Python concurrency runner.
+    needs: sunat-python-normal
+    if: ${{ always() }}
     name: SUNAT Fase 2B — consulta fiscal aislada real
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -22,6 +67,13 @@ jobs:
       contents: read
 
     steps:
+      - name: Exigir aprobación del runner Python normal
+        run: |
+          if [ "${{ needs.sunat-python-normal.result }}" != "success" ]; then
+            echo "El runner fiscal Python normal no terminó correctamente."
+            exit 1
+          fi
+
       - name: Descargar repositorio
         uses: actions/checkout@v5
 
