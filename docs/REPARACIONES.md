@@ -1,5 +1,191 @@
 # Gestión de Reparaciones
 
+## Costo real de reparación — R14
+
+La sección **Costo real de reparación** registra evidencia de costos incurridos:
+repuestos consumidos, servicios externos, mano de obra interna y otros gastos.
+Las cotizaciones son precios comerciales y no se usan para calcular este costo.
+Tampoco se deducen salarios, horas trabajadas ni tarifas desde tiempos calendario,
+diagnósticos, soluciones o pruebas.
+
+### Estados, alcance y corte
+
+- **Costo no determinado** (`undetermined`): todavía no hay fuentes acreditadas
+  ni una revisión vigente que justifique un costo cero. Ausencia de registros no
+  significa gratuidad.
+- **Costo parcial registrado** (`partial`): existen importes acreditados, pero
+  falta revisar el alcance, quedan fuentes pendientes, hay bases incompatibles o
+  cambiaron las fuentes después de la revisión anterior.
+- **Costo real confirmado** (`confirmed`): un usuario con capacidad específica
+  confirmó expresamente el alcance completo de las fuentes económicas a una
+  fecha de corte generada por PostgreSQL después de bloquear la reparación.
+  No significa pago, factura, cierre contable ni finalización técnica.
+
+La revisión declara cada categoría como completa cuando tiene fuentes, o no
+aplicable cuando no las tiene, con evidencia y justificación obligatorias. Un
+alcance sin fuentes solo puede confirmar cero mediante esa declaración explícita
+y una moneda indicada. Los importes manuales cero también requieren evidencia;
+un cero heredado de inventario permanece desconocido.
+
+La huella de revisión contiene las identidades y revisiones económicas, no el
+estado, técnico asignado ni eventos técnicos. Un nuevo consumo, servicio, gasto,
+corrección o anulación invalida la revisión anterior. Añadir y luego anular una
+línea tampoco reactiva una revisión antigua. Una reasignación, prueba, entrega o
+cambio técnico sin cambios económicos conserva la revisión. El historial mantiene
+la evidencia y el corte anteriores, aunque ya no estén vigentes.
+
+### Monedas, bases y precisión
+
+PEN y USD permanecen separados: no hay moneda por defecto para inventario,
+conversión automática ni uso del tipo de cambio de una cotización. Una revisión
+completa multimoneda puede estar confirmada con subtotales PEN/USD y `total: null`;
+la interfaz indica que no existe un total único.
+
+Las bases son incluye impuestos (`tax_inclusive`), sin impuestos
+(`tax_exclusive`) y no afecto/no aplica (`not_applicable`). Esta última es neutral
+si se combina con una sola base gravada. Dos bases gravadas diferentes se muestran
+por separado y bloquean la confirmación; no se inventa un impuesto para conciliarlas.
+
+Los registros manuales admiten importes finitos no negativos de hasta dos
+decimales y 16 dígitos enteros; el costo externo conserva su límite existente de
+12 dígitos enteros. PostgreSQL usa `numeric`, conserva el producto exacto de la
+cantidad consumida por su costo unitario histórico (hasta siete decimales) y suma
+sin redondeo intermedio. Los importes de las RPC viajan como texto decimal. La
+interfaz no los suma con `Number`: muestra todos los decimales significativos,
+con un mínimo de dos, sin recortar fracciones ni perder enteros grandes.
+
+### Procedencia y originales
+
+Una reserva sin consumo no es costo incurrido. Cada consumo se cuenta una vez,
+contrastando su snapshot con el movimiento de salida y la cantidad acumulada del
+repuesto. Los consumos de una reserva posteriormente cancelada permanecen. Una
+inconsistencia del ledger o del movimiento bloquea la confirmación.
+
+La acreditación de inventario admite únicamente buckets de entradas de compra
+físicas, documentadas y homogéneas en moneda/base, con recepción, orden, producto,
+almacén, ubicación, cantidad y costo coherentes. Reconstruye el promedio anterior
+al consumo usando `ledger_sequence` y exige que coincida con el costo guardado.
+Conserva el corte y las referencias de procedencia. Entradas posteriores no
+revaloran consumos ya acreditados. FEFO sigue siendo selección física, no un
+costeo monetario FIFO.
+
+La acreditación comprueba ambos padres de la línea recibida: su línea de orden
+debe pertenecer a la misma orden que la cabecera de recepción. Contrasta producto,
+costo y snapshot tributario de la línea, almacén de cabecera/partida, ubicación,
+estado de entrada disponible, lote y vencimiento. La comparación de lote conserva
+la regla canónica del bucket (`lower(coalesce(lot,''))`), sin equiparar lotes o
+vencimientos distintos. Un documento contradictorio expone el pendiente
+`inventory_documentary_inconsistent`: la verificación se rechaza atómicamente y
+el alcance completo queda bloqueado, conservando los subtotales independientes.
+
+Stock manual, transferencias, reclasificaciones, mezclas de monedas/bases, ceros
+históricos y entradas sin respaldo suficiente no se certifican con una etiqueta
+de moneda y una nota: permanecen pendientes. No se reescribe ni se revalora el
+inventario para resolverlos. La migración no hace backfill económico especulativo.
+
+Un servicio externo pendiente de retorno tiene costo desconocido. El costo
+declarado al retorno conserva importe y moneda originales y requiere evidencia
+de su base económica. **Revisar costo externo** agrega una revisión trazable y
+reemplaza el importe efectivo, sin sumar el original otra vez ni cambiar proveedor,
+custodia o fechas. No registra un pago. Mano de obra y otros gastos se corrigen o
+anulan mediante sucesores inmutables con motivo, respaldo, actor y fecha servidor.
+Las referencias deben identificar documento y línea: una referencia ya registrada
+no se puede usar para crear otra raíz económica en la misma reparación.
+
+Los costos pueden registrarse o corregirse después de entrega, cancelación,
+garantía o devolución sin reparar. Esas acciones económicas no reabren la orden
+ni cambian R28, finalización técnica R13, entrega física o fechas de garantía.
+Una devolución sin reparar tampoco implica costo cero.
+
+### Capacidades y contrato técnico
+
+`REPAIRS_VIEW` permite consultar costos de las reparaciones autorizadas, con RLS
+por organización. Las lecturas económicas no conceden acceso general a inventario
+o compras. Se mantienen los alcances existentes de consulta del módulo.
+
+Las capacidades **Registrar y revisar costos reales**
+(`REPAIRS_MANAGE_ACTUAL_COST`) y **Confirmar revisión de costos reales**
+(`REPAIRS_CONFIRM_ACTUAL_COST`) son distintas; ambas dependen de `REPAIRS_VIEW`.
+Gestionar no concede confirmar y confirmar no concede gestionar. No forman parte
+de “Operar reparaciones” ni se asignan automáticamente a ADMIN, VENTAS o técnicos.
+El propietario debe asignarlas expresamente desde Administración de usuarios a
+una cuenta operativa. El mecanismo administrativo existente no permite permisos
+directos en cuentas ADMIN; se conserva esa regla.
+
+La migración aditiva `20261101010000_repair_actual_cost.sql` crea
+`repair_actual_cost_entries`, `repair_cost_source_reviews` y
+`repair_actual_cost_reviews`, append-only y sin DML directo para clientes. Las RPC
+de escritura son `record_repair_actual_cost`, `revise_repair_actual_cost`,
+`verify_repair_cost_source`, `revise_repair_external_cost` y
+`confirm_repair_actual_cost_review`. Exigen usuario autenticado, sesión activa,
+organización, permiso efectivo, clave de operación y versión del agregado; el
+actor y las fechas de registro se resuelven en servidor. `incurred_on` es una fecha
+declarada no futura en Lima, distinta de la fecha servidor de registro.
+
+Los comandos revalidan sesión/capacidad antes del replay; una repetición exacta
+conserva resultado, versión, eventos y auditoría. La intención se guarda por
+organización/usuario/reparación en `sessionStorage` antes de enviar, y se recupera
+con datos, clave y versión originales tras recarga o pérdida de respuesta. Un
+fallo de almacenamiento impide el envío. `service_role` no ejecuta estas RPC ni
+existe una excepción por rol ADMIN.
+
+`get_repair_actual_cost_summaries` recibe hasta 50 IDs de la página visible en
+una sola llamada. `get_repair_actual_cost_detail` obtiene resumen, fuentes e
+historial bajo una única sentencia/snapshot, con páginas de hasta 50 registros
+(25 en la UI). El resumen agrega todas las fuentes en SQL, incluso más de 100;
+no suma páginas cargadas en el navegador. Ambas secciones son de carga diferida.
+Los conteos y la consulta paginada técnica existentes no evalúan el costo real.
+
+### Validación aislada R14
+
+Desde `frontend`, el runner conserva copias, credenciales y evidencia en un
+proyecto Supabase descartable exclusivo, separado de las bases de trabajo:
+
+```sh
+npm run test:repairs:isolated -- --sql-only --upgrade-actual-cost
+npm run test:repairs:isolated -- --actual-cost-only
+npm run test:repairs:isolated -- --all-sql --workflow-e2e
+npm run test:repairs:isolated -- --checks-only --edge-checks
+npm run test:repairs:isolated -- --sql-only --benchmark-actual-cost
+```
+
+La actualización prepara consumos y servicios reales en el esquema previo y
+comprueba que fuentes, eventos, R13 y garantía no cambian ni se infieren costos.
+Después de guardar esa evidencia, restablece únicamente su proyecto descartable
+para ejecutar las suites de regresión con su baseline de inventario vacío.
+Las suites R14 cubren precisión, procedencia, permisos/RLS, replay, correcciones,
+alcance y carreras entre edición, confirmación, consumo y retorno de proveedor.
+El runner normal incorpora los E2E R14 junto a Reparaciones, R06/R33, R28 y R13.
+
+El E2E administrativo utiliza la pantalla real de Usuarios y la Edge Function
+`admin-users` del proyecto descartable: configura una cuenta operativa sin
+capacidades económicas, comprueba rechazos y después registra/confirma con los
+permisos asignados. Su CORS permite únicamente el origen del navegador aislado;
+no modifica las reglas CORS publicadas ni asigna permisos por nombre de rol.
+
+El historial económico muestra importe/moneda y base anteriores y de cada revisión,
+valor efectivo vigente o registro histórico, y las cuatro categorías de alcance
+de cada confirmación con su vigencia. Los datos se obtienen de las mismas tablas
+inmutables, incluyendo predecesores situados fuera de la página actual.
+
+El benchmark guarda 48 planes `EXPLAIN (ANALYZE, BUFFERS)` con sesión/RLS, tres
+repeticiones, 1.200 órdenes, páginas de 10 con OFFSET 10 y 5/100/500 fuentes
+económicas, además de 500 eventos técnicos de ruido. Contrasta conteo y página
+técnica, página con resumen batch y detalle económico. Comprueba importes exactos,
+equivalencia ante ruido y rollback sin organización sintética residual. No define
+un SLA de producción ni cambia los contratos de autorización.
+
+La ampliación mixta conserva esos 48 planes y agrega 60: página con las columnas
+reales del frontend, página + batch, detalle, conteo y RPC real de verificación de
+procedencia, tres repeticiones. En un segundo rollback hay 1.200 órdenes, 20 con
+cinco fuentes reales y una orden de la página visible que crece a 100/500 fuentes,
+aproximadamente un cuarto de cada categoría. Compras, recepciones, reservas,
+consumos y servicios se crean por sus RPC; se incluyen stock sin origen monetario
+acreditado, servicios sin base verificada y revisiones sucesivas. Una referencia
+decimal independiente comprueba subtotales e IDs solicitados. El escenario con
+ruido agrega 500 eventos técnicos por orden activa y exige equivalencia económica.
+Se guardan 108 planes, medianas y composición de fixtures; no se deduce un SLA.
+
 ## Finalización técnica — R13
 
 La finalización técnica se registra al pasar válidamente de `testing` a

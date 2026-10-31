@@ -42,6 +42,8 @@ export const operationalAccessModules: readonly AccessModule[] = [
   ] },
   { code: 'repairs', label: 'Reparaciones', description: 'Órdenes y operación técnica.', group: 'process', capabilities: [
     { code: 'repairs-view', label: 'Consultar', permissionCodes: [PERMISSIONS.REPAIRS_VIEW] },
+    { code: 'repairs-actual-cost-manage', label: 'Registrar y revisar costos reales', permissionCodes: [PERMISSIONS.REPAIRS_MANAGE_ACTUAL_COST] },
+    { code: 'repairs-actual-cost-confirm', label: 'Confirmar revisión económica', permissionCodes: [PERMISSIONS.REPAIRS_CONFIRM_ACTUAL_COST] },
     { code: 'repairs-operate', label: 'Operar', permissionCodes: [
       PERMISSIONS.REPAIRS_CREATE, PERMISSIONS.REPAIRS_UPDATE, PERMISSIONS.REPAIRS_ASSIGN,
       PERMISSIONS.REPAIRS_CHANGE_STATUS, PERMISSIONS.REPAIRS_APPROVE_QUOTE,
@@ -94,6 +96,8 @@ const permissionDependencies: Partial<Record<PermissionCode, readonly Permission
   [PERMISSIONS.REPAIRS_USE_PARTS]: [PERMISSIONS.REPAIRS_VIEW, PERMISSIONS.INVENTORY_VIEW],
   [PERMISSIONS.REPAIRS_DELIVER]: [PERMISSIONS.REPAIRS_VIEW],
   [PERMISSIONS.REPAIRS_PERFORM_TECHNICAL]: [PERMISSIONS.REPAIRS_VIEW],
+  [PERMISSIONS.REPAIRS_MANAGE_ACTUAL_COST]: [PERMISSIONS.REPAIRS_VIEW],
+  [PERMISSIONS.REPAIRS_CONFIRM_ACTUAL_COST]: [PERMISSIONS.REPAIRS_VIEW],
 }
 
 export function expandPermissionDependencies(codes: readonly PermissionCode[]) {

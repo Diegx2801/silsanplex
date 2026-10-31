@@ -21,3 +21,13 @@ describe('capacidad de exportar inventario', () => {
       .toEqual(expect.arrayContaining([PERMISSIONS.INVENTORY_EXPORT, PERMISSIONS.INVENTORY_VIEW]))
   })
 })
+
+describe('capacidades económicas R14 explícitas',()=>{
+ it('no se incluyen en Operar reparaciones y gestionar no concede confirmar',()=>{
+  const operar=operationalAccessModules.find(m=>m.code==='repairs')?.capabilities.find(c=>c.code==='repairs-operate')?.permissionCodes
+  expect(operar).not.toContain(PERMISSIONS.REPAIRS_MANAGE_ACTUAL_COST)
+  expect(operar).not.toContain(PERMISSIONS.REPAIRS_CONFIRM_ACTUAL_COST)
+  expect(expandPermissionDependencies([PERMISSIONS.REPAIRS_MANAGE_ACTUAL_COST])).toEqual([PERMISSIONS.REPAIRS_MANAGE_ACTUAL_COST,PERMISSIONS.REPAIRS_VIEW])
+  expect(expandPermissionDependencies([PERMISSIONS.REPAIRS_CONFIRM_ACTUAL_COST])).toEqual([PERMISSIONS.REPAIRS_CONFIRM_ACTUAL_COST,PERMISSIONS.REPAIRS_VIEW])
+ })
+})
