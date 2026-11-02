@@ -86,6 +86,7 @@ select results_eq(
     values
       ('ADMIN'::text, 'REPAIRS_APPROVE_QUOTE'::text),
       ('ADMIN'::text, 'REPAIRS_ASSIGN'::text),
+      ('ADMIN'::text, 'REPAIRS_AUTHORIZE_ACCESSORY_EXCEPTION'::text),
       ('ADMIN'::text, 'REPAIRS_CHANGE_STATUS'::text),
       ('ADMIN'::text, 'REPAIRS_CREATE'::text),
       ('ADMIN'::text, 'REPAIRS_DELIVER'::text),

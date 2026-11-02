@@ -14,6 +14,7 @@
     "test:e2e:typecheck": "tsc --project tsconfig.e2e.json",
     "test:e2e:prepare": "npm --prefix ../backend run e2e:prepare",
     "test:e2e:local": "npm run test:e2e",
+    "test:repairs:isolated": "node scripts/test-repair-accessories.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

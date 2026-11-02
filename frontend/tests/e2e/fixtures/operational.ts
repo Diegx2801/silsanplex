@@ -12,23 +12,37 @@ function env(name: string) {
 }
 
 /** Fail closed before login/setup if the local ports belong to another project. */
-export type OperationalTarget = 'persistent-silsan' | 'isolated-phase2c2'
+export type OperationalTarget = 'persistent-silsan' | 'isolated-phase2c2' | 'isolated-accessory-ci'
+
+export function operationalTargetFromEnvironment(): OperationalTarget {
+  if (process.env.SILSAN_ACCESSORY_CI_E2E === '1') return 'isolated-accessory-ci'
+  return process.env.SILSAN_PHASE2C2_E2E === '1' ? 'isolated-phase2c2' : 'persistent-silsan'
+}
 
 export function assertSilsanInstance(target: OperationalTarget = 'persistent-silsan') {
   const isolatedPhase2c2 = target === 'isolated-phase2c2'
+  const isolatedAccessoryCi = target === 'isolated-accessory-ci'
+  const isolated = isolatedPhase2c2 || isolatedAccessoryCi
   if (isolatedPhase2c2 && env('SILSAN_PHASE2C2_E2E') !== '1') {
     throw new Error('La instancia 2C-2 solo se admite con SILSAN_PHASE2C2_E2E=1.')
   }
+  if (isolatedAccessoryCi && env('SILSAN_ACCESSORY_CI_E2E') !== '1') {
+    throw new Error('La instancia E2E desechable solo se admite con SILSAN_ACCESSORY_CI_E2E=1.')
+  }
 
   const url = new URL(env('VITE_SUPABASE_URL'))
-  const projectId = isolatedPhase2c2 ? 'silsanplexp2c2' : 'backend'
-  const apiPort = isolatedPhase2c2 ? '58121' : '54321'
-  const databasePort = isolatedPhase2c2 ? '58122' : '54322'
+  const projectId = isolatedPhase2c2 ? 'silsanplexp2c2' : isolatedAccessoryCi ? env('E2E_ACCESSORY_PROJECT') : 'backend'
+  const apiPort = isolatedPhase2c2 ? '58121' : isolatedAccessoryCi ? new URL(env('E2E_ACCESSORY_API_URL')).port : '54321'
+  const databasePort = isolatedPhase2c2 ? '58122' : isolatedAccessoryCi ? env('E2E_ACCESSORY_DB_PORT') : '54322'
+  if (isolatedAccessoryCi && !/^silsanacc[0-9a-f]{10}$/.test(projectId)) {
+    throw new Error('El proyecto E2E desechable no tiene un identificador permitido.')
+  }
   if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(url.hostname) || url.port !== apiPort) {
     throw new Error(`El escenario operativo ${target} requiere Supabase local en localhost:${apiPort}.`)
   }
   const expectedDirectory = isolatedPhase2c2
     ? resolve(env('E2E_PHASE2C2_WORKDIR'))
+    : isolatedAccessoryCi ? resolve(env('E2E_ACCESSORY_WORKDIR'))
     : resolve(import.meta.dirname, '../../../../backend')
   const databaseContainerName = `supabase_db_${projectId}`
   if (isolatedPhase2c2) {
@@ -47,6 +61,23 @@ export function assertSilsanInstance(target: OperationalTarget = 'persistent-sil
       throw new Error('El volumen de PostgreSQL no está etiquetado para SILSAN 2C-2.')
     }
   }
+  if (isolatedAccessoryCi) {
+    if (!expectedDirectory.includes('silsan-accessories-') || !expectedDirectory.endsWith('backend')) {
+      throw new Error('El backend no corresponde a un proyecto accesorio temporal autorizado.')
+    }
+    const config = readFileSync(resolve(expectedDirectory, 'supabase', 'config.toml'), 'utf8')
+    if (!config.includes(`project_id = "${projectId}"`)
+      || !new RegExp(`^\\[api\\][\\s\\S]*?^port = ${apiPort}$`, 'm').test(config)
+      || !new RegExp(`^\\[db\\][\\s\\S]*?^port = ${databasePort}$`, 'm').test(config)) {
+      throw new Error('La configuración local no coincide con el proyecto operativo desechable.')
+    }
+    const [volume] = JSON.parse(execFileSync('docker', ['volume', 'inspect', `supabase_db_${projectId}`], { encoding: 'utf8' })) as Array<{
+      Name: string; Labels: Record<string, string>
+    }>
+    if (volume?.Name !== `supabase_db_${projectId}` || volume.Labels['com.supabase.cli.project'] !== projectId) {
+      throw new Error('El volumen PostgreSQL no pertenece al proyecto operativo desechable.')
+    }
+  }
   for (const [name, port, hostPort] of [
     [databaseContainerName, '5432/tcp', databasePort],
     [`supabase_kong_${projectId}`, '8000/tcp', apiPort],
@@ -60,13 +91,15 @@ export function assertSilsanInstance(target: OperationalTarget = 'persistent-sil
     if (!container?.State.Running || container.Config.Labels['com.supabase.cli.project'] !== projectId
        || (container.Config.Labels['com.supabase.cli.workdir']
          ? resolve(container.Config.Labels['com.supabase.cli.workdir']) !== expectedDirectory
-         : !isolatedPhase2c2)
+          : !isolated)
       || !container.NetworkSettings.Ports[port]?.some((binding) => binding.HostPort === hostPort)) {
       throw new Error(`La identidad o los puertos de ${name} no corresponden a SILSAN.`)
     }
-    if (isolatedPhase2c2 && name === databaseContainerName
-      && !container.Mounts?.some((mount) => mount.Type === 'volume' && mount.Name === 'supabase_db_silsanplexp2c2')) {
-      throw new Error('La base 2C-2 no utiliza el volumen aislado esperado.')
+    if (isolated && name === databaseContainerName) {
+      const expectedVolume = `supabase_db_${projectId}`
+      if (!container.Mounts?.some((mount) => mount.Type === 'volume' && mount.Name === expectedVolume)) {
+        throw new Error('La base aislada no utiliza el volumen esperado.')
+      }
     }
   }
 
@@ -118,22 +151,27 @@ export async function mutate(page: Page, rpc: string, action: () => Promise<unkn
 
 export async function operationalFixture(page: Page, target: OperationalTarget = 'persistent-silsan') {
   const organizationId = assertSilsanInstance(target)
-  if (target === 'isolated-phase2c2') {
+  if (target !== 'persistent-silsan') {
+    const isolatedApi = target === 'isolated-phase2c2' ? 'http://127.0.0.1:58121' : env('E2E_ACCESSORY_API_URL')
+    const isolatedWeb = target === 'isolated-phase2c2' ? 'http://127.0.0.1:5173' : env('E2E_ACCESSORY_WEB_URL')
     await page.route('**/*', async (route) => {
       const url = new URL(route.request().url())
       if (['54321', '54322'].includes(url.port)
-        || ((url.pathname.startsWith('/auth/v1/') || url.pathname.startsWith('/rest/v1/'))
-          && url.origin !== 'http://127.0.0.1:58121')) {
+        || ((url.pathname.startsWith('/auth/v1/') || url.pathname.startsWith('/rest/v1/') || url.pathname.startsWith('/functions/v1/') || url.pathname.startsWith('/storage/v1/'))
+          && url.origin !== isolatedApi)
+        || (/^https?:$/.test(url.protocol) && ![isolatedWeb, isolatedApi].includes(url.origin))) {
         await route.abort('blockedbyclient')
         throw new Error(`Destino Supabase prohibido: ${url.origin}`)
       }
       await route.fallback()
     })
+    await contextWebsocketGuard(page, isolatedWeb)
   }
   await page.goto('/iniciar-sesion')
-  if (target === 'isolated-phase2c2') {
+  if (target !== 'persistent-silsan') {
     const clientModule = await page.request.get('/src/lib/supabase.ts')
-    expect(await clientModule.text()).toContain('http://127.0.0.1:58121')
+    expect(await clientModule.text()).toContain(target === 'isolated-phase2c2' ? 'http://127.0.0.1:58121' : env('E2E_ACCESSORY_API_URL'))
+    expect(await clientModule.text()).not.toContain('http://127.0.0.1:54321')
   }
   await page.getByLabel('Correo').fill(env('E2E_ADMIN_EMAIL'))
   await page.getByLabel('Contraseña').fill(env('E2E_ADMIN_PASSWORD'))
@@ -182,6 +220,14 @@ export async function operationalFixture(page: Page, target: OperationalTarget =
     supplierId: supplier.id as string, customerId, warehouseId, locationId: location.id as string,
     lot: `LOT-${reference}`, expiration: expiration.toISOString().slice(0, 10),
     documentNumber: String(randomInt(10000000, 99999999)) }
+}
+
+async function contextWebsocketGuard(page: Page, allowedWeb: string) {
+  await page.context().routeWebSocket(/.*/, (socket) => {
+    const address = new URL(socket.url())
+    if (address.origin === allowedWeb.replace('http:', 'ws:')) socket.connectToServer()
+    else socket.close()
+  })
 }
 
 export type OperationalFixture = Awaited<ReturnType<typeof operationalFixture>>

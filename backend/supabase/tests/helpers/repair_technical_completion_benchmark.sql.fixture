@@ -1,0 +1,84 @@
+-- Frozen pre-correction R13 projection (audit hash f23ddba7... of the original
+-- The .fixture extension keeps Supabase/pg_prove SQL discovery from executing it.
+-- migration). Test-only reference, installed ONLY inside the disposable benchmark
+-- transaction and rolled back. Never part of an application migration.
+create schema r13_benchmark;
+grant usage on schema r13_benchmark to authenticated;
+create function r13_benchmark.unoptimized(org uuid,repair uuid)
+returns table(technical_completion jsonb,first_technical_completion jsonb)
+language plpgsql stable security invoker rows 1 set search_path='' as $$
+declare r public.repairs%rowtype; e public.repair_events%rowtype; state text; cycle integer;
+  candidate jsonb; entry_cycle integer; passed boolean:=false; failed boolean:=false; ambiguous boolean:=false;
+  result_passed boolean; result_cycle integer; certificate boolean; contiguous boolean; seen_tests text[]:=array[]::text[];
+begin
+  select * into r from public.repairs where organization_id=org and id=repair;
+  if not found then return; end if;
+  for e in select * from public.repair_events where organization_id=org and repair_id=repair order by id loop
+    if e.event_type='TEST_COMPLETED' and e.from_status='testing' and e.to_status='testing' and entry_cycle is not null then
+      select t.passed,t.test_cycle_number into result_passed,result_cycle from public.repair_tests t
+        where t.organization_id=org and t.repair_id=repair and t.id::text=e.metadata->>'test_id';
+      if not found or result_cycle is distinct from entry_cycle
+        or e.metadata->'test_cycle_number' is distinct from to_jsonb(entry_cycle)
+        or e.metadata->'passed' is distinct from to_jsonb(result_passed)
+        or e.metadata->>'test_id'=any(seen_tests) then ambiguous:=true;
+      elsif result_passed then passed:=true; else failed:=true; end if;
+      seen_tests:=array_append(seen_tests,e.metadata->>'test_id');
+    end if;
+    if e.to_status is null or e.from_status is not distinct from e.to_status then continue; end if;
+    contiguous:=state is null or state is not distinct from e.from_status;
+    if not contiguous then candidate:=null; entry_cycle:=null; ambiguous:=true; end if;
+    if e.event_type='STATUS_CHANGED' and e.to_status='testing' then
+      entry_cycle:=case when jsonb_typeof(e.metadata->'test_cycle_number')='number' and e.metadata->>'test_cycle_number' ~ '^[1-9][0-9]{0,8}$'
+        then (e.metadata->>'test_cycle_number')::integer end;
+      passed:=false; failed:=false; ambiguous:=false; seen_tests:=array[]::text[];
+      candidate:=null;
+    elsif e.event_type='STATUS_CHANGED' and e.from_status='testing' and e.to_status='ready_for_delivery' then
+      certificate:=e.metadata->'technical_completion_version'='1'::jsonb;
+      cycle:=case when certificate and e.metadata->>'test_cycle_number' ~ '^[1-9][0-9]{0,8}$'
+        then (e.metadata->>'test_cycle_number')::integer else entry_cycle end;
+      if contiguous and cycle is not null and
+        ((certificate and not failed and not ambiguous and (entry_cycle is null or entry_cycle=cycle)
+          and e.metadata->'test_cycle_number'=to_jsonb(cycle)
+          and e.metadata ?& array['assigned_technician_id','assigned_technician_name','actor_name']
+          and jsonb_typeof(e.metadata->'assigned_technician_name') in ('string','null')
+          and jsonb_typeof(e.metadata->'actor_name') in ('string','null')
+          and e.metadata->>'assigned_technician_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+          or (not (e.metadata ? 'technical_completion_version') and passed and not failed and not ambiguous
+            and (not (e.metadata ? 'test_cycle_number') or e.metadata->'test_cycle_number'=to_jsonb(entry_cycle)))) then
+        candidate:=jsonb_build_object('event_id',e.id::text,'completed_at',e.created_at,'test_cycle_number',cycle,
+          'actor_user_id',e.actor_user_id,'actor_name',case when certificate then e.metadata->'actor_name' end,
+          'assigned_technician_id',case when certificate then e.metadata->'assigned_technician_id' end,
+          'assigned_technician_name',case when certificate then e.metadata->'assigned_technician_name' end);
+        if first_technical_completion is null then first_technical_completion:=candidate; end if;
+      else candidate:=null; end if;
+    elsif not (e.event_type='DELIVERED' and e.from_status='ready_for_delivery' and e.to_status='delivered' and contiguous) then
+      candidate:=null; entry_cycle:=null;
+    end if;
+    state:=e.to_status;
+  end loop;
+  if r.status in ('ready_for_delivery','delivered') and state=r.status
+    and (candidate->>'test_cycle_number')::integer=r.current_test_cycle_number then technical_completion:=candidate; end if;
+  return next;
+end $$;
+grant execute on function r13_benchmark.unoptimized(uuid,uuid) to authenticated;
+
+-- Exact pre-R13 repair_list shape, including R28/custody, with invoker RLS.
+create view r13_benchmark.baseline with (security_invoker=true) as
+select r.id,r.organization_id,r.repair_code,r.customer_id,r.product_id,r.serial_number,r.received_at,
+  r.estimated_delivery_date,r.delivered_at,r.status,r.priority,r.problem_description,r.diagnosis,r.applied_solution,
+  r.notes,r.customer_reference,r.sale_document_id,r.warranty_reference,r.assigned_technician_id,
+  r.customer_name_snapshot,r.customer_document_snapshot,r.product_code_snapshot,r.product_description_snapshot,
+  r.created_by,r.updated_by,r.created_at,r.updated_at,r.serial_control_snapshot,r.lock_version,
+  r.requester_type,r.requesting_area,r.equipment_type,r.external_equipment_description,
+  exists(select 1 from public.repair_external_services s where s.organization_id=r.organization_id and s.repair_id=r.id and s.returned_at is null) as external_service_pending,
+  r.non_repairable_decision_event_id::text as non_repairable_decision_id,r.returned_unrepaired_at,
+  (select e.metadata || jsonb_build_object('id',e.id::text,'decided_at',e.created_at,'confirmed_by',e.actor_user_id)
+    from public.repair_events e where e.organization_id=r.organization_id and e.repair_id=r.id
+      and e.id=r.non_repairable_decision_event_id) as non_repairable_decision
+from public.repairs r;
+create view r13_benchmark.before_fix with (security_invoker=true) as
+select b.*,
+  (select c.technical_completion from r13_benchmark.unoptimized(b.organization_id,b.id) c) technical_completion,
+  (select c.first_technical_completion from r13_benchmark.unoptimized(b.organization_id,b.id) c) first_technical_completion
+from r13_benchmark.baseline b;
+grant select on r13_benchmark.baseline,r13_benchmark.before_fix to authenticated;

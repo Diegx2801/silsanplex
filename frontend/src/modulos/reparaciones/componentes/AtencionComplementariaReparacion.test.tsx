@@ -66,6 +66,15 @@ describe('Servicio externo y garantía: permisos y claridad', () => {
     expect(screen.queryByRole('button', { name: /Editar garantía|Configurar garantía/ })).not.toBeInTheDocument()
   })
 
+  it('conserva una promesa anterior sin mostrar cobertura iniciada por devolver sin reparar', async () => {
+    service.listar.mockResolvedValue({ servicios: [], garantia: { warranty_days: 90, coverage: 'Promesa anterior', starts_at: null, ends_at: null } })
+    show('returned_unrepaired')
+    open()
+    expect(await screen.findByText(/No iniciada por este resultado/)).toHaveTextContent('Promesa anterior')
+    expect(screen.queryByRole('button', { name: /Editar garantía|Configurar garantía/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Inicio:/)).not.toBeInTheDocument()
+  })
+
   it('recupera el retorno pendiente con sus datos, clave y versión originales', async () => {
     const pending = { tipo: 'receive_repair_external_service', datos: { external_service_id: 'external', cost_amount: '120.50', currency: 'PEN' }, expectedLockVersion: 4, clave: 'bc900000-0000-4000-8000-000000000001' }
     service.recuperar.mockReturnValue(pending)

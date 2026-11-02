@@ -26,6 +26,7 @@ import {
   listarOpcionesUbicacionesReparacion,
   listarReparacionesPaginadas,
   obtenerDetalleReparacion,
+  obtenerResumenReparaciones,
   obtenerOpcionAlmacenReparacion,
   obtenerOpcionClienteReparacion,
   obtenerOpcionProductoReparacion,
@@ -51,6 +52,7 @@ function crearCadena(respuestaActual: () => RespuestaSupabase) {
   const cadena = {
     select: vi.fn(),
     eq: vi.fn(),
+    neq: vi.fn(),
     or: vi.fn(),
     order: vi.fn(),
     range: vi.fn(),
@@ -65,6 +67,7 @@ function crearCadena(respuestaActual: () => RespuestaSupabase) {
 
   cadena.select.mockReturnValue(cadena)
   cadena.eq.mockReturnValue(cadena)
+  cadena.neq.mockReturnValue(cadena)
   cadena.or.mockReturnValue(cadena)
   cadena.order.mockReturnValue(cadena)
   cadena.range.mockReturnValue(cadena)
@@ -137,6 +140,41 @@ describe('reparacionesService', () => {
     supabaseMock.from.mockReset()
     supabaseMock.from.mockReturnValue(cadena)
     supabaseMock.rpc.mockReset()
+  })
+
+  it('excluye devueltas sin reparar del resumen de abiertas sin excluir pendientes de devolución', async () => {
+    await obtenerResumenReparaciones('org-1')
+    expect(cadena.neq).toHaveBeenCalledWith('status', 'returned_unrepaired')
+    expect(cadena.neq).not.toHaveBeenCalledWith('status', 'non_repairable')
+    expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
+  })
+
+  it('mapea la evidencia R13 del listado sin pedir el historial por cada fila', async () => {
+    const evidence = { event_id: '9007199254740993', completed_at: '2026-11-01T12:00:00Z', test_cycle_number: 1,
+      actor_user_id: null, actor_name: null, assigned_technician_id: null, assigned_technician_name: null }
+    respuesta = { data: [{ ...crearFilaReparacion(7), technical_completion: evidence }], error: null, count: 1 }
+    const result = await listarReparacionesPaginadas('org-1', { busqueda: '', estado: 'todos', prioridad: 'todas', pagina: 1, tamanioPagina: 10 })
+    expect(result.elementos[0].finalizacionTecnica).toEqual(evidence)
+    expect(result.elementos[0].primeraFinalizacionTecnica).toBeNull()
+    expect(supabaseMock.from).toHaveBeenCalledTimes(1)
+    expect(supabaseMock.from).toHaveBeenCalledWith('repair_list')
+  })
+
+  it('usa RPC especializada inequívoca con clave y conserva RPC anterior sin clave', async () => {
+    supabaseMock.rpc.mockResolvedValue({ data: null, error: null })
+    const clave = crypto.randomUUID()
+    await cambiarEstadoReparacion('org-1', 'repair-1', 'ready_for_delivery', 'Validado', 7, clave)
+    expect(supabaseMock.rpc).toHaveBeenLastCalledWith('change_repair_status_idempotent', { payload: {
+      organization_id: 'org-1', repair_id: 'repair-1', status: 'ready_for_delivery', observation: 'Validado', expected_lock_version: 7, operation_key: clave,
+    } })
+    await cambiarEstadoReparacion('org-1', 'repair-1', 'testing', '', 8)
+    expect(supabaseMock.rpc).toHaveBeenLastCalledWith('change_repair_status', expect.objectContaining({ requested_expected_lock_version: 8 }))
+  })
+
+  it('filtra devueltas sin reparar en servidor con conteo exacto', async () => {
+    await listarReparacionesPaginadas('org-1', { busqueda: '', estado: 'returned_unrepaired', prioridad: 'todas', pagina: 1, tamanioPagina: 10 })
+    expect(cadena.eq).toHaveBeenCalledWith('status', 'returned_unrepaired')
+    expect(cadena.select).toHaveBeenCalledWith(expect.stringContaining('returned_unrepaired_at'), { count: 'exact' })
   })
 
   it('consulta la vista de lista con organización, filtros y rango server-side', async () => {
@@ -574,6 +612,22 @@ describe('reparacionesService', () => {
     expect(ordenConsultas.filter((tabla) => tabla === 'repair_quotes')).toHaveLength(2)
   })
 
+  it('consulta un solo resumen canónico para vigente, primera e historial en el detalle', async () => {
+    const evidencia = { event_id: '9007199254740993', completed_at: '2026-11-01T05:00:00Z', test_cycle_number: 2,
+      actor_user_id: null, actor_name: null, assigned_technician_id: null, assigned_technician_name: null }
+    const raiz = crearCadena(() => ({ data: { ...crearFilaReparacion(7), technical_completion_summary: {
+      technical_completion: evidencia, first_technical_completion: evidencia, verified_technical_completions: [evidencia],
+    } }, error: null }))
+    supabaseMock.from.mockImplementation((tabla: string) => tabla === 'repair_list' ? raiz : crearCadena(() => tabla === 'repairs'
+      ? { data: { lock_version: 7, current_test_cycle_number: 2 }, error: null } : { data: [], error: null, count: 0 }))
+    const detalle = await obtenerDetalleReparacion('org-1', 'repair-1')
+    expect(detalle.reparacion.finalizacionesTecnicas).toEqual([evidencia])
+    expect(detalle.reparacion.finalizacionTecnica).toEqual(evidencia)
+    expect(raiz.select).toHaveBeenCalledTimes(1)
+    expect(raiz.select.mock.calls[0][0]).toContain(',technical_completion_summary')
+    expect(raiz.select.mock.calls[0][0]).not.toContain(',first_technical_completion')
+  })
+
   it('recorre más de 1000 filas de cada historial y carga líneas solo para la cotización vigente', async () => {
     const cantidad = 1001
     const fecha = '2026-09-06T12:00:00Z'
@@ -599,7 +653,7 @@ describe('reparacionesService', () => {
       created_by: null, created_at: fecha,
     }))
     const eventos = Array.from({ length: cantidad }, (_, indice) => ({
-      id: indice + 1, organization_id: 'org-1', repair_id: 'repair-1',
+      id: indice === cantidad - 1 ? '9007199254740993' : indice + 1, organization_id: 'org-1', repair_id: 'repair-1',
       event_type: 'UPDATED', from_status: 'received', to_status: 'received',
       actor_user_id: null, observation: `Evento ${indice}`, metadata: {}, created_at: fecha,
     }))
@@ -665,6 +719,9 @@ describe('reparacionesService', () => {
     expect(detalle.partes[0].consumos.at(-1)?.id).toBe('consumption-1000')
     expect(detalle.pruebas).toHaveLength(cantidad)
     expect(detalle.eventos).toHaveLength(cantidad)
+    expect(detalle.eventos.at(-1)?.id).toBe('9007199254740993')
+    expect(cadenasPorTabla.get('repair_events')?.[0].select)
+      .toHaveBeenCalledWith(expect.stringContaining('id::text'), { count: 'exact' })
     expect(detalle.cotizacionActiva?.lineas).toHaveLength(cantidad)
     expect(detalle.cotizacionActiva?.lineas.at(-1)?.id).toBe('line-1000')
     expect(detalle.cotizaciones.find((item) => item.id === 'quote-history')?.lineas).toEqual([])

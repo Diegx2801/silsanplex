@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
 import { useTecnicosReparacion } from '@/modulos/reparaciones/estado/useReparacionOpciones'
+import type { CambioEstadoPendiente } from '../modelo/finalizacionTecnica'
 import {
   esquemaCambioEstado,
   esquemaObservacionReparacion,
@@ -99,16 +100,19 @@ interface DialogoCambioEstadoProps {
   abierto: boolean
   reparacion: Reparacion
   alCambiarApertura: (abierto: boolean) => void
-  alGuardar: (estado: EstadoReparacion, observacion: string) => Promise<string | undefined>
+  pendiente?: CambioEstadoPendiente | null
+  alGuardar: (estado: EstadoReparacion, observacion: string, operationKey: string) => Promise<string | undefined>
 }
 
 export function DialogoCambioEstado({
   abierto,
   reparacion,
+  pendiente,
   alCambiarApertura,
   alGuardar,
 }: DialogoCambioEstadoProps) {
-  const opciones = obtenerTransicionesGenericas(reparacion.estado)
+  const opciones = pendiente ? [pendiente.estado as EstadoReparacion] : obtenerTransicionesGenericas(reparacion.estado)
+  const [clave, setClave] = useState('')
   const [mensaje, setMensaje] = useState('')
   const {
     register,
@@ -122,8 +126,11 @@ export function DialogoCambioEstado({
   })
 
   useEffect(() => {
-    if (abierto) reset({ estado: opciones[0] ?? '', observacion: '' })
-  }, [abierto, opciones, reset])
+    if (abierto) {
+      reset({ estado: pendiente?.estado ?? obtenerTransicionesGenericas(reparacion.estado)[0] ?? '', observacion: pendiente?.observacion ?? '' })
+      setClave(pendiente?.clave ?? crypto.randomUUID())
+    }
+  }, [abierto, pendiente, reparacion.estado, reset])
 
   const guardar = async (datos: DatosCambioEstado) => {
     if (!opciones.includes(datos.estado as EstadoReparacion)) {
@@ -131,7 +138,7 @@ export function DialogoCambioEstado({
       return
     }
     setMensaje('')
-    const error = await alGuardar(datos.estado as EstadoReparacion, datos.observacion)
+    const error = await alGuardar(datos.estado as EstadoReparacion, datos.observacion, clave)
     if (error) {
       setMensaje(error)
       return
@@ -149,23 +156,24 @@ export function DialogoCambioEstado({
             <DialogPrimitive.Close asChild><button type="button" aria-label="Cerrar cambio de estado" className="grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X aria-hidden="true" className="size-5" /></button></DialogPrimitive.Close>
           </header>
           <form id="formulario-cambio-estado" className="grid gap-5 px-5 py-6 sm:px-7" onSubmit={handleSubmit(guardar)}>
+            {pendiente ? <p role="status">Operación recuperada: se conservan intención, versión y clave originales.</p> : null}
             <div>
               <label htmlFor="estado-destino-reparacion" className="field-label">Nuevo estado *</label>
-              <select id="estado-destino-reparacion" className="field-control" aria-invalid={Boolean(errors.estado)} {...register('estado')}>
+              <select id="estado-destino-reparacion" className="field-control" aria-invalid={Boolean(errors.estado)} {...register('estado')} disabled={isSubmitting}>
                 {opciones.map((estado) => <option key={estado} value={estado}>{etiquetasEstadoReparacion[estado]}</option>)}
               </select>
               {errors.estado ? <p className="field-error">{errors.estado.message}</p> : null}
             </div>
             <div>
               <label htmlFor="estado-observacion-reparacion" className="field-label">Observación (opcional)</label>
-              <textarea id="estado-observacion-reparacion" rows={3} className="field-control resize-y py-2" placeholder="Qué ocurrió o qué debe saber el siguiente responsable" aria-invalid={Boolean(errors.observacion)} {...register('observacion')} />
+              <textarea id="estado-observacion-reparacion" rows={3} className="field-control resize-y py-2" placeholder="Qué ocurrió o qué debe saber el siguiente responsable" aria-invalid={Boolean(errors.observacion)} {...register('observacion')} readOnly={Boolean(pendiente)} />
               {errors.observacion ? <p className="field-error">{errors.observacion.message}</p> : null}
             </div>
           </form>
           {mensaje ? <p role="alert" className="border-t bg-destructive/10 px-5 py-3 text-sm text-destructive sm:px-7">{mensaje}</p> : null}
           <footer className="flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
             <DialogPrimitive.Close asChild><Button type="button" variant="outline">Cancelar</Button></DialogPrimitive.Close>
-            <Button type="submit" form="formulario-cambio-estado" disabled={isSubmitting || !opciones.length}>Cambiar estado</Button>
+            <Button type="submit" form="formulario-cambio-estado" disabled={isSubmitting || !opciones.length}>{pendiente ? 'Reintentar cambio de estado' : 'Cambiar estado'}</Button>
           </footer>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
