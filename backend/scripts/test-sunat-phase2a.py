@@ -5,6 +5,8 @@ compiles those candidates in order, and runs serial tests inside one ROLLBACK
 transaction. Default requires the complete installed history and also runs
 independent races.
 --ci-transactional uses only a verified GitHub-hosted disposable project.
+--ci-normal runs the complete serial and concurrent suite on a separately
+verified GitHub-hosted disposable project.
 No resets, cleanup, existing fixture reuse, credentials, transport, or backend writes.
 """
 import argparse
@@ -34,11 +36,37 @@ CANDIDATE_HASHES = {
 }
 SUITE = ROOT / 'backend/scripts/fixtures/electronic_document_persistence.sql'
 CONTAINER = 'supabase_db_silsanplexp2c2'
+CI_CONTAINER = None
+CI_RUNNER_ENV = None
 HELPERS = SUITE.read_text(encoding='utf8').split('-- SERIAL_TESTS_START:')[0]
 CHECKS = []
+RACES_COMPLETED = []
+EXPECTED_RACES = (
+    'C01 identical confirm',
+    'C02 conflicting key',
+    'C03 two confirm keys same original',
+    'C03 two prepare keys same sale',
+    'C04 different sales same series',
+    'C05 independent tenants same key',
+    'C06 configuration before confirm',
+    'C06 configuration version before confirm',
+    'C06 confirm before configuration regression',
+    'C09 customer changes before freeze',
+    'C09 freeze before customer change',
+)
 
 
 def run(args, **kwargs):
+    if CI_CONTAINER is not None:
+        if (not isinstance(args, list) or len(args) < 4 or args[0] != 'docker'
+                or args[1:3] != ['exec', '-i'] or args[3] != CI_CONTAINER
+                or len(args) < 5 or args[4] != 'psql'):
+            raise ValueError('CPE_TEST_CI_CONTAINER_TARGET')
+        if not isinstance(CI_RUNNER_ENV, dict) or 'DOCKER_CONFIG' not in CI_RUNNER_ENV:
+            raise ValueError('CPE_TEST_CI_DOCKER_ENVIRONMENT')
+        if 'env' in kwargs and kwargs['env'] != CI_RUNNER_ENV:
+            raise ValueError('CPE_TEST_CI_DOCKER_ENVIRONMENT')
+        kwargs['env'] = dict(CI_RUNNER_ENV)
     result = subprocess.run(args, capture_output=True, text=True, encoding='utf8', **kwargs)
     if result.returncode:
         raise RuntimeError(result.stderr)
@@ -293,6 +321,10 @@ def race(label, expression1, expression2, independent=False):
         r1, r2 = first.result(), second.result()
     values = [json.loads(next(line for line in r.stdout.splitlines() if line.startswith('{'))) for r in [r1,r2]]
     check(label+'/different backend pids', values[0]['pid'] != values[1]['pid'])
+    RACES_COMPLETED.append(label)
+    if CI_CONTAINER is not None:
+        print(json.dumps({'phase': 'race-completed', 'race': label,
+                          'completed': len(RACES_COMPLETED)}), flush=True)
     return values[0]['result'], values[1]['result']
 
 
@@ -393,15 +425,80 @@ def ci_transactional(ci):
                          nontransactional_sequence_values_checked=False),indent=2))
 
 
+def verify_ci_normal():
+    database = sql("select current_database(),current_setting('port')").stdout.strip()
+    if database != 'postgres|5432':
+        raise ValueError('CPE_TEST_CI_DATABASE_IDENTITY')
+    migrations = read('select json_agg(version order by version) from supabase_migrations.schema_migrations')
+    files = sorted(path.name.split('_')[0] for path in MIGRATIONS[0].parent.glob('*.sql'))
+    validate_history(migrations, files, False)
+    definition = sql("select pg_get_functiondef('public.record_distribution_delivery_outcome(jsonb)'::regprocedure)").stdout
+    if ('pg_advisory_xact_lock' not in definition
+            or 'DISTRIBUTION_OUTCOME_OPERATION_KEY_REUSED' not in definition):
+        raise AssertionError('CPE_TEST_CI_DISTRIBUTION_CONTRACT')
+    installed = sql("select array_to_string(statements,E'\\n') from supabase_migrations.schema_migrations where version="
+                    + quote(VERSIONS[0])).stdout
+    if 'CPE-PE-DOM-PEN-1' not in installed:
+        raise AssertionError('CPE_TEST_CI_FISCAL_CONTRACT')
+    check('CI full migration history and fiscal contracts', True,
+          {'migrations': len(files), 'database': database})
+
+
+def ci_normal(ci):
+    """Run the unmodified normal suite against only this job's verified project."""
+    global CONTAINER, CI_CONTAINER, CI_RUNNER_ENV
+    CHECKS.clear()
+    RACES_COMPLETED.clear()
+    CONTAINER = ci.verify_target()
+    CI_RUNNER_ENV = ci.docker_client_env()
+    CI_CONTAINER = CONTAINER
+    try:
+        verify_ci_normal()
+        before = fingerprints()
+        try:
+            serial_check_start = len(CHECKS)
+            serial(False)
+            serial_assertions = len(CHECKS) - serial_check_start
+            races()
+            if tuple(RACES_COMPLETED) != EXPECTED_RACES:
+                raise AssertionError('CPE_TEST_CI_RACE_COVERAGE')
+            check('all independent PostgreSQL races executed',
+                  tuple(RACES_COMPLETED) == EXPECTED_RACES,
+                  {'count': len(RACES_COMPLETED), 'labels': RACES_COMPLETED})
+        finally:
+            after = fingerprints()
+            check('all previous public and auth row fingerprints preserved',
+                  all(not (counter - after.get(table, Counter()))
+                      for table, counter in before.items()))
+        ci.verify_target()
+        print(json.dumps({'mode': 'ci-normal', 'passed': len(CHECKS), 'failed': 0,
+                          'migrations': len(repository_versions()),
+                          'serial_assertions': serial_assertions, 'races': len(RACES_COMPLETED),
+                          'race_labels': RACES_COMPLETED,
+                          'nontransactional_sequence_values_checked': False}, indent=2), flush=True)
+    finally:
+        CI_CONTAINER = None
+        CI_RUNNER_ENV = None
+
+
+def repository_versions():
+    return sorted(path.name.split('_')[0] for path in MIGRATIONS[0].parent.glob('*.sql'))
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--transactional',action='store_true')
     mode.add_argument('--ci-transactional',action='store_true')
+    mode.add_argument('--ci-normal',action='store_true')
     args=parser.parse_args()
     if args.ci_transactional:
         import sunat_phase2a_ci as ci
         ci_transactional(ci)
+        return
+    if args.ci_normal:
+        import sunat_phase2a_normal_ci as ci
+        ci_normal(ci)
         return
     verify(args.transactional)
     before=fingerprints()
