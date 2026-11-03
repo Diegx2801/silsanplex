@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { assignablePermissionCodes, expandPermissionDependencies } from '@/features/users/userTypes'
 import { actorFiscalPrueba, crearComprobanteSandbox, documentoFiscalPrueba, organizacionFiscalPrueba, otraOrganizacionFiscal } from '../__fixtures__/comprobanteSandbox'
 import { ErrorConsultaFiscal } from '../servicios/comprobantesSandboxService'
-import { INTERVALO_REVALIDACION_PERMISO_FISCAL_MS, VIGENCIA_MAXIMA_PERMISO_FISCAL_MS } from './useVigenciaPermisoFiscal'
-import { useComprobanteSandbox } from './useComprobanteSandbox'
+import { INTERVALO_REVALIDACION_PERMISO_FISCAL_MS, useVigenciaPermisoFiscal, VIGENCIA_MAXIMA_PERMISO_FISCAL_MS } from './useVigenciaPermisoFiscal'
+import { useComprobanteSandbox as useComprobanteSandboxConVigencia } from './useComprobanteSandbox'
 
 const mocks = vi.hoisted(() => ({
   consultar: vi.fn(),
@@ -36,6 +36,11 @@ function contexto() {
   return ({ children }: PropsWithChildren) => <QueryClientProvider client={cliente}>{children}</QueryClientProvider>
 }
 
+function useComprobanteSandbox(documentId?: string) {
+  const vigencia = useVigenciaPermisoFiscal(mocks.auth.organizationId)
+  return useComprobanteSandboxConVigencia(documentId, vigencia)
+}
+
 describe('consulta React de comprobantes sandbox', () => {
   beforeEach(() => {
     cliente = new QueryClient()
@@ -51,9 +56,14 @@ describe('consulta React de comprobantes sandbox', () => {
   })
   afterEach(() => { vi.useRealTimers(); cliente.clear() })
 
-  it('registrar BILLING_VIEW no lo concede a Ventas ni lo incorpora al selector general de usuarios', () => {
+  it('permite asignar capacidades fiscales explícitas sin heredarlas desde Ventas', () => {
     expect(expandPermissionDependencies(['SALES_MANAGE'])).not.toContain('BILLING_VIEW')
-    expect(assignablePermissionCodes).not.toContain('BILLING_VIEW')
+    expect(assignablePermissionCodes).toContain('BILLING_VIEW')
+    expect(assignablePermissionCodes).toContain('BILLING_CONFIGURE')
+    expect(assignablePermissionCodes).toContain('BILLING_PREPARE')
+    expect(assignablePermissionCodes).toContain('BILLING_ISSUE')
+    expect(expandPermissionDependencies(['BILLING_ISSUE'])).toEqual(['BILLING_ISSUE', 'BILLING_PREPARE', 'BILLING_VIEW'])
+    expect(expandPermissionDependencies(['BILLING_PREPARE'])).not.toContain('SALES_VIEW')
   })
 
   it('consulta por organización activa y requiere BILLING_VIEW, no SALES_MANAGE ni ADMIN', async () => {
@@ -156,6 +166,9 @@ describe('consulta React de comprobantes sandbox', () => {
     await waitFor(() => expect(result.current.estadoAutorizacion).toBe('permitido'))
     await waitFor(() => expect(result.current.comprobante).toBeDefined())
     expect(mocks.consultar).toHaveBeenCalledTimes(1)
+    cliente.setQueryData(['electronic-billing-configuration', organizacionFiscalPrueba, actorFiscalPrueba], { ruc: 'ficticio' })
+    cliente.setQueryData(['fiscal-source-sales', organizacionFiscalPrueba, actorFiscalPrueba], [{ id: 'venta-ficticia' }])
+    cliente.setQueryData(['fiscal-source-customer', organizacionFiscalPrueba, actorFiscalPrueba, 'venta-ficticia'], { name: 'receptor ficticio' })
 
     mocks.auth.permisoRemoto = false
     await waitFor(() => expect(result.current.estadoAutorizacion).toBe('denegado'), {
@@ -164,7 +177,11 @@ describe('consulta React de comprobantes sandbox', () => {
     expect(result.current.comprobante).toBeUndefined()
     await act(async () => { await result.current.reintentar() })
     expect(mocks.consultar).toHaveBeenCalledTimes(1)
-    expect(cliente.getQueryCache().getAll().every((query) => query.state.data === undefined)).toBe(true)
+    for (const queryKey of [
+      ['electronic-document'], ['electronic-billing-configuration'], ['fiscal-source-sales'], ['fiscal-source-customer'],
+    ]) {
+      expect(cliente.getQueryCache().findAll({ queryKey }).every((query) => query.state.data === undefined)).toBe(true)
+    }
   })
 
   it('falla cerrada si la revalidación no responde antes de vencer la vigencia', async () => {

@@ -12,8 +12,18 @@ import { ComprobanteSandboxPage } from './ComprobanteSandboxPage'
 
 const mocks = vi.hoisted(() => ({
   consultar: vi.fn(),
-  auth: { organizationId: '', userId: '', sesion: true, permiso: true, cargando: false },
-  vigencia: { estado: 'permitido' as const, permitido: true },
+  configuracion: vi.fn(),
+  ventas: vi.fn(),
+  clientes: vi.fn(),
+  guardarPerfil: vi.fn(),
+  guardarSerie: vi.fn(),
+  preparar: vi.fn(),
+  confirmar: vi.fn(),
+  auth: {
+    organizationId: '', userId: '', sesion: true, permiso: true, cargando: false,
+    puedeConfigurar: false, puedePreparar: false, puedeEmitir: false, puedeVerVentas: false,
+  },
+  vigencia: { estado: 'permitido' as 'permitido' | 'denegado' | 'verificando' | 'no_verificable', permitido: true },
 }))
 vi.mock('@/features/auth/useAuth', () => ({
   useAuth: () => ({
@@ -21,13 +31,26 @@ vi.mock('@/features/auth/useAuth', () => ({
     user: mocks.auth.userId ? { id: mocks.auth.userId, email: 'ficticio@example.invalid' } : null,
     session: mocks.auth.sesion ? {} : null,
     isLoading: mocks.auth.cargando,
-    hasPermission: (permiso: string) => mocks.auth.permiso && permiso === 'BILLING_VIEW',
+    hasPermission: (permiso: string) => mocks.auth.permiso && (
+      permiso === 'BILLING_VIEW'
+      || (permiso === 'BILLING_CONFIGURE' && mocks.auth.puedeConfigurar)
+      || (permiso === 'BILLING_PREPARE' && mocks.auth.puedePreparar)
+      || (permiso === 'BILLING_ISSUE' && mocks.auth.puedeEmitir)
+      || (permiso === 'SALES_VIEW' && mocks.auth.puedeVerVentas)
+    ),
   }),
 }))
 vi.mock('@/modulos/facturacion/servicios/comprobantesSandboxService', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/modulos/facturacion/servicios/comprobantesSandboxService')>(),
   consultarComprobanteSandbox: mocks.consultar,
+  consultarConfiguracionEmisionSandbox: mocks.configuracion,
+  guardarPerfilEmisorSandbox: mocks.guardarPerfil,
+  configurarSerieSandbox: mocks.guardarSerie,
+  prepararComprobanteSandbox: mocks.preparar,
+  confirmarComprobanteSandbox: mocks.confirmar,
 }))
+vi.mock('@/modulos/ventas/servicios/ventasService', () => ({ listarVentasPersistentes: mocks.ventas }))
+vi.mock('@/modulos/clientes/servicios/customerService', () => ({ buscarClientes: mocks.clientes }))
 vi.mock('@/modulos/facturacion/estado/useVigenciaPermisoFiscal', () => ({
   useVigenciaPermisoFiscal: () => mocks.vigencia,
 }))
@@ -42,19 +65,55 @@ function buscar(uuid = documentoFiscalPrueba) {
   fireEvent.submit(screen.getByRole('form', { name: 'Consultar comprobante sandbox' }))
 }
 
+function perfilesFicticios() {
+  return [
+    { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', version: '1', ruc: '20000000001', legalName: 'SANDBOX EMISOR UNO',
+      fiscalAddress: { line: 'Calle ficticia 1', district: 'Distrito', province: 'Provincia', department: 'Departamento', ubigeo: '150101', country: 'PE' }, establishmentCode: '0001', series: [] },
+    { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', version: '1', ruc: '20000000002', legalName: 'SANDBOX EMISOR DOS',
+      fiscalAddress: { line: 'Calle ficticia 2', district: 'Distrito', province: 'Provincia', department: 'Departamento', ubigeo: '150102', country: 'PE' }, establishmentCode: '0002', series: [] },
+  ]
+}
+
+function configuracionConSerie() {
+  const [perfil] = perfilesFicticios()
+  return { organizationId: organizacionFiscalPrueba, profiles: [{ ...perfil,
+    series: [{ id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', issuerProfileId: perfil.id, version: '1',
+      documentType: '03' as const, series: 'B001', nextNumber: '1', enabled: true }],
+  }] }
+}
+
+function ventasFicticias() {
+  return [{ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', numeroInterno: 'VEN-000001', pedidoId: 'pedido-ficticio',
+    pedidoNumero: 'PED-000001', clienteId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', clienteDocumento: '20111111111',
+    clienteNombre: 'CLIENTE FICTICIO', tipoDocumento: 'boleta', serie: 'B001', numeroDocumento: '1',
+    fechaVenta: '2026-10-20', almacen: 'Almacén ficticio', preciosIncluyenIgv: true, baseGravada: 100,
+    montoExonerado: 0, montoInafecto: 0, subtotal: 100, igv: 18, total: 118, estadoCalculoTributario: 'calculated',
+    lineas: [{ id: 'linea-ficticia', productoId: 'producto-ficticio', tipoProducto: 'good', productoCodigo: 'P-1',
+      productoDescripcion: 'Producto ficticio', unidadMedida: 'UND', cantidad: 1, precioUnitario: 118, lote: '', fechaVencimiento: '' }],
+    estado: 'registrada', fechaRegistro: '2026-10-20T12:00:00.000Z', fechaDespacho: null }]
+}
+
 describe('pantalla de consulta fiscal sandbox', () => {
   beforeEach(() => {
     cliente = new QueryClient()
     Object.assign(mocks.auth, { organizationId: organizacionFiscalPrueba, userId: actorFiscalPrueba,
-      sesion: true, permiso: true, cargando: false })
+      sesion: true, permiso: true, cargando: false, puedeConfigurar: false, puedePreparar: false,
+      puedeEmitir: false, puedeVerVentas: false })
     Object.assign(mocks.vigencia, { estado: 'permitido', permitido: true })
     mocks.consultar.mockReset().mockResolvedValue(crearComprobanteSandbox())
+    mocks.configuracion.mockReset().mockResolvedValue({ organizationId: organizacionFiscalPrueba, profiles: [] })
+    mocks.ventas.mockReset().mockResolvedValue([])
+    mocks.clientes.mockReset().mockResolvedValue([])
+    mocks.guardarPerfil.mockReset()
+    mocks.guardarSerie.mockReset()
+    mocks.preparar.mockReset()
+    mocks.confirmar.mockReset()
   })
   afterEach(() => cliente.clear())
 
   it('muestra el aviso, formulario asociado y estado inicial sin consultar datos automáticamente', () => {
     render(pantalla())
-    expect(screen.getByRole('heading', { level: 1, name: 'Consulta fiscal sandbox' })).toBeVisible()
+    expect(screen.getByRole('heading', { level: 1, name: 'Facturación · pruebas sandbox' })).toBeVisible()
     expect(screen.getByRole('note', { name: 'Aviso de entorno sandbox' })).toHaveTextContent(AVISO_FISCAL_SANDBOX)
     expect(screen.getByRole('textbox', { name: 'UUID del comprobante' })).toHaveAccessibleDescription(/tu organización/)
     expect(screen.getByRole('heading', { name: 'Ningún comprobante seleccionado' })).toBeVisible()
@@ -98,6 +157,67 @@ describe('pantalla de consulta fiscal sandbox', () => {
     expect(cuotas.getByRole('rowheader', { name: 'Cuota001' })).toBeVisible()
     expect(cuotas.getByRole('cell', { name: '118.00' })).toBeVisible()
     expect(cuotas.getByText('2026-11-24')).toBeVisible()
+  })
+
+  it('mantiene la clave de confirmación por comprobante al cambiar la selección', async () => {
+    const documentoA = documentoFiscalPrueba
+    const documentoB = '55555555-5555-4555-8555-555555555555'
+    mocks.auth.puedeEmitir = true
+    mocks.consultar.mockImplementation(async (_organizationId: string, selectedDocumentId: string) => ({
+      ...crearComprobanteSandbox(), documentId: selectedDocumentId,
+    }))
+    mocks.confirmar
+      .mockRejectedValueOnce(new Error('respuesta de A perdida'))
+      .mockRejectedValueOnce(new Error('respuesta de B perdida'))
+      .mockResolvedValueOnce({})
+
+    render(pantalla())
+    const confirmarSeleccionado = async (selectedDocumentId: string, expectedCalls: number) => {
+      fireEvent.change(screen.getByRole('textbox', { name: 'UUID del comprobante' }), {
+        target: { value: selectedDocumentId },
+      })
+      fireEvent.submit(screen.getByRole('form', { name: 'Consultar comprobante sandbox' }))
+      await waitFor(() => expect(mocks.consultar).toHaveBeenCalledWith(
+        organizacionFiscalPrueba, selectedDocumentId, expect.any(AbortSignal),
+      ))
+      await screen.findByRole('heading', { name: 'Detalle fiscal sandbox' })
+      fireEvent.click(screen.getByRole('checkbox', { name: /Confirmo asignar un número interno/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar numeración sandbox' }))
+      await waitFor(() => expect(mocks.confirmar).toHaveBeenCalledTimes(expectedCalls))
+    }
+
+    await confirmarSeleccionado(documentoA, 1)
+    await screen.findByRole('alert')
+    await confirmarSeleccionado(documentoB, 2)
+    await screen.findByRole('alert')
+    await confirmarSeleccionado(documentoA, 3)
+
+    const comandoAInicial = mocks.confirmar.mock.calls[0][0] as { documentId: string; operationKey: string }
+    const comandoB = mocks.confirmar.mock.calls[1][0] as { documentId: string; operationKey: string }
+    const reintentoA = mocks.confirmar.mock.calls[2][0] as { documentId: string; operationKey: string }
+    expect(comandoAInicial.documentId).toBe(documentoA)
+    expect(comandoB.documentId).toBe(documentoB)
+    expect(comandoB.operationKey).not.toBe(comandoAInicial.operationKey)
+    expect(reintentoA).toEqual(comandoAInicial)
+  })
+
+  it('refresca la configuración fiscal tras asignar el siguiente correlativo', async () => {
+    mocks.auth.puedeEmitir = true
+    mocks.auth.puedeConfigurar = true
+    const [perfil] = perfilesFicticios()
+    mocks.configuracion.mockResolvedValue({ organizationId: organizacionFiscalPrueba, profiles: [perfil] })
+    mocks.confirmar.mockResolvedValue({})
+
+    render(pantalla())
+    expect(await screen.findByRole('form', { name: 'Configuración de perfil emisor sandbox' })).toBeInTheDocument()
+    await waitFor(() => expect(mocks.configuracion).toHaveBeenCalledTimes(1))
+    buscar()
+    await screen.findByRole('heading', { name: 'Detalle fiscal sandbox' })
+    fireEvent.click(screen.getByRole('checkbox', { name: /Confirmo asignar un número interno/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar numeración sandbox' }))
+
+    await waitFor(() => expect(mocks.confirmar).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.configuracion).toHaveBeenCalledTimes(2))
   })
 
   it('conserva valores grandes y ceros decimales sin convertirlos a Number', async () => {
@@ -186,6 +306,252 @@ describe('pantalla de consulta fiscal sandbox', () => {
     expect(screen.queryByRole('form')).not.toBeInTheDocument()
     expect(screen.getByRole('note')).toHaveTextContent(AVISO_FISCAL_SANDBOX)
     expect(mocks.consultar).not.toHaveBeenCalled()
+  })
+
+  it('oculta la configuración fiscal cuando la revalidación remota revoca el permiso', async () => {
+    mocks.auth.puedePreparar = true
+    mocks.configuracion.mockResolvedValue({ organizationId: organizacionFiscalPrueba, profiles: perfilesFicticios() })
+    const vista = render(pantalla())
+    expect(await screen.findByRole('combobox', { name: 'Perfil emisor para preparar' })).toBeVisible()
+    expect(screen.getByRole('option', { name: /SANDBOX EMISOR UNO/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /SANDBOX EMISOR DOS/ })).toBeInTheDocument()
+
+    Object.assign(mocks.vigencia, { estado: 'denegado', permitido: false })
+    vista.rerender(pantalla())
+    expect(screen.queryByRole('combobox', { name: 'Perfil emisor para preparar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /SANDBOX EMISOR UNO/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(/permiso fiscal no está vigente/)
+  })
+
+  it('oculta el formulario mientras revalida y recupera el borrador al volver con la misma autorización', async () => {
+    Object.assign(mocks.auth, { puedeConfigurar: true, puedePreparar: true, puedeVerVentas: true })
+    mocks.configuracion.mockResolvedValue(configuracionConSerie())
+    mocks.ventas.mockResolvedValue(ventasFicticias())
+    const vista = render(pantalla())
+
+    await screen.findByRole('form', { name: 'Preparar comprobante fiscal sandbox' })
+    await screen.findByLabelText('Nombre ficticio del emisor')
+    await screen.findByLabelText('Venta existente')
+    fireEvent.change(screen.getByLabelText('Nombre ficticio del emisor'), { target: { value: 'EMISOR BORRADOR LOCAL' } })
+    fireEvent.change(screen.getByLabelText('Serie existente'), { target: { value: '__nueva__' } })
+    fireEvent.change(screen.getByLabelText('Serie de boleta'), { target: { value: 'B777' } })
+    fireEvent.change(screen.getByLabelText('Siguiente correlativo de prueba'), { target: { value: '42' } })
+    fireEvent.change(screen.getByLabelText('Venta existente'), { target: { value: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' } })
+    fireEvent.change(screen.getByLabelText('Forma de pago'), { target: { value: 'credito' } })
+    fireEvent.change(screen.getByLabelText('Importe pendiente (PEN)'), { target: { value: '95.25' } })
+    fireEvent.change(screen.getByLabelText('Vencimiento de Cuota001'), { target: { value: '2026-12-15' } })
+    fireEvent.change(screen.getByLabelText('Fecha declarada'), { target: { value: '2026-11-03' } })
+
+    Object.assign(mocks.vigencia, { estado: 'no_verificable', permitido: false })
+    vista.rerender(pantalla())
+    expect(screen.queryByRole('form', { name: 'Preparar comprobante fiscal sandbox' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Nombre ficticio del emisor')).not.toBeInTheDocument()
+    expect(screen.queryByText('EMISOR BORRADOR LOCAL')).not.toBeInTheDocument()
+    expect(mocks.preparar).not.toHaveBeenCalled()
+
+    Object.assign(mocks.vigencia, { estado: 'verificando', permitido: false })
+    vista.rerender(pantalla())
+    expect(screen.queryByRole('form')).not.toBeInTheDocument()
+
+    Object.assign(mocks.vigencia, { estado: 'permitido', permitido: true })
+    vista.rerender(pantalla())
+    await screen.findByRole('form', { name: 'Preparar comprobante fiscal sandbox' })
+    expect(await screen.findByLabelText('Nombre ficticio del emisor')).toHaveValue('EMISOR BORRADOR LOCAL')
+    expect(screen.getByLabelText('Serie de boleta')).toHaveValue('B777')
+    expect(screen.getByLabelText('Siguiente correlativo de prueba')).toHaveValue('42')
+    expect(screen.getByLabelText('Venta existente')).toHaveValue('dddddddd-dddd-4ddd-8ddd-dddddddddddd')
+    expect(screen.getByLabelText('Forma de pago')).toHaveValue('credito')
+    expect(screen.getByLabelText('Importe pendiente (PEN)')).toHaveValue('95.25')
+    expect(screen.getByLabelText('Vencimiento de Cuota001')).toHaveValue('2026-12-15')
+    expect(screen.getByLabelText('Fecha declarada')).toHaveValue('2026-11-03')
+  })
+
+  it('descarta borrador y selección al confirmar la revocación del permiso', async () => {
+    Object.assign(mocks.auth, { puedeConfigurar: true, puedePreparar: true, puedeVerVentas: true })
+    mocks.configuracion.mockResolvedValue(configuracionConSerie())
+    mocks.ventas.mockResolvedValue(ventasFicticias())
+    const vista = render(pantalla())
+    await screen.findByLabelText('Nombre ficticio del emisor')
+    fireEvent.change(screen.getByLabelText('Nombre ficticio del emisor'), { target: { value: 'NO DEBE VOLVER' } })
+    fireEvent.change(screen.getByLabelText('Venta existente'), { target: { value: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' } })
+
+    Object.assign(mocks.vigencia, { estado: 'denegado', permitido: false })
+    vista.rerender(pantalla())
+    expect(screen.queryByText('NO DEBE VOLVER')).not.toBeInTheDocument()
+    expect(screen.queryByRole('form')).not.toBeInTheDocument()
+
+    Object.assign(mocks.vigencia, { estado: 'permitido', permitido: true })
+    vista.rerender(pantalla())
+    await screen.findByLabelText('Nombre ficticio del emisor')
+    expect(screen.getByLabelText('Nombre ficticio del emisor')).toHaveValue('EMISOR UNO')
+    expect(screen.getByLabelText('Venta existente')).toHaveValue('')
+  })
+
+  it.each(['usuario', 'organización', 'sesión'] as const)('descarta el borrador cuando cambia %s', async (cambio) => {
+    Object.assign(mocks.auth, { puedeConfigurar: true })
+    mocks.configuracion.mockResolvedValue(configuracionConSerie())
+    const vista = render(pantalla())
+    await screen.findByLabelText('Nombre ficticio del emisor')
+    fireEvent.change(screen.getByLabelText('Nombre ficticio del emisor'), { target: { value: 'BORRADOR DE OTRA IDENTIDAD' } })
+
+    if (cambio === 'usuario') mocks.auth.userId = 'usuario-ficticio-distinto'
+    if (cambio === 'organización') mocks.auth.organizationId = otraOrganizacionFiscal
+    if (cambio === 'sesión') mocks.auth.sesion = false
+    vista.rerender(pantalla())
+    expect(screen.queryByText('BORRADOR DE OTRA IDENTIDAD')).not.toBeInTheDocument()
+
+    if (cambio === 'usuario') mocks.auth.userId = actorFiscalPrueba
+    if (cambio === 'organización') mocks.auth.organizationId = organizacionFiscalPrueba
+    if (cambio === 'sesión') mocks.auth.sesion = true
+    vista.rerender(pantalla())
+    if (cambio === 'sesión') {
+      await screen.findByLabelText('Nombre ficticio del emisor')
+    } else {
+      await screen.findByLabelText('Nombre ficticio del emisor')
+    }
+    expect(screen.getByLabelText('Nombre ficticio del emisor')).toHaveValue('EMISOR UNO')
+  })
+
+  it('reutiliza la clave de preparación después de restaurar el borrador', async () => {
+    Object.assign(mocks.auth, { puedeConfigurar: true, puedePreparar: true, puedeVerVentas: true })
+    mocks.configuracion.mockResolvedValue(configuracionConSerie())
+    mocks.ventas.mockResolvedValue(ventasFicticias())
+    mocks.preparar.mockRejectedValueOnce(new Error('respuesta perdida'))
+      .mockResolvedValueOnce({ documentId: documentoFiscalPrueba })
+    const vista = render(pantalla())
+    const formulario = await screen.findByRole('form', { name: 'Preparar comprobante fiscal sandbox' })
+    await screen.findByLabelText('Venta existente')
+    fireEvent.change(screen.getByLabelText('Venta existente'), { target: { value: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Preparar factura o boleta sandbox' })).toBeEnabled())
+    fireEvent.submit(formulario)
+    await screen.findByRole('alert')
+    const primerComando = mocks.preparar.mock.calls[0][0]
+
+    Object.assign(mocks.vigencia, { estado: 'no_verificable', permitido: false })
+    vista.rerender(pantalla())
+    expect(screen.queryByRole('form', { name: 'Preparar comprobante fiscal sandbox' })).not.toBeInTheDocument()
+    Object.assign(mocks.vigencia, { estado: 'permitido', permitido: true })
+    vista.rerender(pantalla())
+    const formularioRestaurado = await screen.findByRole('form', { name: 'Preparar comprobante fiscal sandbox' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Preparar factura o boleta sandbox' })).toBeEnabled())
+    fireEvent.submit(formularioRestaurado)
+
+    await waitFor(() => expect(mocks.preparar).toHaveBeenCalledTimes(2))
+    expect(mocks.preparar.mock.calls[1][0]).toEqual(primerComando)
+  })
+
+  it('reutiliza la clave de confirmación después de volver a verificar el permiso', async () => {
+    mocks.auth.puedeEmitir = true
+    mocks.confirmar.mockRejectedValueOnce(new Error('respuesta perdida')).mockResolvedValueOnce({})
+    const vista = render(pantalla())
+    buscar()
+    await screen.findByRole('heading', { name: 'Detalle fiscal sandbox' })
+    fireEvent.click(screen.getByRole('checkbox', { name: /Confirmo asignar un número interno/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar numeración sandbox' }))
+    await screen.findByRole('alert')
+    const primerComando = mocks.confirmar.mock.calls[0][0]
+
+    Object.assign(mocks.vigencia, { estado: 'no_verificable', permitido: false })
+    vista.rerender(pantalla())
+    expect(screen.queryByRole('article')).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /Confirmo asignar un número interno/ })).not.toBeInTheDocument()
+    Object.assign(mocks.vigencia, { estado: 'permitido', permitido: true })
+    vista.rerender(pantalla())
+    await screen.findByRole('heading', { name: 'Detalle fiscal sandbox' })
+    fireEvent.click(screen.getByRole('checkbox', { name: /Confirmo asignar un número interno/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar numeración sandbox' }))
+
+    await waitFor(() => expect(mocks.confirmar).toHaveBeenCalledTimes(2))
+    expect(mocks.confirmar.mock.calls[1][0]).toEqual(primerComando)
+  })
+
+  it('permite elegir emisores existentes a quien solo prepara comprobantes', async () => {
+    mocks.auth.puedePreparar = true
+    mocks.configuracion.mockResolvedValue({ organizationId: organizacionFiscalPrueba, profiles: perfilesFicticios() })
+    render(pantalla())
+    const selector = await screen.findByRole('combobox', { name: 'Perfil emisor para preparar' })
+    expect(selector).toHaveValue('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+    fireEvent.change(selector, { target: { value: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' } })
+    expect(selector).toHaveValue('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+    expect(screen.queryByRole('form', { name: 'Configuración de perfil emisor sandbox' })).not.toBeInTheDocument()
+  })
+
+  it('reutiliza el mismo ID y clave al reintentar una creación de perfil con respuesta perdida', async () => {
+    mocks.auth.puedeConfigurar = true
+    const [perfil] = perfilesFicticios()
+    mocks.configuracion.mockResolvedValue({ organizationId: organizacionFiscalPrueba, profiles: [perfil] })
+    mocks.guardarPerfil
+      .mockRejectedValueOnce(new Error('respuesta perdida'))
+      .mockImplementationOnce(async (payload: { id: string }) => ({ id: payload.id, version: '1' }))
+    render(pantalla())
+    await screen.findByRole('form', { name: 'Configuración de perfil emisor sandbox' })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Perfil guardado' }), { target: { value: '__nuevo__' } })
+    await waitFor(() => expect(screen.getByLabelText('RUC de prueba')).toBeEnabled())
+
+    const campos: Record<string, string> = {
+      'RUC de prueba': '20123456789',
+      'Nombre ficticio del emisor': 'Emisor de prueba',
+      'Domicilio fiscal ficticio': 'Calle de prueba 123',
+      Distrito: 'Distrito prueba',
+      Provincia: 'Provincia prueba',
+      Departamento: 'Departamento prueba',
+      Ubigeo: '150101',
+      'Código de establecimiento': '0001',
+    }
+    for (const [label, value] of Object.entries(campos)) {
+      fireEvent.change(screen.getByLabelText(label), { target: { value } })
+    }
+    expect(screen.getByLabelText('RUC de prueba')).toHaveValue('20123456789')
+
+    const form = screen.getByRole('form', { name: 'Configuración de perfil emisor sandbox' })
+    fireEvent.submit(form)
+    await waitFor(() => expect(mocks.guardarPerfil).toHaveBeenCalledTimes(1))
+    fireEvent.submit(form)
+    await waitFor(() => expect(mocks.guardarPerfil).toHaveBeenCalledTimes(2))
+
+    const primerPayload = mocks.guardarPerfil.mock.calls[0][0] as { id: string; operationKey: string }
+    const segundoPayload = mocks.guardarPerfil.mock.calls[1][0] as { id: string; operationKey: string }
+    expect(segundoPayload).toEqual(primerPayload)
+  })
+
+  it('reutiliza el mismo ID y clave al reintentar una creación de serie con respuesta perdida', async () => {
+    mocks.auth.puedeConfigurar = true
+    const [perfil] = perfilesFicticios()
+    mocks.configuracion.mockResolvedValue({ organizationId: organizacionFiscalPrueba, profiles: [perfil] })
+    mocks.guardarSerie
+      .mockRejectedValueOnce(new Error('respuesta perdida'))
+      .mockImplementationOnce(async (payload: { id: string }) => ({ id: payload.id, version: '2' }))
+    render(pantalla())
+    const form = await screen.findByRole('form', { name: 'Configuración de serie sandbox' })
+    fireEvent.submit(form)
+    await waitFor(() => expect(mocks.guardarSerie).toHaveBeenCalledTimes(1))
+    fireEvent.submit(form)
+    await waitFor(() => expect(mocks.guardarSerie).toHaveBeenCalledTimes(2))
+
+    const primerPayload = mocks.guardarSerie.mock.calls[0][0] as { id: string; operationKey: string }
+    const segundoPayload = mocks.guardarSerie.mock.calls[1][0] as { id: string; operationKey: string }
+    expect(segundoPayload).toEqual(primerPayload)
+  })
+
+  it.each(['perfil', 'serie'] as const)('muestra errores al configurador sin permiso de preparación al guardar %s', async (tipo) => {
+    mocks.auth.puedeConfigurar = true
+    const [perfil] = perfilesFicticios()
+    mocks.configuracion.mockResolvedValue({ organizationId: organizacionFiscalPrueba, profiles: [perfil] })
+    if (tipo === 'perfil') mocks.guardarPerfil.mockRejectedValueOnce(new Error('respuesta privada'))
+    else mocks.guardarSerie.mockRejectedValueOnce(new Error('respuesta privada'))
+
+    render(pantalla())
+    const nombre = tipo === 'perfil' ? 'Configuración de perfil emisor sandbox' : 'Configuración de serie sandbox'
+    const form = await screen.findByRole('form', { name: nombre })
+    const boton = tipo === 'perfil'
+      ? screen.getByRole('button', { name: 'Guardar cambios de perfil sandbox' })
+      : screen.getByRole('button', { name: 'Guardar serie sandbox' })
+    await waitFor(() => expect(boton).toBeEnabled())
+    fireEvent.submit(form)
+
+    await waitFor(() => expect(tipo === 'perfil' ? mocks.guardarPerfil : mocks.guardarSerie).toHaveBeenCalledTimes(1))
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo completar esta operación sandbox.')
+    expect(screen.queryByRole('form', { name: 'Preparar comprobante fiscal sandbox' })).not.toBeInTheDocument()
   })
 
   it('la ruta real y su entrada de navegación exigen BILLING_VIEW', async () => {

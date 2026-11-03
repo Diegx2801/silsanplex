@@ -22,6 +22,24 @@ describe('capacidad de exportar inventario', () => {
   })
 })
 
+describe('capacidades fiscales sandbox', () => {
+  it('las asigna de forma explícita y mantiene dependencias mínimas de consulta', () => {
+    const billing = operationalAccessModules.find((module) => module.code === 'billing')
+    expect(billing?.capabilities.map((capability) => capability.permissionCodes[0])).toEqual([
+      PERMISSIONS.BILLING_VIEW,
+      PERMISSIONS.BILLING_CONFIGURE,
+      PERMISSIONS.BILLING_PREPARE,
+      PERMISSIONS.BILLING_ISSUE,
+    ])
+    expect(expandPermissionDependencies([PERMISSIONS.BILLING_ISSUE])).toEqual([
+      PERMISSIONS.BILLING_ISSUE,
+      PERMISSIONS.BILLING_PREPARE,
+      PERMISSIONS.BILLING_VIEW,
+    ])
+    expect(expandPermissionDependencies([PERMISSIONS.SALES_MANAGE])).not.toContain(PERMISSIONS.BILLING_VIEW)
+  })
+})
+
 describe('capacidades económicas R14 explícitas',()=>{
  it('no se incluyen en Operar reparaciones y gestionar no concede confirmar',()=>{
   const operar=operationalAccessModules.find(m=>m.code==='repairs')?.capabilities.find(c=>c.code==='repairs-operate')?.permissionCodes

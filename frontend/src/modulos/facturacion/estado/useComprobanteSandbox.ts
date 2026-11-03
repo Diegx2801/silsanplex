@@ -7,11 +7,10 @@ import {
   esquemaReferenciaComprobanteSandbox,
 } from '@/modulos/facturacion/modelo/comprobanteSandbox'
 import { consultarComprobanteSandbox, ErrorConsultaFiscal } from '@/modulos/facturacion/servicios/comprobantesSandboxService'
-import { useVigenciaPermisoFiscal } from './useVigenciaPermisoFiscal'
+import type { VigenciaPermisoFiscal } from './useVigenciaPermisoFiscal'
 
-export function useComprobanteSandbox(documentId?: string) {
+export function useComprobanteSandbox(documentId: string | undefined, vigencia: VigenciaPermisoFiscal) {
   const { access, user, session, isLoading, hasPermission } = useAuth()
-  const vigencia = useVigenciaPermisoFiscal(access?.organizationId ?? '')
   const referencia = esquemaReferenciaComprobanteSandbox.safeParse({
     organizationId: access?.organizationId ?? '', documentId: documentId ?? '',
   })

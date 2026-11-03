@@ -59,7 +59,7 @@ try {
     ${helpers}
     create function pg_temp.read_fixture() returns jsonb language plpgsql as $$
     declare a jsonb:=pg_temp.cpe_tenant(); b jsonb:=pg_temp.cpe_tenant();
-      sale uuid; operation_sale uuid; operation_payload jsonb; p jsonb; prepared jsonb; frozen jsonb; otherdoc jsonb;
+      sale uuid; operation_sale uuid; operation_payload jsonb; ui_sale uuid; p jsonb; prepared jsonb; frozen jsonb; otherdoc jsonb;
     begin
       update public.organizations set name='SANDBOX organización A' where id=(a->>'org')::uuid;
       update public.organizations set name='SANDBOX organización B' where id=(b->>'org')::uuid;
@@ -76,9 +76,10 @@ try {
       otherdoc:=pg_temp.cpe_ok('prepare_electronic_document',pg_temp.cpe_prepare(b,sale),(b->>'actor')::uuid,(b->>'sid')::uuid);
       operation_sale:=pg_temp.cpe_sale(a);
       operation_payload:=pg_temp.cpe_prepare(a,operation_sale);
+      ui_sale:=pg_temp.cpe_sale(a,'[{"quantity":"1.000","price":"118.0000","affectation":"gravado"}]');
       return jsonb_build_object('a',a,'b',b,'prepared',prepared->>'documentId',
         'frozen',frozen->>'documentId','other',otherdoc->>'documentId',
-        'operationSale',operation_sale,'operationPayload',operation_payload);
+        'operationSale',operation_sale,'operationPayload',operation_payload,'uiSale',ui_sale);
     end $$;
     select pg_temp.read_fixture();
     commit;
@@ -88,7 +89,8 @@ try {
   const identities = {}
   const access = {
     viewer: ['BILLING_VIEW'],
-    manager: ['BILLING_VIEW', 'BILLING_PREPARE', 'BILLING_ISSUE'],
+    manager: ['BILLING_VIEW', 'BILLING_CONFIGURE', 'BILLING_PREPARE', 'BILLING_ISSUE',
+      'SALES_VIEW', 'PRODUCTS_VIEW', 'CUSTOMERS_VIEW', 'INVENTORY_VIEW'],
     denied: [],
     other: ['BILLING_VIEW'],
   }
@@ -165,11 +167,30 @@ try {
       'public.save_electronic_issuer_profile(jsonb)', 'public.configure_electronic_series(jsonb)',
       'public.prepare_electronic_document(jsonb)', 'public.revise_electronic_document(jsonb)',
       'public.confirm_electronic_document(jsonb)', 'public.get_electronic_document(uuid,uuid)',
+      'public.get_electronic_billing_configuration(uuid)',
       'public.can_view_electronic_documents(uuid)']) signature`))
   evidence.rpcPrivileges = rpcPrivileges
   check('authorized fiscal RPC EXECUTE remains available only to authenticated',
-    Object.keys(rpcPrivileges).length === 7 && Object.values(rpcPrivileges).every(value =>
+    Object.keys(rpcPrivileges).length === 8 && Object.values(rpcPrivileges).every(value =>
       value.authenticated === true && value.anon === false))
+  const billingConfiguration = await checked(identities.manager.client.rpc('get_electronic_billing_configuration', {
+    requested_organization_id: fixture.a.org,
+  }))
+  check('authorized configuration RPC returns only sandbox profile and series fields',
+    billingConfiguration.organizationId === fixture.a.org && billingConfiguration.profiles.length === 1
+      && billingConfiguration.profiles[0].legalName.startsWith('SANDBOX ')
+      && billingConfiguration.profiles[0].series.some(series => series.documentType === '01')
+      && !Object.hasOwn(billingConfiguration.profiles[0], 'ruleSetHash'))
+  const viewerConfiguration = await identities.viewer.client.rpc('get_electronic_billing_configuration', {
+    requested_organization_id: fixture.a.org,
+  })
+  check('BILLING_VIEW without configure or prepare cannot read editable configuration',
+    viewerConfiguration.data === null && viewerConfiguration.error?.code === '42501')
+  const foreignConfiguration = await identities.manager.client.rpc('get_electronic_billing_configuration', {
+    requested_organization_id: fixture.b.org,
+  })
+  check('configuration RPC cannot cross organization membership',
+    foreignConfiguration.data === null && foreignConfiguration.error?.code === '42501')
   const rpc = (who, org, doc) => identities[who].client.rpc('get_electronic_document', { organization_id: org, document_id: doc })
   for (const [state, id] of [['prepared', fixture.prepared], ['frozen', fixture.frozen]]) {
     const data = await checked(rpc('viewer', fixture.a.org, id))
@@ -343,6 +364,100 @@ try {
   await expect(page.getByRole('cell', { name: '118.0000', exact: true })).toBeVisible()
   evidence.browser.push('real login/menu/UUID/prepared/exact decimals/sandbox warning')
 
+  await logout()
+  await login('manager')
+  await page.getByRole('link', { name: /Fiscal sandbox/ }).first().click()
+  await expect(page).toHaveURL(`${web}/facturacion-sandbox`)
+  phase = 'browser-sandbox-ui-workflow'
+  const managerConfigurationReads = () => observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_billing_configuration').length
+  await expect(page.getByRole('form', { name: 'Configuración de perfil emisor sandbox' })).toBeVisible()
+  const profileForm = page.getByRole('form', { name: 'Configuración de perfil emisor sandbox' })
+  const configurationReadsBeforeProfileSave = managerConfigurationReads()
+  await profileForm.getByRole('button', { name: 'Guardar cambios de perfil sandbox' }).click()
+  await expect.poll(managerConfigurationReads).toBeGreaterThan(configurationReadsBeforeProfileSave)
+  await expect(profileForm.getByRole('button', { name: 'Guardar cambios de perfil sandbox' })).toBeEnabled()
+  const seriesForm = page.getByRole('form', { name: 'Configuración de serie sandbox' })
+  await seriesForm.getByLabel('Tipo de comprobante').selectOption('01')
+  await expect(seriesForm.getByLabel('Serie de factura')).toHaveValue('F001')
+  await seriesForm.getByRole('button', { name: 'Guardar cambios de serie sandbox' }).click()
+  await expect(seriesForm.getByRole('button', { name: 'Guardar cambios de serie sandbox' })).toBeEnabled()
+  const preparationForm = page.getByRole('form', { name: 'Preparar comprobante fiscal sandbox' })
+  await expect(preparationForm.getByRole('combobox', { name: 'Venta existente' })).toBeVisible()
+  await preparationForm.getByLabel('Venta existente').selectOption(fixture.uiSale)
+  await expect(preparationForm.getByLabel('Serie habilitada').locator('option:checked')).toContainText('F001')
+  await expect(preparationForm.getByRole('button', { name: 'Preparar factura o boleta sandbox' })).toBeEnabled()
+  const commercialBeforeSandboxWorkflow = fingerprint()
+  await preparationForm.getByRole('button', { name: 'Preparar factura o boleta sandbox' }).click()
+  await expect(page.getByText('Preparado · sin número', { exact: true })).toBeVisible()
+  await expect(page.getByRole('cell', { name: '118.0000', exact: true })).toBeVisible()
+  const workflowDocField = page.getByRole('textbox', { name: 'UUID del comprobante' })
+  const preparedDocId = await workflowDocField.inputValue()
+  assert.match(preparedDocId, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+  await page.getByRole('checkbox', { name: /Confirmo asignar un n[uú]mero interno de prueba/ }).check()
+  await page.getByRole('button', { name: 'Confirmar numeración sandbox' }).click()
+  const documentArticle = page.getByRole('article', { name: 'Detalle fiscal sandbox' })
+  await expect(documentArticle).toContainText('Congelado')
+  const fiscalDefinition = label => documentArticle.getByText(label, { exact: true }).locator('xpath=..').locator('dd')
+  const displayedType = fiscalDefinition('Tipo')
+  const displayedSeries = fiscalDefinition('Serie')
+  await expect(displayedType).toHaveText('Factura (01)')
+  await expect(displayedSeries).toHaveText('F001')
+  evidence.uiSnapshot = { type: await displayedType.innerText(), series: await displayedSeries.innerText() }
+  check('UI snapshot type and series match the configured invoice series',
+    evidence.uiSnapshot.type === 'Factura (01)' && evidence.uiSnapshot.series === 'F001')
+  await expect(page.getByText('SIN VALIDEZ TRIBUTARIA · resultado ficticio')).toHaveCount(0)
+  const afterConfirm = fingerprint()
+  const commercialTables = ['sales', 'sale_items', 'orders', 'order_items', 'inventory_movements', 'inventory_reservations', 'distribution_deliveries']
+  check('sandbox confirmation leaves sales, orders, inventory and deliveries unchanged',
+    commercialTables.every(table => JSON.stringify(commercialBeforeSandboxWorkflow[table]) === JSON.stringify(afterConfirm[table])))
+  const uiDocument = afterConfirm.electronic_documents.find(row => row.sale_id === fixture.uiSale)
+  const seriesBeforeConfirmation = commercialBeforeSandboxWorkflow.electronic_document_series
+    .find(row => row.id === uiDocument?.series_id)
+  const numberedSeriesDocuments = afterConfirm.electronic_documents
+    .filter(row => row.series_id === uiDocument?.series_id && row.number !== null)
+    .map(row => String(row.number))
+  check('UI confirmation allocates the next unique sandbox number without duplicate documents',
+    afterConfirm.electronic_documents.filter(row => row.sale_id === fixture.uiSale).length === 1
+      && uiDocument?.number !== null && uiDocument?.series === 'F001'
+      && Number(uiDocument?.number) === Number(seriesBeforeConfirmation?.next_number)
+      && new Set(numberedSeriesDocuments).size === numberedSeriesDocuments.length)
+  check('confirmed sandbox outbox stays blocked with no production attempts',
+    afterConfirm.electronic_document_outbox.filter(row => row.document_id === preparedDocId).length === 1
+      && afterConfirm.electronic_document_outbox.find(row => row.document_id === preparedDocId)?.action === 'sandbox_hold'
+      && afterConfirm.electronic_document_outbox.find(row => row.document_id === preparedDocId)?.state === 'blocked'
+      && afterConfirm.electronic_document_outbox.find(row => row.document_id === preparedDocId)?.attempts === 0)
+  const afterConfirmationRead = observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length
+  await page.getByRole('button', { name: 'Ejecutar simulación local' }).click()
+  const simulatedResult = page.getByRole('region', { name: 'Resultado ficticio del simulador' })
+  await expect(simulatedResult).toBeVisible()
+  await expect(simulatedResult).toContainText('SIN VALIDEZ TRIBUTARIA')
+  await expect(simulatedResult).toContainText('Simulación local favorable')
+  const afterSimulation = fingerprint()
+  evidence.simulationDocumentReadDelta = observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length
+    - afterConfirmationRead
+  check('local simulation leaves fiscal/commercial state unchanged and the outbox blocked',
+    JSON.stringify(afterConfirm) === JSON.stringify(afterSimulation)
+      && afterSimulation.electronic_document_outbox.every(row => row.state === 'blocked' && row.attempts === 0))
+  const downloadPromise = page.waitForEvent('download')
+  await simulatedResult.getByRole('button', { name: 'Descargar recibo JSON simulado' }).click()
+  const download = await downloadPromise
+  assert.equal(download.suggestedFilename(), `simulacion-${preparedDocId}.json`)
+  const receiptStream = await download.createReadStream()
+  assert.ok(receiptStream)
+  const receiptChunks = []
+  for await (const chunk of receiptStream) receiptChunks.push(chunk)
+  const receipt = JSON.parse(Buffer.concat(receiptChunks).toString('utf8'))
+  check('downloaded evidence is explicitly simulated and is not a CDR', receipt.simulated === true
+    && receipt.documentId === preparedDocId && receipt.status === 'accepted'
+    && receipt.message.includes('No es un CDR de SUNAT'))
+  evidence.browser.push('sale/profile/series/prepare/review/confirm/local simulation/JSON receipt')
+  before = afterSimulation
+
+  await logout()
+  await login('viewer')
+  await page.getByRole('link', { name: /Fiscal sandbox/ }).first().click()
+  await expect(page).toHaveURL(`${web}/facturacion-sandbox`)
+
   assert.equal(await page.evaluate(() => document.hasFocus()), true)
   delayedResponseReady = new Promise(resolve => { resolveDelayedResponseReady = resolve })
   delayedResponseReleased = new Promise(resolve => { releaseDelayedResponse = resolve })
@@ -359,7 +474,8 @@ try {
   if (permissionRevocation.error) throw new Error('FISCAL_TEST_PERMISSION_REVOCATION_FAILED')
   check('separate admin session revoked exactly the viewer BILLING_VIEW grant', permissionRevocation.data.length === 1)
   const documentReadsAtRevocation = observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length
-  await expect(page.getByRole('heading', { name: 'Consulta fiscal bloqueada' })).toBeVisible({ timeout: 5_500 })
+  await expect(page.getByRole('alert').filter({ hasText: 'Tu permiso fiscal no está vigente o no pudo verificarse; los datos se ocultaron.' }))
+    .toBeVisible({ timeout: 5_500 })
   const revocationPropagationMs = Date.now() - revocationStartedAt
   check('focused browser hides snapshot within the five-second authorization lease', revocationPropagationMs <= 5_000
     && await page.evaluate(() => document.hasFocus()))
@@ -380,18 +496,29 @@ try {
   }).select('user_id')
   if (permissionRestoration.error) throw new Error('FISCAL_TEST_PERMISSION_RESTORATION_FAILED')
   check('admin restored the original viewer grant without replacing its identity', permissionRestoration.data.length === 1)
+  const permissionChecksBeforeRestoration = observed.filter(r => r.path === '/rest/v1/rpc/has_organization_permission').length
+  await expect.poll(() => observed.filter(r => r.path === '/rest/v1/rpc/has_organization_permission').length,
+    { timeout: 6_000 }).toBeGreaterThan(permissionChecksBeforeRestoration)
+  const uuidInput = page.getByRole('textbox', { name: 'UUID del comprobante' })
+  await expect(uuidInput).toBeVisible({ timeout: 6_000 })
+  await expect(uuidInput).toHaveValue('')
+  check('restored authorization does not automatically restore the revoked document selection',
+    observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length === documentReadsAtRevocation)
+  await uuidInput.fill(fixture.prepared)
+  await page.getByRole('button', { name: 'Consultar' }).click()
   await expect.poll(() => observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length,
     { timeout: 6_000 }).toBeGreaterThan(documentReadsAtRevocation)
-  check('restored authorization causes a fresh real document RPC',
+  check('restored authorization and an explicit lookup cause a fresh real document RPC',
     observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length > documentReadsAtRevocation)
   await expect(page.getByRole('article', { name: 'Detalle fiscal sandbox' })).toBeVisible({ timeout: 6_000 })
-  evidence.browser.push('legitimate grant restoration reverified and fetched a fresh snapshot')
+  evidence.browser.push('legitimate grant restoration required an explicit UUID lookup and fetched a fresh snapshot')
 
   const permissionChecksBeforeNetworkFailure = observed.filter(r => r.path === '/rest/v1/rpc/has_organization_permission').length
   failNextPermissionRpc = true
   await expect.poll(() => observed.filter(r => r.path === '/rest/v1/rpc/has_organization_permission').length,
     { timeout: 5_000 }).toBeGreaterThan(permissionChecksBeforeNetworkFailure)
-  await expect(page.getByRole('heading', { name: 'Consulta fiscal bloqueada' })).toBeVisible({ timeout: 1_000 })
+  await expect(page.getByRole('alert').filter({ hasText: 'Tu permiso fiscal no está vigente o no pudo verificarse; los datos se ocultaron.' }))
+    .toBeVisible({ timeout: 1_000 })
   await expect(page.getByRole('article', { name: 'Detalle fiscal sandbox' })).toHaveCount(0)
   await expect(page.getByRole('article', { name: 'Detalle fiscal sandbox' })).toBeVisible({ timeout: 6_000 })
   evidence.browser.push('permission network failure fails closed and a later real check recovers')
