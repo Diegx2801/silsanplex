@@ -117,6 +117,7 @@ function ConsultaComprobante({
       })
       setConfirmadoExplicito(false)
       await queryClient.invalidateQueries({ queryKey: ['electronic-document', organizationId, AMBIENTE_FISCAL_SANDBOX, comprobante.documentId] })
+      await queryClient.invalidateQueries({ queryKey: ['electronic-billing-configuration', organizationId] })
       await consulta.reintentar()
     } catch (error) {
       setErrorAccion(error instanceof ErrorComandoFiscal ? error.message : 'No se pudo confirmar la numeración de prueba.')

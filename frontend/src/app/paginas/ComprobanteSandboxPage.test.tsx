@@ -173,6 +173,25 @@ describe('pantalla de consulta fiscal sandbox', () => {
     expect(reintentoA).toEqual(comandoAInicial)
   })
 
+  it('refresca la configuración fiscal tras asignar el siguiente correlativo', async () => {
+    mocks.auth.puedeEmitir = true
+    mocks.auth.puedeConfigurar = true
+    const [perfil] = perfilesFicticios()
+    mocks.configuracion.mockResolvedValue({ organizationId: organizacionFiscalPrueba, profiles: [perfil] })
+    mocks.confirmar.mockResolvedValue({})
+
+    render(pantalla())
+    expect(await screen.findByRole('form', { name: 'Configuración de perfil emisor sandbox' })).toBeInTheDocument()
+    await waitFor(() => expect(mocks.configuracion).toHaveBeenCalledTimes(1))
+    buscar()
+    await screen.findByRole('heading', { name: 'Detalle fiscal sandbox' })
+    fireEvent.click(screen.getByRole('checkbox', { name: /Confirmo asignar un número interno/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar numeración sandbox' }))
+
+    await waitFor(() => expect(mocks.confirmar).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.configuracion).toHaveBeenCalledTimes(2))
+  })
+
   it('conserva valores grandes y ceros decimales sin convertirlos a Number', async () => {
     const dto = crearComprobanteSandbox()
     dto.snapshot.totals.total = '999999999999.99'
