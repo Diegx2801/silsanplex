@@ -496,12 +496,22 @@ try {
   }).select('user_id')
   if (permissionRestoration.error) throw new Error('FISCAL_TEST_PERMISSION_RESTORATION_FAILED')
   check('admin restored the original viewer grant without replacing its identity', permissionRestoration.data.length === 1)
+  const permissionChecksBeforeRestoration = observed.filter(r => r.path === '/rest/v1/rpc/has_organization_permission').length
+  await expect.poll(() => observed.filter(r => r.path === '/rest/v1/rpc/has_organization_permission').length,
+    { timeout: 6_000 }).toBeGreaterThan(permissionChecksBeforeRestoration)
+  const uuidInput = page.getByRole('textbox', { name: 'UUID del comprobante' })
+  await expect(uuidInput).toBeVisible({ timeout: 6_000 })
+  await expect(uuidInput).toHaveValue('')
+  check('restored authorization does not automatically restore the revoked document selection',
+    observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length === documentReadsAtRevocation)
+  await uuidInput.fill(fixture.prepared)
+  await page.getByRole('button', { name: 'Consultar' }).click()
   await expect.poll(() => observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length,
     { timeout: 6_000 }).toBeGreaterThan(documentReadsAtRevocation)
-  check('restored authorization causes a fresh real document RPC',
+  check('restored authorization and an explicit lookup cause a fresh real document RPC',
     observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length > documentReadsAtRevocation)
   await expect(page.getByRole('article', { name: 'Detalle fiscal sandbox' })).toBeVisible({ timeout: 6_000 })
-  evidence.browser.push('legitimate grant restoration reverified and fetched a fresh snapshot')
+  evidence.browser.push('legitimate grant restoration required an explicit UUID lookup and fetched a fresh snapshot')
 
   const permissionChecksBeforeNetworkFailure = observed.filter(r => r.path === '/rest/v1/rpc/has_organization_permission').length
   failNextPermissionRpc = true
