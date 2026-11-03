@@ -7,6 +7,7 @@ import { useAuth } from '@/features/auth/useAuth'
 import { DetalleComprobanteSandbox } from '@/modulos/facturacion/componentes/DetalleComprobanteSandbox'
 import { FlujoEmisionSandbox } from '@/modulos/facturacion/componentes/FlujoEmisionSandbox'
 import { useComprobanteSandbox } from '@/modulos/facturacion/estado/useComprobanteSandbox'
+import { useVigenciaPermisoFiscal, type VigenciaPermisoFiscal } from '@/modulos/facturacion/estado/useVigenciaPermisoFiscal'
 import { AMBIENTE_FISCAL_SANDBOX, AVISO_FISCAL_SANDBOX, esquemaReferenciaComprobanteSandbox } from '@/modulos/facturacion/modelo/comprobanteSandbox'
 import {
   confirmarComprobanteSandbox,
@@ -21,11 +22,13 @@ function ConsultaComprobante({
   documentId,
   onDocumentIdChange,
   puedeConfirmar,
+  vigencia,
 }: {
   organizationId: string
   documentId?: string
   onDocumentIdChange: (documentId?: string) => void
   puedeConfirmar: boolean
+  vigencia: VigenciaPermisoFiscal
 }) {
   const id = useId()
   const campo = useRef<HTMLInputElement>(null)
@@ -37,7 +40,7 @@ function ConsultaComprobante({
   const [confirmadoExplicito, setConfirmadoExplicito] = useState(false)
   const [pendingAction, setPendingAction] = useState<'confirm' | 'simulate' | null>(null)
   const [simulacion, setSimulacion] = useState<ResultadoSimulacionSandbox | null>(null)
-  const consulta = useComprobanteSandbox(documentId)
+  const consulta = useComprobanteSandbox(documentId, vigencia)
   const error = consulta.error instanceof ErrorConsultaFiscal ? consulta.error : null
 
   useEffect(() => {
@@ -196,6 +199,7 @@ function ConsultaComprobante({
 
 export function ComprobanteSandboxPage() {
   const { access, user, session, isLoading, hasPermission } = useAuth()
+  const vigencia = useVigenciaPermisoFiscal(access?.organizationId ?? '')
   const identity = access && user ? `${access.organizationId}:${user.id}` : ''
   const [selection, setSelection] = useState<{ identity: string; documentId?: string }>({ identity: '', documentId: undefined })
   const documentId = selection.identity === identity ? selection.documentId : undefined
@@ -209,13 +213,20 @@ export function ComprobanteSandboxPage() {
     {isLoading ? <p role="status">Verificando acceso fiscal…</p>
       : !session || !user ? <p role="alert">Inicia sesión para consultar comprobantes sandbox.</p>
         : !access || !hasPermission(PERMISSIONS.BILLING_VIEW) ? <p role="alert">No tienes permiso para consultar comprobantes fiscales.</p>
+          : !vigencia.permitido ? <p role={vigencia.estado === 'verificando' ? 'status' : 'alert'}>
+            {vigencia.estado === 'verificando'
+              ? 'Verificando autorización fiscal…'
+              : 'Tu permiso fiscal no está vigente o no pudo verificarse; los datos se ocultaron.'}
+          </p>
           : <div key={`${access.organizationId}:${user.id}`} className="min-w-0 space-y-8">
             <FlujoEmisionSandbox organizationId={access.organizationId} userId={user.id}
               puedeConfigurar={hasPermission(PERMISSIONS.BILLING_CONFIGURE)}
               puedePreparar={hasPermission(PERMISSIONS.BILLING_PREPARE)}
+              permisoFiscalVigente={vigencia.permitido}
               onPrepared={selectDocument} />
             <ConsultaComprobante organizationId={access.organizationId} documentId={documentId}
-              onDocumentIdChange={selectDocument} puedeConfirmar={hasPermission(PERMISSIONS.BILLING_ISSUE)} />
+              onDocumentIdChange={selectDocument} puedeConfirmar={hasPermission(PERMISSIONS.BILLING_ISSUE)}
+              vigencia={vigencia} />
           </div>}
   </div>
 }

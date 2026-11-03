@@ -26,6 +26,8 @@ const SERIE_NUEVA = '__nueva__'
 const PERFILES_VACIOS: ConfiguracionEmisionSandbox['profiles'] = []
 const SERIES_VACIAS: ConfiguracionEmisionSandbox['profiles'][number]['series'] = []
 
+type ComandoIdempotentePendiente = { operationKey: string; id: string }
+
 type PerfilFormulario = {
   ruc: string
   nombre: string
@@ -70,12 +72,14 @@ export function FlujoEmisionSandbox({
   userId,
   puedeConfigurar,
   puedePreparar,
+  permisoFiscalVigente,
   onPrepared,
 }: {
   organizationId: string
   userId: string
   puedeConfigurar: boolean
   puedePreparar: boolean
+  permisoFiscalVigente: boolean
   onPrepared: (documentId: string) => void
 }) {
   const { hasPermission } = useAuth()
@@ -97,14 +101,17 @@ export function FlujoEmisionSandbox({
   const [dueDate, setDueDate] = useState(() => fechaMasDias(fechaLocalActual(), 30))
   const [operationError, setOperationError] = useState<string | null>(null)
   const [pendingAction, setPendingAction] = useState<'profile' | 'series' | 'prepare' | null>(null)
-  const profileKey = useRef<string | null>(null)
-  const seriesKey = useRef<string | null>(null)
+  const profileCommand = useRef<ComandoIdempotentePendiente | null>(null)
+  const seriesCommand = useRef<ComandoIdempotentePendiente | null>(null)
   const prepareKey = useRef<string | null>(null)
+
+  const resetProfileCommand = () => { profileCommand.current = null }
+  const resetSeriesCommand = () => { seriesCommand.current = null }
 
   const configQuery = useQuery({
     queryKey: ['electronic-billing-configuration', organizationId, userId],
     queryFn: ({ signal }) => consultarConfiguracionEmisionSandbox(organizationId, signal),
-    enabled: puedeConsultarConfiguracion,
+    enabled: permisoFiscalVigente && puedeConsultarConfiguracion,
     staleTime: 0,
     retry: false,
   })
@@ -128,7 +135,7 @@ export function FlujoEmisionSandbox({
   const salesQuery = useQuery({
     queryKey: ['fiscal-source-sales', organizationId, userId],
     queryFn: () => listarVentasPersistentes(organizationId),
-    enabled: puedePreparar && puedeVerVentas,
+    enabled: permisoFiscalVigente && puedePreparar && puedeVerVentas,
     staleTime: 0,
     retry: false,
   })
@@ -142,7 +149,7 @@ export function FlujoEmisionSandbox({
       const result = await buscarClientes(organizationId, selectedSale.clienteDocumento, 20)
       return result.find((customer) => customer.id === selectedSale.clienteId)
     },
-    enabled: Boolean(puedePreparar && puedeVerVentas && selectedSale),
+    enabled: Boolean(permisoFiscalVigente && puedePreparar && puedeVerVentas && selectedSale),
     staleTime: 0,
     retry: false,
   })
@@ -192,21 +199,24 @@ export function FlujoEmisionSandbox({
   }, [activeSeries, preparationSeriesId])
 
   const actualizarPerfil = (campo: keyof PerfilFormulario, valor: string) => {
-    profileKey.current = null
+    resetProfileCommand()
     setProfileForm((actual) => ({ ...actual, [campo]: valor }))
   }
   const guardarPerfil = async (evento: SubmitEvent<HTMLFormElement>) => {
     evento.preventDefault()
-    if (!puedeConfigurar || !config || !profileForm.ruc.trim() || !profileForm.nombre.trim()) return
+    if (!permisoFiscalVigente || !puedeConfigurar || !config || !profileForm.ruc.trim() || !profileForm.nombre.trim()) return
     setOperationError(null)
     setPendingAction('profile')
-    profileKey.current ??= crearClaveOperacionFiscal()
-    const profileId = selectedProfile?.id ?? crypto.randomUUID()
+    profileCommand.current ??= {
+      operationKey: crearClaveOperacionFiscal(),
+      id: selectedProfile?.id ?? crypto.randomUUID(),
+    }
+    const profileId = selectedProfile?.id ?? profileCommand.current.id
     try {
       const result = await guardarPerfilEmisorSandbox({
         organizationId,
         environment: AMBIENTE_FISCAL_SANDBOX,
-        operationKey: profileKey.current,
+        operationKey: profileCommand.current.operationKey,
         id: profileId,
         expectedVersion: selectedProfile?.version ?? '0',
         ruc: profileForm.ruc.trim(),
@@ -220,7 +230,7 @@ export function FlujoEmisionSandbox({
         ruleSetHash: HASH_REGLAS_FISCALES,
         testOnly: true,
       })
-      profileKey.current = null
+      profileCommand.current = null
       setSelectedProfileId(result.id)
       await queryClient.invalidateQueries({ queryKey: ['electronic-billing-configuration', organizationId, userId] })
     } catch (error) {
@@ -232,16 +242,19 @@ export function FlujoEmisionSandbox({
 
   const guardarSerie = async (evento: SubmitEvent<HTMLFormElement>) => {
     evento.preventDefault()
-    if (!puedeConfigurar || !selectedProfile || !config) return
+    if (!permisoFiscalVigente || !puedeConfigurar || !selectedProfile || !config) return
     setOperationError(null)
     setPendingAction('series')
-    seriesKey.current ??= crearClaveOperacionFiscal()
-    const seriesId = editableSeries?.id ?? crypto.randomUUID()
+    seriesCommand.current ??= {
+      operationKey: crearClaveOperacionFiscal(),
+      id: editableSeries?.id ?? crypto.randomUUID(),
+    }
+    const seriesId = editableSeries?.id ?? seriesCommand.current.id
     try {
       const result = await configurarSerieSandbox({
         organizationId,
         environment: AMBIENTE_FISCAL_SANDBOX,
-        operationKey: seriesKey.current,
+        operationKey: seriesCommand.current.operationKey,
         id: seriesId,
         expectedVersion: editableSeries?.version ?? '0',
         issuerProfileId: selectedProfile.id,
@@ -250,7 +263,7 @@ export function FlujoEmisionSandbox({
         nextNumber,
         enabled: seriesEnabled,
       })
-      seriesKey.current = null
+      seriesCommand.current = null
       setEditorSeriesId(result.id)
       setPreparationSeriesId(result.id)
       await queryClient.invalidateQueries({ queryKey: ['electronic-billing-configuration', organizationId, userId] })
@@ -263,7 +276,7 @@ export function FlujoEmisionSandbox({
 
   const preparar = async (evento: SubmitEvent<HTMLFormElement>) => {
     evento.preventDefault()
-    if (!puedePreparar || !selectedSale || !selectedProfile || !selectedSeries || !config) return
+    if (!permisoFiscalVigente || !puedePreparar || !selectedSale || !selectedProfile || !selectedSeries || !config) return
     if (documentType === '01' && !fiscalAddressId) {
       setOperationError('Para una factura, el cliente debe tener una dirección fiscal activa con ubigeo.')
       return
@@ -298,7 +311,7 @@ export function FlujoEmisionSandbox({
     }
   }
 
-  if (!puedeConsultarConfiguracion && !puedePreparar) return null
+  if (!permisoFiscalVigente || (!puedeConsultarConfiguracion && !puedePreparar)) return null
 
   return <section aria-labelledby="flujo-emision-sandbox" className="min-w-0 space-y-7 border-t pt-7">
     <header>
@@ -316,6 +329,19 @@ export function FlujoEmisionSandbox({
           <Button type="button" variant="outline" onClick={() => void configQuery.refetch()}>Reintentar configuración</Button>
         </div> : null}
 
+      {config && puedePreparar && !puedeConfigurar && profiles.length > 1 ? <div>
+        <label className="field-label" htmlFor="perfil-emisor-para-preparar">Perfil emisor para preparar</label>
+        <select id="perfil-emisor-para-preparar" className="field-control"
+          value={selectedProfile?.id ?? profiles[0].id}
+          onChange={(event) => {
+            setSelectedProfileId(event.target.value)
+            setPreparationSeriesId('')
+            resetSeriesCommand()
+          }}>
+          {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.legalName} · {profile.ruc}</option>)}
+        </select>
+      </div> : null}
+
       {config && puedeConfigurar ? <>
         <div className="grid gap-5 md:grid-cols-2">
           <form aria-label="Configuración de perfil emisor sandbox" onSubmit={guardarPerfil} className="space-y-4">
@@ -323,7 +349,11 @@ export function FlujoEmisionSandbox({
             {profiles.length > 0 ? <div>
               <label className="field-label" htmlFor="perfil-emisor-sandbox">Perfil guardado</label>
               <select id="perfil-emisor-sandbox" className="field-control" value={selectedProfileId || profiles[0]?.id || PERFIL_NUEVO}
-                onChange={(event) => { setSelectedProfileId(event.target.value); profileKey.current = null }}>
+                onChange={(event) => {
+                  setSelectedProfileId(event.target.value)
+                  resetProfileCommand()
+                  resetSeriesCommand()
+                }}>
                 {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.legalName} · {profile.ruc}</option>)}
                 <option value={PERFIL_NUEVO}>Crear perfil ficticio</option>
               </select>
@@ -376,14 +406,14 @@ export function FlujoEmisionSandbox({
             <div>
               <label className="field-label" htmlFor="tipo-documento-serie">Tipo de comprobante</label>
               <select id="tipo-documento-serie" className="field-control" value={documentType}
-                onChange={(event) => { setDocumentType(event.target.value as '01' | '03'); setEditorSeriesId(''); setPreparationSeriesId(''); seriesKey.current = null }}>
+                onChange={(event) => { setDocumentType(event.target.value as '01' | '03'); setEditorSeriesId(''); setPreparationSeriesId(''); resetSeriesCommand() }}>
                 <option value="01">Factura (01)</option><option value="03">Boleta (03)</option>
               </select>
             </div>
             {seriesForType.length ? <div>
               <label className="field-label" htmlFor="serie-configurada">Serie existente</label>
               <select id="serie-configurada" className="field-control" value={editorSeriesId || seriesForType[0].id}
-                onChange={(event) => { setEditorSeriesId(event.target.value); seriesKey.current = null }}>
+                onChange={(event) => { setEditorSeriesId(event.target.value); resetSeriesCommand() }}>
                 {seriesForType.map((series) => <option key={series.id} value={series.id}>{series.series} · siguiente {series.nextNumber}</option>)}
                 <option value={SERIE_NUEVA}>Agregar otra serie de prueba</option>
               </select>
@@ -392,16 +422,16 @@ export function FlujoEmisionSandbox({
               <label className="field-label" htmlFor="serie-codigo">Serie {documentType === '01' ? 'de factura' : 'de boleta'}</label>
               <input id="serie-codigo" className="field-control font-mono" pattern={documentType === '01' ? 'F[A-Z0-9]{3}' : 'B[A-Z0-9]{3}'}
                 maxLength={4} value={seriesCode} disabled={Boolean(editableSeries)} required
-                onChange={(event) => { setSeriesCode(event.target.value.toUpperCase()); seriesKey.current = null }} />
+                onChange={(event) => { setSeriesCode(event.target.value.toUpperCase()); resetSeriesCommand() }} />
               <p className="field-help">La serie queda inmutable cuando se crea.</p>
             </div>
             <div>
               <label className="field-label" htmlFor="serie-correlativo">Siguiente correlativo de prueba</label>
               <input id="serie-correlativo" className="field-control" inputMode="numeric" pattern="[1-9][0-9]{0,7}"
-                value={nextNumber} required onChange={(event) => { setNextNumber(event.target.value); seriesKey.current = null }} />
+                value={nextNumber} required onChange={(event) => { setNextNumber(event.target.value); resetSeriesCommand() }} />
             </div>
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={seriesEnabled} onChange={(event) => { setSeriesEnabled(event.target.checked); seriesKey.current = null }} />
+              <input type="checkbox" checked={seriesEnabled} onChange={(event) => { setSeriesEnabled(event.target.checked); resetSeriesCommand() }} />
               Serie habilitada para preparación sandbox
             </label>
             <Button type="submit" disabled={!selectedProfile || pendingAction !== null || configQuery.isFetching}>

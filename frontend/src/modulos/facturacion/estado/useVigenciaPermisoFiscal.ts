@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, type QueryKey } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
 import { supabase } from '@/lib/supabase'
@@ -13,6 +13,18 @@ export type EstadoVigenciaPermisoFiscal =
   | 'permitido'
   | 'denegado'
   | 'no_verificable'
+
+export interface VigenciaPermisoFiscal {
+  estado: EstadoVigenciaPermisoFiscal
+  permitido: boolean
+}
+
+const CONSULTAS_FISCALES: readonly QueryKey[] = [
+  ['electronic-document'],
+  ['electronic-billing-configuration'],
+  ['fiscal-source-sales'],
+  ['fiscal-source-customer'],
+]
 
 interface ResultadoVigencia {
   identidad: string | null
@@ -55,11 +67,11 @@ export function useVigenciaPermisoFiscal(organizationId: string) {
     let ultimoEstado: EstadoVigenciaPermisoFiscal | null = null
 
     const eliminarSnapshotsFiscales = () => {
-      const filtros = { queryKey: ['electronic-document'] as const }
-      void queryClient.cancelQueries(filtros).finally(() => {
-        if (montado && ultimoEstado === 'permitido') return
-        queryClient.getQueryCache().findAll(filtros).forEach((query) => {
+      const filtros = CONSULTAS_FISCALES.map((queryKey) => ({ queryKey }))
+      filtros.forEach((filtro) => {
+        queryClient.getQueryCache().findAll(filtro).forEach((query) => {
           query.setState({
+            ...query.state,
             data: undefined,
             dataUpdatedAt: 0,
             error: null,
@@ -72,7 +84,10 @@ export function useVigenciaPermisoFiscal(organizationId: string) {
             fetchStatus: 'idle',
           })
         })
-        queryClient.removeQueries(filtros)
+      })
+      void Promise.all(filtros.map((filtro) => queryClient.cancelQueries(filtro))).finally(() => {
+        if (montado && ultimoEstado === 'permitido') return
+        filtros.forEach((filtro) => queryClient.removeQueries(filtro))
       })
     }
 
@@ -193,5 +208,5 @@ export function useVigenciaPermisoFiscal(organizationId: string) {
     }
   }, [accessToken, identidad, organizationId, queryClient, tieneSesion, userId])
 
-  return { estado, permitido: estado === 'permitido' }
+  return { estado, permitido: estado === 'permitido' } satisfies VigenciaPermisoFiscal
 }
