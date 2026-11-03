@@ -87,7 +87,7 @@ test('registra y edita un cliente con varias direcciones y una principal', async
   await expect(dialog).toBeHidden()
 
   await page.getByRole('searchbox', { name: 'Buscar' }).fill(documentNumber)
-  await expect(page.getByText(legalName)).toBeVisible()
+  await expect(page.getByRole('table').getByText(legalName)).toBeVisible()
   await page.getByRole('button', { name: `Editar ${legalName}` }).click()
   const editDialog = page.getByRole('dialog', { name: 'Editar cliente' })
   const persistedSecondAddress = editDialog.locator('[data-address-index]').filter({ hasText: 'Almacén secundario' })
@@ -135,7 +135,7 @@ test('previsualiza e importa clientes desde un archivo de Codeplex', async ({ pa
   await expect(importDialog.getByText(/Importación finalizada: 1 creados/)).toBeVisible()
   await importDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
   await page.getByRole('searchbox', { name: 'Buscar', exact: true }).fill(uniqueDocument)
-  await expect(page.getByText(uniqueName)).toBeVisible()
+  await expect(page.getByRole('table').getByText(uniqueName)).toBeVisible()
 })
 
 test('rechaza un archivo de clientes sin columnas obligatorias', async ({ page }) => {
@@ -197,7 +197,7 @@ test('importa direcciones de entrega desde la hoja separada', async ({ page }) =
   await importDialog.getByRole('button', { name: 'Cerrar', exact: true }).click()
 
   await page.getByRole('searchbox', { name: 'Buscar', exact: true }).fill(documentNumber)
-  await expect(page.getByText(legalName)).toBeVisible()
+  await expect(page.getByRole('table').getByText(legalName)).toBeVisible()
   await page.getByRole('button', { name: `Editar ${legalName}` }).click()
   const editDialog = page.getByRole('dialog', { name: 'Editar cliente' })
   await expect(editDialog.locator('[data-address-index="0"]')).toBeVisible()
