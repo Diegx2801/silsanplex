@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   configuracion: vi.fn(),
   guardarPerfil: vi.fn(),
   guardarSerie: vi.fn(),
+  confirmar: vi.fn(),
   auth: {
     organizationId: '', userId: '', sesion: true, permiso: true, cargando: false,
     puedeConfigurar: false, puedePreparar: false, puedeEmitir: false, puedeVerVentas: false,
@@ -42,6 +43,7 @@ vi.mock('@/modulos/facturacion/servicios/comprobantesSandboxService', async (imp
   consultarConfiguracionEmisionSandbox: mocks.configuracion,
   guardarPerfilEmisorSandbox: mocks.guardarPerfil,
   configurarSerieSandbox: mocks.guardarSerie,
+  confirmarComprobanteSandbox: mocks.confirmar,
 }))
 vi.mock('@/modulos/facturacion/estado/useVigenciaPermisoFiscal', () => ({
   useVigenciaPermisoFiscal: () => mocks.vigencia,
@@ -77,6 +79,7 @@ describe('pantalla de consulta fiscal sandbox', () => {
     mocks.configuracion.mockReset().mockResolvedValue({ organizationId: organizacionFiscalPrueba, profiles: [] })
     mocks.guardarPerfil.mockReset()
     mocks.guardarSerie.mockReset()
+    mocks.confirmar.mockReset()
   })
   afterEach(() => cliente.clear())
 
@@ -126,6 +129,48 @@ describe('pantalla de consulta fiscal sandbox', () => {
     expect(cuotas.getByRole('rowheader', { name: 'Cuota001' })).toBeVisible()
     expect(cuotas.getByRole('cell', { name: '118.00' })).toBeVisible()
     expect(cuotas.getByText('2026-11-24')).toBeVisible()
+  })
+
+  it('mantiene la clave de confirmación por comprobante al cambiar la selección', async () => {
+    const documentoA = documentoFiscalPrueba
+    const documentoB = '55555555-5555-4555-8555-555555555555'
+    mocks.auth.puedeEmitir = true
+    mocks.consultar.mockImplementation(async (_organizationId: string, selectedDocumentId: string) => ({
+      ...crearComprobanteSandbox(), documentId: selectedDocumentId,
+    }))
+    mocks.confirmar
+      .mockRejectedValueOnce(new Error('respuesta de A perdida'))
+      .mockRejectedValueOnce(new Error('respuesta de B perdida'))
+      .mockResolvedValueOnce({})
+
+    render(pantalla())
+    const confirmarSeleccionado = async (selectedDocumentId: string, expectedCalls: number) => {
+      fireEvent.change(screen.getByRole('textbox', { name: 'UUID del comprobante' }), {
+        target: { value: selectedDocumentId },
+      })
+      fireEvent.submit(screen.getByRole('form', { name: 'Consultar comprobante sandbox' }))
+      await waitFor(() => expect(mocks.consultar).toHaveBeenCalledWith(
+        organizacionFiscalPrueba, selectedDocumentId, expect.any(AbortSignal),
+      ))
+      await screen.findByRole('heading', { name: 'Detalle fiscal sandbox' })
+      fireEvent.click(screen.getByRole('checkbox', { name: /Confirmo asignar un número interno/ }))
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar numeración sandbox' }))
+      await waitFor(() => expect(mocks.confirmar).toHaveBeenCalledTimes(expectedCalls))
+    }
+
+    await confirmarSeleccionado(documentoA, 1)
+    await screen.findByRole('alert')
+    await confirmarSeleccionado(documentoB, 2)
+    await screen.findByRole('alert')
+    await confirmarSeleccionado(documentoA, 3)
+
+    const comandoAInicial = mocks.confirmar.mock.calls[0][0] as { documentId: string; operationKey: string }
+    const comandoB = mocks.confirmar.mock.calls[1][0] as { documentId: string; operationKey: string }
+    const reintentoA = mocks.confirmar.mock.calls[2][0] as { documentId: string; operationKey: string }
+    expect(comandoAInicial.documentId).toBe(documentoA)
+    expect(comandoB.documentId).toBe(documentoB)
+    expect(comandoB.operationKey).not.toBe(comandoAInicial.operationKey)
+    expect(reintentoA).toEqual(comandoAInicial)
   })
 
   it('conserva valores grandes y ceros decimales sin convertirlos a Number', async () => {

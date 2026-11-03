@@ -32,7 +32,7 @@ function ConsultaComprobante({
 }) {
   const id = useId()
   const campo = useRef<HTMLInputElement>(null)
-  const claveConfirmacion = useRef<string | null>(null)
+  const clavesConfirmacion = useRef(new Map<string, string>())
   const queryClient = useQueryClient()
   const [entrada, setEntrada] = useState('')
   const [errorEntrada, setErrorEntrada] = useState<string | null>(null)
@@ -42,6 +42,14 @@ function ConsultaComprobante({
   const [simulacion, setSimulacion] = useState<ResultadoSimulacionSandbox | null>(null)
   const consulta = useComprobanteSandbox(documentId, vigencia)
   const error = consulta.error instanceof ErrorConsultaFiscal ? consulta.error : null
+  const idComprobanteConsultado = consulta.comprobante?.documentId
+  const estadoComprobanteConsultado = consulta.comprobante?.state
+
+  useEffect(() => {
+    if (estadoComprobanteConsultado === 'frozen' && idComprobanteConsultado) {
+      clavesConfirmacion.current.delete(`${organizationId}:${AMBIENTE_FISCAL_SANDBOX}:${idComprobanteConsultado}`)
+    }
+  }, [organizationId, idComprobanteConsultado, estadoComprobanteConsultado])
 
   useEffect(() => {
     if (documentId) setEntrada(documentId)
@@ -93,16 +101,20 @@ function ConsultaComprobante({
     if (!puedeConfirmar || !comprobante || comprobante.state !== 'prepared' || !confirmadoExplicito) return
     setPendingAction('confirm')
     setErrorAccion(null)
-    claveConfirmacion.current ??= crearClaveOperacionFiscal()
+    const scopeConfirmacion = `${organizationId}:${AMBIENTE_FISCAL_SANDBOX}:${comprobante.documentId}`
+    let operationKey = clavesConfirmacion.current.get(scopeConfirmacion)
+    if (!operationKey) {
+      operationKey = crearClaveOperacionFiscal()
+      clavesConfirmacion.current.set(scopeConfirmacion, operationKey)
+    }
     try {
       await confirmarComprobanteSandbox({
         organizationId,
         environment: AMBIENTE_FISCAL_SANDBOX,
-        operationKey: claveConfirmacion.current,
+        operationKey,
         documentId: comprobante.documentId,
         expectedVersion: comprobante.version,
       })
-      claveConfirmacion.current = null
       setConfirmadoExplicito(false)
       await queryClient.invalidateQueries({ queryKey: ['electronic-document', organizationId, AMBIENTE_FISCAL_SANDBOX, comprobante.documentId] })
       await consulta.reintentar()
