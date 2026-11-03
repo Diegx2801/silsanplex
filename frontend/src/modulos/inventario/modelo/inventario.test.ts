@@ -93,38 +93,33 @@ describe('inventario', () => {
     expect(crearDescripcionMotivoMovimiento('Otro', '  Entrega extraordinaria  ')).toBe('Otro: Entrega extraordinaria')
   })
 
-  it('limita los motivos del aumento de stock a diferencias positivas u otro', () => {
+  it('exige una posición de stock existente para cualquier dirección de ajuste', () => {
     const ajuste = {
       productoId: producto.id,
       tipoAjuste: 'ajuste-positivo',
       almacenId: 'almacen-1',
       bucketKey: '',
-      ubicacionId: 'ubicacion-1',
-      estadoStock: 'available',
-      lote: 'LOTE-1',
-      fechaVencimiento: '2027-12-31',
-      costoUnitario: '12.5',
       cantidad: '1',
-      motivoAjuste: 'expired',
       observacion: '',
     } as const
 
     expect(esquemaFormularioAjusteStock.safeParse(ajuste).success).toBe(false)
     expect(esquemaFormularioAjusteStock.safeParse({
       ...ajuste,
-      motivoAjuste: 'physical_count_difference',
+      bucketKey: 'almacen-1|ubicacion-1|available|lote-1|2027-12-31',
     }).success).toBe(true)
     expect(esquemaFormularioAjusteStock.safeParse({
       ...ajuste,
-      motivoAjuste: 'internal_use',
-    }).success).toBe(false)
+      tipoAjuste: 'ajuste-negativo',
+      bucketKey: 'almacen-1|ubicacion-1|available|lote-1|2027-12-31',
+    }).success).toBe(true)
   })
 
-  it('guarda el motivo del ajuste en lenguaje claro dentro del límite del Kardex', () => {
-    const motivo = crearMotivoAjusteStock('physical_count_difference', 'x'.repeat(120))
+  it('guarda un motivo de auditoría fijo y conserva la observación opcional dentro del límite del Kardex', () => {
+    const motivo = crearMotivoAjusteStock('x'.repeat(120))
     expect(motivo).toContain('Diferencia de inventario físico')
-    expect(motivo).not.toContain('physical_count_difference')
     expect(motivo.length).toBeLessThanOrEqual(180)
+    expect(crearMotivoAjusteStock('')).toBe('Ajuste de stock: Diferencia de inventario físico')
   })
 
   it('convierte entradas y salidas en variaciones con signo', () => {

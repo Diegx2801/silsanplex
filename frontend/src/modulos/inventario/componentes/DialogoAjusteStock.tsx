@@ -20,8 +20,6 @@ import {
   claveBucketAjusteStock,
   crearMotivoAjusteStock,
   esquemaFormularioAjusteStock,
-  motivosAjustePositivoStock,
-  motivosAjusteStock,
   type BucketAjusteStock,
   type DatosFormularioAjusteStock,
   type DatosMovimientoInventario,
@@ -49,8 +47,7 @@ interface DialogoAjusteStockProps {
 
 interface ConfirmacionAjusteStock {
   datos: DatosFormularioAjusteStock
-  bucket: BucketAjusteStock | null
-  ubicacion: UbicacionAlmacen | null
+  bucket: BucketAjusteStock
 }
 
 function descripcionBucket(bucket: BucketAjusteStock) {
@@ -103,7 +100,7 @@ function DetalleStock({
         </div>
         <div>
           <dt className="text-xs text-muted-foreground">
-            {positivo ? 'Disponible actual' : 'Disponible para descontar'}
+            {positivo ? 'Saldo no reservado' : 'Disponible para descontar'}
           </dt>
           <dd className="mt-1 font-mono font-semibold tabular-nums">
             {formatoCantidad.format(disponible)}
@@ -161,7 +158,6 @@ export function DialogoAjusteStock({
     watch,
     setValue,
     setError,
-    trigger,
     formState: { errors },
   } = useForm<DatosFormularioAjusteStock>({
     resolver: zodResolver(esquemaFormularioAjusteStock),
@@ -170,15 +166,9 @@ export function DialogoAjusteStock({
       tipoAjuste: 'ajuste-negativo',
       almacenId: almacenInicialId,
       bucketKey: bucketInicial,
-      ubicacionId: posicionInicial?.ubicacionId ?? '',
-      estadoStock: posicionInicial?.estado ?? 'available',
-      lote: posicionInicial?.lote ?? '',
-      fechaVencimiento: posicionInicial?.fechaVencimiento ?? '',
-      costoUnitario: '',
       cantidad: '',
       unidadEntradaId: contexto?.producto.unidadBaseId,
       factorConversionEsperado: 1,
-      motivoAjuste: 'physical_count_difference',
       observacion: '',
     },
   })
@@ -187,18 +177,8 @@ export function DialogoAjusteStock({
   const tipoAjuste = watch('tipoAjuste')
   const almacenId = watch('almacenId')
   const bucketKey = watch('bucketKey')
-  const ubicacionId = watch('ubicacionId')
-  const estadoStock = watch('estadoStock')
-  const lote = watch('lote')
-  const fechaVencimiento = watch('fechaVencimiento')
   const cantidad = watch('cantidad')
   const unidadEntradaId = watch('unidadEntradaId')
-  const motivoAjuste = watch('motivoAjuste')
-  const requiereDetalleMotivo = motivoAjuste === 'other'
-
-  useEffect(() => {
-    if (!requiereDetalleMotivo) void trigger('observacion')
-  }, [requiereDetalleMotivo, trigger])
   const { buckets, cargando, consultando, error } = useBucketsAjusteStock(
     productoId,
     almacenId,
@@ -252,8 +232,9 @@ export function DialogoAjusteStock({
     [buckets, ubicacionesActivas],
   )
   const bucketsVisibles = useMemo(
-    () => bucketsActivos.filter((bucket) => cantidadDisponibleAjusteStock(bucket) > 0),
-    [bucketsActivos],
+    () => bucketsActivos.filter((bucket) => tipoAjuste === 'ajuste-positivo'
+      || cantidadDisponibleAjusteStock(bucket) > 0),
+    [bucketsActivos, tipoAjuste],
   )
   const opcionesBuckets = useMemo<ComboboxOption[]>(
     () => bucketsVisibles.map((bucket) => {
@@ -262,7 +243,7 @@ export function DialogoAjusteStock({
         value: claveBucketAjusteStock(bucket),
         label: descripcionBucket(bucket),
         secondaryText: [
-          `${formatoCantidad.format(descontable)} ${bucket.unidadMedida || 'unidades'} descontables`,
+          `${formatoCantidad.format(descontable)} ${bucket.unidadMedida || 'unidades'} disponibles para descontar`,
           `${formatoCantidad.format(bucket.cantidadFisica)} físico`,
           `${formatoCantidad.format(bucket.cantidadReservada)} reservado`,
         ].join(' · '),
@@ -286,41 +267,6 @@ export function DialogoAjusteStock({
   const factorConversion = unidadEntrada?.factorConversion ?? 1
   const cantidadNumero = Number(cantidad) * factorConversion
   const tipoAjusteAnterior = useRef(tipoAjuste)
-  const ubicacionesVisibles = useMemo(
-    () => ubicaciones.filter((item) => item.activa && item.almacenId === almacenId),
-    [almacenId, ubicaciones],
-  )
-  const opcionesUbicaciones = useMemo<ComboboxOption[]>(
-    () => ubicacionesVisibles.map((item) => ({
-      value: item.id,
-      label: `${item.codigo} · ${item.nombre}`,
-      keywords: [item.codigo, item.nombre],
-    })),
-    [ubicacionesVisibles],
-  )
-  const bucketsDestino = useMemo(
-    () => buckets.filter((bucket) => bucket.ubicacionId === ubicacionId && bucket.estadoStock === estadoStock),
-    [buckets, estadoStock, ubicacionId],
-  )
-  const opcionesLote = useMemo<ComboboxOption[]>(
-    () => bucketsDestino.map((bucket) => ({
-      value: `existente:${claveBucketAjusteStock(bucket)}`,
-      label: bucket.lote || 'Sin lote',
-      secondaryText: [
-        bucket.fechaVencimiento ? `Vence ${formatearFechaCalendarioPeru(bucket.fechaVencimiento)}` : 'Sin vencimiento',
-        `${formatoCantidad.format(bucket.cantidadFisica)} ${bucket.unidadMedida || 'unidades'} en esta posición`,
-      ].join(' · '),
-      keywords: [bucket.lote, bucket.fechaVencimiento, bucket.ubicacionCodigo],
-    })),
-    [bucketsDestino],
-  )
-  const bucketPositivo = useMemo(
-    () => bucketsDestino.find((bucket) =>
-      bucket.lote.trim().toLocaleLowerCase('es-PE') === lote.trim().toLocaleLowerCase('es-PE')
-      && bucket.fechaVencimiento === fechaVencimiento,
-    ) ?? null,
-    [bucketsDestino, fechaVencimiento, lote],
-  )
   const ubicacionAnterior = useRef({ productoId: productoInicialId, almacenId: almacenInicialId })
 
   useEffect(() => {
@@ -339,26 +285,12 @@ export function DialogoAjusteStock({
     if (tipoAjusteAnterior.current === tipoAjuste) return
     tipoAjusteAnterior.current = tipoAjuste
     setValue('bucketKey', '')
-    setValue('ubicacionId', '')
-    setValue('estadoStock', 'available')
-    setValue('lote', '')
-    setValue('fechaVencimiento', '')
-    setValue('costoUnitario', '')
     setValue('cantidad', '')
-    setValue('motivoAjuste', 'physical_count_difference')
     setConfirmacion(null)
     setErrorGuardado('')
     setValue('almacenId', '', { shouldDirty: true })
     setAlmacenOpcion(null)
   }, [setValue, tipoAjuste])
-
-  useEffect(() => {
-    if (bucketPositivo) {
-      setValue('costoUnitario', bucketPositivo.costoPromedio.toFixed(4))
-    } else if (tipoAjuste === 'ajuste-positivo') {
-      setValue('costoUnitario', '')
-    }
-  }, [bucketPositivo, setValue, tipoAjuste])
 
   useEffect(() => {
     if (consultando || error || !bucketKey || bucketSeleccionado) return
@@ -383,11 +315,11 @@ export function DialogoAjusteStock({
     const unidadSeleccionada = producto?.unidadesEntrada?.find((unidad) => unidad.id === datos.unidadEntradaId)
       ?? producto?.unidadesEntrada?.[0]
     const cantidadSolicitada = Number(datos.cantidad) * (unidadSeleccionada?.factorConversion ?? 1)
+    if (!bucketSeleccionado) {
+      setError('bucketKey', { type: 'validate', message: 'Selecciona la posición de stock que vas a ajustar' })
+      return
+    }
     if (datos.tipoAjuste === 'ajuste-negativo') {
-      if (!bucketSeleccionado) {
-        setError('bucketKey', { type: 'validate', message: 'Selecciona una posición de stock para descontar' })
-        return
-      }
       const cantidadDisponible = cantidadDisponibleAjusteStock(bucketSeleccionado)
       if (cantidadSolicitada > cantidadDisponible) {
         setError('cantidad', {
@@ -396,30 +328,9 @@ export function DialogoAjusteStock({
         })
         return
       }
-      setErrorGuardado('')
-      setConfirmacion({ datos, bucket: bucketSeleccionado, ubicacion: null })
-      return
-    }
-
-    const ubicacion = ubicacionesVisibles.find((item) => item.id === datos.ubicacionId)
-    if (!ubicacion) {
-      setError('ubicacionId', { type: 'validate', message: 'Selecciona una ubicación activa del almacén' })
-      return
-    }
-    if (producto?.controlLote && !datos.lote.trim()) {
-      setError('lote', { type: 'validate', message: 'Ingresa el código de lote impreso en el envase' })
-      return
-    }
-    if (producto?.controlVencimiento && !datos.fechaVencimiento) {
-      setError('fechaVencimiento', { type: 'validate', message: 'Ingresa la fecha de vencimiento del lote' })
-      return
-    }
-    if (!bucketPositivo && (!datos.costoUnitario.trim() || !Number.isFinite(Number(datos.costoUnitario)) || Number(datos.costoUnitario) < 0)) {
-      setError('costoUnitario', { type: 'validate', message: 'Ingresa el costo unitario para valorar la nueva posición' })
-      return
     }
     setErrorGuardado('')
-    setConfirmacion({ datos, bucket: bucketPositivo, ubicacion })
+    setConfirmacion({ datos, bucket: bucketSeleccionado })
   }
 
   const confirmarAjuste = async () => {
@@ -428,29 +339,23 @@ export function DialogoAjusteStock({
     setErrorGuardado('')
     const { datos, bucket } = confirmacion
     let errorRegistro: string | undefined
-    const warehouseName = almacenSeleccionado?.nombre
-      ?? almacenOpcion?.label.split(' · ').slice(1).join(' · ')
-      ?? ''
     try {
       errorRegistro = await alGuardar({
         productoId: datos.productoId,
         tipo: datos.tipoAjuste,
         cantidad: datos.cantidad,
-        almacen: bucket?.almacenNombre ?? warehouseName,
-        almacenId: bucket?.almacenId ?? datos.almacenId,
-        ubicacionId: bucket?.ubicacionId ?? datos.ubicacionId,
-        estadoStock: bucket?.estadoStock ?? datos.estadoStock,
-        costoUnitario: bucket
-          ? bucket.costoPromedio.toFixed(4)
-          : bucketPositivo
-            ? bucketPositivo.costoPromedio.toFixed(4)
-            : datos.costoUnitario,
-        lote: bucket?.lote ?? datos.lote,
-        fechaVencimiento: bucket?.fechaVencimiento ?? datos.fechaVencimiento,
+        almacen: bucket.almacenNombre,
+        almacenId: bucket.almacenId,
+        ubicacionId: bucket.ubicacionId,
+        estadoStock: bucket.estadoStock,
+        // El RPC toma el costo promedio bajo bloqueo del bucket. No enviarlo evita
+        // revalorar la existencia con un costo leído antes de una operación concurrente.
+        lote: bucket.lote,
+        fechaVencimiento: bucket.fechaVencimiento,
         fechaOperacion: hoy(),
         unidadEntradaId: datos.unidadEntradaId || producto?.unidadBaseId,
         factorConversionEsperado: datos.factorConversionEsperado ?? unidadEntrada?.factorConversion ?? 1,
-        motivo: crearMotivoAjusteStock(datos.motivoAjuste, datos.observacion),
+        motivo: crearMotivoAjusteStock(datos.observacion),
       })
     } catch {
       errorRegistro = 'No se pudo registrar el ajuste. Inténtalo nuevamente.'
@@ -506,25 +411,19 @@ export function DialogoAjusteStock({
                 <AlertTriangle aria-hidden="true" className="mt-1 size-4 shrink-0" />
                 <p>
                   Se {confirmacion.datos.tipoAjuste === 'ajuste-positivo' ? 'aumentarán' : 'descontarán'}{' '}
-                  <strong>{formatoCantidad.format(cantidadConfirmada)} {confirmacion.bucket?.unidadMedida || producto?.unidadMedida || 'unidades'}</strong>{' '}
-                  de <strong>{confirmacion.bucket?.productoDescripcion || producto?.descripcion}</strong> en{' '}
-                  <strong>{confirmacion.bucket?.almacenNombre || almacenSeleccionado?.nombre || almacenOpcion?.label.split(' · ').slice(1).join(' · ')}</strong> ·{' '}
-                  {confirmacion.bucket
-                    ? descripcionBucket(confirmacion.bucket)
-                    : `${confirmacion.ubicacion?.codigo} · Lote ${confirmacion.datos.lote || 'sin lote'} · ${confirmacion.datos.fechaVencimiento ? `vence ${formatearFechaCalendarioPeru(confirmacion.datos.fechaVencimiento)}` : 'sin vencimiento'} · ${etiquetasEstadoStock[confirmacion.datos.estadoStock]}`}
-                  .
+                  <strong>{formatoCantidad.format(cantidadConfirmada)} {confirmacion.bucket.unidadMedida || producto?.unidadMedida || 'unidades'}</strong>{' '}
+                  de <strong>{confirmacion.bucket.productoDescripcion}</strong> en{' '}
+                  <strong>{confirmacion.bucket.almacenNombre}</strong> · {descripcionBucket(confirmacion.bucket)}.
                 </p>
               </div>
-              {confirmacion.bucket ? (
-                <DetalleStock
-                  bucket={confirmacion.bucket}
-                  cantidad={cantidadConfirmada}
-                  positivo={confirmacion.datos.tipoAjuste === 'ajuste-positivo'}
-                />
-              ) : null}
+              <DetalleStock
+                bucket={confirmacion.bucket}
+                cantidad={cantidadConfirmada}
+                positivo={confirmacion.datos.tipoAjuste === 'ajuste-positivo'}
+              />
               <p className="text-sm leading-6 text-muted-foreground">
-                El stock se actualizará en la unidad base; el historial conservará la cantidad y unidad ingresadas,
-                {' '}el motivo y el usuario responsable.
+                Se conservarán lote, vencimiento, condición y costo de la posición. El historial registrará la
+                {' '}diferencia, la observación (si agregaste una) y el usuario responsable.
               </p>
               {errorGuardado ? (
                 <p role="alert" className="field-error border border-destructive/30 bg-destructive/5 px-4 py-3">
@@ -563,7 +462,7 @@ export function DialogoAjusteStock({
                   <option value="ajuste-positivo">Aumentar stock</option>
                   <option value="ajuste-negativo">Descontar stock</option>
                 </select>
-                <p className="field-help">Úsalo solo para corregir una diferencia; las recepciones y salidas normales se registran en Movimientos.</p>
+                <p className="field-help">Corrige una diferencia de conteo en una posición existente. Las recepciones y salidas se registran en Movimientos.</p>
               </div>
 
               <input type="hidden" {...register('almacenId')} />
@@ -577,10 +476,6 @@ export function DialogoAjusteStock({
                   setAlmacenOpcion(opcion ?? null)
                   setValue('almacenId', valor, { shouldValidate: true, shouldDirty: true })
                   setValue('bucketKey', '', { shouldDirty: true })
-                  setValue('ubicacionId', '', { shouldDirty: true })
-                  setValue('lote', '', { shouldDirty: true })
-                  setValue('fechaVencimiento', '', { shouldDirty: true })
-                  setValue('costoUnitario', '', { shouldDirty: true })
                   setValue('cantidad', '', { shouldDirty: true })
                   setConfirmacion(null)
                   setErrorGuardado('')
@@ -588,8 +483,8 @@ export function DialogoAjusteStock({
                 loadOptions={cargarAlmacenesAjuste}
                 placeholder={productoId ? 'Buscar por código o nombre' : 'Selecciona primero un producto'}
                 helperText={tipoAjuste === 'ajuste-negativo'
-                  ? 'Busca un almacén donde este producto tenga stock no reservado.'
-                  : 'Busca cualquier almacén activo donde se encontró el stock.'}
+                  ? 'Busca un almacén con stock disponible para descontar.'
+                  : 'Busca el almacén donde está la posición que necesitas corregir.'}
                 error={errors.almacenId?.message}
                 required
                 disabled={!productoId}
@@ -601,11 +496,11 @@ export function DialogoAjusteStock({
                 loadingMessage="Buscando almacenes…"
               />
 
-              {tipoAjuste === 'ajuste-negativo' ? <div>
+              <div>
                 <input type="hidden" {...register('bucketKey')} />
                 <Combobox
                   id="bucket-ajuste-stock"
-                  label="Ubicación y lote"
+                  label="Ubicación, lote y condición"
                   value={bucketKey}
                   options={opcionesBuckets}
                   onChange={(valor) => {
@@ -622,13 +517,15 @@ export function DialogoAjusteStock({
                         ? 'Consultando existencias…'
                         : bucketsVisibles.length
                           ? 'Busca por ubicación, lote o vencimiento'
-                          : bucketsActivos.length
+                          : tipoAjuste === 'ajuste-negativo' && bucketsActivos.length
                             ? 'Todo el stock está reservado'
                             : 'No hay stock físico en este almacén'
                   }
                   helperText={error || !almacenId || !bucketsVisibles.length
                     ? undefined
-                    : 'Elige la ubicación, lote y condición exactos que vas a descontar.'}
+                    : tipoAjuste === 'ajuste-negativo'
+                      ? 'Selecciona la posición exacta; el stock reservado no se puede descontar.'
+                      : 'Selecciona la posición encontrada. Se conservarán su lote, vencimiento, condición y costo.'}
                   error={errors.bucketKey?.message ?? (error ? 'No se pudieron consultar las existencias. Vuelve a intentarlo.' : undefined)}
                   required
                   disabled={!productoId || !almacenId || cargando || bucketsVisibles.length === 0}
@@ -639,119 +536,28 @@ export function DialogoAjusteStock({
                         ? 'Selecciona un almacén para consultar las posiciones de stock.'
                       : cargando
                         ? 'Consultando existencias…'
-                        : bucketsActivos.length
+                        : tipoAjuste === 'ajuste-negativo' && bucketsActivos.length
                           ? 'Todo el stock físico está reservado; no hay unidades para descontar.'
-                          : 'No hay stock físico en ubicaciones activas de este almacén.'
+                          : 'No hay posiciones con stock físico en este almacén.'
                   }
                   noResultsMessage="No se encontraron ubicaciones o lotes con esos datos."
                   maxVisibleOptions={50}
                 />
                 {!error && productoId && almacenId && !cargando && bucketsVisibles.length === 0 ? (
                   <p className="field-help">
-                    {bucketsActivos.length
+                    {tipoAjuste === 'ajuste-negativo' && bucketsActivos.length
                       ? 'Todo el stock de este almacén está reservado.'
-                      : 'Busca otro almacén si el producto tiene stock en otra ubicación.'}
+                      : 'Si encontraste stock donde el sistema registra cero, ingrésalo como movimiento de entrada con sus datos de lote y costo.'}
                   </p>
                 ) : null}
-              </div> : <>
-                <div>
-                  <input type="hidden" {...register('ubicacionId')} />
-                  <Combobox
-                    id="ubicacion-ajuste-stock"
-                    label="Ubicación"
-                    value={ubicacionId}
-                    options={opcionesUbicaciones}
-                    onChange={(valor) => {
-                      setValue('ubicacionId', valor, { shouldValidate: true, shouldDirty: true })
-                      setValue('lote', '', { shouldDirty: true })
-                      setValue('fechaVencimiento', '', { shouldDirty: true })
-                      setValue('costoUnitario', '', { shouldDirty: true })
-                      setValue('cantidad', '', { shouldDirty: true })
-                      setConfirmacion(null)
-                    }}
-                    placeholder={almacenId ? 'Buscar ubicación por código o nombre' : 'Selecciona primero un almacén'}
-                    error={errors.ubicacionId?.message}
-                    required
-                    disabled={!almacenId || ubicacionesVisibles.length === 0}
-                    noOptionsMessage={almacenId ? 'No hay ubicaciones activas en este almacén.' : 'Selecciona primero un almacén.'}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="condicion-ajuste-stock" className="field-label">Condición del stock *</label>
-                  <select
-                    id="condicion-ajuste-stock"
-                    className="field-control"
-                    {...register('estadoStock', {
-                      onChange: () => {
-                        setValue('lote', '', { shouldDirty: true })
-                        setValue('fechaVencimiento', '', { shouldDirty: true })
-                        setValue('costoUnitario', '', { shouldDirty: true })
-                      },
-                    })}
-                  >
-                    <option value="available">Disponible</option>
-                    <option value="quarantine">Cuarentena</option>
-                    <option value="damaged">Dañado / inmovilizado</option>
-                  </select>
-                </div>
-                <div>
-                  <input type="hidden" {...register('lote')} />
-                  <Combobox
-                    id="lote-ajuste-positivo"
-                    label="Lote del fabricante"
-                    value={lote}
-                    options={opcionesLote}
-                    allowCustomValue
-                    onChange={(valor, opcion) => {
-                      const key = opcion?.value ?? ''
-                      const bucket = bucketsDestino.find((item) => `existente:${claveBucketAjusteStock(item)}` === key)
-                      setValue('lote', bucket?.lote ?? valor, { shouldValidate: true, shouldDirty: true })
-                      setValue('fechaVencimiento', bucket?.fechaVencimiento ?? '', { shouldDirty: true })
-                      setValue('costoUnitario', bucket ? bucket.costoPromedio.toFixed(4) : '', { shouldDirty: true })
-                    }}
-                    placeholder={ubicacionId ? 'Buscar un lote o escribir uno nuevo' : 'Selecciona primero una ubicación'}
-                    helperText="Usa el código impreso en el envase; si no está registrado, puedes escribirlo."
-                    error={errors.lote?.message}
-                    required={Boolean(producto?.controlLote)}
-                    disabled={!ubicacionId}
-                    noOptionsMessage="Escribe el código del lote encontrado."
-                    noResultsMessage="No se encontró; puedes usar el código escrito como nuevo lote."
-                  />
-                </div>
-                <div>
-                  <label htmlFor="vencimiento-ajuste-stock" className="field-label">Fecha de vencimiento {producto?.controlVencimiento ? '*' : '(opcional)'}</label>
-                  <input
-                    id="vencimiento-ajuste-stock"
-                    type="date"
-                    className="field-control"
-                    aria-invalid={Boolean(errors.fechaVencimiento)}
-                    {...register('fechaVencimiento')}
-                  />
-                  {errors.fechaVencimiento ? <p className="field-error">{errors.fechaVencimiento.message}</p> : null}
-                </div>
-                {!bucketPositivo ? <div>
-                  <label htmlFor="costo-ajuste-stock" className="field-label">Costo unitario *</label>
-                  <input
-                    id="costo-ajuste-stock"
-                    type="number"
-                    min="0"
-                    step="0.0001"
-                    placeholder="0.0000"
-                    className="field-control"
-                    aria-invalid={Boolean(errors.costoUnitario)}
-                    {...register('costoUnitario')}
-                  />
-                  {errors.costoUnitario ? <p className="field-error">{errors.costoUnitario.message}</p> : (
-                    <p className="field-help">Necesario para valorar una posición nueva. Las posiciones existentes conservan su costo promedio.</p>
-                  )}
-                </div> : <p className="field-help">Se conservará el costo promedio de la posición existente: {bucketPositivo.costoPromedio.toFixed(4)}.</p>}
-                {bucketPositivo ? <input type="hidden" {...register('costoUnitario')} /> : null}
-              </>}
+              </div>
 
-              {tipoAjuste === 'ajuste-negativo' && bucketSeleccionado ? (
-                <DetalleStock bucket={bucketSeleccionado} cantidad={cantidadNumero} />
-              ) : tipoAjuste === 'ajuste-positivo' && bucketPositivo ? (
-                <DetalleStock bucket={bucketPositivo} cantidad={cantidadNumero} positivo />
+              {bucketSeleccionado ? (
+                <DetalleStock
+                  bucket={bucketSeleccionado}
+                  cantidad={cantidadNumero}
+                  positivo={tipoAjuste === 'ajuste-positivo'}
+                />
               ) : null}
 
               <div>
@@ -771,7 +577,9 @@ export function DialogoAjusteStock({
                 {errors.cantidad ? (
                   <p className="field-error">{errors.cantidad.message}</p>
                 ) : (
-                  <p className="field-help">{unidadEntrada?.nombre || producto?.unidadMedida || 'Unidades'} · máximo 3 decimales</p>
+                  <p className="field-help">
+                    Ingresa la diferencia, no el total contado. {unidadEntrada?.nombre || producto?.unidadMedida || 'Unidades'} · máximo 3 decimales.
+                  </p>
                 )}
               </div>
               {(producto?.unidadesEntrada?.length ?? 0) > 1 ? (
@@ -798,40 +606,19 @@ export function DialogoAjusteStock({
               ) : null}
 
               <div>
-                <label htmlFor="motivo-ajuste-stock" className="field-label">Motivo del ajuste *</label>
-                <select
-                  id="motivo-ajuste-stock"
-                  className="field-control"
-                  {...register('motivoAjuste')}
-                >
-                  {(tipoAjuste === 'ajuste-positivo' ? motivosAjustePositivoStock : motivosAjusteStock).map((motivo) => (
-                    <option key={motivo.valor} value={motivo.valor}>{motivo.etiqueta}</option>
-                  ))}
-                </select>
-                {errors.motivoAjuste ? <p className="field-error">{errors.motivoAjuste.message}</p> : null}
-              </div>
-
-              <div>
-                <label htmlFor="observacion-ajuste-stock" className="field-label">
-                  {requiereDetalleMotivo ? 'Describe el motivo *' : 'Observación (opcional)'}
-                </label>
+                <label htmlFor="observacion-ajuste-stock" className="field-label">Observación (opcional)</label>
                 <textarea
                   id="observacion-ajuste-stock"
                   rows={3}
                   maxLength={120}
-                  placeholder={requiereDetalleMotivo ? 'Explica el motivo del ajuste' : 'Agrega un detalle útil para la trazabilidad'}
+                  placeholder="Agrega un detalle útil para la trazabilidad"
                   className="field-control py-2"
-                  aria-required={requiereDetalleMotivo}
                   aria-invalid={Boolean(errors.observacion)}
-                  aria-describedby={errors.observacion
-                    ? 'observacion-ajuste-stock-error'
-                    : requiereDetalleMotivo ? 'observacion-ajuste-stock-ayuda' : undefined}
+                  aria-describedby={errors.observacion ? 'observacion-ajuste-stock-error' : undefined}
                   {...register('observacion')}
                 />
                 {errors.observacion ? (
                   <p id="observacion-ajuste-stock-error" role="alert" className="field-error">{errors.observacion.message}</p>
-                ) : requiereDetalleMotivo ? (
-                  <p id="observacion-ajuste-stock-ayuda" className="field-help">Obligatorio al elegir «Otro»: entre 3 y 120 caracteres.</p>
                 ) : null}
               </div>
 
