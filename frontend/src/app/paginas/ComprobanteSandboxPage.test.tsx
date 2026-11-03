@@ -54,7 +54,7 @@ describe('pantalla de consulta fiscal sandbox', () => {
 
   it('muestra el aviso, formulario asociado y estado inicial sin consultar datos automáticamente', () => {
     render(pantalla())
-    expect(screen.getByRole('heading', { level: 1, name: 'Consulta fiscal sandbox' })).toBeVisible()
+    expect(screen.getByRole('heading', { level: 1, name: 'Facturación · pruebas sandbox' })).toBeVisible()
     expect(screen.getByRole('note', { name: 'Aviso de entorno sandbox' })).toHaveTextContent(AVISO_FISCAL_SANDBOX)
     expect(screen.getByRole('textbox', { name: 'UUID del comprobante' })).toHaveAccessibleDescription(/tu organización/)
     expect(screen.getByRole('heading', { name: 'Ningún comprobante seleccionado' })).toBeVisible()

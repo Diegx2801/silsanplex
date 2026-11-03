@@ -17,6 +17,12 @@ export interface AccessModule {
 }
 
 export const operationalAccessModules: readonly AccessModule[] = [
+  { code: 'billing', label: 'Facturación', description: 'Consulta y preparación de comprobantes sandbox.', group: 'process', capabilities: [
+    { code: 'billing-view', label: 'Consultar', permissionCodes: [PERMISSIONS.BILLING_VIEW] },
+    { code: 'billing-configure', label: 'Configurar emisor y series', permissionCodes: [PERMISSIONS.BILLING_CONFIGURE] },
+    { code: 'billing-prepare', label: 'Preparar comprobantes', permissionCodes: [PERMISSIONS.BILLING_PREPARE] },
+    { code: 'billing-issue', label: 'Confirmar numeración de prueba', permissionCodes: [PERMISSIONS.BILLING_ISSUE] },
+  ] },
   { code: 'products', label: 'Productos', description: 'Catálogo y precios.', group: 'master', capabilities: [
     { code: 'products-view', label: 'Consultar', permissionCodes: [PERMISSIONS.PRODUCTS_VIEW] },
     { code: 'products-manage', label: 'Administrar', permissionCodes: [PERMISSIONS.PRODUCTS_MANAGE] },
@@ -75,6 +81,9 @@ export const assignablePermissionCodes = [
 ] as PermissionCode[]
 
 const permissionDependencies: Partial<Record<PermissionCode, readonly PermissionCode[]>> = {
+  [PERMISSIONS.BILLING_CONFIGURE]: [PERMISSIONS.BILLING_VIEW],
+  [PERMISSIONS.BILLING_PREPARE]: [PERMISSIONS.BILLING_VIEW],
+  [PERMISSIONS.BILLING_ISSUE]: [PERMISSIONS.BILLING_PREPARE],
   [PERMISSIONS.PRODUCTS_MANAGE]: [PERMISSIONS.PRODUCTS_VIEW],
   [PERMISSIONS.INVENTORY_MANAGE]: [PERMISSIONS.INVENTORY_VIEW],
   [PERMISSIONS.INVENTORY_EXPORT]: [PERMISSIONS.INVENTORY_VIEW],

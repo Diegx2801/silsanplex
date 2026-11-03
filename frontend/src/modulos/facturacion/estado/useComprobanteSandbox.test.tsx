@@ -51,9 +51,14 @@ describe('consulta React de comprobantes sandbox', () => {
   })
   afterEach(() => { vi.useRealTimers(); cliente.clear() })
 
-  it('registrar BILLING_VIEW no lo concede a Ventas ni lo incorpora al selector general de usuarios', () => {
+  it('permite asignar capacidades fiscales explícitas sin heredarlas desde Ventas', () => {
     expect(expandPermissionDependencies(['SALES_MANAGE'])).not.toContain('BILLING_VIEW')
-    expect(assignablePermissionCodes).not.toContain('BILLING_VIEW')
+    expect(assignablePermissionCodes).toContain('BILLING_VIEW')
+    expect(assignablePermissionCodes).toContain('BILLING_CONFIGURE')
+    expect(assignablePermissionCodes).toContain('BILLING_PREPARE')
+    expect(assignablePermissionCodes).toContain('BILLING_ISSUE')
+    expect(expandPermissionDependencies(['BILLING_ISSUE'])).toEqual(['BILLING_ISSUE', 'BILLING_PREPARE', 'BILLING_VIEW'])
+    expect(expandPermissionDependencies(['BILLING_PREPARE'])).not.toContain('SALES_VIEW')
   })
 
   it('consulta por organización activa y requiere BILLING_VIEW, no SALES_MANAGE ni ADMIN', async () => {
