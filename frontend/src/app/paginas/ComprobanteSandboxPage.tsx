@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type Dispatch, type SetStateAction, type SubmitEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { Button } from '@/components/ui/button'
@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
 import { DetalleComprobanteSandbox } from '@/modulos/facturacion/componentes/DetalleComprobanteSandbox'
 import { FlujoEmisionSandbox } from '@/modulos/facturacion/componentes/FlujoEmisionSandbox'
+import { crearBorradorEmisionSandbox, type BorradorEmisionSandbox } from '@/modulos/facturacion/estado/borradorEmisionSandbox'
 import { useComprobanteSandbox } from '@/modulos/facturacion/estado/useComprobanteSandbox'
 import { useVigenciaPermisoFiscal, type VigenciaPermisoFiscal } from '@/modulos/facturacion/estado/useVigenciaPermisoFiscal'
 import { AMBIENTE_FISCAL_SANDBOX, AVISO_FISCAL_SANDBOX, esquemaReferenciaComprobanteSandbox } from '@/modulos/facturacion/modelo/comprobanteSandbox'
@@ -23,16 +24,17 @@ function ConsultaComprobante({
   onDocumentIdChange,
   puedeConfirmar,
   vigencia,
+  clavesConfirmacion,
 }: {
   organizationId: string
   documentId?: string
   onDocumentIdChange: (documentId?: string) => void
   puedeConfirmar: boolean
   vigencia: VigenciaPermisoFiscal
+  clavesConfirmacion: Map<string, string>
 }) {
   const id = useId()
   const campo = useRef<HTMLInputElement>(null)
-  const clavesConfirmacion = useRef(new Map<string, string>())
   const queryClient = useQueryClient()
   const [entrada, setEntrada] = useState('')
   const [errorEntrada, setErrorEntrada] = useState<string | null>(null)
@@ -47,9 +49,9 @@ function ConsultaComprobante({
 
   useEffect(() => {
     if (estadoComprobanteConsultado === 'frozen' && idComprobanteConsultado) {
-      clavesConfirmacion.current.delete(`${organizationId}:${AMBIENTE_FISCAL_SANDBOX}:${idComprobanteConsultado}`)
+      clavesConfirmacion.delete(`${organizationId}:${AMBIENTE_FISCAL_SANDBOX}:${idComprobanteConsultado}`)
     }
-  }, [organizationId, idComprobanteConsultado, estadoComprobanteConsultado])
+  }, [clavesConfirmacion, organizationId, idComprobanteConsultado, estadoComprobanteConsultado])
 
   useEffect(() => {
     if (documentId) setEntrada(documentId)
@@ -102,10 +104,10 @@ function ConsultaComprobante({
     setPendingAction('confirm')
     setErrorAccion(null)
     const scopeConfirmacion = `${organizationId}:${AMBIENTE_FISCAL_SANDBOX}:${comprobante.documentId}`
-    let operationKey = clavesConfirmacion.current.get(scopeConfirmacion)
+    let operationKey = clavesConfirmacion.get(scopeConfirmacion)
     if (!operationKey) {
       operationKey = crearClaveOperacionFiscal()
-      clavesConfirmacion.current.set(scopeConfirmacion, operationKey)
+      clavesConfirmacion.set(scopeConfirmacion, operationKey)
     }
     try {
       await confirmarComprobanteSandbox({
@@ -210,13 +212,60 @@ function ConsultaComprobante({
   </div>
 }
 
+interface EstadoPaginaFiscal {
+  identidad: string | null
+  documentId?: string
+  borrador: BorradorEmisionSandbox | null
+}
+
 export function ComprobanteSandboxPage() {
   const { access, user, session, isLoading, hasPermission } = useAuth()
   const vigencia = useVigenciaPermisoFiscal(access?.organizationId ?? '')
-  const identity = access && user ? `${access.organizationId}:${user.id}` : ''
-  const [selection, setSelection] = useState<{ identity: string; documentId?: string }>({ identity: '', documentId: undefined })
-  const documentId = selection.identity === identity ? selection.documentId : undefined
-  const selectDocument = (nextDocumentId?: string) => setSelection({ identity, documentId: nextDocumentId })
+  const identity = access && user && session ? `${access.organizationId}:${user.id}` : null
+  const [estadoPagina, setEstadoPagina] = useState<EstadoPaginaFiscal>({ identidad: null, borrador: null })
+  const clavesConfirmacionRef = useRef({ identidad: null as string | null, valores: new Map<string, string>() })
+  const identityRef = useRef(identity)
+  const autorizacionDenegadaRef = useRef(false)
+  identityRef.current = identity
+  const permisoLocalDenegado = Boolean(access && !hasPermission(PERMISSIONS.BILLING_VIEW))
+  const autorizacionDenegada = !identity || permisoLocalDenegado || vigencia.estado === 'denegado'
+  autorizacionDenegadaRef.current = autorizacionDenegada
+
+  const debeDescartarBorrador = estadoPagina.identidad !== identity
+    || (autorizacionDenegada && (estadoPagina.borrador !== null || estadoPagina.documentId !== undefined
+      || clavesConfirmacionRef.current.valores.size > 0))
+  if (clavesConfirmacionRef.current.identidad !== identity || (autorizacionDenegada && clavesConfirmacionRef.current.valores.size > 0)) {
+    clavesConfirmacionRef.current = { identidad: identity, valores: new Map() }
+  }
+
+  if (debeDescartarBorrador) setEstadoPagina({ identidad: identity, documentId: undefined, borrador: null })
+
+  const borradorInicial = useMemo(crearBorradorEmisionSandbox, [identity])
+  const borrador = estadoPagina.identidad === identity && estadoPagina.borrador
+    ? estadoPagina.borrador
+    : borradorInicial
+  const documentId = estadoPagina.identidad === identity ? estadoPagina.documentId : undefined
+
+  const actualizarBorrador = useCallback<Dispatch<SetStateAction<BorradorEmisionSandbox>>>((actualizar) => {
+    if (!identity || identityRef.current !== identity || autorizacionDenegadaRef.current) return
+    setEstadoPagina((actual) => {
+      if (actual.identidad !== identity || identityRef.current !== identity || autorizacionDenegadaRef.current) return actual
+      const borradorActual = actual.borrador ?? borradorInicial
+      return {
+        ...actual,
+        borrador: typeof actualizar === 'function' ? actualizar(borradorActual) : actualizar,
+      }
+    })
+  }, [borradorInicial, identity])
+
+  const selectDocument = useCallback((nextDocumentId?: string) => {
+    if (!identity || identityRef.current !== identity || autorizacionDenegadaRef.current) return
+    setEstadoPagina((actual) => actual.identidad === identity
+      && identityRef.current === identity && !autorizacionDenegadaRef.current
+      ? { ...actual, documentId: nextDocumentId }
+      : actual)
+  }, [identity])
+
   return <div className="min-w-0 space-y-7">
     <header className="border-b pb-7">
       <h1 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Facturación · pruebas sandbox</h1>
@@ -236,10 +285,11 @@ export function ComprobanteSandboxPage() {
               puedeConfigurar={hasPermission(PERMISSIONS.BILLING_CONFIGURE)}
               puedePreparar={hasPermission(PERMISSIONS.BILLING_PREPARE)}
               permisoFiscalVigente={vigencia.permitido}
+              borrador={borrador} actualizarBorrador={actualizarBorrador}
               onPrepared={selectDocument} />
             <ConsultaComprobante organizationId={access.organizationId} documentId={documentId}
               onDocumentIdChange={selectDocument} puedeConfirmar={hasPermission(PERMISSIONS.BILLING_ISSUE)}
-              vigencia={vigencia} />
+              vigencia={vigencia} clavesConfirmacion={clavesConfirmacionRef.current.valores} />
           </div>}
   </div>
 }
