@@ -77,7 +77,7 @@ class TransactionalRunnerTests(unittest.TestCase):
 
     def test_transactional_script_orders_both_candidates_before_fixture(self):
         before = [hashlib.sha256(p.read_bytes()).hexdigest() for p in runner.MIGRATIONS]
-        source = runner.serial_script(True)
+        source = runner.serial_script(True).replace('\r\n', '\n')
         first, second = [runner.candidate_sql(p) for p in runner.MIGRATIONS]
         self.assertTrue(source.startswith('begin;\n'))
         self.assertTrue(source.endswith('\nrollback;'))
@@ -99,38 +99,39 @@ class TransactionalRunnerTests(unittest.TestCase):
 
     def test_normal_script_does_not_compile_candidates(self):
         with patch.object(runner, 'candidate_sql', side_effect=AssertionError('unexpected DDL')):
-            self.assertEqual(runner.serial_script(False), 'begin;\n\n'
+            source = runner.serial_script(False).replace('\r\n', '\n')
+            self.assertEqual(source, 'begin;\n\n'
                              + runner.SUITE.read_text(encoding='utf8') + '\nrollback;')
 
     def test_strips_only_balanced_outer_wrapper(self):
-        with patch.object(Path, 'read_text', return_value='-- comment\nBEGIN;\nselect 1;\nCOMMIT;\n-- end\n'):
+        with patch.object(Path, 'read_text', return_value='-- comment\r\nBEGIN;\r\nselect 1;\r\nCOMMIT;\r\n-- end\r\n'):
             self.assertEqual(runner.candidate_sql(runner.MIGRATIONS[1]),
-                             '-- comment\nselect 1;\n-- end\n')
+                             '-- comment\r\nselect 1;\r\n-- end\r\n')
 
     def test_rejects_unbalanced_or_internal_transaction_control(self):
-        sources = ['begin;\nselect 1;', 'begin;', 'select 1;\ncommit;',
-                   'begin;\nselect 1;\ncommit;',
-                   'begin;\ncommit;\nselect 1;\ncommit;', 'select 1;\nrollback;',
-                   'start transaction;\nselect 1;', 'select 1;\nend;', 'abort;']
+        sources = ['begin;\r\nselect 1;', 'begin;', 'select 1;\r\ncommit;',
+                   'begin;\r\nselect 1;\r\ncommit;',
+                   'begin;\r\ncommit;\r\nselect 1;\r\ncommit;', 'select 1;\r\nrollback;',
+                   'start transaction;\r\nselect 1;', 'select 1;\r\nend;', 'abort;']
         for source in sources:
             with self.subTest(source=source):
                 with patch.object(Path, 'read_text', return_value=source):
                     with self.assertRaisesRegex(ValueError, 'CPE_TEST_CANDIDATE_TRANSACTION_CONTROL'):
                         runner.candidate_sql(runner.MIGRATIONS[0])
-        for source in ['select 1;', 'begin;\nselect 1;', 'select 1;\ncommit;',
-                       'begin;\ncommit;\nselect 1;\ncommit;']:
+        for source in ['select 1;', 'begin;\r\nselect 1;', 'select 1;\r\ncommit;',
+                       'begin;\r\ncommit;\r\nselect 1;\r\ncommit;']:
             with self.subTest(candidate='second', source=source):
                 with patch.object(Path, 'read_text', return_value=source):
                     with self.assertRaisesRegex(ValueError, 'CPE_TEST_CANDIDATE_TRANSACTION_CONTROL'):
                         runner.candidate_sql(runner.MIGRATIONS[1])
 
     def test_preserves_plpgsql_body(self):
-        source = 'create function f() returns void language plpgsql as $$\nbegin\nnull;\nend $$;\n'
+        source = 'create function f() returns void language plpgsql as $$\r\nbegin\r\nnull;\r\nend $$;\r\n'
         with patch.object(Path, 'read_text', return_value=source):
             self.assertEqual(runner.candidate_sql(runner.MIGRATIONS[0]), source)
 
     def test_rejects_empty_candidate(self):
-        with patch.object(Path, 'read_text', return_value='-- comment\n'):
+        with patch.object(Path, 'read_text', return_value='-- comment\r\n'):
             with self.assertRaisesRegex(ValueError, 'CPE_TEST_EMPTY_CANDIDATE'):
                 runner.candidate_sql(runner.MIGRATIONS[0])
 
@@ -139,15 +140,15 @@ class TransactionalRunnerTests(unittest.TestCase):
             runner.candidate_sql(Path('unexpected.sql'))
 
     def test_serial_requires_all_assertions_and_postgres_stage_markers(self):
-        notices = ''.join(f'NOTICE:  PASS: case-{n}\n' for n in range(97))
-        markers = ''.join(f'NOTICE:  CPE_TRANSACTIONAL:{stage}\n'
+        notices = ''.join(f'NOTICE:  PASS: case-{n}\r\n' for n in range(97))
+        markers = ''.join(f'NOTICE:  CPE_TRANSACTIONAL:{stage}\r\n'
                           for stage in ('candidate-1', 'candidate-2', 'serial'))
         with patch.object(runner, 'sql', return_value=SimpleNamespace(stderr=notices + markers)), \
                 patch.object(runner, 'check') as checked:
             runner.serial(True)
             self.assertEqual(checked.call_count, 97)
         for stderr in (notices, notices + markers.replace('candidate-2', 'candidate-1'),
-                       notices.replace('NOTICE:  PASS: case-0\n', '') + markers):
+                       notices.replace('NOTICE:  PASS: case-0\r\n', '') + markers):
             with self.subTest(stderr_length=len(stderr)), \
                     patch.object(runner, 'sql', return_value=SimpleNamespace(stderr=stderr)):
                 with self.assertRaises(AssertionError):
@@ -229,7 +230,8 @@ class HostedCIGuardTests(unittest.TestCase):
             self.assertEqual(cli_commands[1][:3], ['migration', 'up', '--local'])
             self.assertNotIn('reset', str(observed))
             self.assertNotIn('--linked', str(observed))
-            self.assertIn('enabled = false\nsql_paths = []', ci.config('unique-job'))
+            self.assertIn('enabled = false\nsql_paths = []',
+                          ci.config('unique-job').replace('\r\n', '\n'))
             configuration = tomllib.loads(ci.config('unique-job'))
             self.assertEqual(configuration['project_id'], 'unique-job')
             self.assertEqual(configuration['api']['port'], 59121)
@@ -271,7 +273,7 @@ class HostedCIGuardTests(unittest.TestCase):
 
             def command(args):
                 if args[1:3] == ['ps', '-aq']:
-                    return 'db\nkong'
+                    return 'db\r\nkong'
                 if args[1] == 'inspect':
                     return json.dumps(values)
                 if args[1:3] == ['volume', 'ls']:
@@ -298,7 +300,7 @@ class HostedCIGuardTests(unittest.TestCase):
                     ci.absent_candidates(runner)
 
     def test_schema_dump_normalizes_only_random_restrict_keys(self):
-        source = '\\restrict random\ncreate table t(id int);\ngrant select on t to a;\n\\unrestrict random\n'
+        source = '\\restrict random\r\ncreate table t(id int);\r\ngrant select on t to a;\r\n\\unrestrict random\r\n'
         self.assertEqual(ci.normalize_dump(source), 'create table t(id int);\ngrant select on t to a;')
 
     def test_cli_error_does_not_log_secret_output(self):
@@ -346,7 +348,7 @@ class HostedCIGuardTests(unittest.TestCase):
                                       snapshot=unittest.mock.Mock(side_effect=[baseline, after]))
             with self.subTest(changed=changed), patch.object(runner, 'CONTAINER', runner.CONTAINER), \
                     patch.object(runner, 'CHECKS', []), patch('builtins.print'), \
-                    patch.object(runner, 'sql', return_value=SimpleNamespace(stdout='postgres|5432\n')), \
+                    patch.object(runner, 'sql', return_value=SimpleNamespace(stdout='postgres|5432\r\n')), \
                     patch.object(runner, 'serial') as serial:
                 if changed:
                     with self.assertRaises(AssertionError):
@@ -421,7 +423,9 @@ class NormalCIIdentityTests(unittest.TestCase):
         if include_db:
             containers.append({
                 'Name': f'/supabase_db_{self.project}',
-                'Config': {'Labels': labels}, 'State': {'Running': True},
+                'Config': {'Labels': labels,
+                           'Healthcheck': {'Test': list(normal_ci.UPSTREAM_POSTGRES_HEALTHCHECKS[0])}},
+                'State': {'Running': True, 'Health': {'Status': 'healthy'}},
                 'NetworkSettings': {'Ports': {'5432/tcp': [{'HostIp': '127.0.0.1',
                                                              'HostPort': str(normal_ci.PORTS['db'])}]},
                                     'Networks': {network_name: {}}},
@@ -443,7 +447,7 @@ class NormalCIIdentityTests(unittest.TestCase):
         networks = [{'Name': name, 'Driver': driver}
                     for name, driver in normal_ci.SYSTEM_NETWORKS.items()]
         if include_network:
-            networks.append({'Name': network_name, 'Driver': 'bridge', 'Internal': True,
+            networks.append({'Name': network_name, 'Driver': 'bridge', 'Internal': False,
                              'Options': dict(normal_ci.NETWORK_OPTIONS), 'Labels': labels})
         return {'containers': containers, 'volumes': volumes, 'networks': networks}
 
@@ -466,8 +470,8 @@ class NormalCIIdentityTests(unittest.TestCase):
 
     def test_workflow_runs_normal_runner_and_gates_existing_required_fiscal_check(self):
         workflow = (normal_ci.ROOT / '.github/workflows/inventory-e2e.yml').read_text(encoding='utf8')
-        normal_match = re.search(r'(?ms)^  sunat-python-normal:\n(.*?)(?=^  [a-z0-9-]+:|\Z)', workflow)
-        fiscal_match = re.search(r'(?ms)^  sunat-fiscal-integration:\n(.*?)(?=^  [a-z0-9-]+:|\Z)', workflow)
+        normal_match = re.search(r'(?ms)^  sunat-python-normal:\r?\n(.*?)(?=^  [a-z0-9-]+:|\Z)', workflow)
+        fiscal_match = re.search(r'(?ms)^  sunat-fiscal-integration:\r?\n(.*?)(?=^  [a-z0-9-]+:|\Z)', workflow)
         self.assertIsNotNone(normal_match)
         self.assertIsNotNone(fiscal_match)
         normal_job, fiscal_job = normal_match.group(1), fiscal_match.group(1)
@@ -482,6 +486,7 @@ class NormalCIIdentityTests(unittest.TestCase):
             'backend/scripts/sunat_phase2a_normal_ci.py stop',
         ):
             self.assertIn(required, normal_job)
+        self.assertNotIn('network-ab', normal_job)
         self.assertIn('needs: sunat-python-normal', fiscal_job)
         self.assertIn('if: ${{ always() }}', fiscal_job)
         self.assertIn('needs.sunat-python-normal.result', fiscal_job)
@@ -562,7 +567,7 @@ class NormalCIIdentityTests(unittest.TestCase):
 
     def test_inventory_uses_allowlisted_compact_docker_ps_flags(self):
         result = subprocess.CompletedProcess(
-            ['docker', 'ps', '-aq'], 0, stdout='container-id\n', stderr='')
+            ['docker', 'ps', '-aq'], 0, stdout='container-id\r\n', stderr='')
         with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
                 patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
                 patch.object(normal_ci.subprocess, 'run', return_value=result) as run:
@@ -607,7 +612,7 @@ class NormalCIIdentityTests(unittest.TestCase):
                 normal_ci.docker_guard()
 
     def test_docker_network_mutations_are_limited_to_the_derived_loopback_network(self):
-        expected_create = ['docker', 'network', 'create', '--driver', 'bridge', '--internal',
+        expected_create = ['docker', 'network', 'create', '--driver', 'bridge',
                            '--opt', 'com.docker.network.bridge.host_binding_ipv4=127.0.0.1',
                            '--label', 'com.docker.compose.project=' + self.project,
                            '--label', 'com.supabase.cli.project=' + self.project,
@@ -766,7 +771,7 @@ class NormalCIIdentityTests(unittest.TestCase):
         self.assertEqual(json.loads((self.directory / 'manifest.json').read_text())['migrations'], manifest)
         self.assertEqual([Path(args[0]).name for args in observed], ['docker', 'supabase', 'supabase'])
         self.assertEqual([args[1] for args in observed], ['network', 'start', 'migration'])
-        self.assertEqual(observed[0][2:], ['create', '--driver', 'bridge', '--internal',
+        self.assertEqual(observed[0][2:], ['create', '--driver', 'bridge',
                                            '--opt', 'com.docker.network.bridge.host_binding_ipv4=127.0.0.1',
                                            '--label', 'com.docker.compose.project=' + self.project,
                                            '--label', 'com.supabase.cli.project=' + self.project,
@@ -789,13 +794,44 @@ class NormalCIIdentityTests(unittest.TestCase):
             (local_temp / 'project-ref').unlink()
             (local_temp / 'cli-latest').unlink()
         local_temp.rmdir()
-
-    def test_verify_target_requires_owned_db_api_ports_volumes_and_internal_binds(self):
+        branches = self.directory / 'supabase/.branches'
+        branches.mkdir()
+        current_branch = branches / '_current_branch'
+        current_branch.write_bytes(b'main')
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp):
+            normal_ci.assert_directory(self.project, self.directory, self.identity)
+            current_branch.write_bytes(b'private-sentinel')
+            with self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_CLI_BRANCH_MARKER'):
+                normal_ci.assert_directory(self.project, self.directory, self.identity)
+            current_branch.write_bytes(b'main')
+            (branches / 'unexpected').write_text('private-sentinel', encoding='utf8')
+            with self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_CLI_BRANCH_CONTENTS'):
+                normal_ci.assert_directory(self.project, self.directory, self.identity)
+    def test_verify_target_requires_owned_db_api_ports_volumes_and_loopback_binds(self):
         valid = self.owned_inventory()
         with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
                 patch.object(normal_ci, 'docker_guard'), patch.object(normal_ci, 'assert_directory'), \
                 patch.object(normal_ci, 'inventory', return_value=valid):
             self.assertEqual(normal_ci.verify_target(), f'supabase_db_{self.project}')
+
+        shell_healthcheck = self.owned_inventory()
+        shell_healthcheck['containers'][0]['Config']['Healthcheck']['Test'] = list(
+            normal_ci.UPSTREAM_POSTGRES_HEALTHCHECKS[1])
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'docker_guard'), patch.object(normal_ci, 'assert_directory'), \
+                patch.object(normal_ci, 'inventory', return_value=shell_healthcheck):
+            self.assertEqual(normal_ci.verify_target(), f'supabase_db_{self.project}')
+
+        unowned = self.owned_inventory()
+        unowned['containers'][0]['Config']['Labels'] = {}
+        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
+                patch.object(normal_ci, 'docker_guard'), patch.object(normal_ci, 'assert_directory'), \
+                patch.object(normal_ci, 'inventory', return_value=unowned), \
+                patch.object(normal_ci, 'assert_postgres_ready') as readiness:
+            with self.assertRaisesRegex(ValueError, 'CPE_NORMAL_CI_CONTAINER_OWNER'):
+                normal_ci.verify_target()
+            readiness.assert_not_called()
 
         cases = [
             ('missing volume', self.owned_inventory(include_volume=False), 'PROJECT_VOLUMES_MISSING'),
@@ -807,9 +843,9 @@ class NormalCIIdentityTests(unittest.TestCase):
         non_loopback = self.owned_inventory()
         non_loopback['containers'][0]['NetworkSettings']['Ports']['5432/tcp'][0]['HostIp'] = '0.0.0.0'
         cases.append(('wildcard host binding', non_loopback, 'CONTAINER_PORT_OR_BIND'))
-        external = self.owned_inventory()
-        external['networks'][-1]['Internal'] = False
-        cases.append(('non-internal network', external, 'NETWORK_ISOLATION'))
+        internal_network = self.owned_inventory()
+        internal_network['networks'][-1]['Internal'] = True
+        cases.append(('internal network rejected', internal_network, 'NETWORK_ISOLATION'))
         wrong_option = self.owned_inventory()
         wrong_option['networks'][-1]['Options']['com.docker.network.bridge.host_binding_ipv4'] = '0.0.0.0'
         cases.append(('wildcard network binding', wrong_option, 'NETWORK_BIND_ADDRESS'))
@@ -1139,527 +1175,44 @@ class NormalCIIdentityTests(unittest.TestCase):
         self.assertTrue(all(re.fullmatch(r'[a-f0-9]{64}', digest) for digest in manifest.values()))
 
 
-class NetworkTopologyProbeTests(unittest.TestCase):
-    setUp = NormalCIIdentityTests.setUp
-    fixed_target = NormalCIIdentityTests.fixed_target
-    owned_inventory = NormalCIIdentityTests.owned_inventory
-    def test_probe_cases_have_distinct_fixed_derived_identities(self):
-        projects = []
-        with patch.dict(os.environ, self.env, clear=True), \
-                patch.object(normal_ci.sys, 'platform', 'linux'), \
-                patch.object(normal_ci, 'ROOT', self.workspace), \
-                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
-                patch.object(normal_ci, 'RUNNER_WORK_ROOT', self.runner_work):
-            for case in (None, 'internal', 'bridge'):
-                with patch.object(normal_ci, '_PROBE_CASE', case):
-                    project, directory, doc = normal_ci.identity()
-                    projects.append(project)
-                    self.assertEqual(directory.name, project)
-                    self.assertEqual(doc['project_id'], project)
-        self.assertEqual(len(set(projects)), 3)
-        self.assertTrue(projects[1].endswith('-i'))
-        self.assertTrue(projects[2].endswith('-b'))
-        self.assertTrue(all(len(project) <= 40 for project in projects))
 
-    def test_probe_identity_is_deterministic_unique_and_consistent_everywhere(self):
-        config_path = self.workspace / 'backend/supabase/config.toml'
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text('[db]\nmajor_version = 17\n', encoding='utf8')
-        projects = set()
-        for run_id in ('41111723586', '41111723587'):
-            for attempt in ('1', '2'):
-                for case in ('internal', 'bridge'):
-                    env = {**self.env, 'GITHUB_RUN_ID': run_id, 'GITHUB_RUN_ATTEMPT': attempt}
-                    with patch.dict(os.environ, env, clear=True), \
-                            patch.object(normal_ci.sys, 'platform', 'linux'), \
-                            patch.object(normal_ci, 'ROOT', self.workspace), \
-                            patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
-                            patch.object(normal_ci, 'RUNNER_WORK_ROOT', self.runner_work), \
-                            patch.object(normal_ci, '_PROBE_CASE', case):
-                        target = normal_ci.identity()
-                        self.assertEqual(target, normal_ci.identity())
-                        project, directory, doc = target
-                        self.assertNotIn(project, projects)
-                        projects.add(project)
-                        self.assertLessEqual(len(project), 40)
-                        self.assertEqual(directory.name, project)
-                        self.assertEqual(doc['project_id'], project)
-                        self.assertEqual(tomllib.loads(normal_ci.config(project))['project_id'], project)
-                        args = normal_ci.network_create_args(project)
-                        self.assertIn('com.supabase.cli.project=' + project, args)
-                        self.assertIn('com.docker.compose.project=' + project, args)
-                        self.assertEqual(args[-1], 'supabase_network_' + project)
-                        container = {'Name': '/supabase_db_' + project, 'Config': {'Labels': {
-                            'com.supabase.cli.project': project, 'com.docker.compose.project': project}}}
-                        diagnostic = normal_ci.container_owner_diagnostic(container, project,
-                                                                           'RESOURCE_VERIFICATION')
-                        self.assertEqual(diagnostic['supabase_project_label'], 'MATCH')
-                        self.assertEqual(diagnostic['compose_project_label'], 'MATCH')
-                        self.assertTrue(diagnostic['name_matches_expected_pattern'])
-        self.assertEqual(len(projects), 8)
+class PostgresHealthcheckContractTests(unittest.TestCase):
+    def test_accepts_only_the_exact_cli_cmd_and_cmd_shell_forms(self):
+        for expected in normal_ci.UPSTREAM_POSTGRES_HEALTHCHECKS:
+            with self.subTest(mode=expected[0]):
+                self.assertTrue(normal_ci.postgres_healthcheck_is_supported(
+                    {'Healthcheck': {'Test': list(expected)}}))
 
-    def test_project_validator_rejects_cli_sanitization_or_truncation(self):
-        normal_ci.validate_project_id('a' * 40)
-        for project in ('a' * 41, '', '-abc', '_abc', '.abc', 'a/b', 'a b', 'ábc', None):
-            with self.subTest(project=project), self.assertRaisesRegex(ValueError, 'PROJECT_ID'):
-                normal_ci.validate_project_id(project)
-        with patch.dict(os.environ, self.env, clear=True), \
-                patch.object(normal_ci.sys, 'platform', 'linux'), \
-                patch.object(normal_ci, 'ROOT', self.workspace), \
-                patch.object(normal_ci, 'RUNNER_TEMP_ROOT', self.runner_temp), \
-                patch.object(normal_ci, 'RUNNER_WORK_ROOT', self.runner_work), \
-                patch.object(normal_ci, '_PROBE_CASE', 'internal'):
-            with patch.dict(os.environ, {'GITHUB_RUN_ID': '1' * 40}), \
-                    patch.object(normal_ci, 'docker_guard') as docker_guard:
-                with self.assertRaisesRegex(ValueError, 'PROJECT_ID'):
-                    normal_ci.prepare()
-                docker_guard.assert_not_called()
+        cmd = list(normal_ci.UPSTREAM_POSTGRES_HEALTHCHECKS[0])
+        shell = list(normal_ci.UPSTREAM_POSTGRES_HEALTHCHECKS[1])
+        unsupported = (
+            cmd + ['extra'],
+            cmd[:-2] + ['5433'],
+            shell + ['extra'],
+            ['CMD-SHELL', shell[1] + ' && private-sentinel'],
+            ['CMD-SHELL', 'private-sentinel'],
+            ['CMD', 'pg_isready'],
+            ['NONE'],
+            [],
+            None,
+        )
+        for test in unsupported:
+            with self.subTest(test_type=type(test).__name__):
+                self.assertFalse(normal_ci.postgres_healthcheck_is_supported(
+                    {'Healthcheck': {'Test': test}}))
 
-    @staticmethod
-    def proof(case):
-        return {'cli_start_success': case == 'bridge', 'cleanup_verified': True,
-                'sample': {'owner_labels_verified': True, 'postgres_internal_healthy': True,
-                           'internal': case == 'internal',
-                           'ipam': [{'subnet': '172.22.0.0/16', 'gateway': '172.22.0.1'}],
-                           'requested_bindings': [{'HostIp': '', 'HostPort': str(normal_ci.PORTS['db'])}],
-                           'effective_bindings': ([{'HostIp': '127.0.0.1',
-                                                    'HostPort': str(normal_ci.PORTS['db'])}]
-                                                  if case == 'bridge' else []),
-                           'localhost_tcp_connected': case == 'bridge'}}
-
-    def test_proof_requires_actual_health_ports_tcp_cli_and_cleanup(self):
-        for case in ('internal', 'bridge'):
-            normal_ci.validate_network_probe(case, self.proof(case))
-            mutations = (
-                lambda p: p.update(cleanup_verified=False),
-                lambda p: p.update(observer_error='ValueError'),
-                lambda p: p['sample'].update(postgres_internal_healthy=False),
-                lambda p: p['sample'].update(internal=case != 'internal'),
-                lambda p: p['sample'].update(localhost_tcp_connected=case != 'bridge'),
-                lambda p: p.update(cli_start_success=case != 'bridge'),
-                lambda p: p['sample'].update(ipam=[]),
-            )
-            for mutate in mutations:
-                proof = self.proof(case)
-                mutate(proof)
-                with self.assertRaises(ValueError):
-                    normal_ci.validate_network_probe(case, proof)
-
-    def test_probe_sample_uses_owned_internal_health_and_loopback_only(self):
-        resources = self.owned_inventory()
-        db = resources['containers'][0]
-        db['Config']['Healthcheck'] = {'Test': list(normal_ci.UPSTREAM_POSTGRES_HEALTHCHECK)}
-        db['State']['Health'] = {'Status': 'healthy'}
-        db['HostConfig'] = {'PortBindings': {'5432/tcp': [{'HostIp': '', 'HostPort': str(normal_ci.PORTS['db'])}]}}
-        resources['networks'][-1]['IPAM'] = {'Config': [{'Subnet': '172.22.0.0/16', 'Gateway': '172.22.0.1'}]}
-        for case in ('internal', 'bridge'):
-            resources['networks'][-1]['Internal'] = case == 'internal'
-            db['NetworkSettings']['Ports']['5432/tcp'] = self.proof(case)['sample']['effective_bindings']
-            with patch.object(normal_ci, '_PROBE_CASE', case), \
-                    patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
-                    patch.object(normal_ci, 'assert_owner'), \
-                    patch.object(normal_ci, 'inventory', return_value=resources), \
-                    patch.object(normal_ci.socket, 'create_connection') as connect:
-                if case == 'internal':
-                    connect.side_effect = OSError('unpublished')
-                sample = normal_ci.sample_network_probe()
-                self.assertTrue(sample['postgres_internal_healthy'])
-                self.assertEqual(sample['localhost_tcp_connected'], case == 'bridge')
-                connect.assert_called_once_with(('127.0.0.1', normal_ci.PORTS['db']), timeout=0.25)
-        for host in ('0.0.0.0', '::', '::1', '192.0.2.1'):
-            db['NetworkSettings']['Ports']['5432/tcp'][0]['HostIp'] = host
-            with patch.object(normal_ci, '_PROBE_CASE', 'bridge'), \
-                    patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
-                    patch.object(normal_ci, 'assert_owner'), \
-                    patch.object(normal_ci, 'inventory', return_value=resources), \
-                    patch.object(normal_ci.socket, 'create_connection') as connect:
-                with self.assertRaisesRegex(ValueError, 'PROBE_NON_LOOPBACK_BIND'):
-                    normal_ci.sample_network_probe()
-                connect.assert_not_called()
-
-    def test_partial_states_never_claim_complete_evidence(self):
-        for scenario, expected_health, expected_phase in (
-                ('missing-db', 'NOT_FOUND', 'WAITING_POSTGRES'),
-                ('missing-network', 'STARTING', 'WAITING_NETWORK'),
-                ('starting', 'STARTING', 'POSTGRES_STARTING'),
-                ('unhealthy', 'UNHEALTHY', 'POSTGRES_UNHEALTHY'),
-                ('unknown', 'UNKNOWN', 'POSTGRES_UNKNOWN'),
-                ('missing-ports', 'HEALTHY', 'WAITING_REQUESTED_BINDINGS'),
-                ('missing-healthcheck', 'HEALTHY', 'WAITING_EXPECTED_HEALTHCHECK')):
-            resources = self.owned_inventory(include_db=scenario != 'missing-db',
-                                             include_network=scenario != 'missing-network')
-            if scenario != 'missing-db':
-                db = resources['containers'][0]
-                status = {'unhealthy': 'unhealthy', 'unknown': 'unexpected',
-                          'missing-ports': 'healthy', 'missing-healthcheck': 'healthy'}.get(scenario, 'starting')
-                db['State']['Health'] = {'Status': status}
-                db['Config']['Healthcheck'] = {'Test': list(normal_ci.UPSTREAM_POSTGRES_HEALTHCHECK)}
-                if scenario == 'missing-healthcheck':
-                    db['Config'].pop('Healthcheck')
-            with self.subTest(scenario=scenario), \
-                    patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
-                    patch.object(normal_ci, 'assert_owner'), \
-                    patch.object(normal_ci, 'inventory', return_value=resources), \
-                    patch.object(normal_ci.socket, 'create_connection') as connect:
-                sample = normal_ci.sample_network_probe()
-                self.assertEqual(sample['partial']['health_status'], expected_health)
-                self.assertEqual(sample['partial']['initialization_phase'], expected_phase)
-                self.assertNotIn('postgres_internal_healthy', sample)
-                connect.assert_not_called()
-                with self.assertRaisesRegex(ValueError, 'INCOMPLETE_EVIDENCE'):
-                    normal_ci.validate_network_probe('internal', {'sample': sample, 'cleanup_verified': True})
-
-    def test_requested_unpublished_and_published_refused_ports_are_observable(self):
-        for published in (False, True):
-            resources = self.owned_inventory()
-            db = resources['containers'][0]
-            db['Config']['Healthcheck'] = {'Test': list(normal_ci.UPSTREAM_POSTGRES_HEALTHCHECK)}
-            db['State']['Health'] = {'Status': 'healthy'}
-            db['HostConfig'] = {'PortBindings': {'5432/tcp': [{'HostIp': '', 'HostPort': str(normal_ci.PORTS['db'])}]}}
-            if not published:
-                db['NetworkSettings']['Ports']['5432/tcp'] = []
-            with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
-                    patch.object(normal_ci, 'assert_owner'), \
-                    patch.object(normal_ci, 'inventory', return_value=resources), \
-                    patch.object(normal_ci.socket, 'create_connection', side_effect=OSError('private-sentinel')):
-                sample = normal_ci.sample_network_probe()
-            partial = sample['partial']
-            self.assertTrue(partial['requested_bindings_present'])
-            self.assertEqual(partial['effective_bindings_present'], published)
-            self.assertFalse(partial['localhost_tcp_connected'])
-            self.assertEqual(partial['initialization_phase'],
-                             'LOCALHOST_TCP_REFUSED' if published else 'HOST_PORT_NOT_PUBLISHED')
-            self.assertNotIn('private-sentinel', json.dumps(sample))
-            with self.assertRaises(ValueError):
-                normal_ci.validate_network_probe('bridge', {'sample': sample, 'cleanup_verified': True,
-                                                            'cli_start_success': False})
-
-    def test_observer_counts_inventory_timeout_and_command_failure_without_raw_errors(self):
-        for error, counter in ((subprocess.TimeoutExpired('private-sentinel', 3), 'inventory_timeouts'),
-                               (RuntimeError('private-sentinel'), 'inventory_command_failures')):
-            observed = normal_ci.threading.Event()
-            evidence = {}
-
-            def sample():
-                observed.set()
-                raise error
-
-            def start(*args, **kwargs):
-                self.assertTrue(observed.wait(2))
-                return ''
-
-            with patch.object(normal_ci, '_PROBE_EVIDENCE', evidence), \
-                    patch.object(normal_ci, 'sample_network_probe', side_effect=sample), \
-                    patch.object(normal_ci, 'command', side_effect=start):
-                normal_ci.start_and_observe(['approved-command'])
-            self.assertGreater(evidence[counter], 0)
-            self.assertGreater(evidence['failed_observations'], 0)
-            self.assertEqual(evidence['complete_observations'], 0)
-            self.assertNotIn('private-sentinel', json.dumps(evidence))
-
-    def test_inconclusive_and_failed_cleanup_stop_before_second_case(self):
-        for cleanup_fails in (False, True):
-            def prepare():
-                normal_ci._PROBE_EVIDENCE.update(cli_start_success=False, partial_observations=1)
-                raise RuntimeError('CPE_NORMAL_CI_COMMAND_FAILED:supabase')
-
-            with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
-                    patch.object(normal_ci, 'prepare', side_effect=prepare) as start, \
-                    patch.object(normal_ci, 'stop', side_effect=(ValueError('cleanup failed') if cleanup_fails else None)), \
-                    patch('builtins.print') as log:
-                with self.assertRaises(ValueError):
-                    normal_ci.network_ab()
-                self.assertEqual(start.call_count, 1)
-            records = [json.loads(call.args[0]) for call in log.call_args_list]
-            self.assertEqual(records[-1]['outcome'], 'INCONCLUSIVE')
-            self.assertNotIn('network-ab-result', [record['phase'] for record in records])
-            self.assertEqual(records[-1].get('cleanup_verified'), None if cleanup_fails else True)
-
-    def test_cases_are_sequential_and_cleanup_precedes_next_case(self):
-        events = []
-
-        def prepare():
-            case = normal_ci._PROBE_CASE
-            events.append(('prepare', case))
-            normal_ci._PROBE_EVIDENCE.update(self.proof(case))
-            normal_ci._PROBE_EVIDENCE.pop('cleanup_verified')
-            if case == 'internal':
-                raise RuntimeError('CPE_NORMAL_CI_COMMAND_FAILED:supabase')
-
-        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
-                patch.object(normal_ci, 'prepare', side_effect=prepare), \
-                patch.object(normal_ci, 'stop', side_effect=lambda: events.append(('stop', normal_ci._PROBE_CASE))), \
-                patch('builtins.print'):
-            normal_ci.network_ab()
-        self.assertEqual(events, [('prepare', 'internal'), ('stop', 'internal'),
-                                  ('prepare', 'bridge'), ('stop', 'bridge')])
-        self.assertIsNone(normal_ci._PROBE_CASE)
-        self.assertIsNone(normal_ci._PROBE_EVIDENCE)
-
-    def test_probe_failure_still_cleans_and_cannot_claim_reproduction(self):
-        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
-                patch.object(normal_ci, 'prepare', side_effect=ValueError('identity failure')), \
-                patch.object(normal_ci, 'stop') as stop, patch('builtins.print'):
-            with self.assertRaisesRegex(ValueError, 'identity failure'):
-                normal_ci.network_ab()
-            stop.assert_called_once()
-        self.assertIsNone(normal_ci._PROBE_CASE)
-        self.assertIsNone(normal_ci._PROBE_EVIDENCE)
-
-    def test_observer_closes_after_start_failure(self):
-        with patch.object(normal_ci, '_PROBE_EVIDENCE', {}), \
-                patch.object(normal_ci, 'sample_network_probe', return_value=None), \
-                patch.object(normal_ci, 'command', side_effect=RuntimeError('start failed')):
-            with self.assertRaisesRegex(RuntimeError, 'start failed'):
-                normal_ci.start_and_observe(['approved-command'])
-        self.assertFalse(any(t.name == 'owned-supabase-network-probe' for t in normal_ci.threading.enumerate()))
-
-    def test_observer_reports_only_fixed_guard_codes(self):
-        for message in ('CPE_NORMAL_CI_PROBE_REQUESTED_BIND', 'private credential sentinel'):
-            observed = normal_ci.threading.Event()
-            evidence = {}
-
-            def sample():
-                observed.set()
-                raise ValueError(message)
-
-            def start(*args, **kwargs):
-                self.assertTrue(observed.wait(2))
-                return ''
-
-            with patch.object(normal_ci, '_PROBE_EVIDENCE', evidence), \
-                    patch.object(normal_ci, 'sample_network_probe', side_effect=sample), \
-                    patch.object(normal_ci, 'command', side_effect=start):
-                normal_ci.start_and_observe(['approved-command'])
-            self.assertEqual(evidence['observer_error'], 'ValueError')
-            if message.startswith('CPE_NORMAL_CI_'):
-                self.assertEqual(evidence['observer_guard'], message)
-            else:
-                self.assertNotIn('observer_guard', evidence)
-                self.assertNotIn(message, json.dumps(evidence))
-
-    def test_finalizer_attempts_all_fixed_cases_after_one_cleanup_failure(self):
-        events = []
-        for case in ('internal', 'bridge', 'normal'):
-            (self.base / case).mkdir()
-
-        def target():
-            case = normal_ci._PROBE_CASE or 'normal'
-            return case, self.base / case, {}
-
-        def stop():
-            events.append(normal_ci._PROBE_CASE)
-            if normal_ci._PROBE_CASE == 'internal':
-                raise ValueError('unowned resource')
-
-        with patch.object(normal_ci, 'identity', side_effect=target), \
-                patch.object(normal_ci, 'stop', side_effect=stop):
-            with self.assertRaisesRegex(ValueError, 'FINALIZER_FAILED_CLOSED'):
-                normal_ci.stop_all()
-        self.assertEqual(events, ['internal', 'bridge', None])
-        self.assertIsNone(normal_ci._PROBE_CASE)
-
-
-class PostgresHealthcheckDiagnosticTests(unittest.TestCase):
-    setUp = NormalCIIdentityTests.setUp
-    fixed_target = NormalCIIdentityTests.fixed_target
-    owned_inventory = NormalCIIdentityTests.owned_inventory
-
-    def test_official_cmd_signature_requires_exact_full_array(self):
-        expected = ['CMD', 'pg_isready', '-U', 'postgres', '-h', '127.0.0.1', '-p', '5432']
-        result = normal_ci.classify_postgres_healthcheck({'Healthcheck': {'Test': expected}})
-        self.assertTrue(result['matches_upstream_expected_signature'])
-        self.assertEqual(result['healthcheck_format'], 'CMD')
-        self.assertEqual(result['argument_count'], 7)
-        self.assertTrue(result['pg_isready_exact_argument'])
-        self.assertTrue(result['localhost_exact_argument'])
-        self.assertTrue(result['port_5432_present'])
-        self.assertFalse(result['pg_isready_embedded'])
-        self.assertFalse(result['localhost_embedded'])
-        for test in (expected + ['private-sentinel'],
-                     ['CMD', 'pg_isready', '-h', '127.0.0.1'],
-                     ['CMD', 'private-sentinel', 'pg_isready', '127.0.0.1', '5432']):
-            self.assertFalse(normal_ci.classify_postgres_healthcheck(
-                {'Healthcheck': {'Test': test}})['matches_upstream_expected_signature'])
-
-    def test_shell_known_and_unknown_are_diagnostic_only(self):
-        for command, embedded in (
-                ('pg_isready -U postgres -h 127.0.0.1 -p 5432', True),
-                ('private-sentinel', False)):
-            result = normal_ci.classify_postgres_healthcheck({'Healthcheck': {'Test': ['CMD-SHELL', command]}})
-            self.assertEqual(result['healthcheck_format'], 'CMD-SHELL')
-            self.assertEqual(result['argument_count'], 1)
-            self.assertEqual(result['pg_isready_embedded'], embedded)
-            self.assertEqual(result['localhost_embedded'], embedded)
-            self.assertFalse(result['pg_isready_exact_argument'])
-            self.assertFalse(result['localhost_exact_argument'])
-            self.assertFalse(result['matches_upstream_expected_signature'])
-            self.assertNotIn('private-sentinel', json.dumps(result))
-
-    def test_missing_null_disabled_and_invalid_shapes_are_safe(self):
-        cases = [(None, 'MISSING'), ({}, 'MISSING'), ({'Healthcheck': None}, 'MISSING'),
-                 ({'Healthcheck': {}}, 'MISSING'), ({'Healthcheck': {'Test': None}}, 'MISSING'),
-                 ({'Healthcheck': {'Test': []}}, 'MISSING'),
-                 ({'Healthcheck': {'Test': ['NONE']}}, 'NONE'),
-                 ({'Healthcheck': 'private-sentinel'}, 'INVALID')]
-        cases += [({'Healthcheck': {'Test': test}}, 'INVALID') for test in (
-            'private-sentinel', [None], ['CMD'], ['CMD-SHELL'], ['CMD-SHELL', 'a', 'b'],
-            ['NONE', 'a'], ['UNKNOWN', 'a'], ['CMD', None], ['CMD'] + ['a'] * 40,
-            ['CMD', 'private-sentinel' * 4096])]
-        for config, mode in cases:
-            with self.subTest(mode=mode):
-                result = normal_ci.classify_postgres_healthcheck(config)
-                self.assertEqual(result['healthcheck_format'], mode)
-                self.assertLessEqual(result['argument_count'], 32)
-                self.assertFalse(result['matches_upstream_expected_signature'])
-                self.assertNotIn('private-sentinel', json.dumps(result))
-
-    def test_healthy_unknown_and_unhealthy_known_never_become_conclusive(self):
-        for status, test in (
-                ('healthy', ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -p 5432']),
-                ('unhealthy', list(normal_ci.UPSTREAM_POSTGRES_HEALTHCHECK))):
-            resources = self.owned_inventory()
-            db = resources['containers'][0]
-            db['Config']['Healthcheck'] = {'Test': test}
-            db['State']['Health'] = {'Status': status}
-            with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
-                    patch.object(normal_ci, 'assert_owner'), \
-                    patch.object(normal_ci, 'inventory', return_value=resources):
-                sample = normal_ci.sample_network_probe()
-            self.assertEqual(sample['partial']['health_status'], status.upper())
-            self.assertNotIn('postgres_internal_healthy', sample)
-            with self.assertRaisesRegex(ValueError, 'INCOMPLETE_EVIDENCE'):
-                normal_ci.validate_network_probe('internal', {'sample': sample, 'cleanup_verified': True})
-
-    def test_healthy_snapshot_is_retained_even_with_unknown_signature(self):
-        evidence = {}
-        observed = normal_ci.threading.Event()
-        partial = {'postgres_found': True, 'health_status': 'HEALTHY',
-                   'initialization_phase': 'WAITING_EXPECTED_HEALTHCHECK',
-                   'healthcheck': normal_ci.classify_postgres_healthcheck(
-                       {'Healthcheck': {'Test': ['CMD-SHELL', 'private-sentinel']}})}
-
-        def sample():
-            observed.set()
-            return {'partial': partial}
-
-        def command(*args, **kwargs):
-            self.assertTrue(observed.wait(2))
-            return ''
-
-        with patch.object(normal_ci, '_PROBE_EVIDENCE', evidence), \
-                patch.object(normal_ci, 'sample_network_probe', side_effect=sample), \
-                patch.object(normal_ci, 'command', side_effect=command):
-            normal_ci.start_and_observe(['approved-command'])
-        self.assertEqual(evidence['healthy_postgres_observation'], partial)
-        self.assertEqual(evidence['complete_observations'], 0)
-        self.assertNotIn('sample', evidence)
-        self.assertNotIn('private-sentinel', json.dumps(evidence))
-
-    def test_unverified_container_is_rejected_before_healthcheck_classification(self):
-        resources = self.owned_inventory()
-        resources['containers'][0]['Config']['Labels'] = {}
-        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
-                patch.object(normal_ci, 'assert_owner'), \
-                patch.object(normal_ci, 'inventory', return_value=resources), \
-                patch.object(normal_ci, 'classify_postgres_healthcheck') as classify, \
-                patch.object(normal_ci.socket, 'create_connection') as connect, patch('builtins.print'):
-            with self.assertRaisesRegex(ValueError, 'CONTAINER_OWNER'):
-                normal_ci.sample_network_probe()
-            classify.assert_not_called()
-            connect.assert_not_called()
-
-
-class ContainerOwnerDiagnosticTests(unittest.TestCase):
-    setUp = NormalCIIdentityTests.setUp
-    fixed_target = NormalCIIdentityTests.fixed_target
-    owned_inventory = NormalCIIdentityTests.owned_inventory
-
-    def test_valid_labels_preserve_verification_without_rejection_log(self):
-        resources = self.owned_inventory()
-        with patch('builtins.print') as log:
-            normal_ci.assert_owned_resources(self.project, resources, self.directory)
-        log.assert_not_called()
-        diagnostic = normal_ci.container_owner_diagnostic(resources['containers'][0], self.project,
-                                                           'SUPABASE_START_OBSERVATION')
-        self.assertEqual(diagnostic['supabase_project_label'], 'MATCH')
-        self.assertEqual(diagnostic['compose_project_label'], 'MATCH')
-
-    def test_each_label_failure_is_sanitized_and_still_rejected(self):
-        first, second = 'com.supabase.cli.project', 'com.docker.compose.project'
-        cases = [
-            ({second: self.project}, ('MISSING', 'MATCH')),
-            ({first: self.project}, ('MATCH', 'MISSING')),
-            ({first: 'private-sentinel', second: self.project}, ('MISMATCH', 'MATCH')),
-            ({first: self.project, second: 'private-sentinel'}, ('MATCH', 'MISMATCH')),
-            ({first: None, second: 7}, ('INVALID', 'INVALID')),
-            ('private-sentinel', ('INVALID', 'INVALID')),
-            (None, ('MISSING', 'MISSING')),
-        ]
-        for labels, expected in cases:
-            with self.subTest(expected=expected):
-                resources = self.owned_inventory()
-                resources['containers'][0]['Config']['Labels'] = labels
-                with patch('builtins.print') as log, \
-                        self.assertRaisesRegex(ValueError, '^CPE_NORMAL_CI_CONTAINER_OWNER$'):
-                    normal_ci.assert_owned_resources(self.project, resources, self.directory,
-                                                     stage='SUPABASE_START_OBSERVATION')
-                diagnostic = json.loads(log.call_args.args[0])
-                self.assertEqual((diagnostic['supabase_project_label'],
-                                  diagnostic['compose_project_label']), expected)
-                self.assertEqual(diagnostic['lifecycle_stage'], 'SUPABASE_START_OBSERVATION')
-                self.assertEqual(diagnostic['failed_check'], 'CPE_NORMAL_CI_CONTAINER_OWNER')
-                self.assertNotIn('private-sentinel', json.dumps(diagnostic))
-                self.assertNotIn(self.project, json.dumps(diagnostic))
-
-    def test_foreign_auxiliary_and_incomplete_resources_never_allow_probe_connection(self):
-        for name, labels, role, name_matches in (
-                ('/supabase_db_private-sentinel', {}, 'POSTGRESQL', False),
-                ('/temporary-private-sentinel', {}, 'OTHER', False),
-                ('/supabase_db_' + self.project, None, 'POSTGRESQL', True)):
-            resources = self.owned_inventory()
-            resources['containers'][0].update(Name=name, Config={'Labels': labels})
-            with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
-                    patch.object(normal_ci, 'assert_owner'), \
-                    patch.object(normal_ci, 'inventory', return_value=resources), \
-                    patch.object(normal_ci.socket, 'create_connection') as connect, \
-                    patch('builtins.print') as log:
-                with self.assertRaisesRegex(ValueError, 'CONTAINER_OWNER'):
-                    normal_ci.sample_network_probe()
-                connect.assert_not_called()
-            diagnostic = json.loads(log.call_args.args[0])
-            self.assertEqual(diagnostic['role'], role)
-            self.assertIs(diagnostic['name_matches_expected_pattern'], name_matches)
-            self.assertNotIn('private-sentinel', json.dumps(diagnostic))
-
-    def test_unverified_container_blocks_cleanup_without_deletion(self):
-        resources = self.owned_inventory()
-        resources['containers'][0]['Config']['Labels'] = {}
-        self.directory.mkdir()
-        with patch.object(normal_ci, 'identity', side_effect=self.fixed_target), \
-                patch.object(normal_ci, 'docker_guard'), \
-                patch.object(normal_ci, 'assert_owner'), \
-                patch.object(normal_ci, 'assert_directory'), \
-                patch.object(normal_ci, 'inventory', return_value=resources), \
-                patch.object(normal_ci, 'command') as command, \
-                patch.object(normal_ci, 'safe_remove_directory') as remove, \
-                patch('builtins.print') as log:
-            with self.assertRaisesRegex(ValueError, 'CONTAINER_OWNER'):
-                normal_ci.stop()
-            command.assert_not_called()
-            remove.assert_not_called()
-        self.assertTrue(self.directory.exists())
-        self.assertEqual(json.loads(log.call_args.args[0])['lifecycle_stage'], 'CLEANUP')
-
-    def test_metadata_cannot_inject_diagnostic_fields_or_values(self):
-        result = normal_ci.container_owner_diagnostic(
-            {'Name': 'private-sentinel', 'Config': {'Labels': []},
-             'Env': ['private-sentinel']}, self.project, 'private-sentinel')
-        self.assertEqual(set(result), {'phase', 'resource_type', 'role', 'supabase_project_label',
-                                      'compose_project_label', 'name_matches_expected_pattern',
-                                      'lifecycle_stage', 'failed_check'})
-        self.assertNotIn('private-sentinel', json.dumps(result))
-
+    def test_readiness_fails_closed_without_echoing_config(self):
+        accepted = list(normal_ci.UPSTREAM_POSTGRES_HEALTHCHECKS[0])
+        cases = (
+            ({'Config': {'Healthcheck': {'Test': accepted}},
+              'State': {'Health': {'Status': 'unhealthy'}}}, 'POSTGRES_NOT_HEALTHY'),
+            ({'Config': {'Healthcheck': {'Test': ['CMD-SHELL', 'private-sentinel']}},
+              'State': {'Health': {'Status': 'healthy'}}}, 'POSTGRES_HEALTHCHECK'),
+        )
+        for container, guard in cases:
+            with self.subTest(guard=guard), self.assertRaisesRegex(ValueError, guard) as error:
+                normal_ci.assert_postgres_ready(container)
+            self.assertNotIn('private-sentinel', str(error.exception))
 
 class NormalRunnerCoverageTests(unittest.TestCase):
     def test_declared_race_manifest_matches_all_real_runner_call_sites(self):

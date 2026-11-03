@@ -7,7 +7,6 @@ project. The workflow's unconditional finalizer removes only resources whose
 project labels and temporary owner manifest match this run.
 """
 import hashlib
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -18,7 +17,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import threading
 import tomllib
 
 
@@ -32,9 +30,6 @@ RUNNER_TEMP_ROOT = Path('/home/runner/work/_temp')
 DOCKER_ENDPOINT = 'unix:///var/run/docker.sock'
 PORTS = {'shadow': 59320, 'api': 59321, 'db': 59322}
 NETWORK_OPTIONS = {'com.docker.network.bridge.host_binding_ipv4': '127.0.0.1'}
-# Fixed diagnostic cases only; never selected through an environment override.
-_PROBE_CASE = None
-_PROBE_EVIDENCE = None
 SUPABASE_HOME_NAME = 'supabase-home'
 DOCKER_CONFIG_NAME = 'docker-config'
 SUPABASE_CHILD_ENV = {
@@ -126,9 +121,6 @@ def identity(env=None, platform=None, root=None):
          f'{env["GITHUB_JOB"]}').encode('utf8')
     ).hexdigest()[:10]
     project = f'silsan-py-{run_id}-{attempt}-{job_fingerprint}'
-    require(_PROBE_CASE in (None, 'internal', 'bridge'), 'PROBE_CASE')
-    if _PROBE_CASE is not None:
-        project += {'internal': '-i', 'bridge': '-b'}[_PROBE_CASE]
     validate_project_id(project)
     runner_temp = Path(env['RUNNER_TEMP']).resolve()
     directory = runner_temp / project
@@ -147,17 +139,11 @@ def identity(env=None, platform=None, root=None):
     return project, directory, identity_doc
 
 
-def network_is_internal():
-    return _PROBE_CASE != 'bridge'
-
-
 def network_create_args(project):
-    args = ['docker', 'network', 'create', '--driver', 'bridge']
-    if network_is_internal():
-        args.append('--internal')
-    return args + ['--opt', 'com.docker.network.bridge.host_binding_ipv4=127.0.0.1',
-                   '--label', 'com.docker.compose.project=' + project,
-                   '--label', 'com.supabase.cli.project=' + project, network_name(project)]
+    return ['docker', 'network', 'create', '--driver', 'bridge',
+            '--opt', 'com.docker.network.bridge.host_binding_ipv4=127.0.0.1',
+            '--label', 'com.docker.compose.project=' + project,
+            '--label', 'com.supabase.cli.project=' + project, network_name(project)]
 
 
 def config(project):
@@ -329,10 +315,6 @@ def command(args, timeout=900):
     if result.returncode:
         # Supabase start/status output can contain local API keys; never emit it.
         if program == 'supabase' and args[1:2] == ['start']:
-            if _PROBE_EVIDENCE is not None:
-                _PROBE_EVIDENCE['local_connect_error'] = bool(re.search(
-                    r'failed to connect|dial.*tcp|connection refused',
-                    f'{result.stdout or ""}\n{result.stderr or ""}', re.I))
             print(json.dumps({'phase': 'supabase-start-failed',
                               'exit_code': result.returncode,
                               'categories': safe_start_failure_categories(result),
@@ -443,6 +425,21 @@ def assert_owner(project, directory, identity_doc):
     require(json.loads(owner_path.read_text(encoding='utf8')) == owner_doc(identity_doc), 'OWNER_MARKER')
 
 
+def assert_cli_branch_marker(supabase_directory):
+    branches = supabase_directory / '.branches'
+    if not branches.exists() and not branches.is_symlink():
+        return False
+    require(branches.is_dir() and not branches.is_symlink()
+            and branches.resolve().is_relative_to(supabase_directory.resolve()), 'CLI_BRANCH_DIRECTORY')
+    entries = list(branches.iterdir())
+    require(len(entries) == 1 and entries[0].name == '_current_branch', 'CLI_BRANCH_CONTENTS')
+    marker = entries[0]
+    require(marker.is_file() and not marker.is_symlink()
+            and stat.S_ISREG(marker.stat(follow_symlinks=False).st_mode), 'CLI_BRANCH_MARKER')
+    require(marker.read_bytes() == b'main', 'CLI_BRANCH_MARKER')
+    return True
+
+
 def assert_directory(project, directory, identity_doc, require_copy=True):
     assert_owner(project, directory, identity_doc)
     home = directory / SUPABASE_HOME_NAME
@@ -496,8 +493,12 @@ def assert_directory(project, directory, identity_doc, require_copy=True):
     require(root_entries == ['manifest.json', 'owner.json', 'supabase', SUPABASE_HOME_NAME],
             'DIRECTORY_CONTENTS')
     supabase_entries = sorted(path.name for path in (directory / 'supabase').iterdir())
-    require(supabase_entries in (['config.toml', 'migrations'], ['.temp', 'config.toml', 'migrations']),
-            'SUPABASE_CONTENTS')
+    expected_supabase_entries = ['config.toml', 'migrations']
+    if local_temp.exists():
+        expected_supabase_entries.append('.temp')
+    if assert_cli_branch_marker(directory / 'supabase'):
+        expected_supabase_entries.append('.branches')
+    require(supabase_entries == sorted(expected_supabase_entries), 'SUPABASE_CONTENTS')
 
 
 def label_owner(labels, project, kind):
@@ -507,46 +508,8 @@ def label_owner(labels, project, kind):
             kind + '_OWNER')
 
 
-def container_owner_diagnostic(container, project, stage):
-    """Classify untrusted metadata without returning names, labels or config values."""
-    config_doc = container.get('Config')
-    labels = config_doc.get('Labels') if isinstance(config_doc, dict) else []
-
-    def label_state(key):
-        if labels is None:
-            return 'MISSING'
-        if not isinstance(labels, dict):
-            return 'INVALID'
-        if key not in labels:
-            return 'MISSING'
-        value = labels[key]
-        if not isinstance(value, str):
-            return 'INVALID'
-        return 'MATCH' if value == project else 'MISMATCH'
-
-    name = container.get('Name')
-    roles = {'db': 'POSTGRESQL', 'kong': 'KONG', 'auth': 'AUTH', 'rest': 'POSTGREST',
-             'storage': 'STORAGE'}
-    role = next((role for prefix, role in roles.items()
-                 if isinstance(name, str) and name.startswith('/supabase_' + prefix + '_')), 'OTHER')
-    # A name-derived role is only a hint; it never establishes ownership.
-    return {'phase': 'resource-owner-rejected', 'resource_type': 'CONTAINER', 'role': role,
-            'supabase_project_label': label_state('com.supabase.cli.project'),
-            'compose_project_label': label_state('com.docker.compose.project'),
-            'name_matches_expected_pattern': (isinstance(name, str) and name.startswith('/supabase_')
-                                              and name.endswith('_' + project)),
-            'lifecycle_stage': (stage if stage in ('RESOURCE_VERIFICATION', 'SUPABASE_START_OBSERVATION',
-                                                  'CLEANUP') else 'RESOURCE_VERIFICATION'),
-            'failed_check': 'CPE_NORMAL_CI_CONTAINER_OWNER'}
-
-
-def assert_owned_resources(project, resources, directory, require_complete=True,
-                           stage='RESOURCE_VERIFICATION'):
+def assert_owned_resources(project, resources, directory, require_complete=True):
     for container in resources['containers']:
-        diagnostic = container_owner_diagnostic(container, project, stage)
-        if (diagnostic['supabase_project_label'] != 'MATCH'
-                or diagnostic['compose_project_label'] != 'MATCH'):
-            print(json.dumps(diagnostic), flush=True)
         label_owner(container.get('Config', {}).get('Labels') or {}, project, 'CONTAINER')
         require(container.get('Name', '').startswith('/supabase_')
                 and container.get('Name', '').endswith('_' + project), 'CONTAINER_NAME')
@@ -566,7 +529,7 @@ def assert_owned_resources(project, resources, directory, require_complete=True,
         require(labels.get('com.docker.compose.project') == project
                 and labels.get('com.supabase.cli.project') == project, 'NETWORK_OWNER')
         require(network.get('Name') == network_name(project), 'NETWORK_NAME')
-        require(network.get('Driver') == 'bridge' and network.get('Internal') is network_is_internal(),
+        require(network.get('Driver') == 'bridge' and network.get('Internal') is False,
                 'NETWORK_ISOLATION')
         require(network.get('Options') == NETWORK_OPTIONS, 'NETWORK_BIND_ADDRESS')
     require(len(custom_networks) <= 1, 'NETWORK_COUNT')
@@ -587,247 +550,30 @@ def cli_version():
     return locked
 
 
-UPSTREAM_POSTGRES_HEALTHCHECK = (
-    'CMD', 'pg_isready', '-U', 'postgres', '-h', '127.0.0.1', '-p', '5432')
+UPSTREAM_POSTGRES_HEALTHCHECKS = (
+    ('CMD', 'pg_isready', '-U', 'postgres', '-h', '127.0.0.1', '-p', '5432'),
+    ('CMD-SHELL', 'pg_isready -U postgres -h 127.0.0.1 -p 5432'),
+)
 
 
-def classify_postgres_healthcheck(config_doc):
-    """Bounded diagnostic only; no command text or arbitrary values leave this function.
-
-    Expected signature: CLI v2.115.0/apps/cli-go/internal/db/start/start.go.
-    argument_count excludes the CMD/CMD-SHELL/NONE mode and saturates at 32.
-    Embedded-token flags are observational and never authorize a signature.
-    """
-    healthcheck = config_doc.get('Healthcheck') if isinstance(config_doc, dict) else None
-    result = {'healthcheck_present': healthcheck is not None, 'healthcheck_format': 'MISSING',
-              'argument_count': 0, 'pg_isready_exact_argument': False, 'pg_isready_embedded': False,
-              'localhost_exact_argument': False, 'localhost_embedded': False,
-              'port_5432_present': False, 'matches_upstream_expected_signature': False}
-    if healthcheck is None:
-        return result
+def postgres_healthcheck_is_supported(config_doc):
+    """Accept only the exact Docker forms generated by Supabase CLI 2.115.0."""
+    if not isinstance(config_doc, dict):
+        return False
+    healthcheck = config_doc.get('Healthcheck')
     if not isinstance(healthcheck, dict):
-        result['healthcheck_format'] = 'INVALID'
-        return result
+        return False
     test = healthcheck.get('Test')
-    if test is None or test == []:
-        return result
-    if not isinstance(test, list):
-        result['healthcheck_format'] = 'INVALID'
-        return result
-    result['argument_count'] = min(max(len(test) - 1, 0), 32)
-    if (not 1 <= len(test) <= 33
-            or not all(isinstance(arg, str) and len(arg) <= 4096 for arg in test)):
-        result['healthcheck_format'] = 'INVALID'
-        return result
-    mode, args = test[0], test[1:]
-    if (mode not in ('CMD', 'CMD-SHELL', 'NONE')
-            or (mode == 'CMD' and not args)
-            or (mode == 'CMD-SHELL' and len(args) != 1)
-            or (mode == 'NONE' and args)):
-        result['healthcheck_format'] = 'INVALID'
-        return result
-    result.update(
-        healthcheck_format=mode,
-        pg_isready_exact_argument='pg_isready' in args,
-        pg_isready_embedded=any('pg_isready' in arg and arg != 'pg_isready' for arg in args),
-        localhost_exact_argument='127.0.0.1' in args,
-        localhost_embedded=any('127.0.0.1' in arg and arg != '127.0.0.1' for arg in args),
-        port_5432_present=any(re.search(r'(?<!\d)5432(?!\d)', arg) is not None for arg in args),
-        matches_upstream_expected_signature=tuple(test) == UPSTREAM_POSTGRES_HEALTHCHECK)
-    return result
+    return isinstance(test, list) and tuple(test) in UPSTREAM_POSTGRES_HEALTHCHECKS
 
 
-def sample_network_probe():
-    """Observe only owned resources; return no configuration, env or credentials."""
-    project, directory, identity_doc = identity()
-    assert_owner(project, directory, identity_doc)
-    resources = inventory(timeout=3)
-    networks = assert_owned_resources(project, resources, directory, require_complete=False,
-                                      stage='SUPABASE_START_OBSERVATION')
-    database = next((c for c in resources['containers']
-                     if c.get('Name') == f'/supabase_db_{project}'), None)
-    partial = {'postgres_found': database is not None, 'exclusive_network_found': bool(networks),
-               'health_status': 'NOT_FOUND', 'expected_healthcheck': False,
-               'requested_bindings_present': False, 'effective_bindings_present': False,
-               'localhost_tcp_connected': None, 'initialization_phase': 'WAITING_POSTGRES'}
-    if not networks:
-        partial['initialization_phase'] = 'WAITING_NETWORK'
-    if database is None:
-        return {'partial': partial}
-    state = database.get('State')
+def assert_postgres_ready(container):
+    state = container.get('State')
     health = state.get('Health') if isinstance(state, dict) else None
-    status = health.get('Status') if isinstance(health, dict) else None
-    partial['health_status'] = {'starting': 'STARTING', 'healthy': 'HEALTHY',
-                                'unhealthy': 'UNHEALTHY'}.get(status, 'UNKNOWN') if isinstance(status, str) else 'UNKNOWN'
-    partial['healthcheck'] = classify_postgres_healthcheck(database.get('Config'))
-    partial['expected_healthcheck'] = partial['healthcheck']['matches_upstream_expected_signature']
-    requested = database.get('HostConfig', {}).get('PortBindings', {}).get('5432/tcp') or []
-    effective = database.get('NetworkSettings', {}).get('Ports', {}).get('5432/tcp') or []
-    partial['requested_bindings_present'] = bool(requested)
-    partial['effective_bindings_present'] = bool(effective)
-    if not networks:
-        return {'partial': partial}
-    require(set(database.get('NetworkSettings', {}).get('Networks', {}))
-            == {network_name(project)}, 'PROBE_DATABASE_NETWORK')
-    if requested:
-        require(len(requested) == 1 and requested[0].get('HostPort') == str(PORTS['db'])
-                and requested[0].get('HostIp', '') in ('', '127.0.0.1'), 'PROBE_REQUESTED_BIND')
-    for container in resources['containers']:
-        for bindings in (container.get('NetworkSettings', {}).get('Ports') or {}).values():
-            for binding in bindings or []:
-                require(binding.get('HostIp') == '127.0.0.1', 'PROBE_NON_LOOPBACK_BIND')
-                require(binding.get('HostPort') in (str(PORTS['api']), str(PORTS['db'])),
-                        'PROBE_UNEXPECTED_PORT')
-    connected = False
-    if requested:
-        try:
-            with socket.create_connection(('127.0.0.1', PORTS['db']), timeout=0.25):
-                connected = True
-        except OSError:
-            pass
-    partial['localhost_tcp_connected'] = connected if requested else None
-    if partial['health_status'] != 'HEALTHY':
-        partial['initialization_phase'] = 'POSTGRES_' + partial['health_status']
-    elif not partial['expected_healthcheck']:
-        partial['initialization_phase'] = 'WAITING_EXPECTED_HEALTHCHECK'
-    elif not requested:
-        partial['initialization_phase'] = 'WAITING_REQUESTED_BINDINGS'
-    elif not effective:
-        partial['initialization_phase'] = 'HOST_PORT_NOT_PUBLISHED'
-    elif not connected:
-        partial['initialization_phase'] = 'LOCALHOST_TCP_REFUSED'
-    else:
-        partial['initialization_phase'] = 'LOCALHOST_TCP_CONNECTED'
-    if (partial['health_status'] != 'HEALTHY' or not partial['expected_healthcheck'] or not requested):
-        return {'partial': partial}
-    network = networks[0]
-    ipam = [{'subnet': str(ipaddress.ip_network(entry['Subnet'])),
-             'gateway': str(ipaddress.ip_address(entry['Gateway'])) if entry.get('Gateway') else None}
-            for entry in network.get('IPAM', {}).get('Config', []) if entry.get('Subnet')]
-    return {'partial': partial, 'owner_labels_verified': True,
-            'internal': network['Internal'], 'ipam': ipam,
-            'postgres_internal_healthy': True,
-            'requested_bindings': [{'HostIp': b.get('HostIp', ''), 'HostPort': b['HostPort']}
-                                   for b in requested],
-            'effective_bindings': [{'HostIp': b['HostIp'], 'HostPort': b['HostPort']}
-                                   for b in effective],
-            'localhost_tcp_connected': connected}
-
-
-def start_and_observe(args):
-    if _PROBE_EVIDENCE is None:
-        return command(args, timeout=1200)
-    finished = threading.Event()
-    evidence = _PROBE_EVIDENCE
-    evidence.update(complete_observations=0, partial_observations=0, failed_observations=0,
-                    inventory_timeouts=0, inventory_command_failures=0, phases_observed=[])
-
-    def observe():
-        while not finished.is_set():
-            try:
-                sample = sample_network_probe()
-                if sample is not None:
-                    partial = sample['partial']
-                    evidence['last_observation'] = partial
-                    if partial['postgres_found']:
-                        evidence['last_postgres_observation'] = partial
-                        if partial['health_status'] == 'HEALTHY':
-                            evidence['healthy_postgres_observation'] = partial
-                    phase = partial['initialization_phase']
-                    if phase not in evidence['phases_observed']:
-                        evidence['phases_observed'].append(phase)
-                    if sample.get('postgres_internal_healthy') is True:
-                        evidence['sample'] = sample
-                        evidence['complete_observations'] += 1
-                    else:
-                        evidence['partial_observations'] += 1
-            except subprocess.TimeoutExpired:
-                evidence['failed_observations'] += 1
-                evidence['inventory_timeouts'] += 1
-            except RuntimeError:
-                # The CLI can remove partial containers between list and inspect.
-                evidence['failed_observations'] += 1
-                evidence['inventory_command_failures'] += 1
-            except Exception as error:
-                evidence['failed_observations'] += 1
-                evidence['observer_error'] = type(error).__name__
-                # Emit only our fixed guard identifier, never arbitrary exception text.
-                if re.fullmatch(r'CPE_NORMAL_CI_[A-Z_]{1,80}', str(error)):
-                    evidence['observer_guard'] = str(error)
-                return
-            finished.wait(0.5)
-
-    observer = threading.Thread(target=observe, name='owned-supabase-network-probe', daemon=True)
-    observer.start()
-    try:
-        result = command(args, timeout=1200)
-        evidence['cli_start_success'] = True
-        return result
-    except RuntimeError:
-        evidence['cli_start_success'] = False
-        raise
-    finally:
-        finished.set()
-        observer.join(timeout=30)
-        require(not observer.is_alive(), 'PROBE_OBSERVER_NOT_CLOSED')
-
-
-def validate_network_probe(case, evidence):
-    require(case in ('internal', 'bridge') and 'observer_error' not in evidence,
-            'PROBE_OBSERVATION')
-    sample = evidence.get('sample') or {}
-    require(sample.get('owner_labels_verified') is True
-            and sample.get('postgres_internal_healthy') is True
-            and bool(sample.get('ipam')) and evidence.get('cleanup_verified') is True,
-            'PROBE_INCOMPLETE_EVIDENCE')
-    require(sample.get('internal') is (case == 'internal'), 'PROBE_NETWORK_TYPE')
-    requested = sample.get('requested_bindings') or []
-    require(len(requested) == 1 and requested[0].get('HostPort') == str(PORTS['db'])
-            and requested[0].get('HostIp') in ('', '127.0.0.1'), 'PROBE_REQUESTED_BIND')
-    expected_bindings = [{'HostIp': '127.0.0.1', 'HostPort': str(PORTS['db'])}]
-    if case == 'internal':
-        require(evidence.get('cli_start_success') is False
-                and sample.get('effective_bindings') == []
-                and sample.get('localhost_tcp_connected') is False, 'PROBE_INTERNAL_NOT_REPRODUCED')
-    else:
-        require(evidence.get('cli_start_success') is True
-                and sample.get('effective_bindings') == expected_bindings
-                and sample.get('localhost_tcp_connected') is True, 'PROBE_BRIDGE_NOT_WORKING')
-
-
-def network_ab():
-    global _PROBE_CASE, _PROBE_EVIDENCE
-    identity()  # Reject all non-hosted/non-approved invocations before any mutation.
-    require(_PROBE_CASE is None and _PROBE_EVIDENCE is None, 'PROBE_ALREADY_ACTIVE')
-    try:
-        for case in ('internal', 'bridge'):
-            _PROBE_CASE, _PROBE_EVIDENCE = case, {}
-            evidence = _PROBE_EVIDENCE
-            try:
-                try:
-                    prepare()
-                except RuntimeError as error:
-                    if case != 'internal' or str(error) != 'CPE_NORMAL_CI_COMMAND_FAILED:supabase':
-                        raise
-            finally:
-                try:
-                    stop()
-                    evidence['cleanup_verified'] = True
-                finally:
-                    try:
-                        validate_network_probe(case, evidence)
-                    except ValueError as error:
-                        evidence['outcome'] = 'INCONCLUSIVE'
-                        evidence['conclusion_guard'] = (str(error) if re.fullmatch(
-                            r'CPE_NORMAL_CI_[A-Z_]{1,80}', str(error)) else 'CPE_NORMAL_CI_PROBE_OBSERVATION')
-                    else:
-                        evidence['outcome'] = 'DEMONSTRATED'
-                    print(json.dumps({'phase': 'network-ab', 'case': case, **evidence}), flush=True)
-            validate_network_probe(case, evidence)
-        print(json.dumps({'phase': 'network-ab-result', 'internal_blocks_host_port': True,
-                          'bridge_restores_host_port': True, 'sequential_cleanup_verified': True}), flush=True)
-    finally:
-        _PROBE_CASE, _PROBE_EVIDENCE = None, None
+    require(isinstance(health, dict) and health.get('Status') == 'healthy',
+            'POSTGRES_NOT_HEALTHY')
+    require(postgres_healthcheck_is_supported(container.get('Config')),
+            'POSTGRES_HEALTHCHECK')
 
 
 def prepare():
@@ -869,8 +615,8 @@ def prepare():
         command(network_create_args(project))
         assert_owned_resources(project, inventory(), directory, require_complete=False)
         start_attempted = True
-        start_and_observe([cli, 'start', '--workdir', str(directory), '--exclude', EXCLUDED_SERVICES,
-                           '--network-id', network_name(project)])
+        command([cli, 'start', '--workdir', str(directory), '--exclude', EXCLUDED_SERVICES,
+                 '--network-id', network_name(project)], timeout=1200)
         container = verify_target()
         command([cli, 'migration', 'up', '--local', '--workdir', str(directory)], timeout=1800)
         container = verify_target()
@@ -897,6 +643,7 @@ def verify_target():
     containers = {container['Name']: container for container in resources['containers']}
     db_name, api_name = f'/supabase_db_{project}', f'/supabase_kong_{project}'
     require(db_name in containers and api_name in containers, 'REQUIRED_CONTAINERS')
+    assert_postgres_ready(containers[db_name])
     for name, internal_port, host_port in ((db_name, '5432/tcp', str(PORTS['db'])),
                                            (api_name, '8000/tcp', str(PORTS['api']))):
         container = containers[name]
@@ -978,11 +725,11 @@ def stop():
                           'resources_absent': True}), flush=True)
         return
     assert_directory(project, directory, identity_doc, require_copy=True)
-    assert_owned_resources(project, resources, directory, require_complete=False, stage='CLEANUP')
+    assert_owned_resources(project, resources, directory, require_complete=False)
     if resources['containers']:
         command([cli_path(), 'stop', '--no-backup', '--workdir', str(directory)], timeout=180)
     resources = inventory()
-    assert_owned_resources(project, resources, directory, require_complete=False, stage='CLEANUP')
+    assert_owned_resources(project, resources, directory, require_complete=False)
     require(not resources['containers'], 'CLEANUP_PROJECT_CONTAINERS_REMAIN')
     if resources['volumes']:
         # `stop --no-backup` should delete project data volumes. If any remain,
@@ -990,7 +737,7 @@ def stop():
         volume_names = sorted(volume['Name'] for volume in resources['volumes'])
         command(['docker', 'volume', 'rm', *volume_names])
     resources = inventory()
-    assert_owned_resources(project, resources, directory, require_complete=False, stage='CLEANUP')
+    assert_owned_resources(project, resources, directory, require_complete=False)
     require(not resources['containers'] and not resources['volumes'], 'CLEANUP_PROJECT_RESOURCES_REMAIN')
     custom_networks = [n for n in resources['networks'] if n.get('Name') not in SYSTEM_NETWORKS]
     if custom_networks:
@@ -1002,30 +749,11 @@ def stop():
                       'volumes': 0, 'custom_networks': 0, 'directory_removed': True}), flush=True)
 
 
-def stop_all():
-    """Finalizer also covers interruption between either fixed A/B case and cleanup."""
-    global _PROBE_CASE
-    identity()
-    failures = []
-    try:
-        for case in ('internal', 'bridge', None):
-            _PROBE_CASE = case
-            _, directory, _ = identity()
-            if case is not None and not directory.exists():
-                continue
-            try:
-                stop()
-            except Exception:
-                failures.append(case or 'normal')
-    finally:
-        _PROBE_CASE = None
-    require(not failures, 'FINALIZER_FAILED_CLOSED')
-
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('prepare', 'stop', 'network-ab'))
+    parser.add_argument('action', choices=('prepare', 'stop'))
     action = parser.parse_args().action
-    {'prepare': prepare, 'stop': stop_all, 'network-ab': network_ab}[action]()
+    {'prepare': prepare, 'stop': stop}[action]()
