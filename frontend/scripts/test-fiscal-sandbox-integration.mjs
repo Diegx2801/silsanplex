@@ -470,7 +470,8 @@ try {
   if (permissionRevocation.error) throw new Error('FISCAL_TEST_PERMISSION_REVOCATION_FAILED')
   check('separate admin session revoked exactly the viewer BILLING_VIEW grant', permissionRevocation.data.length === 1)
   const documentReadsAtRevocation = observed.filter(r => r.path === '/rest/v1/rpc/get_electronic_document').length
-  await expect(page.getByRole('heading', { name: 'Consulta fiscal bloqueada' })).toBeVisible({ timeout: 5_500 })
+  await expect(page.getByRole('alert').filter({ hasText: 'Tu permiso fiscal no está vigente o no pudo verificarse; los datos se ocultaron.' }))
+    .toBeVisible({ timeout: 5_500 })
   const revocationPropagationMs = Date.now() - revocationStartedAt
   check('focused browser hides snapshot within the five-second authorization lease', revocationPropagationMs <= 5_000
     && await page.evaluate(() => document.hasFocus()))
