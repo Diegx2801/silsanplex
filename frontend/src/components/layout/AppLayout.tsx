@@ -3,7 +3,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useEffect, useId, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 
-import { seccionesNavegacion, todosElementosNavegacion } from '@/app/navegacion'
+import { seccionesNavegacionVisibles, todosElementosNavegacion } from '@/app/navegacion'
 import { Button } from '@/components/ui/button'
 import type { Permission } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
@@ -25,7 +25,7 @@ function ContenidoNavegacion({
   const { pathname } = useLocation()
   const idNavegacion = useId()
   const [gruposAbiertos, setGruposAbiertos] = useState<string[]>(() =>
-    seccionesNavegacion
+    seccionesNavegacionVisibles
       .flatMap((seccion) => seccion.elementos)
       .filter(
         (elemento) =>
@@ -36,7 +36,7 @@ function ContenidoNavegacion({
   )
 
   useEffect(() => {
-    const padreActivo = seccionesNavegacion
+    const padreActivo = seccionesNavegacionVisibles
       .flatMap((seccion) => seccion.elementos)
       .find(
         (elemento) =>
@@ -82,7 +82,7 @@ function ContenidoNavegacion({
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
-        {seccionesNavegacion.map((seccion) => (
+        {seccionesNavegacionVisibles.map((seccion) => (
           <div key={seccion.titulo} className="mb-6 last:mb-0">
             <p className="px-3 pb-2 font-mono text-[0.68rem] font-medium tracking-[0.08em] text-muted-foreground uppercase">
               {seccion.titulo}

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { ClientesPage } from './ClientesPage'
@@ -14,6 +14,21 @@ const mocks = vi.hoisted(() => ({
   consultarRuc: vi.fn(),
   consultarDni: vi.fn(),
 }))
+
+const cliente = {
+  id: 'cliente-1',
+  tipoDocumento: 'ruc',
+  numeroDocumento: '20548796321',
+  nombreRazonSocial: 'Boticas El Sol S.A.C.',
+  nombreComercial: 'El Sol',
+  contacto: 'Ana Pérez',
+  email: 'ana@example.test',
+  telefono: '999111222',
+  direccion: 'Av. Los Olivos 123, Lima',
+  estadoSunat: 'ACTIVO',
+  fuenteDatosFiscales: 'SUNAT',
+  activo: true,
+} as const
 
 vi.mock('@/features/auth/useAuth', () => ({
   useAuth: () => ({ hasPermission: mocks.hasPermission }),
@@ -82,5 +97,39 @@ describe('ClientesPage', () => {
     screen.getByRole('button', { name: 'Reintentar' }).click()
     expect(await screen.findByText('0 registros')).toBeVisible()
     expect(mocks.listarClientes).toHaveBeenCalledTimes(2)
+  })
+
+  it('presenta tarjetas táctiles con consulta y edición sin reemplazar la tabla de escritorio', async () => {
+    mocks.hasPermission.mockImplementation((permission) => permission === PERMISSIONS.CUSTOMERS_MANAGE)
+    mocks.listarClientes.mockResolvedValue({ clientes: [cliente], total: 1 })
+
+    const { container } = renderPage()
+
+    const tarjetas = await screen.findByRole('list', { name: 'Clientes' })
+    expect(tarjetas).toHaveClass('lg:hidden')
+    expect(within(tarjetas).getByRole('heading', { name: 'Boticas El Sol S.A.C.' })).toBeVisible()
+    expect(within(tarjetas).getByText(/20548796321/)).toBeVisible()
+    expect(within(tarjetas).getByText('Av. Los Olivos 123, Lima')).toBeVisible()
+    expect(within(tarjetas).getByText(/ACTIVO · SUNAT/)).toBeVisible()
+    expect(within(tarjetas).getByRole('button', { name: 'Ver detalle de Boticas El Sol S.A.C.' })).toBeVisible()
+    expect(within(tarjetas).getByRole('button', { name: 'Editar' })).toBeVisible()
+    expect(within(tarjetas).getByRole('button', { name: 'Desactivar cliente' })).toBeVisible()
+
+    const tabla = screen.getByRole('table')
+    expect(tabla.parentElement).toHaveClass('hidden', 'lg:block')
+    expect(container.querySelector('[class*="min-w-[68rem]"]')).not.toBeNull()
+  })
+
+  it('mantiene consulta disponible pero oculta gestión en tarjetas para un usuario de solo lectura', async () => {
+    mocks.hasPermission.mockImplementation((permission) => permission === PERMISSIONS.CUSTOMERS_VIEW)
+    mocks.listarClientes.mockResolvedValue({ clientes: [cliente], total: 1 })
+
+    renderPage()
+
+    const tarjetas = await screen.findByRole('list', { name: 'Clientes' })
+    expect(tarjetas).toHaveClass('lg:hidden')
+    expect(within(tarjetas).getByRole('button', { name: 'Ver detalle de Boticas El Sol S.A.C.' })).toBeVisible()
+    expect(within(tarjetas).queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument()
+    expect(within(tarjetas).queryByRole('button', { name: 'Desactivar cliente' })).not.toBeInTheDocument()
   })
 })

@@ -154,3 +154,58 @@ describe('Filtros del historial de transferencias', () => {
     ).not.toBeInTheDocument()
   })
 })
+
+describe('Kardex adaptable', () => {
+  it('muestra trazabilidad, cantidades, lote y saldos completos en tarjetas móviles', () => {
+    const listado = {
+      data: {
+        elementos: [{
+          id: 'movimiento-1',
+          secuenciaLedger: 7,
+          productoId: 'producto-1',
+          productoCodigo: 'SKU-01',
+          productoDescripcion: 'Producto de prueba',
+          unidadMedida: 'Unidad',
+          almacen: 'Almacén central',
+          estado: 'available',
+          lote: 'LOT-2026-01',
+          fechaOperacion: '2026-10-20',
+          fechaRegistro: '2026-10-20T15:00:00Z',
+          motivo: 'Recepción de compra',
+          documentoReferencia: 'REC-000014',
+          costoUnitario: 5,
+          cantidadEntrada: 10,
+          cantidadSalida: 0,
+          valorEntrada: 50,
+          valorSalida: 0,
+          saldoCantidad: 10,
+          saldoValor: 50,
+          cantidadCapturada: 1,
+          unidadCapturada: 'Caja',
+          factorConversion: 10,
+        }],
+        total: 1,
+        totalPaginas: 1,
+      },
+      isLoading: false,
+      isFetching: false,
+      error: null,
+      refetch: vi.fn(),
+    }
+    mocks.listados.mockReturnValue({ kardex: listado, transferencias: listado })
+
+    const historial = montar('kardex')
+    const tarjetas = screen.getByRole('list', { name: 'Movimientos del Kardex' })
+
+    expect(tarjetas).toHaveClass('xl:hidden')
+    expect(within(tarjetas).getByText('Producto de prueba')).toBeVisible()
+    expect(within(tarjetas).getByText('Almacén central · LOT-2026-01')).toBeVisible()
+    expect(within(tarjetas).getByText('REC-000014')).toBeVisible()
+    expect(within(tarjetas).getByText('Recepción de compra')).toBeVisible()
+    expect(within(tarjetas).getByText('Equivale a 10 Unidad')).toBeVisible()
+    expect(within(tarjetas).getByText('Valor del saldo')).toBeVisible()
+
+    const tabla = historial.getByRole('table', { name: 'Kardex valorizado' })
+    expect(tabla.parentElement).toHaveClass('hidden', 'xl:block')
+  })
+})

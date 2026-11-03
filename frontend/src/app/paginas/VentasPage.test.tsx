@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router'
 
@@ -143,6 +143,22 @@ describe('VentasPage', () => {
     expect(await screen.findByRole('combobox', { name: 'Producto 1' })).toBeVisible()
   })
 
+  it('usa enlaces de navegación normales con foco y destino claros para cambiar de vista', () => {
+    renderPage()
+
+    const navegacion = screen.getByRole('navigation', { name: 'Secciones de ventas' })
+    const cotizaciones = within(navegacion).getByRole('link', { name: 'Cotizaciones' })
+    const ejecucion = within(navegacion).getByRole('link', { name: 'Ejecución comercial' })
+
+    expect(navegacion).not.toHaveAttribute('role', 'tablist')
+    expect(cotizaciones).not.toHaveAttribute('role', 'tab')
+    expect(cotizaciones).toHaveAttribute('aria-current', 'page')
+    expect(cotizaciones).toHaveAttribute('href', '/ventas')
+    expect(ejecucion).not.toHaveAttribute('aria-selected')
+    expect(ejecucion).toHaveAttribute('href', '/ventas?vista=ejecucion')
+    expect(cotizaciones).toHaveClass('min-h-11')
+  })
+
   it('muestra en la página el motivo cuando la emisión es rechazada', async () => {
     const cotizacion: Cotizacion = {
       id: 'cotizacion-1',
@@ -226,7 +242,7 @@ describe('VentasPage', () => {
 
   it('separa cotizaciones y ejecución comercial sin salir del módulo Ventas', () => {
     renderPage()
-    fireEvent.click(screen.getByRole('tab', { name: 'Ejecución comercial' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Ejecución comercial' }))
 
     expect(screen.getByRole('heading', { name: 'Pedidos, ventas y despachos' })).toBeVisible()
     expect(screen.getByLabelText('Buscar')).toHaveAttribute('placeholder', 'Pedido, cliente, producto o comprobante')
