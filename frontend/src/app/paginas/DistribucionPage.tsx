@@ -1,4 +1,4 @@
-import { ArrowRight, Ban, CalendarClock, Eye, FileDown, PackageCheck, Pencil, Plus, Search, Truck } from 'lucide-react'
+import { ArrowRight, Ban, CalendarClock, Eye, FileDown, PackageCheck, Pencil, Search, Truck } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
@@ -13,6 +13,7 @@ import { fechaActualPeru, ZONA_HORARIA_NEGOCIO } from '@/lib/fechas'
 import { useClientes } from '@/modulos/clientes/estado/useClientes'
 import { DialogoDetalleEntrega } from '@/modulos/distribucion/componentes/DialogoDetalleEntrega'
 import { DialogoResultadoEntrega } from '@/modulos/distribucion/componentes/DialogoResultadoEntrega'
+import { PedidosPorProgramar } from '@/modulos/distribucion/componentes/PedidosPorProgramar'
 import { useMovimientosDisponiblesDistribucion, useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
 import { obtenerLineasDisponiblesDistribucion, pedidoListoParaProgramarDistribucion } from '@/modulos/distribucion/modelo/pedidosProgramables'
 import {
@@ -79,7 +80,7 @@ function etiquetaCumplimientoPedido(pedido: PedidoVenta) {
 }
 
 export function DistribucionPage() {
-  const [parametros, setParametros] = useSearchParams()
+  const [parametros] = useSearchParams()
   const vista: VistaDistribucion = parametros.get('vista') === 'seguimiento' ? 'seguimiento' : 'pendientes'
   const { hasPermission } = useAuth()
   const puedeGestionarDistribucion = hasPermission(PERMISSIONS.DISTRIBUTION_MANAGE)
@@ -161,6 +162,23 @@ export function DistribucionPage() {
     (paginaPendientesVisible - 1) * tamanioPaginaPendientes,
     paginaPendientesVisible * tamanioPaginaPendientes,
   )
+  const pedidosProgramablesResumen = useMemo(() => pedidosPorProgramarVisibles.map((pedido) => {
+    const lineasDisponibles = lineasDisponiblesPorPedido.get(pedido.id) ?? []
+    return {
+      id: pedido.id,
+      numero: pedido.numero,
+      clienteNombre: pedido.clienteNombre,
+      clienteDocumento: pedido.clienteDocumento,
+      almacenNombre: pedido.almacenNombre ?? 'No especificado',
+      cantidadProductos: lineasDisponibles.length,
+      cantidadDisponible: lineasDisponibles.reduce(
+        (total, linea) => total + linea.cantidadDisponibleDistribucion,
+        0,
+      ),
+      estado: etiquetaCumplimientoPedido(pedido),
+      estadoListo: pedido.estadoCumplimiento === 'dispatched',
+    }
+  }), [lineasDisponiblesPorPedido, pedidosPorProgramarVisibles])
   const filtradas = filtrarProgramacionesEntrega(programaciones, {
     busqueda: busquedaDiferida,
     estado: filtroEstado,
@@ -225,10 +243,6 @@ export function DistribucionPage() {
   const requiereDatosTransporte = estadoRequiereTransporte && !esRecojoCliente
   const requiereTransportista = requiereDatosTransporte && datos.tipoTransporte === 'externo'
   const destinoBloqueado = Boolean(edicion && !['programado', 'preparando', 'reprogramado'].includes(edicion.estado))
-
-  const cambiarVista = (siguiente: VistaDistribucion) => {
-    setParametros(siguiente === 'pendientes' ? {} : { vista: siguiente })
-  }
 
   useEffect(() => {
     if (!formularioAbierto || !datos.pedidoId || datos.direccionEntrega || direccionSeleccionadaId || !direccionesCliente.length) return
@@ -327,6 +341,13 @@ export function DistribucionPage() {
       })),
     })
     setFormularioAbierto(true)
+  }
+
+  const abrirDetallePedido = (pedidoId: string, disparador: HTMLButtonElement) => {
+    const pedido = pedidos.find((item) => item.id === pedidoId)
+    if (!pedido) return
+    disparadorPedidoDetalle.current = disparador
+    setPedidoDetalle(pedido)
   }
 
   const enviar = async (evento: React.FormEvent<HTMLFormElement>) => {
@@ -572,22 +593,18 @@ export function DistribucionPage() {
         </div>
       </header>
 
-      <nav aria-label="Secciones de distribución" role="tablist" className="flex flex-wrap gap-2 border-b pb-2 print:hidden">
+      <nav aria-label="Secciones de distribución" className="flex flex-wrap gap-2 border-b pb-2 print:hidden">
         <Link
           to="/distribucion"
-          role="tab"
-          aria-selected={vista === 'pendientes'}
-          className={vista === 'pendientes' ? 'border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary' : 'px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground'}
-          onClick={(evento) => { evento.preventDefault(); cambiarVista('pendientes') }}
+          aria-current={vista === 'pendientes' ? 'page' : undefined}
+          className={vista === 'pendientes' ? 'inline-flex min-h-11 items-center border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring' : 'inline-flex min-h-11 items-center px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'}
         >
           Por programar
         </Link>
         <Link
           to="/distribucion?vista=seguimiento"
-          role="tab"
-          aria-selected={vista === 'seguimiento'}
-          className={vista === 'seguimiento' ? 'border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary' : 'px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground'}
-          onClick={(evento) => { evento.preventDefault(); cambiarVista('seguimiento') }}
+          aria-current={vista === 'seguimiento' ? 'page' : undefined}
+          className={vista === 'seguimiento' ? 'inline-flex min-h-11 items-center border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring' : 'inline-flex min-h-11 items-center px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'}
         >
           Seguimiento de entregas
         </Link>
@@ -604,7 +621,7 @@ export function DistribucionPage() {
             ['Atrasadas', resumen.atrasadas],
             ['Con incidencias', resumen.conIncidencias],
           ].map(([etiqueta, valor]) => (
-            <article key={etiqueta} className="flex min-h-16 flex-col justify-between gap-2 bg-card px-3 py-3">
+            <article key={etiqueta} className="flex min-h-16 flex-col justify-between gap-2 bg-card px-3 py-3 last:col-span-2 xl:last:col-span-1">
               <div className="flex items-start justify-between gap-2"><p className="font-mono text-[0.62rem] leading-4 tracking-[0.06em] text-muted-foreground uppercase">{etiqueta}</p><Truck aria-hidden="true" className="size-4 shrink-0 text-primary" /></div>
               <p className="font-mono text-xl font-semibold tabular-nums">{valor}</p>
             </article>
@@ -643,24 +660,12 @@ export function DistribucionPage() {
           ) : !pedidosPorProgramarFiltrados.length ? (
             <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{pedidosPorProgramar.length ? 'No hay coincidencias' : 'No hay pedidos listos para programar'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{pedidosPorProgramar.length ? 'Prueba con otra búsqueda o limpia el filtro de almacén.' : 'Aquí aparecen pedidos de envío cuando todos sus bienes están despachados. Los despachos parciales continúan en Ventas y los recojos del cliente se gestionan allí.'}</p></div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[58rem] border-collapse text-left text-sm">
-                <thead className="border-b bg-muted/45"><tr><th className="px-5 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Pedido</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Cliente</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Almacén</th><th className="px-4 py-3 text-end font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Bienes</th><th className="px-4 py-3 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Estado</th><th className="px-5 py-3 text-end font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Acciones</th></tr></thead>
-                <tbody className="divide-y">{pedidosPorProgramarVisibles.map((pedido) => {
-                  const lineasDisponibles = lineasDisponiblesPorPedido.get(pedido.id) ?? []
-                  const cantidadProductos = lineasDisponibles.length
-                  const cantidadDisponible = lineasDisponibles.reduce((total, linea) => total + linea.cantidadDisponibleDistribucion, 0)
-                  return <tr key={pedido.id} className="hover:bg-muted/35">
-                    <td className="px-5 py-4 font-mono text-xs font-medium text-primary">{pedido.numero}</td>
-                    <td className="max-w-[18rem] px-4 py-4"><p className="truncate font-medium">{pedido.clienteNombre}</p><p className="mt-1 text-xs text-muted-foreground">{pedido.clienteDocumento}</p></td>
-                    <td className="px-4 py-4 text-sm text-muted-foreground">{pedido.almacenNombre ?? 'No especificado'}</td>
-                    <td className="px-4 py-4 text-end"><p className="font-mono tabular-nums">{cantidadProductos} producto{cantidadProductos === 1 ? '' : 's'}</p><p className="mt-1 text-xs text-muted-foreground">{cantidadDisponible} unidades sin asignar</p></td>
-                    <td className="px-4 py-4"><span className="status-label" data-tone={pedido.estadoCumplimiento === 'dispatched' ? 'listo' : 'pendiente'}>{etiquetaCumplimientoPedido(pedido)}</span></td>
-                    <td className="px-5 py-4 text-end"><div className="flex justify-end gap-1"><Button type="button" variant="ghost" size="icon" title="Ver detalle del pedido" aria-label={`Ver detalle de ${pedido.numero}`} onClick={(evento) => { disparadorPedidoDetalle.current = evento.currentTarget; setPedidoDetalle(pedido) }}><Eye aria-hidden="true" /></Button>{puedeGestionarDistribucion ? <Button type="button" onClick={() => prepararPedido(pedido.id)}><Plus aria-hidden="true" /> Programar envío</Button> : null}</div></td>
-                  </tr>
-                })}</tbody>
-              </table>
-            </div>
+            <PedidosPorProgramar
+              pedidos={pedidosProgramablesResumen}
+              puedeProgramar={puedeGestionarDistribucion}
+              alVerDetalle={abrirDetallePedido}
+              alProgramar={prepararPedido}
+            />
           )}
           {pedidosPorProgramarFiltrados.length ? <PaginacionListado etiqueta="pedidos por programar" pagina={paginaPendientesVisible} tamanioPagina={tamanioPaginaPendientes} total={pedidosPorProgramarFiltrados.length} totalPaginas={totalPaginasPendientes} cantidadVisible={pedidosPorProgramarVisibles.length} alCambiarPagina={setPaginaPendientes} alCambiarTamanio={(siguiente) => { setTamanioPaginaPendientes(siguiente); setPaginaPendientes(1) }} /> : null}
         </section>
@@ -725,7 +730,7 @@ export function DistribucionPage() {
                       {puedeGestionarDistribucion && !item.requiereConciliacionCantidades ? (
                         <div className="mt-3 flex flex-wrap gap-2 print:hidden">
                           {accionPrincipal ? <Button type="button" size="sm" disabled={guardandoEstado || guardandoResultado} onClick={() => void ejecutarTransicionEtapa(item, accionPrincipal.estado)}><ArrowRight aria-hidden="true" />{accionPrincipal.etiqueta}</Button> : null}
-                          {puedeRegistrarResultado ? <Button type="button" size="sm" variant={accionPrincipal ? 'outline' : 'default'} disabled={guardandoEstado || guardandoResultado} onClick={() => setEntregaResultado(item)}><PackageCheck aria-hidden="true" />{item.estado === 'entrega_parcial' ? 'Registrar recepción adicional' : 'Registrar resultado'}</Button> : null}
+                          {puedeRegistrarResultado ? <Button type="button" size="sm" className="min-h-11" variant={accionPrincipal ? 'outline' : 'default'} disabled={guardandoEstado || guardandoResultado} onClick={() => setEntregaResultado(item)}><PackageCheck aria-hidden="true" />{item.estado === 'entrega_parcial' ? 'Registrar recepción adicional' : 'Registrar resultado'}</Button> : null}
                           {puedeReprogramar ? <Button type="button" size="sm" variant="outline" disabled={guardandoEstado} onClick={() => editarProgramacion(item, true)}><CalendarClock aria-hidden="true" /> Reprogramar fecha</Button> : null}
                           {puedeEditar ? <Button type="button" size="sm" variant="outline" disabled={guardandoEstado} onClick={() => editarProgramacion(item)}><Pencil aria-hidden="true" /> Editar planificación</Button> : null}
                           {puedeCancelar ? <Button type="button" size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={guardandoEstado} onClick={() => { setErrorCancelacion(''); setEntregaPorCancelar(item) }}><Ban aria-hidden="true" /> Cancelar</Button> : null}

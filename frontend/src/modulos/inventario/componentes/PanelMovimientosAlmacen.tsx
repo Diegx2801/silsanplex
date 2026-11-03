@@ -194,8 +194,87 @@ export function PanelMovimientosAlmacen(props: Props) {
             mensajeVacio="No hay movimientos de Kardex para los filtros activos."
             alReintentar={() => void listados.kardex.refetch()}
           >
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[72rem] text-left text-sm">
+            <ul aria-label="Movimientos del Kardex" className="divide-y xl:hidden">
+              {kardex.map((movimiento) => (
+                <li key={movimiento.id}>
+                  <article className="space-y-4 px-4 py-5 sm:px-6">
+                    <header className="min-w-0">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-mono text-xs text-primary">
+                          MOV-{String(movimiento.secuenciaLedger).padStart(6, '0')}
+                        </p>
+                        <time dateTime={movimiento.fechaOperacion} className="font-mono text-xs text-muted-foreground">
+                          {movimiento.fechaOperacion}
+                        </time>
+                      </div>
+                      <h3 className="mt-2 break-words font-semibold">{movimiento.productoDescripcion}</h3>
+                      <p className="mt-1 font-mono text-xs text-muted-foreground">{movimiento.productoCodigo}</p>
+                    </header>
+
+                    <dl className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Entrada</dt>
+                        <dd className="mt-1">
+                          {movimiento.cantidadEntrada
+                            ? <CantidadMovimiento {...movimiento} cantidad={movimiento.cantidadEntrada} />
+                            : '—'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Salida</dt>
+                        <dd className="mt-1">
+                          {movimiento.cantidadSalida
+                            ? <CantidadMovimiento {...movimiento} cantidad={movimiento.cantidadSalida} />
+                            : '—'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Saldo</dt>
+                        <dd className="mt-1 font-mono font-semibold tabular-nums">
+                          {formatoCantidad.format(movimiento.saldoCantidad)}
+                          {movimiento.unidadMedida ? <span className="ms-1 font-sans text-xs font-normal text-muted-foreground">{movimiento.unidadMedida}</span> : null}
+                        </dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-xs text-muted-foreground">Almacén · lote</dt>
+                        <dd className="mt-1 break-words">{movimiento.almacen} · {movimiento.lote || 'Sin lote'}</dd>
+                      </div>
+                    </dl>
+
+                    <details open className="border-t pt-3">
+                      <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        Detalle y trazabilidad
+                      </summary>
+                      <dl className="grid gap-3 pt-2 text-sm sm:grid-cols-2">
+                        <div className="min-w-0">
+                          <dt className="text-xs text-muted-foreground">Número de movimiento</dt>
+                          <dd className="mt-1 font-mono">MOV-{String(movimiento.secuenciaLedger).padStart(6, '0')}</dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="text-xs text-muted-foreground">Documento externo</dt>
+                          <dd className="mt-1 break-words">{movimiento.documentoReferencia || 'Sin documento externo'}</dd>
+                        </div>
+                        <div className="min-w-0 sm:col-span-2">
+                          <dt className="text-xs text-muted-foreground">Motivo</dt>
+                          <dd className="mt-1 break-words">{movimiento.motivo}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Importe · costo unitario</dt>
+                          <dd className="mt-1"><ImporteMovimiento {...movimiento} /></dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Valor del saldo</dt>
+                          <dd className="mt-1 font-mono">{formatoMoneda.format(movimiento.saldoValor)}</dd>
+                        </div>
+                      </dl>
+                    </details>
+                  </article>
+                </li>
+              ))}
+            </ul>
+
+            <div className="hidden overflow-x-auto xl:block">
+              <table aria-label="Kardex valorizado" className="w-full min-w-[72rem] text-left text-sm">
                 <thead>
                   <tr className="border-b bg-muted/45 font-mono text-[0.68rem] uppercase text-muted-foreground">
                     <th className="px-5 py-3">Fecha</th>

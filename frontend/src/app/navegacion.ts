@@ -23,6 +23,7 @@ export interface ElementoNavegacion {
   descripcion: string
   icono: LucideIcon
   permission?: Permission
+  visible?: boolean
   hijos?: ElementoNavegacion[]
 }
 
@@ -163,10 +164,18 @@ export const seccionesNavegacion: SeccionNavegacion[] = [
         ruta: '/configuracion',
         descripcion: 'Parámetros generales',
         icono: Settings,
+        visible: false,
       },
     ],
   },
 ]
+
+export const seccionesNavegacionVisibles: SeccionNavegacion[] = seccionesNavegacion
+  .map((seccion) => ({
+    ...seccion,
+    elementos: seccion.elementos.filter((elemento) => elemento.visible !== false),
+  }))
+  .filter((seccion) => seccion.elementos.length > 0)
 
 export const elementosNavegacion = seccionesNavegacion.flatMap(
   (seccion) => seccion.elementos,

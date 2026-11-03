@@ -97,7 +97,7 @@ function EstadoCotizacionEtiqueta({ cotizacion }: { cotizacion: Cotizacion }) {
 }
 
 export function VentasPage() {
-  const [parametros, setParametros] = useSearchParams()
+  const [parametros] = useSearchParams()
   const vista: VistaVentas = parametros.get('vista') === 'ejecucion' ? 'ejecucion' : 'cotizaciones'
   const { access, hasPermission } = useAuth()
   const organizationId = access?.organizationId ?? ''
@@ -182,10 +182,6 @@ export function VentasPage() {
   const disparadorPedido = useRef<HTMLButtonElement | null>(null)
   const disparadorDetalle = useRef<HTMLButtonElement | null>(null)
   const busquedaDiferida = useDeferredValue(busqueda)
-
-  const cambiarVista = (siguiente: VistaVentas) => {
-    setParametros(siguiente === 'cotizaciones' ? {} : { vista: siguiente })
-  }
 
   const notificar = (texto: string, esError = false) => {
     setMensaje(texto)
@@ -346,22 +342,18 @@ export function VentasPage() {
         ) : null}
       </header>
 
-      <nav aria-label="Secciones de ventas" role="tablist" className="flex flex-wrap gap-2 border-b pb-2">
+      <nav aria-label="Secciones de ventas" className="flex flex-wrap gap-2 border-b pb-2">
         <Link
           to="/ventas"
-          role="tab"
-          aria-selected={vista === 'cotizaciones'}
-          className={vista === 'cotizaciones' ? 'border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary' : 'px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground'}
-          onClick={(evento) => { evento.preventDefault(); cambiarVista('cotizaciones') }}
+          aria-current={vista === 'cotizaciones' ? 'page' : undefined}
+          className={vista === 'cotizaciones' ? 'inline-flex min-h-11 items-center border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring' : 'inline-flex min-h-11 items-center px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'}
         >
           Cotizaciones
         </Link>
         <Link
           to="/ventas?vista=ejecucion"
-          role="tab"
-          aria-selected={vista === 'ejecucion'}
-          className={vista === 'ejecucion' ? 'border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary' : 'px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground'}
-          onClick={(evento) => { evento.preventDefault(); cambiarVista('ejecucion') }}
+          aria-current={vista === 'ejecucion' ? 'page' : undefined}
+          className={vista === 'ejecucion' ? 'inline-flex min-h-11 items-center border-b-2 border-primary px-4 py-2 text-sm font-semibold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring' : 'inline-flex min-h-11 items-center px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'}
         >
           Ejecución comercial
         </Link>

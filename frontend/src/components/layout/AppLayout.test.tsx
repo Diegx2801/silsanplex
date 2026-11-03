@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 
 import { AppLayout } from './AppLayout'
+import { elementosNavegacion } from '@/app/navegacion'
 
 vi.mock('@/features/auth/useAuth', () => ({
   useAuth: () => ({
@@ -47,5 +48,23 @@ describe('AppLayout', () => {
     expect(screen.getByRole('link', { name: 'Movimientos y Kardex' })).toHaveAttribute('href', '/inventario/movimientos')
     expect(screen.getAllByText('Almacenes y ubicaciones')).toHaveLength(2)
     expect(screen.getByText('Contenido del mantenedor')).toBeVisible()
+  })
+
+  it('retira Configuración del menú mientras conserva su definición para la ruta futura', () => {
+    render(
+      <MemoryRouter initialEntries={['/inventario']}>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route path="inventario" element={<p>Existencias</p>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByRole('link', { name: 'Configuración' })).not.toBeInTheDocument()
+    expect(elementosNavegacion.find((elemento) => elemento.ruta === '/configuracion')).toMatchObject({
+      titulo: 'Configuración',
+      visible: false,
+    })
   })
 })
