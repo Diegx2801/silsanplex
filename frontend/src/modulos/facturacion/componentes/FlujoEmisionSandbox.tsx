@@ -100,6 +100,7 @@ export function FlujoEmisionSandbox({
   const [outstanding, setOutstanding] = useState('')
   const [dueDate, setDueDate] = useState(() => fechaMasDias(fechaLocalActual(), 30))
   const [operationError, setOperationError] = useState<string | null>(null)
+  const [configurationError, setConfigurationError] = useState<string | null>(null)
   const [pendingAction, setPendingAction] = useState<'profile' | 'series' | 'prepare' | null>(null)
   const profileCommand = useRef<ComandoIdempotentePendiente | null>(null)
   const seriesCommand = useRef<ComandoIdempotentePendiente | null>(null)
@@ -200,12 +201,13 @@ export function FlujoEmisionSandbox({
 
   const actualizarPerfil = (campo: keyof PerfilFormulario, valor: string) => {
     resetProfileCommand()
+    setConfigurationError(null)
     setProfileForm((actual) => ({ ...actual, [campo]: valor }))
   }
   const guardarPerfil = async (evento: SubmitEvent<HTMLFormElement>) => {
     evento.preventDefault()
     if (!permisoFiscalVigente || !puedeConfigurar || !config || !profileForm.ruc.trim() || !profileForm.nombre.trim()) return
-    setOperationError(null)
+    setConfigurationError(null)
     setPendingAction('profile')
     profileCommand.current ??= {
       operationKey: crearClaveOperacionFiscal(),
@@ -234,7 +236,7 @@ export function FlujoEmisionSandbox({
       setSelectedProfileId(result.id)
       await queryClient.invalidateQueries({ queryKey: ['electronic-billing-configuration', organizationId, userId] })
     } catch (error) {
-      setOperationError(mensajeSeguro(error))
+      setConfigurationError(mensajeSeguro(error))
     } finally {
       setPendingAction(null)
     }
@@ -243,7 +245,7 @@ export function FlujoEmisionSandbox({
   const guardarSerie = async (evento: SubmitEvent<HTMLFormElement>) => {
     evento.preventDefault()
     if (!permisoFiscalVigente || !puedeConfigurar || !selectedProfile || !config) return
-    setOperationError(null)
+    setConfigurationError(null)
     setPendingAction('series')
     seriesCommand.current ??= {
       operationKey: crearClaveOperacionFiscal(),
@@ -268,7 +270,7 @@ export function FlujoEmisionSandbox({
       setPreparationSeriesId(result.id)
       await queryClient.invalidateQueries({ queryKey: ['electronic-billing-configuration', organizationId, userId] })
     } catch (error) {
-      setOperationError(mensajeSeguro(error))
+      setConfigurationError(mensajeSeguro(error))
     } finally {
       setPendingAction(null)
     }
@@ -440,6 +442,7 @@ export function FlujoEmisionSandbox({
           </form>
         </div>
       </> : null}
+      {configurationError ? <p role="alert" className="field-error">{configurationError}</p> : null}
       {!puedeConfigurar && puedePreparar ? <p className="text-sm text-muted-foreground">
         Configuración guardada para consulta. Para crear o editar el emisor y las series se requiere BILLING_CONFIGURE.
       </p> : null}

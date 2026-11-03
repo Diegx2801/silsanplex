@@ -344,6 +344,27 @@ describe('pantalla de consulta fiscal sandbox', () => {
     expect(segundoPayload).toEqual(primerPayload)
   })
 
+  it.each(['perfil', 'serie'] as const)('muestra errores al configurador sin permiso de preparación al guardar %s', async (tipo) => {
+    mocks.auth.puedeConfigurar = true
+    const [perfil] = perfilesFicticios()
+    mocks.configuracion.mockResolvedValue({ organizationId: organizacionFiscalPrueba, profiles: [perfil] })
+    if (tipo === 'perfil') mocks.guardarPerfil.mockRejectedValueOnce(new Error('respuesta privada'))
+    else mocks.guardarSerie.mockRejectedValueOnce(new Error('respuesta privada'))
+
+    render(pantalla())
+    const nombre = tipo === 'perfil' ? 'Configuración de perfil emisor sandbox' : 'Configuración de serie sandbox'
+    const form = await screen.findByRole('form', { name: nombre })
+    const boton = tipo === 'perfil'
+      ? screen.getByRole('button', { name: 'Guardar cambios de perfil sandbox' })
+      : screen.getByRole('button', { name: 'Guardar serie sandbox' })
+    await waitFor(() => expect(boton).toBeEnabled())
+    fireEvent.submit(form)
+
+    await waitFor(() => expect(tipo === 'perfil' ? mocks.guardarPerfil : mocks.guardarSerie).toHaveBeenCalledTimes(1))
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo completar esta operación sandbox.')
+    expect(screen.queryByRole('form', { name: 'Preparar comprobante fiscal sandbox' })).not.toBeInTheDocument()
+  })
+
   it('la ruta real y su entrada de navegación exigen BILLING_VIEW', async () => {
     expect(elementosNavegacion.find((item) => item.ruta === '/facturacion-sandbox')?.permission).toBe('BILLING_VIEW')
     const { router } = await import('@/app/router/router')

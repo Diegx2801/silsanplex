@@ -503,7 +503,8 @@ try {
   failNextPermissionRpc = true
   await expect.poll(() => observed.filter(r => r.path === '/rest/v1/rpc/has_organization_permission').length,
     { timeout: 5_000 }).toBeGreaterThan(permissionChecksBeforeNetworkFailure)
-  await expect(page.getByRole('heading', { name: 'Consulta fiscal bloqueada' })).toBeVisible({ timeout: 1_000 })
+  await expect(page.getByRole('alert').filter({ hasText: 'Tu permiso fiscal no está vigente o no pudo verificarse; los datos se ocultaron.' }))
+    .toBeVisible({ timeout: 1_000 })
   await expect(page.getByRole('article', { name: 'Detalle fiscal sandbox' })).toHaveCount(0)
   await expect(page.getByRole('article', { name: 'Detalle fiscal sandbox' })).toBeVisible({ timeout: 6_000 })
   evidence.browser.push('permission network failure fails closed and a later real check recovers')
