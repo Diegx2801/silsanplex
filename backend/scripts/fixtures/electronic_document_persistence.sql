@@ -190,7 +190,9 @@ begin
  r:=pg_temp.cpe_capture(format('select public.get_electronic_document(%L,%L)',org,d->>'documentId'),(other_f->>'actor')::uuid,(other_f->>'sid')::uuid);
  perform pg_temp.cpe_assert('foreign tenant cannot read RPC',r->>'state'='42501');
  r:=pg_temp.cpe_capture('select to_jsonb(count(*)) from public.electronic_documents',(other_f->>'actor')::uuid,(other_f->>'sid')::uuid);
- perform pg_temp.cpe_assert('RLS hides another organization',r->'value'='0'::jsonb);
+ perform pg_temp.cpe_assert('direct read is constrained by RLS or denied by SQL grants',
+  case when has_table_privilege('authenticated','public.electronic_documents','SELECT')
+   then r->'value'='0'::jsonb else r->>'state'='42501' end);
  r:=pg_temp.cpe_capture(format('update public.electronic_documents set version=version+1 where organization_id=%L',org),a,sid);
  perform pg_temp.cpe_assert('authenticated no direct writes',r->>'state'='42501');
  insert into auth.users(id,email,raw_user_meta_data) values(anon,anon::text||'@example.invalid','{"full_name":"SANDBOX denied"}');
@@ -207,7 +209,11 @@ begin
  perform pg_temp.cpe_assert('view only cannot prepare',r->>'state'='42501');
  delete from auth.sessions where id=anon_session;
  r:=pg_temp.cpe_capture('select to_jsonb(count(*)) from public.electronic_documents',anon,anon_session);
- perform pg_temp.cpe_assert('revoked session RLS returns no rows',r->'value'='0'::jsonb);
+ perform pg_temp.cpe_assert('revoked session direct read is filtered by RLS or denied by SQL grants',
+  case when has_table_privilege('authenticated','public.electronic_documents','SELECT')
+   then r->>'state'='00000' and r->'value'='0'::jsonb else r->>'state'='42501' end);
+ r:=pg_temp.cpe_capture(format('select public.get_electronic_document(%L,%L)',org,d->>'documentId'),anon,anon_session);
+ perform pg_temp.cpe_assert('revoked session cannot read RPC',r->>'state'='42501');
  r:=pg_temp.cpe_call('prepare_electronic_document',p,a,gen_random_uuid());
  perform pg_temp.cpe_assert('invalid session denied',r->>'state'='42501');
  reset role;
