@@ -621,7 +621,7 @@ export function DistribucionPage() {
             ['Atrasadas', resumen.atrasadas],
             ['Con incidencias', resumen.conIncidencias],
           ].map(([etiqueta, valor]) => (
-            <article key={etiqueta} className="flex min-h-16 flex-col justify-between gap-2 bg-card px-3 py-3">
+            <article key={etiqueta} className="flex min-h-16 flex-col justify-between gap-2 bg-card px-3 py-3 last:col-span-2 xl:last:col-span-1">
               <div className="flex items-start justify-between gap-2"><p className="font-mono text-[0.62rem] leading-4 tracking-[0.06em] text-muted-foreground uppercase">{etiqueta}</p><Truck aria-hidden="true" className="size-4 shrink-0 text-primary" /></div>
               <p className="font-mono text-xl font-semibold tabular-nums">{valor}</p>
             </article>

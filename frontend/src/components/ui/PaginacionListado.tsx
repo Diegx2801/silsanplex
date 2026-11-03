@@ -49,7 +49,7 @@ export function PaginacionListado({
             onChange={(evento) =>
               alCambiarTamanio(Number(evento.target.value) as TamanioPaginaListado)
             }
-            className="field-control min-h-9 w-20 py-1"
+            className="field-control min-h-11 w-20 py-1"
           >
             {tamaniosPaginaListado.map((tamanio) => (
               <option key={tamanio} value={tamanio}>{tamanio}</option>
@@ -64,6 +64,7 @@ export function PaginacionListado({
             aria-label={`Página anterior de ${etiqueta}`}
             disabled={cargando || pagina <= 1}
             onClick={() => alCambiarPagina(pagina - 1)}
+            className="min-h-11 min-w-11"
           >
             <ChevronLeft aria-hidden="true" />
           </Button>
@@ -77,6 +78,7 @@ export function PaginacionListado({
             aria-label={`Página siguiente de ${etiqueta}`}
             disabled={cargando || pagina >= totalPaginas}
             onClick={() => alCambiarPagina(pagina + 1)}
+            className="min-h-11 min-w-11"
           >
             <ChevronRight aria-hidden="true" />
           </Button>
