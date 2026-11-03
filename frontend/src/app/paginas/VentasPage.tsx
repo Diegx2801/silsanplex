@@ -334,6 +334,7 @@ export function VentasPage() {
           <Button
             type="button"
             size="lg"
+            className="min-h-11"
             disabled={!clientesActivos.length || !productosActivos.length}
             onClick={(evento) => abrirFormulario(evento)}
           >
@@ -435,7 +436,7 @@ export function VentasPage() {
       {errorCotizaciones ? (
         <aside role="alert" className="flex flex-col gap-3 border-s-4 border-destructive bg-destructive/10 px-5 py-4 text-sm leading-6 sm:flex-row sm:items-center sm:justify-between">
           <span>No se pudieron cargar las cotizaciones persistentes.</span>
-          <Button type="button" variant="outline" size="sm" onClick={() => void reintentarCotizaciones()}>
+          <Button type="button" variant="outline" size="sm" className="min-h-11 lg:min-h-0" onClick={() => void reintentarCotizaciones()}>
             Reintentar
           </Button>
         </aside>
@@ -502,7 +503,7 @@ export function VentasPage() {
           </div>
         ) : (
           <>
-            <div className="divide-y md:hidden">
+            <div className="divide-y xl:hidden">
               {cotizacionesVisibles.map((cotizacion) => {
                 const total = calcularTotalesCotizacion(
                   cotizacion.lineas,
@@ -532,20 +533,20 @@ export function VentasPage() {
                       </div>
                     </dl>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <Button type="button" variant="outline" onClick={(evento) => abrirDetalle(evento, cotizacion)}>
+                      <Button type="button" variant="outline" className="min-h-11" onClick={(evento) => abrirDetalle(evento, cotizacion)}>
                         <Eye aria-hidden="true" /> Ver detalle
                       </Button>
                       {puedeGestionarVentas && cotizacion.estado === 'borrador' ? (
                         <>
-                          <Button type="button" variant="outline" onClick={(evento) => abrirFormulario(evento, cotizacion)}>
+                          <Button type="button" variant="outline" className="min-h-11" onClick={(evento) => abrirFormulario(evento, cotizacion)}>
                             <Pencil aria-hidden="true" /> Editar
                           </Button>
-                          <Button type="button" onClick={(evento) => solicitarEmision(evento, cotizacion)}>
+                          <Button type="button" className="min-h-11" onClick={(evento) => solicitarEmision(evento, cotizacion)}>
                             <Send aria-hidden="true" /> Emitir
                           </Button>
                         </>
                       ) : puedeGestionarVentas && estadoVisible(cotizacion) === 'emitida' ? (
-                        <Button type="button" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
+                        <Button type="button" className="min-h-11" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
                           <ShoppingCart aria-hidden="true" /> {creandoPedido ? 'Creando pedido…' : 'Crear pedido'}
                         </Button>
                       ) : null}
@@ -554,7 +555,7 @@ export function VentasPage() {
                 )
               })}
             </div>
-            <div className="hidden overflow-x-auto md:block">
+            <div className="hidden overflow-x-auto xl:block">
               <table className="w-full min-w-[58rem] border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b bg-muted/45 font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">
@@ -589,20 +590,20 @@ export function VentasPage() {
                         <td className="px-4 py-4"><EstadoCotizacionEtiqueta cotizacion={cotizacion} /></td>
                         <td className="px-6 py-4">
                           <div className="flex justify-end gap-1">
-                            <Button type="button" variant="ghost" size="icon" title="Ver detalle de cotización" aria-label={`Ver detalle de ${cotizacion.numero}`} onClick={(evento) => abrirDetalle(evento, cotizacion)}>
+                            <Button type="button" variant="ghost" size="icon" className="min-h-11 min-w-11 lg:min-h-0 lg:min-w-0" title="Ver detalle de cotización" aria-label={`Ver detalle de ${cotizacion.numero}`} onClick={(evento) => abrirDetalle(evento, cotizacion)}>
                               <Eye aria-hidden="true" />
                             </Button>
                             {puedeGestionarVentas && cotizacion.estado === 'borrador' ? (
                               <>
-                                <Button type="button" variant="ghost" size="icon" title="Editar cotización" aria-label={`Editar ${cotizacion.numero}`} onClick={(evento) => abrirFormulario(evento, cotizacion)}>
+                                <Button type="button" variant="ghost" size="icon" className="min-h-11 min-w-11 lg:min-h-0 lg:min-w-0" title="Editar cotización" aria-label={`Editar ${cotizacion.numero}`} onClick={(evento) => abrirFormulario(evento, cotizacion)}>
                                   <Pencil aria-hidden="true" />
                                 </Button>
-                                <Button type="button" variant="ghost" size="icon" title="Emitir cotización" aria-label={`Emitir ${cotizacion.numero}`} onClick={(evento) => solicitarEmision(evento, cotizacion)}>
+                                <Button type="button" variant="ghost" size="icon" className="min-h-11 min-w-11 lg:min-h-0 lg:min-w-0" title="Emitir cotización" aria-label={`Emitir ${cotizacion.numero}`} onClick={(evento) => solicitarEmision(evento, cotizacion)}>
                                   <Send aria-hidden="true" />
                                 </Button>
                               </>
                             ) : puedeGestionarVentas && estadoVisible(cotizacion) === 'emitida' ? (
-                              <Button type="button" variant="outline" size="sm" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
+                              <Button type="button" variant="outline" size="sm" className="min-h-11 lg:min-h-0" disabled={creandoPedido || cargandoAlmacenes || !almacenesActivos.length} onClick={(evento) => solicitarCreacionPedido(evento, cotizacion)}>
                                 <ShoppingCart aria-hidden="true" /> {creandoPedido ? 'Creando pedido…' : 'Crear pedido'}
                               </Button>
                             ) : null}

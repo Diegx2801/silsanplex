@@ -136,11 +136,57 @@ describe('VentasPage', () => {
 
   it('abre la cotización con el diálogo centrado y los selectores buscables', async () => {
     renderPage()
-    screen.getByRole('button', { name: 'Nueva cotización' }).click()
+    const nuevaCotizacion = screen.getByRole('button', { name: 'Nueva cotización' })
+    expect(nuevaCotizacion).toHaveClass('min-h-11')
+    nuevaCotizacion.click()
 
     expect(await screen.findByRole('dialog', { name: 'Nueva cotización' })).toBeVisible()
     expect(await screen.findByRole('combobox', { name: 'Cliente' })).toBeVisible()
     expect(await screen.findByRole('combobox', { name: 'Producto 1' })).toBeVisible()
+  })
+
+  it('mantiene las acciones de cotización táctiles en las tarjetas móviles', () => {
+    const cotizacion: Cotizacion = {
+      id: 'cotizacion-movil',
+      numero: 'COT-000020',
+      clienteId: cliente.id,
+      clienteDocumento: cliente.numeroDocumento,
+      clienteNombre: cliente.nombreRazonSocial,
+      fechaEmision: '2026-11-03',
+      fechaValidez: '2026-11-10',
+      preciosIncluyenIgv: true,
+      observacion: '',
+      lineas: [{
+        id: 'linea-movil',
+        productoId: producto.id,
+        productoCodigo: producto.codigo,
+        productoDescripcion: producto.descripcion,
+        unidadMedida: producto.unidadMedida,
+        cantidad: 1,
+        precioUnitario: 23.6,
+        afectacionIgv: 'gravado',
+      }],
+      estado: 'borrador',
+      fechaRegistro: '2026-11-03T12:00:00.000Z',
+      fechaCambioEstado: null,
+    }
+    mocks.useCotizacionesPersistentes.mockReturnValue({
+      cotizaciones: [cotizacion],
+      guardarCotizacion: vi.fn().mockResolvedValue(undefined),
+      emitirCotizacion: vi.fn().mockResolvedValue(undefined),
+      cargando: false,
+      emitiendo: false,
+      error: null,
+      reintentar: vi.fn(),
+    })
+
+    const { container } = renderPage()
+
+    expect(container.querySelector('[class~="xl:hidden"]')).toBeInTheDocument()
+    expect(container.querySelector('[class~="xl:block"]')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ver detalle' })).toHaveClass('min-h-11')
+    expect(screen.getByRole('button', { name: 'Editar' })).toHaveClass('min-h-11')
+    expect(screen.getByRole('button', { name: 'Emitir' })).toHaveClass('min-h-11')
   })
 
   it('usa enlaces de navegación normales con foco y destino claros para cambiar de vista', () => {

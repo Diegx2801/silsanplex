@@ -51,11 +51,32 @@ describe('DialogoRegistroVenta', () => {
 
   it('muestra el error de la RPC y conserva abierto el formulario', async () => {
     const alCambiarApertura = renderDialog(vi.fn().mockResolvedValue('No hay disponibilidad'))
+    fireEvent.change(screen.getByLabelText('Fecha *'), { target: { value: '2026-11-03' } })
     completarFormulario()
     fireEvent.click(screen.getByRole('button', { name: 'Registrar venta' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('No hay disponibilidad')
     expect(alCambiarApertura).not.toHaveBeenCalledWith(false)
+    expect(screen.getByLabelText('Comprobante *')).toHaveValue('factura')
+    expect(screen.getByLabelText('Fecha *')).toHaveValue('2026-11-03')
+    expect(screen.getByLabelText('Serie *')).toHaveValue('f001')
+    expect(screen.getByLabelText('Número *')).toHaveValue('1')
+    expect(screen.getByLabelText('Almacén de despacho *')).toHaveValue('Almacén principal')
+  })
+
+  it('mantiene visible el pie de acciones al desplazar el formulario en pantallas bajas', () => {
+    renderDialog(vi.fn())
+
+    const dialogo = screen.getByRole('dialog')
+    const formulario = dialogo.querySelector('form')
+    const contenidoDesplazable = formulario?.querySelector('.overflow-y-auto')
+    const pie = formulario?.querySelector('footer')
+
+    expect(dialogo).toHaveClass('max-h-[92svh]', 'overflow-hidden')
+    expect(formulario).toHaveClass('flex', 'min-h-0', 'overflow-hidden')
+    expect(contenidoDesplazable).toHaveClass('min-h-0', 'flex-1', 'overflow-y-auto')
+    expect(pie).toHaveClass('shrink-0')
+    expect(screen.getByRole('button', { name: 'Registrar venta' })).toHaveClass('min-h-11')
   })
 
   it('impide un doble envío mientras la conversión permanece pendiente', async () => {

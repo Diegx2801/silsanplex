@@ -186,6 +186,29 @@ describe('DialogoCotizacion', () => {
 
     expect(await screen.findByText('No se pudo guardar la cotización')).toBeVisible()
     expect(alCambiarApertura).not.toHaveBeenCalledWith(false)
+    expect(screen.getByRole('combobox', { name: 'Cliente' })).toHaveValue('Boticas El Sol SAC')
+    expect(screen.getByRole('combobox', { name: 'Producto 1' })).toHaveValue('MED-001 · Paracetamol 500 mg')
+    expect(screen.getByLabelText('Precio unitario del producto 1')).toHaveValue('23.60')
+  })
+
+  it('impide guardar dos veces mientras la cotización sigue pendiente', async () => {
+    let resolver: (resultado?: string) => void = () => undefined
+    const alGuardar = vi.fn(() => new Promise<string | undefined>((resolve) => { resolver = resolve }))
+    const alCambiarApertura = renderDialog(alGuardar)
+
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Cliente' }))
+    fireEvent.click(screen.getByRole('option', { name: /Boticas El Sol SAC/ }))
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Producto 1' }))
+    fireEvent.click(screen.getByRole('option', { name: /MED-001/ }))
+    const botonGuardar = screen.getByRole('button', { name: 'Guardar borrador' })
+    fireEvent.click(botonGuardar)
+
+    await waitFor(() => expect(botonGuardar).toBeDisabled())
+    fireEvent.click(botonGuardar)
+    expect(alGuardar).toHaveBeenCalledOnce()
+
+    resolver()
+    await waitFor(() => expect(alCambiarApertura).toHaveBeenCalledWith(false))
   })
 
   it('advierte la afectación de IGV pendiente antes de emitir', () => {
