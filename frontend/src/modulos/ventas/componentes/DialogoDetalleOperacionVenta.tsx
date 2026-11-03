@@ -76,7 +76,7 @@ export function DialogoDetalleOperacionVenta({
             <section className="px-5 py-6 sm:px-7" aria-labelledby="detalle-operacion-resumen">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <p className="font-mono text-xs tracking-[0.08em] text-primary uppercase">Ejecución comercial</p>
+                  <p className="font-mono text-xs tracking-[0.08em] text-primary uppercase">Pedidos y ventas</p>
                   <h2 id="detalle-operacion-resumen" className="mt-2 text-lg font-semibold">{pedido.clienteNombre}</h2>
                   <p className="mt-1 text-sm text-muted-foreground">{pedido.clienteDocumento}</p>
                 </div>

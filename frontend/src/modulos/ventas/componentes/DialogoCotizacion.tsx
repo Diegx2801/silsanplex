@@ -195,7 +195,7 @@ export function DialogoCotizacion({
               <button
                 type="button"
                 aria-label="Cerrar cotización"
-                className="grid size-9 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <X aria-hidden="true" className="size-5" />
               </button>
@@ -307,6 +307,7 @@ export function DialogoCotizacion({
                 <Button
                   type="button"
                   variant="outline"
+                  className="min-h-11 lg:min-h-0"
                   onClick={() =>
                     append({
                       productoId: '',
@@ -342,6 +343,7 @@ export function DialogoCotizacion({
                           type="button"
                           variant="ghost"
                           size="icon"
+                          className="min-h-11 min-w-11 lg:min-h-0 lg:min-w-0"
                           disabled={fields.length === 1}
                           aria-label={`Quitar producto ${indice + 1}`}
                           onClick={() => remove(indice)}
@@ -534,7 +536,7 @@ export function DialogoCotizacion({
 
           <footer className="flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
             <DialogPrimitive.Close asChild>
-              <Button type="button" variant="outline" size="lg">
+              <Button type="button" variant="outline" size="lg" className="min-h-11">
                 Cancelar
               </Button>
             </DialogPrimitive.Close>
@@ -542,6 +544,7 @@ export function DialogoCotizacion({
               type="submit"
               form="formulario-cotizacion"
               size="lg"
+              className="min-h-11"
               disabled={isSubmitting}
             >
               {cotizacion ? 'Guardar cambios' : 'Guardar borrador'}

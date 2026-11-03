@@ -195,7 +195,7 @@ export function PanelOperacionesVenta({
     <section aria-labelledby="operaciones-venta-title" className="ledger-sheet">
       <div className="flex flex-col gap-3 border-b px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
         <div>
-          <span className="font-mono text-[0.68rem] tracking-[0.06em] text-primary uppercase">Ejecución comercial</span>
+          <span className="font-mono text-[0.68rem] tracking-[0.06em] text-primary uppercase">Pedidos y ventas</span>
           <h2 id="operaciones-venta-title" className="mt-1 text-lg font-semibold">Pedidos, ventas y despachos</h2>
           <p className="mt-1 text-sm text-muted-foreground">Cada etapa conserva el documento que le dio origen.</p>
         </div>
@@ -262,7 +262,7 @@ export function PanelOperacionesVenta({
         </div>
         <div className="flex items-end justify-end">
           {(busqueda || filtroEstado !== 'todos' || filtroAlmacen || fechaDesde || fechaHasta) ? (
-            <Button type="button" variant="ghost" onClick={limpiarFiltros}>Limpiar filtros</Button>
+            <Button type="button" variant="ghost" className="min-h-11 lg:min-h-0" onClick={limpiarFiltros}>Limpiar filtros</Button>
           ) : null}
         </div>
       </div>
@@ -279,7 +279,7 @@ export function PanelOperacionesVenta({
       {error ? (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 border-s-4 border-destructive bg-destructive/10 px-5 py-5 sm:px-6">
           <p className="text-sm">No se pudieron cargar los pedidos o ventas persistentes.</p>
-          {alReintentar ? <Button type="button" variant="outline" onClick={() => void alReintentar()}>Reintentar</Button> : null}
+          {alReintentar ? <Button type="button" variant="outline" className="min-h-11 lg:min-h-0" onClick={() => void alReintentar()}>Reintentar</Button> : null}
         </div>
       ) : cargando ? (
         <p className="px-5 py-8 text-sm text-muted-foreground sm:px-6">Cargando operaciones comerciales…</p>
@@ -294,7 +294,7 @@ export function PanelOperacionesVenta({
           <ClipboardCheck aria-hidden="true" className="mx-auto size-8 text-primary" />
           <h3 className="mt-4 font-semibold">No hay operaciones que coincidan</h3>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Prueba con otro término o limpia los filtros activos.</p>
-          <Button type="button" variant="outline" className="mt-5" onClick={limpiarFiltros}>Limpiar filtros</Button>
+          <Button type="button" variant="outline" className="mt-5 min-h-11 lg:min-h-0" onClick={limpiarFiltros}>Limpiar filtros</Button>
         </div>
       ) : (
         <div className="divide-y">
@@ -335,30 +335,30 @@ export function PanelOperacionesVenta({
                   </div>
                 </div>
                 <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
-                  <Button type="button" variant="outline" size="sm" onClick={(evento) => { disparadorDetalle.current = evento.currentTarget; setPedidoPorConsultar(pedido) }}>
+                  <Button type="button" variant="outline" size="sm" className="min-h-11 lg:min-h-0" onClick={(evento) => { disparadorDetalle.current = evento.currentTarget; setPedidoPorConsultar(pedido) }}>
                     <Eye aria-hidden="true" /> Ver detalle
                   </Button>
                   {!venta && pedido.estado === 'confirmado' && !fiscalCalculado ? (
                     <span className="text-sm font-medium text-muted-foreground">Cálculo tributario {pedido.estadoCalculoTributario === 'pending' ? 'pendiente' : 'no reconstruible'}</span>
                   ) : !venta && pedido.estado === 'confirmado' ? (
                     alRegistrarVenta ? (
-                      <Button type="button" onClick={() => setPedidoSeleccionado(pedido)}><ReceiptText aria-hidden="true" /> Registrar venta</Button>
+                      <Button type="button" className="min-h-11 lg:min-h-0" onClick={() => setPedidoSeleccionado(pedido)}><ReceiptText aria-hidden="true" /> Registrar venta</Button>
                     ) : <span className="text-sm font-medium text-muted-foreground">Solo consulta</span>
                   ) : venta?.estado === 'registrada' && venta.estadoCalculoTributario !== 'calculated' ? (
                     <span className="text-sm font-medium text-muted-foreground">Cálculo tributario {venta.estadoCalculoTributario === 'pending' ? 'pendiente' : 'no reconstruible'}</span>
                   ) : venta?.estado === 'registrada' ? (
                     <div className="flex flex-wrap justify-end gap-2">
                       {alCompletarServicios && venta.lineas.some((linea) => linea.tipoProducto === 'service' && (linea.cantidadPendiente ?? linea.cantidad) > 0) ? (
-                        <Button type="button" variant="outline" disabled={completandoServicios} onClick={() => setVentaPorCompletarServicios(venta)}>
+                        <Button type="button" variant="outline" className="min-h-11 lg:min-h-0" disabled={completandoServicios} onClick={() => setVentaPorCompletarServicios(venta)}>
                           <ClipboardCheck aria-hidden="true" /> Completar servicios
                         </Button>
                       ) : null}
                       {venta.lineas.some((linea) => linea.tipoProducto === 'good' && (linea.cantidadPendiente ?? linea.cantidad) > 0) ? (
                         alDespacharVenta ? (
-                          <Button type="button" disabled={despachandoVenta} onClick={() => setVentaPorDespachar(venta)}>
+                          <Button type="button" className="min-h-11 lg:min-h-0" disabled={despachandoVenta} onClick={() => setVentaPorDespachar(venta)}>
                             <PackageCheck aria-hidden="true" /> Despachar bienes
                           </Button>
-                        ) : <Button type="button" disabled title="El despacho canónico requiere configuración"><PackageCheck aria-hidden="true" /> Despacho pendiente</Button>
+                        ) : <Button type="button" className="min-h-11 lg:min-h-0" disabled title="El despacho canónico requiere configuración"><PackageCheck aria-hidden="true" /> Despacho pendiente</Button>
                       ) : null}
                     </div>
                   ) : venta?.estado === 'despachada' ? (
@@ -375,12 +375,12 @@ export function PanelOperacionesVenta({
                 {!venta && pedido.estado === 'confirmado' && (alActualizarPedido || alCancelarPedido) ? (
                   <div className="flex flex-wrap gap-2 lg:col-start-3 lg:justify-end">
                     {alActualizarPedido ? (
-                      <Button type="button" variant="outline" size="sm" disabled={actualizandoPedido || cancelandoPedido || !fiscalCalculado} onClick={() => setPedidoPorModificar(pedido)}>
+                      <Button type="button" variant="outline" size="sm" className="min-h-11 lg:min-h-0" disabled={actualizandoPedido || cancelandoPedido || !fiscalCalculado} onClick={() => setPedidoPorModificar(pedido)}>
                         <Pencil aria-hidden="true" /> Modificar cantidades
                       </Button>
                     ) : null}
                     {alCancelarPedido ? (
-                      <Button type="button" variant="destructive" size="sm" disabled={actualizandoPedido || cancelandoPedido} onClick={() => { claveCancelacion.current = crypto.randomUUID(); setErrorCancelacion(''); setPedidoPorCancelar(pedido) }}>
+                      <Button type="button" variant="destructive" size="sm" className="min-h-11 lg:min-h-0" disabled={actualizandoPedido || cancelandoPedido} onClick={() => { claveCancelacion.current = crypto.randomUUID(); setErrorCancelacion(''); setPedidoPorCancelar(pedido) }}>
                         <Ban aria-hidden="true" /> Cancelar pedido
                       </Button>
                     ) : null}
