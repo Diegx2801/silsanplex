@@ -97,7 +97,7 @@ test('registra y edita un cliente con varias direcciones y una principal', async
   await editDialog.getByLabel('Nombre comercial').fill('Cliente E2E actualizado')
   await editDialog.getByRole('button', { name: 'Guardar cambios' }).click()
   await expect(editDialog).toBeHidden()
-  await expect(page.getByText('Cliente E2E actualizado')).toBeVisible()
+  await expect(page.getByRole('table').getByText('Cliente E2E actualizado')).toBeVisible()
 })
 
 test('muestra los errores de cliente y mantiene abierta la dirección inválida', async ({ page }) => {
