@@ -10,6 +10,7 @@ import { randomBytes, randomUUID, createHash } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { assertSupabaseDbLintSucceeded } from './lib/supabase-db-lint.mjs'
 import { benchmarkTechnicalCompletion } from './lib/repair-technical-completion-benchmark.mjs'
+import { benchmarkActualCost } from './lib/repair-actual-cost-benchmark.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const cli = path.join(root, 'backend/node_modules', process.platform === 'win32'
@@ -26,11 +27,13 @@ const ports = { api: 59321, db: 59322, web: 59325 }
 const api = `http://127.0.0.1:${ports.api}`
 const upgradeNonRepairable = process.argv.includes('--upgrade-non-repairable')
 const upgradeTechnicalCompletion = process.argv.includes('--upgrade-technical-completion')
-const upgrade = process.argv.includes('--upgrade') || upgradeNonRepairable || upgradeTechnicalCompletion
+const upgradeActualCost = process.argv.includes('--upgrade-actual-cost')
+const upgrade = process.argv.includes('--upgrade') || upgradeNonRepairable || upgradeTechnicalCompletion || upgradeActualCost
 const sqlOnly = process.argv.includes('--sql-only')
 const nonRepairableOnly = process.argv.includes('--non-repairable-only')
 const technicalCompletionOnly = process.argv.includes('--technical-completion-only')
-const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly || technicalCompletionOnly
+const actualCostOnly = process.argv.includes('--actual-cost-only')
+const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly || technicalCompletionOnly || actualCostOnly
 const checksOnly = process.argv.includes('--checks-only')
 const workflowE2e = process.argv.includes('--workflow-e2e')
 const runLog = []
@@ -107,6 +110,7 @@ try {
   if (!checksOnly) {
   await Promise.all([59320, 59321, 59322, 59323, 59324, 59325, 59327, 59328, 59329].map(available))
   for (const name of ['backend/supabase/migrations', 'backend/supabase/tests', 'backend/supabase/seed.sql', 'backend/supabase/config.toml',
+    'backend/supabase/functions/admin-users', 'backend/supabase/functions/ruc-lookup', 'backend/supabase/functions/dni-lookup', 'backend/supabase/functions/_shared',
     'frontend/src', 'frontend/tests', 'frontend/index.html', 'frontend/package.json', 'frontend/tsconfig.json',
     'frontend/tsconfig.app.json', 'frontend/tsconfig.node.json', 'frontend/vite.config.ts', 'frontend/playwright.config.ts']) {
     const target = path.join(directory, name)
@@ -120,8 +124,12 @@ try {
     config = config.replaceAll(`= ${from}`, `= ${to}`)
   }
   fs.writeFileSync(configPath, config)
+  // Runtime configuration belongs only to this generated project. Keep the
+  // production CORS allowlist unchanged and authorize exactly its test origin.
+  fs.writeFileSync(path.join(backend,'supabase/functions/.env'),
+    `ALLOWED_ORIGINS=http://127.0.0.1:${ports.web}\nPUBLIC_APP_URL=http://127.0.0.1:${ports.web}\n`)
   const migrationDirectory = path.join(backend, 'supabase/migrations')
-   const candidates = fs.readdirSync(migrationDirectory).filter(n => n.includes(upgradeTechnicalCompletion ? 'repair_technical_completion' : upgradeNonRepairable ? 'repair_non_repairable' : 'repair_accessory_control'))
+   const candidates = fs.readdirSync(migrationDirectory).filter(n => n.includes(upgradeActualCost ? 'repair_actual_cost' : upgradeTechnicalCompletion ? 'repair_technical_completion' : upgradeNonRepairable ? 'repair_non_repairable' : 'repair_accessory_control'))
   assert.equal(candidates.length, 1)
   const candidate = candidates[0]
   // Postpone the candidate AND later dependent migrations, only in this copy.
@@ -133,7 +141,9 @@ try {
   if (upgrade) for (const [name] of upgradeSources) fs.unlinkSync(path.join(migrationDirectory, name))
   // start may fail after creating resources; cleanup still verifies exclusive identity.
   started = true
-  run(cli, ['start', '-x', 'realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor'],
+  // E2E uses the real isolated admin-users Edge Function; no mocked grants.
+  // Only named source folders are copied, never an application .env file.
+  run(cli, ['start', '-x', `realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,${sqlOnly ? 'edge-runtime,' : ''}logflare,vector,supavisor`],
     { cwd: backend, log: 'migrations-start.log', print: false })
   verify()
   if (upgrade) {
@@ -153,22 +163,52 @@ try {
       select jsonb_agg(to_jsonb(w) order by id) from repair_service_warranty_details w
       where organization_id='a6290000-0000-4000-8000-000000000002';`)
     let technicalBefore
-    if (upgradeTechnicalCompletion) {
+    let costSourcesBefore, completionBefore
+    if (upgradeTechnicalCompletion || upgradeActualCost) {
       sql(`begin;
         insert into organization_memberships(organization_id,user_id) values('a6290000-0000-4000-8000-000000000002','a6290000-0000-4000-8000-000000000001');
         insert into user_roles(organization_id,user_id,role_code) values('a6290000-0000-4000-8000-000000000002','a6290000-0000-4000-8000-000000000001','ADMIN');
         insert into auth.sessions(id,user_id,created_at,updated_at) values('a6290000-0000-4000-8000-000000000001','a6290000-0000-4000-8000-000000000001',now(),now());
         select set_config('request.jwt.claims','{"role":"authenticated","sub":"a6290000-0000-4000-8000-000000000001","session_id":"a6290000-0000-4000-8000-000000000001"}',true);
-        do $$ declare r uuid; o uuid:='a6290000-0000-4000-8000-000000000002'; a uuid:='a6290000-0000-4000-8000-000000000001'; begin
+        do $$ declare r uuid; o uuid:='a6290000-0000-4000-8000-000000000002'; a uuid:='a6290000-0000-4000-8000-000000000001';
+          p uuid; w uuid; l uuid; s uuid; part uuid; service uuid; v bigint; begin
           r:=create_repair(jsonb_build_object('organization_id',o,'operation_key',gen_random_uuid(),'requester_type','internal','requesting_area','Upgrade',
             'equipment_type','external','external_equipment_description','Upgrade equipment','problem_description','Upgrade problem','customer_reference','R13 upgrade valid'));
           perform assign_repair(o,r,a,1); perform change_repair_status(o,r,'diagnosis',null,2);
-          perform change_repair_status(o,r,'in_repair',null,3); perform change_repair_status(o,r,'testing',null,4);
-          perform record_repair_test(jsonb_build_object('organization_id',o,'repair_id',r,'expected_lock_version',5,'test_type','Encendido','result','Aprobada','passed',true));
-          perform change_repair_status(o,r,'ready_for_delivery',null,6);
+          perform change_repair_status(o,r,'in_repair',null,3);
+          ${upgradeActualCost ? `
+          p:=gen_random_uuid(); s:=gen_random_uuid();
+          insert into products(id,organization_id,code,description,unit_of_measure,batch_control,expiration_control,created_by,updated_by)
+            values(p,o,'R14-UPGRADE','Historical consumed part','UND',false,false,a,a);
+          insert into suppliers(id,organization_id,document_type,document_number,business_name,created_by,updated_by)
+            values(s,o,'ruc','20999999994','Historical external supplier',a,a);
+          w:=save_warehouse(jsonb_build_object('organization_id',o,'operation_key',gen_random_uuid(),'code','R14-UPGRADE','name','Historical cost warehouse','address','Disposable'));
+          select id into l from warehouse_locations where warehouse_id=w and code='GENERAL';
+          perform record_inventory_movement(jsonb_build_object('organization_id',o,'product_id',p,'warehouse_id',w,'location_id',l,'movement_type','entrada','quantity',10,
+            'unit_cost',5,'stock_status','available','operation_date',(now() at time zone 'America/Lima')::date,'reason','Historical stock','document_reference','R14 upgrade'));
+          select lock_version into v from repairs where id=r;
+          part:=reserve_repair_part(jsonb_build_object('organization_id',o,'repair_id',r,'expected_lock_version',v,'operation_key',gen_random_uuid(),'product_id',p,
+            'warehouse_id',w,'location_id',l,'quantity_requested',1,'stock_status','available'));
+          select lock_version into v from repairs where id=r;
+          perform consume_repair_part(jsonb_build_object('organization_id',o,'repair_part_id',part,'expected_lock_version',v,'operation_key',gen_random_uuid(),'quantity',1));
+          select lock_version into v from repairs where id=r;
+          service:=send_repair_external_service(jsonb_build_object('organization_id',o,'repair_id',r,'expected_lock_version',v,'operation_key',gen_random_uuid(),'supplier_id',s,'description','Historical external work'));
+          select lock_version into v from repairs where id=r;
+          perform receive_repair_external_service(jsonb_build_object('organization_id',o,'repair_id',r,'expected_lock_version',v,'operation_key',gen_random_uuid(),'external_service_id',service,'cost_amount',120.50,'currency','USD'));
+          ` : ''}
+          select lock_version into v from repairs where id=r;
+          perform change_repair_status(o,r,'testing',null,v);
+          perform record_repair_test(jsonb_build_object('organization_id',o,'repair_id',r,'expected_lock_version',v+1,'test_type','Encendido','result','Aprobada','passed',true));
+          perform change_repair_status(o,r,'ready_for_delivery',null,v+2);
         end $$; commit;`)
       technicalBefore = sql(`select jsonb_agg(to_jsonb(e) order by id) from repair_events e
         where repair_id=(select id from repairs where customer_reference='R13 upgrade valid')`)
+      if (upgradeActualCost) {
+        completionBefore = sql(`select technical_completion_summary from repair_list where customer_reference='R13 upgrade valid'`)
+        costSourcesBefore = sql(`select jsonb_build_object('consumptions',(select jsonb_agg(to_jsonb(c) order by id) from repair_part_consumptions c where organization_id='a6290000-0000-4000-8000-000000000002'),
+          'movements',(select jsonb_agg(to_jsonb(m) order by ledger_sequence) from inventory_movements m where organization_id='a6290000-0000-4000-8000-000000000002'),
+          'external',(select jsonb_agg(to_jsonb(e) order by id) from repair_external_services e where organization_id='a6290000-0000-4000-8000-000000000002'))`)
+      }
     }
     for (const [name, source] of upgradeSources) fs.writeFileSync(path.join(migrationDirectory, name), source)
     run(cli, ['migration', 'up'], { cwd: backend, log: 'migrations-upgrade.log' })
@@ -189,10 +229,32 @@ try {
       assert.equal(sql(`select count(*) from repair_list where customer_reference='R13 upgrade valid' and technical_completion is not null
         and technical_completion=first_technical_completion and technical_completion->>'assigned_technician_id' is null`),'1','Real pre-R13 completion reconstructed without inventing its technician')
     }
+    if (upgradeActualCost) {
+      assert.equal(sql(`select technical_completion_summary from repair_list where customer_reference='R13 upgrade valid'`),completionBefore,'R14 does not change R13 history or completion')
+      assert.equal(sql(`select jsonb_agg(to_jsonb(e) order by id) from repair_events e where repair_id=(select id from repairs where customer_reference='R13 upgrade valid')`),technicalBefore,'R14 leaves technical events untouched')
+      assert.equal(sql(`select jsonb_build_object('consumptions',(select jsonb_agg(to_jsonb(c) order by id) from repair_part_consumptions c where organization_id='a6290000-0000-4000-8000-000000000002'),
+        'movements',(select jsonb_agg(to_jsonb(m) order by ledger_sequence) from inventory_movements m where organization_id='a6290000-0000-4000-8000-000000000002'),
+        'external',(select jsonb_agg(to_jsonb(e) order by id) from repair_external_services e where organization_id='a6290000-0000-4000-8000-000000000002'))`),costSourcesBefore,'Historical quantities/costs/currencies/custody unchanged')
+      assert.equal(sql('select (select count(*) from repair_actual_cost_entries)+(select count(*) from repair_cost_source_reviews)+(select count(*) from repair_actual_cost_reviews)'),'0','No speculative economic backfill')
+      assert.equal(sql(`begin; select set_config('request.jwt.claims','{"role":"authenticated","sub":"a6290000-0000-4000-8000-000000000001","session_id":"a6290000-0000-4000-8000-000000000001"}',true);
+        select (get_repair_actual_cost_detail('a6290000-0000-4000-8000-000000000002',(select id from repairs where customer_reference='R13 upgrade valid'))->'summary'->>'state'); rollback;`).split(/\r?\n/).at(-1),'undetermined','Legacy money remains pending without verified currency/basis')
+    }
     fs.writeFileSync(path.join(evidence, 'historical-upgrade.json'), JSON.stringify({ candidate, unchanged: true, historicalRepairs: 4,
       unchangedDeliveredWarranties: 1, inferredAccessories: 0, inferredDecisions: 0, inferredCompletions: 0,
       reconstructedTechnicalCompletions: upgradeTechnicalCompletion ? 1 : 0,
-      unchangedTechnicalEvents: upgradeTechnicalCompletion ? true : null }))
+      unchangedTechnicalEvents: upgradeTechnicalCompletion || upgradeActualCost ? true : null,
+      unchangedEconomicSources: upgradeActualCost ? true : null, inferredActualCosts: 0 }))
+    if (upgradeActualCost) {
+      // Upgrade evidence includes real stock/consumption. Existing SQL suites
+      // deliberately assert a clean inventory baseline, so keep their contract
+      // intact instead of letting the committed upgrade fixtures contaminate it.
+      // Reset ONLY the verified disposable project after preserving evidence.
+      verify()
+      run(cli, ['db', 'reset', '--local'], { cwd: backend, log: 'upgrade-clean-baseline.log', print: false })
+      verify()
+      assert.equal(sql('select count(*) from inventory_movements'), '0', 'Clean inventory before regression suites')
+      assert.equal(sql("select count(*) from organizations where slug='historical-accessories'"), '0', 'Upgrade fixtures do not leak into regression suites')
+    }
   }
   const organizationsBeforeSql = JSON.parse(sql("select coalesce(json_agg(json_build_object('id',id,'slug',slug,'name',name) order by slug),'[]'::json) from public.organizations"))
   if (!upgrade) {
@@ -230,6 +292,9 @@ try {
    fs.writeFileSync(path.join(evidence,'technical-completion-plans.log'),plans)
    if (process.argv.includes('--benchmark-technical-completion')) {
      runLog.push({ technicalCompletionBenchmark: benchmarkTechnicalCompletion({ sql, backend, evidence }) })
+   }
+   if (process.argv.includes('--benchmark-actual-cost')) {
+     runLog.push({ actualCostBenchmark: benchmarkActualCost({ sql, evidence }) })
    }
   if (!evidenceOnly) {
     const tests = fs.readdirSync(path.join(backend, 'supabase/tests/database')).filter(n => process.argv.includes('--all-sql') || /^repairs?[_.].*\.sql$/.test(n) || n === 'authorization_permissions.test.sql')
@@ -295,7 +360,8 @@ try {
     const organizationId = organizations[0].id
     const identities = {}
     for (const [name, role] of [['admin','ADMIN'], ['ordinary','VENTAS'], ['member','VENTAS'],
-      ['recovery','VENTAS'], ['repairs','ADMIN'], ['technician','TECNICO_REPARACIONES'], ['foreign','ADMIN']]) {
+      ['recovery','VENTAS'], ['repairs','ADMIN'], ['technician','TECNICO_REPARACIONES'], ['foreign','ADMIN'],
+      ['costs','ADMIN'], ['costmanager','VENTAS'], ['costreviewer','VENTAS'], ['economicoperator','VENTAS']]) {
       const org = name === 'foreign' ? randomUUID() : organizationId
       const email = `${name}.${randomUUID()}@example.invalid`, password = randomBytes(24).toString('base64url')
       const { user } = await checked(admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: `Accessory E2E ${name}` } }))
@@ -304,6 +370,8 @@ try {
         await checked(admin.from('user_roles').insert({ organization_id: org, user_id: user.id, role_code: role }))
       }
       if (name === 'ordinary') sql(`insert into organization_user_permissions(organization_id,user_id,permission_code) values('${org}','${user.id}','REPAIRS_DELIVER');`)
+      if (['costs','costmanager'].includes(name)) sql(`insert into organization_user_permissions(organization_id,user_id,permission_code) values('${org}','${user.id}','REPAIRS_MANAGE_ACTUAL_COST');`)
+      if (['costs','costreviewer'].includes(name)) sql(`insert into organization_user_permissions(organization_id,user_id,permission_code) values('${org}','${user.id}','REPAIRS_CONFIRM_ACTUAL_COST');`)
       identities[name] = { email, password, id: user.id, organizationId: org }
     }
     const inventoryClient = createClient(api,status.ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false}})
@@ -361,22 +429,25 @@ try {
     } else {
       playwrightCommand.push('tests/e2e/repairs.spec.ts')
     }
-    if (!nonRepairableOnly && !technicalCompletionOnly) run(process.execPath, playwrightCommand,
+    if (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath, playwrightCommand,
       { cwd: frontend, env, log: 'e2e.log' })
     // Both modes keep SILSAN exclusive until the strict operational preflight
     // has finished; only the accessory suite needs a second organization.
     await createForeignTenant()
-    if (!nonRepairableOnly && !technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-accessories.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-accessories-results.json')},log:'e2e-accessory-multitenant.log'})
-    if (!technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-non-repairable.spec.ts'],
      {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-non-repairable-results.json')},log:'e2e-non-repairable.log'})
-    if (!nonRepairableOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!nonRepairableOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-technical-completion.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-technical-completion-results.json')},log:'e2e-technical-completion.log'})
-    runLog.push({ e2e: 'passed', suite: technicalCompletionOnly ? 'technical-completion only' : nonRepairableOnly ? 'non-repairable only'
-      : workflowE2e ? 'all workflow E2E, accessories, non-repairable and technical-completion' : 'repairs, accessories, non-repairable and technical-completion', api, web: ports.web })
+    if (!nonRepairableOnly && !technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+      'accessory-e2e/repair-actual-cost.spec.ts'],
+    {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-actual-cost-results.json')},log:'e2e-actual-cost.log'})
+    runLog.push({ e2e: 'passed', suite: actualCostOnly ? 'actual-cost only' : technicalCompletionOnly ? 'technical-completion only' : nonRepairableOnly ? 'non-repairable only'
+      : workflowE2e ? 'all workflow E2E, accessories, R28, R13 and R14' : 'repairs, accessories, R28, R13 and R14', api, web: ports.web })
   }
   }
   if (checksOnly || process.argv.includes('--checks')) {
@@ -393,6 +464,17 @@ try {
       run(process.execPath,[path.join(root,'frontend/node_modules',script),...args],{...options,log})
     }
     run(process.execPath,[path.join(root,'backend/node_modules/typescript/bin/tsc'),'--project','tsconfig.scripts.json'], {cwd:path.join(root,'backend'),log:'backend-typecheck.log'})
+    if (process.argv.includes('--edge-checks')) {
+      assert.ok(process.env.npm_execpath, 'Run edge checks via npm so the pinned tool is available')
+      const edgeEnv = { ...process.env, npm_config_cache: path.join(tempParent,'npm-deno-cache'), DENO_DIR: path.join(tempParent,'deno-cache') }
+      for (const name of ['admin-users','ruc-lookup','dni-lookup']) {
+        const config = `supabase/functions/${name}/deno.json`
+        for (const [action,target] of [['check',`supabase/functions/${name}/index.ts`],['test',`supabase/functions/${name}`]]) {
+          run(process.execPath,[process.env.npm_execpath,'exec','--yes','--package=deno@2.9.5','--','deno',action,'--frozen','--node-modules-dir=none','--config',config,target],
+            {cwd:path.join(root,'backend'),env:edgeEnv,log:`edge-${name}-${action}.log`})
+        }
+      }
+    }
   }
   fs.writeFileSync(path.join(evidence, 'summary.json'), JSON.stringify({ project, base: execFileSync('git', ['rev-parse','HEAD'], { cwd: root, encoding: 'utf8' }).trim(), upgrade, runLog }, null, 2))
 } finally {

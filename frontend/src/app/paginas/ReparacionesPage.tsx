@@ -41,6 +41,8 @@ import {
   type Reparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
 
+import { ResumenCostosPagina } from '@/modulos/reparaciones/componentes/ResumenCostosPagina'
+
 const tamanioPagina = 10
 const formatoFecha = new Intl.DateTimeFormat('es-PE', {
   day: '2-digit',
@@ -300,6 +302,8 @@ export function ReparacionesPage() {
       </section>
 
       {formularioAbierto && (puedeCrear || (puedeEditar && reparacionEnEdicion)) ? <DialogoReparacion datosCreacionPendiente={datosCreacionPendiente} key={reparacionEnEdicion?.id ?? 'nueva-reparacion'} abierto={formularioAbierto} reparacion={reparacionEnEdicion} identidadEditable={identidadEditableEnEdicion} clientes={opciones.clientes} productos={opciones.productos} totalClientes={opciones.totalClientes} totalProductos={opciones.totalProductos} clienteActual={opciones.clienteActual} productoActual={opciones.productoActual} buscarClientes={opciones.buscarClientes} buscarProductos={opciones.buscarProductos} resolverCliente={opciones.resolverCliente} resolverProducto={opciones.resolverProducto} cargandoOpciones={opciones.cargando} alCambiarApertura={setFormularioAbierto} alGuardar={guardarReparacion} alRestaurarFoco={() => disparadorFormulario.current?.focus()} /> : null}
+
+      <ResumenCostosPagina reparaciones={operaciones.reparaciones} />
 
       {reparacionId ? <DetalleReparacion
         key={reparacionId}

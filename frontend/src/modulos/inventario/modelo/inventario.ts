@@ -21,24 +21,6 @@ export const motivosMovimientoManual = {
   salida: ['Consumo interno', 'Entrega de muestras', 'Uso en control de calidad', 'Otro'],
 } as const
 
-export const motivosAjusteStock = [
-  { valor: 'expired', etiqueta: 'Producto vencido' },
-  { valor: 'damaged', etiqueta: 'Producto deteriorado' },
-  { valor: 'broken', etiqueta: 'Rotura' },
-  { valor: 'lost', etiqueta: 'Pérdida' },
-  { valor: 'physical_count_difference', etiqueta: 'Diferencia de inventario físico' },
-  { valor: 'other', etiqueta: 'Otro' },
-] as const
-
-export type MotivoAjusteStock = (typeof motivosAjusteStock)[number]['valor']
-const motivosAjustePositivoValores: readonly MotivoAjusteStock[] = [
-  'physical_count_difference',
-  'other',
-]
-export const motivosAjustePositivoStock = motivosAjusteStock.filter(({ valor }) =>
-  motivosAjustePositivoValores.includes(valor),
-)
-
 export interface BucketAjusteStock {
   productoId: string
   productoCodigo: string
@@ -78,11 +60,6 @@ export const esquemaFormularioAjusteStock = z
     tipoAjuste: z.enum(['ajuste-positivo', 'ajuste-negativo']),
     almacenId: z.string().min(1, 'Selecciona un almacén'),
     bucketKey: z.string(),
-    ubicacionId: z.string(),
-    estadoStock: z.enum(['available', 'quarantine', 'damaged']),
-    lote: z.string().trim().max(60, 'Máximo 60 caracteres'),
-    fechaVencimiento: z.string(),
-    costoUnitario: z.string(),
     unidadEntradaId: z.string().uuid().or(z.literal('')).optional(),
     factorConversionEsperado: z.number().positive().optional(),
     cantidad: z
@@ -92,39 +69,14 @@ export const esquemaFormularioAjusteStock = z
         (valor) => /^\d+(\.\d{1,3})?$/.test(valor) && Number(valor) > 0,
         'Ingresa una cantidad mayor a cero con hasta 3 decimales',
       ),
-    motivoAjuste: z.enum(
-      motivosAjusteStock.map((motivo) => motivo.valor) as [MotivoAjusteStock, ...MotivoAjusteStock[]],
-      { message: 'Selecciona un motivo' },
-    ),
     observacion: z.string().trim().max(120, 'Máximo 120 caracteres'),
   })
   .superRefine((datos, contexto) => {
-    if (datos.tipoAjuste === 'ajuste-negativo' && !datos.bucketKey) {
+    if (!datos.bucketKey) {
       contexto.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['bucketKey'],
-        message: 'Selecciona la posición de stock que vas a descontar',
-      })
-    }
-    if (datos.tipoAjuste === 'ajuste-positivo' && !datos.ubicacionId) {
-      contexto.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['ubicacionId'],
-        message: 'Selecciona la ubicación donde se encontró el stock',
-      })
-    }
-    if (datos.tipoAjuste === 'ajuste-positivo' && !motivosAjustePositivoValores.includes(datos.motivoAjuste)) {
-      contexto.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['motivoAjuste'],
-        message: 'Selecciona un motivo válido para aumentar el stock',
-      })
-    }
-    if (datos.motivoAjuste === 'other' && datos.observacion.length < 3) {
-      contexto.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['observacion'],
-        message: 'Describe el motivo cuando selecciones "Otro"',
+        message: 'Selecciona la posición de stock que vas a ajustar',
       })
     }
   })
@@ -155,13 +107,9 @@ export function cantidadFisicaNoReservada(cantidadFisica: number, cantidadReserv
   return Math.max(cantidadFisica - cantidadReservada, 0)
 }
 
-export function crearMotivoAjusteStock(
-  motivo: MotivoAjusteStock,
-  observacion: string,
-) {
-  const etiqueta = motivosAjusteStock.find((item) => item.valor === motivo)?.etiqueta ?? 'Otro'
+export function crearMotivoAjusteStock(observacion: string) {
   const detalle = observacion.trim()
-  return `Ajuste de stock: ${etiqueta}${detalle ? ` — ${detalle}` : ''}`
+  return `Ajuste de stock: Diferencia de inventario físico${detalle ? ` — ${detalle}` : ''}`
 }
 
 export function crearDescripcionMotivoMovimiento(motivo: string, detalle?: string) {
