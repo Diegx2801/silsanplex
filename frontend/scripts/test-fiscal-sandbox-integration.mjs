@@ -397,8 +397,12 @@ try {
   await page.getByRole('button', { name: 'Confirmar numeración sandbox' }).click()
   const documentArticle = page.getByRole('article', { name: 'Detalle fiscal sandbox' })
   await expect(documentArticle).toContainText('Congelado')
-  const displayedFiscalFields = await documentArticle.locator('dl').first().locator('dd').allTextContents()
-  evidence.uiSnapshot = { type: displayedFiscalFields[0]?.trim(), series: displayedFiscalFields[1]?.trim(), number: displayedFiscalFields[2]?.trim() }
+  const fiscalDefinition = label => documentArticle.getByText(label, { exact: true }).locator('xpath=..').locator('dd')
+  const displayedType = fiscalDefinition('Tipo')
+  const displayedSeries = fiscalDefinition('Serie')
+  await expect(displayedType).toHaveText('Factura (01)')
+  await expect(displayedSeries).toHaveText('F001')
+  evidence.uiSnapshot = { type: await displayedType.innerText(), series: await displayedSeries.innerText() }
   check('UI snapshot type and series match the configured invoice series',
     evidence.uiSnapshot.type === 'Factura (01)' && evidence.uiSnapshot.series === 'F001')
   await expect(page.getByText('SIN VALIDEZ TRIBUTARIA · resultado ficticio')).toHaveCount(0)
