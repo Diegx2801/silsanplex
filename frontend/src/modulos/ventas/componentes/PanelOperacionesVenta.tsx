@@ -195,7 +195,7 @@ export function PanelOperacionesVenta({
     <section aria-labelledby="operaciones-venta-title" className="ledger-sheet">
       <div className="flex flex-col gap-3 border-b px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
         <div>
-          <span className="font-mono text-[0.68rem] tracking-[0.06em] text-primary uppercase">Ejecución comercial</span>
+          <span className="font-mono text-[0.68rem] tracking-[0.06em] text-primary uppercase">Pedidos y ventas</span>
           <h2 id="operaciones-venta-title" className="mt-1 text-lg font-semibold">Pedidos, ventas y despachos</h2>
           <p className="mt-1 text-sm text-muted-foreground">Cada etapa conserva el documento que le dio origen.</p>
         </div>

@@ -186,7 +186,18 @@ describe('VentasPage', () => {
     expect(container.querySelector('[class~="xl:block"]')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ver detalle' })).toHaveClass('min-h-11')
     expect(screen.getByRole('button', { name: 'Editar' })).toHaveClass('min-h-11')
-    expect(screen.getByRole('button', { name: 'Emitir' })).toHaveClass('min-h-11')
+    expect(screen.getByRole('button', { name: 'Emitir cotización' })).toHaveClass('min-h-11')
+    expect(container.querySelector('button[aria-label="Emitir cotización COT-000020"]')).toBeInTheDocument()
+  })
+
+  it('presenta el resumen comercial en dos columnas compactas en móvil', () => {
+    renderPage()
+
+    const resumen = screen.getByRole('region', { name: 'Resumen comercial' })
+    const cuadrícula = resumen.firstElementChild
+
+    expect(cuadrícula).toHaveClass('grid-cols-2', 'xl:grid-cols-4')
+    expect(within(resumen).getAllByRole('article')).toHaveLength(4)
   })
 
   it('usa enlaces de navegación normales con foco y destino claros para cambiar de vista', () => {
@@ -194,7 +205,7 @@ describe('VentasPage', () => {
 
     const navegacion = screen.getByRole('navigation', { name: 'Secciones de ventas' })
     const cotizaciones = within(navegacion).getByRole('link', { name: 'Cotizaciones' })
-    const ejecucion = within(navegacion).getByRole('link', { name: 'Ejecución comercial' })
+    const ejecucion = within(navegacion).getByRole('link', { name: 'Pedidos y ventas' })
 
     expect(navegacion).not.toHaveAttribute('role', 'tablist')
     expect(cotizaciones).not.toHaveAttribute('role', 'tab')
@@ -203,6 +214,7 @@ describe('VentasPage', () => {
     expect(ejecucion).not.toHaveAttribute('aria-selected')
     expect(ejecucion).toHaveAttribute('href', '/ventas?vista=ejecucion')
     expect(cotizaciones).toHaveClass('min-h-11')
+    expect(screen.getByText('Crea cotizaciones y gestiona pedidos y ventas desde un solo lugar.')).toBeVisible()
   })
 
   it('muestra en la página el motivo cuando la emisión es rechazada', async () => {
@@ -242,7 +254,7 @@ describe('VentasPage', () => {
     })
 
     renderPage()
-    fireEvent.click(screen.getByRole('button', { name: /Emitir COT-000001/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Emitir cotización COT-000001/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'Emitir cotización' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(error)
@@ -286,11 +298,12 @@ describe('VentasPage', () => {
     expect(screen.getByText('Entrega coordinada.')).toBeVisible()
   })
 
-  it('separa cotizaciones y ejecución comercial sin salir del módulo Ventas', () => {
+  it('separa cotizaciones y pedidos y ventas sin salir del módulo Ventas', () => {
     renderPage()
-    fireEvent.click(screen.getByRole('link', { name: 'Ejecución comercial' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Pedidos y ventas' }))
 
     expect(screen.getByRole('heading', { name: 'Pedidos, ventas y despachos' })).toBeVisible()
+    expect(screen.getAllByText('Pedidos y ventas')).not.toHaveLength(0)
     expect(screen.getByLabelText('Buscar')).toHaveAttribute('placeholder', 'Pedido, cliente, producto o comprobante')
     expect(screen.getByLabelText('Estado operativo')).toBeVisible()
     expect(screen.getByText('Todavía no hay pedidos')).toBeVisible()
