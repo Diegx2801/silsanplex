@@ -79,7 +79,7 @@ async function openRepair(page: Page, reference: string) {
   await page.goto('/reparaciones')
   await page.getByLabel('Buscar reparación').fill(reference)
   await expect(page.getByText('1 de 1 órdenes visibles')).toBeVisible()
-  await page.getByRole('button', { name: 'Ver detalle', exact: true }).click()
+  await page.getByRole('button', { name: /^(Ver detalle|Ver reparación)$/i }).click()
   await expect(page.getByRole('button', { name: 'Cerrar detalle de reparación' })).toBeVisible()
 }
 
