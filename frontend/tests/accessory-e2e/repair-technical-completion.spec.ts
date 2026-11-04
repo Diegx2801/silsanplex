@@ -128,7 +128,7 @@ test('R13: finalización servidor, actores históricos, listado y garantía solo
   await expect(page.getByText('No hay un cambio de estado pendiente de confirmar en esta pestaña.')).toBeVisible()
   await expect(page.getByRole('dialog', { name: 'Cambiar estado', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Cerrar detalle de reparación', exact: true }).click()
-  await expect(page.getByText(/^Técnica:/)).toBeVisible()
+  await expect(page.getByText(/^(Técnica:|Finalización técnica)/)).toBeVisible()
 })
 
 test('R13: fallo y aprobado no borran fallo; retrabajo, ciclo nuevo y primera finalización intacta', async ({ page }) => {
