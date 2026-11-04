@@ -39,7 +39,7 @@ async function open(page: Page, reference: string) {
   await page.goto('/reparaciones')
   await page.getByLabel('Buscar reparación', { exact: true }).fill(reference)
   await expect(page.getByText('1 de 1 órdenes visibles')).toBeVisible()
-  await page.getByRole('button', { name: 'Ver detalle', exact: true }).click()
+  await page.getByRole('button', { name: /^(Ver detalle|Ver reparación)$/i }).click()
   await expect(page.getByRole('heading', { name: 'Resultado No reparable', exact: true })).toBeVisible()
 }
 async function prepare(page: Page, browser: Browser, withAccessories = false) {
