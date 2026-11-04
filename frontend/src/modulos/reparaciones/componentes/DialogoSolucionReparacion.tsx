@@ -56,7 +56,7 @@ export function DialogoSolucionReparacion({
     <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-foreground/30" />
-        <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-[70] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 border bg-background shadow-xl outline-none">
+        <DialogPrimitive.Content data-reparaciones-touch-target className="fixed start-1/2 top-1/2 z-[70] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 border bg-background shadow-xl outline-none">
           <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7">
             <div>
               <DialogPrimitive.Title className="text-xl font-semibold">

@@ -185,7 +185,7 @@ export function DialogoReservaParte({
     <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-foreground/30" />
-        <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-[70] max-h-[92svh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background shadow-xl outline-none">
+        <DialogPrimitive.Content data-reparaciones-touch-target className="fixed start-1/2 top-1/2 z-[70] max-h-[92svh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background shadow-xl outline-none">
           <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7">
             <div>
               <DialogPrimitive.Title className="text-xl font-semibold">Reservar repuesto</DialogPrimitive.Title>
@@ -329,7 +329,7 @@ export function DialogoConsumoParte({
     <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-foreground/30" />
-        <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-[70] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 border bg-background shadow-xl outline-none">
+        <DialogPrimitive.Content data-reparaciones-touch-target className="fixed start-1/2 top-1/2 z-[70] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 border bg-background shadow-xl outline-none">
           <header className="flex items-start justify-between gap-4 border-b px-5 py-5">
             <div><DialogPrimitive.Title className="text-xl font-semibold">Consumir repuesto</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">{parte.productoDescripcionSnapshot} · Saldo pendiente: {saldo} {unidadMedida || '(unidad base pendiente de consultar)'}</DialogPrimitive.Description></div>
             <DialogPrimitive.Close asChild><button type="button" aria-label="Cerrar consumo" className="grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X aria-hidden="true" className="size-5" /></button></DialogPrimitive.Close>

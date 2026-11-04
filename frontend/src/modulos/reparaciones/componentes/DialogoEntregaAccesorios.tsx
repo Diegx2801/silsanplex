@@ -85,7 +85,7 @@ export function DialogoEntregaAccesorios({ abierto, reparacion, alCambiarApertur
   }
   return <Dialog.Root open={abierto} onOpenChange={guardando ? undefined : alCambiarApertura}><Dialog.Portal>
     <Dialog.Overlay className="fixed inset-0 z-50 bg-foreground/25" />
-    <Dialog.Content className="fixed start-1/2 top-1/2 z-50 max-h-[90vh] w-[min(95vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background p-6 shadow-xl">
+    <Dialog.Content data-reparaciones-touch-target className="fixed start-1/2 top-1/2 z-50 max-h-[90vh] w-[min(95vw,42rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background p-4 shadow-xl sm:p-6">
        <Dialog.Title className="text-lg font-semibold">{sinReparar ? 'Devolver sin reparar' : 'Entregar reparación'}</Dialog.Title>
        <Dialog.Description className="mt-2 text-sm text-muted-foreground">{sinReparar ? 'Confirma la devolución física sin reparación exitosa. Se conservan la decisión técnica y los costos; no inicia garantía de reparación. Se comprobarán proveedor, reservas y accesorios.' : 'Se verificarán los gates técnicos vigentes, la custodia externa y los accesorios pendientes.'}</Dialog.Description>
        {consulta.isLoading ? <p role="status">{sinReparar ? 'Consultando accesorios antes de devolver sin reparar…' : 'Consultando accesorios antes de entregar…'}</p> : consulta.error ? <div role="alert"><p>{consulta.error.message}</p><Button onClick={() => void consulta.refetch()}>Reintentar lectura de {accion}</Button></div> : consulta.data ? <form onSubmit={confirmar} className="mt-4 space-y-4">
