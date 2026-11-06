@@ -195,6 +195,17 @@ a {
 }
 
 @media (pointer: coarse), (max-width: 1023px) {
+  [data-compras-touch-target] [data-slot='button'],
+  [data-compras-touch-target] button,
+  [data-compras-touch-target] .field-control {
+    min-height: 44px;
+  }
+
+  [data-compras-touch-target] [data-size='icon'],
+  [data-compras-touch-target] button[aria-label^='Cerrar'] {
+    min-width: 44px;
+  }
+
   [data-reparaciones-touch-target] button,
   [data-reparaciones-touch-target] .field-control {
     min-height: 44px;

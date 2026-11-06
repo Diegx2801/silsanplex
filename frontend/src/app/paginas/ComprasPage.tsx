@@ -288,7 +288,7 @@ export function ComprasPage() {
   ]
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" data-compras-touch-target>
       <header className="flex flex-col gap-5 border-b pb-7 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <span className="font-mono text-xs tracking-[0.08em] text-primary uppercase">
@@ -504,15 +504,15 @@ export function ComprasPage() {
                 return (
                   <article key={compra.id} className="px-5 py-5">
                     <div className="flex items-start justify-between gap-3">
-                      <div>
+                      <div className="min-w-0 flex-1">
                         <p className="font-mono text-xs text-primary uppercase">
                           {etiquetaDocumento(compra)}
                         </p>
-                        <h3 className="mt-1 font-semibold">{compra.proveedorNombre}</h3>
+                        <h3 className="mt-1 break-words font-semibold">{compra.proveedorNombre}</h3>
                       </div>
                       <EstadoCompraEtiqueta estado={compra.estado} />
                     </div>
-                    <dl className="mt-4 grid grid-cols-3 gap-3 border-t pt-4 text-sm">
+                    <dl className="mt-4 grid grid-cols-2 gap-3 border-t pt-4 text-sm sm:grid-cols-3">
                       <div>
                         <dt className="text-xs text-muted-foreground">Emisión</dt>
                         <dd className="mt-1">
@@ -523,9 +523,9 @@ export function ComprasPage() {
                         <dt className="text-xs text-muted-foreground">Productos</dt>
                         <dd className="mt-1 font-mono">{compra.lineas.length}</dd>
                       </div>
-                      <div>
+                      <div className="col-span-2 min-w-0 sm:col-span-1">
                         <dt className="text-xs text-muted-foreground">Total</dt>
-                        <dd className="mt-1 font-mono font-semibold">
+                        <dd className="mt-1 min-w-0 font-mono font-semibold tabular-nums">
                           {compra.total === null || compra.total === undefined
                             ? 'Pendiente'
                             : formatoMoneda.format(compra.total)}
@@ -533,7 +533,7 @@ export function ComprasPage() {
                       </div>
                     </dl>
                     {compra.estado === 'borrador' && puedeGestionar ? (
-                      <div className="mt-4 flex gap-2">
+                      <div className="mt-4 flex flex-wrap gap-2">
                         <Button
                           type="button"
                           variant="outline"
@@ -559,7 +559,7 @@ export function ComprasPage() {
                         </Button>
                       </div>
                     ) : ['emitida', 'parcialmente-recibida'].includes(compra.estado) && puedeRecibir ? (
-                      <div className="mt-4 flex gap-2">
+                      <div className="mt-4 flex flex-wrap gap-2">
                         <Button type="button" disabled={accionando} onClick={(evento) => solicitarRecepcion(evento, compra)}>
                           <PackageCheck aria-hidden="true" /> Recibir
                         </Button>

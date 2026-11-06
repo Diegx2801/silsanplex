@@ -278,6 +278,7 @@ export function DialogoCompra({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25" />
         <DialogPrimitive.Content
+          data-compras-touch-target
           className="fixed start-1/2 top-1/2 z-50 flex max-h-[92svh] w-[calc(100%-2rem)] max-w-5xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background shadow-xl outline-none sm:w-[calc(100%-3rem)]"
           onCloseAutoFocus={(evento) => {
             evento.preventDefault()

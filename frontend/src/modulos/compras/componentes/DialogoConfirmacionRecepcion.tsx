@@ -272,7 +272,7 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
     <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-60 bg-foreground/30" />
-        <DialogPrimitive.Content className="fixed start-1/2 top-1/2 z-70 max-h-[90vh] w-[calc(100%-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background p-5 shadow-xl outline-none sm:p-6" onCloseAutoFocus={(evento) => { evento.preventDefault(); alRestaurarFoco() }}>
+        <DialogPrimitive.Content data-compras-touch-target className="fixed start-1/2 top-1/2 z-70 max-h-[90vh] w-[calc(100%-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background p-5 shadow-xl outline-none sm:p-6" onCloseAutoFocus={(evento) => { evento.preventDefault(); alRestaurarFoco() }}>
           <div className="grid size-10 place-items-center rounded-full bg-accent text-primary"><PackageCheck aria-hidden="true" className="size-5" /></div>
           <DialogPrimitive.Title className="mt-4 text-xl font-semibold">Registrar recepción</DialogPrimitive.Title>
           <DialogPrimitive.Description className="mt-2 text-sm leading-6 text-muted-foreground">Registra lo recibido físicamente y el resultado de la inspección. Solo la cantidad aceptada entra a inventario; los servicios se marcan atendidos sin generar stock.</DialogPrimitive.Description>
