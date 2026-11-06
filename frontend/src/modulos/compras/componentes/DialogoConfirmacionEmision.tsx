@@ -45,6 +45,7 @@ export function DialogoConfirmacionEmision({
       <AlertDialogPrimitive.Portal>
         <AlertDialogPrimitive.Overlay className="fixed inset-0 z-60 bg-foreground/30" />
         <AlertDialogPrimitive.Content
+          data-compras-touch-target
           className="fixed start-1/2 top-1/2 z-70 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 border bg-background p-5 shadow-xl outline-none sm:p-6"
           onCloseAutoFocus={(evento) => {
             evento.preventDefault()
