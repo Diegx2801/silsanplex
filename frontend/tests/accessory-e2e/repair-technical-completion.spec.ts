@@ -133,7 +133,10 @@ test('R13: finalización servidor, actores históricos, listado y garantía solo
     timeStyle: 'short',
     timeZone: 'America/Lima',
   }).format(new Date(completed.technical_completion.completed_at))
-  await expect(page.getByText(fechaFinalizacionVisible, { exact: true }).filter({ visible: true })).toBeVisible()
+  const valorFinalizacionTecnica = page.locator('.ledger-sheet article:visible dt')
+    .filter({ hasText: /^Finalización técnica$/ })
+    .locator('xpath=following-sibling::dd[1]')
+  await expect(valorFinalizacionTecnica).toHaveText(fechaFinalizacionVisible)
 })
 
 test('R13: fallo y aprobado no borran fallo; retrabajo, ciclo nuevo y primera finalización intacta', async ({ page }) => {
