@@ -241,6 +241,10 @@ select is(
   'un usuario sin confirmar conserva la invitación pendiente'
 );
 
+insert into auth.sessions(id, user_id, created_at, updated_at)
+select id, id, now(), now() from auth.users
+where id in ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333');
+
 update auth.users
 set email_confirmed_at = now()
 where id = '22222222-2222-4222-8222-222222222222';
@@ -408,8 +412,8 @@ select is(
 
 set local role authenticated;
 select set_config(
-  'request.jwt.claim.sub',
-  '11111111-1111-4111-8111-111111111111',
+  'request.jwt.claims',
+  '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"11111111-1111-4111-8111-111111111111"}',
   true
 );
 
@@ -439,8 +443,8 @@ reset role;
 
 set local role authenticated;
 select set_config(
-  'request.jwt.claim.sub',
-  '22222222-2222-4222-8222-222222222222',
+  'request.jwt.claims',
+  '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated","session_id":"22222222-2222-4222-8222-222222222222"}',
   true
 );
 
@@ -480,8 +484,8 @@ reset role;
 
 set local role authenticated;
 select set_config(
-  'request.jwt.claim.sub',
-  '33333333-3333-4333-8333-333333333333',
+  'request.jwt.claims',
+  '{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated","session_id":"33333333-3333-4333-8333-333333333333"}',
   true
 );
 
@@ -528,8 +532,8 @@ and user_id = '22222222-2222-4222-8222-222222222222';
 
 set local role authenticated;
 select set_config(
-  'request.jwt.claim.sub',
-  '22222222-2222-4222-8222-222222222222',
+  'request.jwt.claims',
+  '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated","session_id":"22222222-2222-4222-8222-222222222222"}',
   true
 );
 
@@ -568,8 +572,8 @@ where slug = 'organizacion-silsan-test';
 
 set local role authenticated;
 select set_config(
-  'request.jwt.claim.sub',
-  '11111111-1111-4111-8111-111111111111',
+  'request.jwt.claims',
+  '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"11111111-1111-4111-8111-111111111111"}',
   true
 );
 
@@ -601,8 +605,8 @@ where id = '33333333-3333-4333-8333-333333333333';
 
 set local role authenticated;
 select set_config(
-  'request.jwt.claim.sub',
-  '33333333-3333-4333-8333-333333333333',
+  'request.jwt.claims',
+  '{"sub":"33333333-3333-4333-8333-333333333333","role":"authenticated","session_id":"33333333-3333-4333-8333-333333333333"}',
   true
 );
 

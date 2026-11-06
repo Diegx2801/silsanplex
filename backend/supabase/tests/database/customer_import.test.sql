@@ -24,8 +24,11 @@ insert into public.user_roles (organization_id, user_id, role_code)
 select id, 'c2222222-2222-4222-8222-222222222222', 'ADMIN'
 from public.organizations where slug = 'drogueria-silsan';
 
+insert into auth.sessions(id, user_id, created_at, updated_at)
+values ('c2222222-2222-4222-8222-222222222222', 'c2222222-2222-4222-8222-222222222222', now(), now());
+
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c2222222-2222-4222-8222-222222222222', true);
+select set_config('request.jwt.claims', '{"sub":"c2222222-2222-4222-8222-222222222222","role":"authenticated","session_id":"c2222222-2222-4222-8222-222222222222"}', true);
 
 create temporary table import_result as
 select public.import_customers('{
@@ -80,7 +83,7 @@ select throws_ok(
   '22023', 'CUSTOMER_FISCAL_IDENTITY_IMMUTABLE', 'impide modificar la identidad fiscal'
 );
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c2222222-2222-4222-8222-222222222222', true);
+select set_config('request.jwt.claims', '{"sub":"c2222222-2222-4222-8222-222222222222","role":"authenticated","session_id":"c2222222-2222-4222-8222-222222222222"}', true);
 
 select is(
   (
