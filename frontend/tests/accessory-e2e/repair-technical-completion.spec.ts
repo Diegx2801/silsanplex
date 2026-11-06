@@ -48,7 +48,7 @@ async function open(page: Page, reference: string) {
   await page.goto('/reparaciones')
   await page.getByLabel('Buscar reparación', { exact: true }).fill(reference)
   await expect(page.getByText('1 de 1 órdenes visibles')).toBeVisible()
-  await page.getByRole('button', { name: 'Ver detalle', exact: true }).click()
+  await page.getByRole('button', { name: /^(Ver detalle|Ver reparación)$/i }).click()
   await expect(page.getByRole('region', { name: 'Finalización técnica y entrega' })).toBeVisible()
 }
 async function change(page: Page, status: string) {
@@ -128,7 +128,15 @@ test('R13: finalización servidor, actores históricos, listado y garantía solo
   await expect(page.getByText('No hay un cambio de estado pendiente de confirmar en esta pestaña.')).toBeVisible()
   await expect(page.getByRole('dialog', { name: 'Cambiar estado', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Cerrar detalle de reparación', exact: true }).click()
-  await expect(page.getByText(/^Técnica:/)).toBeVisible()
+  const fechaFinalizacionVisible = new Intl.DateTimeFormat('es-PE', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'America/Lima',
+  }).format(new Date(completed.technical_completion.completed_at))
+  const valorFinalizacionTecnica = page.locator('.ledger-sheet article:visible dt')
+    .filter({ hasText: /^Finalización técnica$/ })
+    .locator('xpath=following-sibling::dd[1]')
+  await expect(valorFinalizacionTecnica).toHaveText(fechaFinalizacionVisible)
 })
 
 test('R13: fallo y aprobado no borran fallo; retrabajo, ciclo nuevo y primera finalización intacta', async ({ page }) => {

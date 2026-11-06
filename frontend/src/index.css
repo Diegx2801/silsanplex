@@ -194,6 +194,18 @@ a {
   }
 }
 
+@media (pointer: coarse), (max-width: 1023px) {
+  [data-reparaciones-touch-target] button,
+  [data-reparaciones-touch-target] .field-control {
+    min-height: 44px;
+  }
+
+  [data-reparaciones-touch-target] button[data-size='icon'],
+  [data-reparaciones-touch-target] button[aria-label^='Cerrar'] {
+    min-width: 44px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

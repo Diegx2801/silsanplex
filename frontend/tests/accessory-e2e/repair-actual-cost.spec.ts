@@ -25,7 +25,7 @@ async function state(a:Actor,id:string,status:string) {const r=await row(a,id);a
  requested_organization_id:a.identity.organizationId,requested_repair_id:id,requested_status:status,requested_observation:null,requested_expected_lock_version:r.lock_version}))}
 async function open(page:Page,reference:string) {
  await page.goto('/reparaciones');await page.getByLabel('Buscar reparación',{exact:true}).fill(reference)
- await expect(page.getByText('1 de 1 órdenes visibles')).toBeVisible();await page.getByRole('button',{name:'Ver detalle',exact:true}).click()
+ await expect(page.getByText('1 de 1 órdenes visibles')).toBeVisible();await page.getByRole('button',{name:/^(Ver detalle|Ver reparación)$/i}).click()
  await page.getByText('Costo real de reparación',{exact:true}).click()
  await expect(page.getByRole('region',{name:'Consulta de costo real'}).getByText(/Costo (real confirmado|parcial registrado|no determinado)/).first()).toBeVisible()
 }

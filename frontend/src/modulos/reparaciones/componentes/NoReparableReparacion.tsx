@@ -100,7 +100,7 @@ export function NoReparableReparacion({ detalle }: { detalle: DetalleReparacion 
     {devolver ? <DialogoEntregaAccesorios abierto sinReparar reparacion={r} alCambiarApertura={setDevolver} /> : null}
     <Dialog.Root open={Boolean(editor)} onOpenChange={abierto => { if (!abierto && !guardando) { setEditor(null); setError('') } }}><Dialog.Portal>
       <Dialog.Overlay className="fixed inset-0 z-50 bg-foreground/25" />
-      <Dialog.Content className="fixed start-1/2 top-1/2 z-50 max-h-[90vh] w-[min(95vw,40rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background p-6 shadow-xl">
+      <Dialog.Content data-reparaciones-touch-target className="fixed start-1/2 top-1/2 z-50 max-h-[90vh] w-[min(95vw,40rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background p-4 shadow-xl sm:p-6">
         <Dialog.Title className="text-lg font-semibold">{editor?.tipo === 'reopen_repair_non_repairable_assessment' ? 'Reabrir evaluación técnica' : 'Confirmar No reparable'}</Dialog.Title>
         <Dialog.Description className="mt-2 text-sm">{r.codigo} · {r.productoDescripcionSnapshot}. Esta acción no devuelve físicamente el equipo ni modifica stock.</Dialog.Description>
         {editor ? <form className="mt-4 space-y-4" onSubmit={guardar}>
