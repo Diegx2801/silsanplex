@@ -128,7 +128,12 @@ test('R13: finalización servidor, actores históricos, listado y garantía solo
   await expect(page.getByText('No hay un cambio de estado pendiente de confirmar en esta pestaña.')).toBeVisible()
   await expect(page.getByRole('dialog', { name: 'Cambiar estado', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Cerrar detalle de reparación', exact: true }).click()
-  await expect(page.getByText(/^(Técnica:|Finalización técnica)/).filter({ visible: true })).toBeVisible()
+  const fechaFinalizacionVisible = new Intl.DateTimeFormat('es-PE', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'America/Lima',
+  }).format(new Date(completed.technical_completion.completed_at))
+  await expect(page.getByText(fechaFinalizacionVisible, { exact: true }).filter({ visible: true })).toBeVisible()
 })
 
 test('R13: fallo y aprobado no borran fallo; retrabajo, ciclo nuevo y primera finalización intacta', async ({ page }) => {
