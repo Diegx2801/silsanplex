@@ -70,10 +70,24 @@ select is(
   'anon no puede ejecutar la recepcion inspeccionada'
 );
 
-insert into public.organizations (id, name, slug, legal_name)
-values
-  ('c4c00000-0000-4000-8000-000000000001', 'E4C Uno', 'e4c-uno', 'E4C Uno S.A.C.'),
-  ('c4c00000-0000-4000-8000-000000000002', 'E4C Dos', 'e4c-dos', 'E4C Dos S.A.C.');
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'organizations' and column_name = 'legal_name'
+  ) then
+    execute $sql$
+      insert into public.organizations (id, name, slug, legal_name) values
+        ('c4c00000-0000-4000-8000-000000000001', 'E4C Uno', 'e4c-uno', 'E4C Uno S.A.C.'),
+        ('c4c00000-0000-4000-8000-000000000002', 'E4C Dos', 'e4c-dos', 'E4C Dos S.A.C.')
+    $sql$;
+  else
+    insert into public.organizations (id, name, slug) values
+      ('c4c00000-0000-4000-8000-000000000001', 'E4C Uno', 'e4c-uno'),
+      ('c4c00000-0000-4000-8000-000000000002', 'E4C Dos', 'e4c-dos');
+  end if;
+end;
+$$;
 
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values
