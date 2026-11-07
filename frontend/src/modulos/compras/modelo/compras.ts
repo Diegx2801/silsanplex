@@ -94,6 +94,7 @@ export const esquemaLineaCompra = z.object({
   cantidad: z.number().positive(),
   cantidadRecibida: z.number().nonnegative(),
   cantidadPendiente: z.number().nonnegative(),
+  cantidadRechazada: z.number().nonnegative().optional(),
   costoUnitario: z.number().positive(),
   lote: z.string(),
   fechaVencimiento: z.string(),

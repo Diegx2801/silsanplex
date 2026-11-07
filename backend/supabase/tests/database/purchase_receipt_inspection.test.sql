@@ -1,6 +1,6 @@
 begin;
 
-select plan(53);
+select plan(61);
 
 select has_table(
   'public',
@@ -70,10 +70,10 @@ select is(
   'anon no puede ejecutar la recepcion inspeccionada'
 );
 
-insert into public.organizations (id, name, slug)
+insert into public.organizations (id, name, slug, legal_name)
 values
-  ('c4c00000-0000-4000-8000-000000000001', 'E4C Uno', 'e4c-uno'),
-  ('c4c00000-0000-4000-8000-000000000002', 'E4C Dos', 'e4c-dos');
+  ('c4c00000-0000-4000-8000-000000000001', 'E4C Uno', 'e4c-uno', 'E4C Uno S.A.C.'),
+  ('c4c00000-0000-4000-8000-000000000002', 'E4C Dos', 'e4c-dos', 'E4C Dos S.A.C.');
 
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values
@@ -350,8 +350,28 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', 'c4c10000-0000-4000-8000-000000000001', true);
 select is(
   (select status from public.purchase_orders where document_number = '001'),
-  'received',
-  'la recepcion fisica completa conserva la semantica del estado de la orden'
+  'partially_received',
+  'el rechazo conserva pendiente la cantidad que aun no fue aceptada'
+);
+select is(
+  (select received_quantity from public.supplier_operational_performance_facts where purchase_order_id = (select id from public.purchase_orders where document_number = '001')),
+  7.000::numeric,
+  'el indicador de proveedor suma solo la cantidad aceptada'
+);
+select is(
+  (select complete_line from public.supplier_operational_performance_facts where purchase_order_id = (select id from public.purchase_orders where document_number = '001')),
+  false,
+  'el indicador no considera completa una linea con rechazo pendiente'
+);
+select is(
+  (select sum(quantity) from public.supplier_price_history where purchase_order_id = (select id from public.purchase_orders where document_number = '001')),
+  7.000::numeric,
+  'el historial de precios pondera solo unidades aceptadas'
+);
+select is(
+  (select comparison.received_quantity from public.get_product_supplier_comparison('c4c00000-0000-4000-8000-000000000001', 'c4c50000-0000-4000-8000-000000000001') comparison),
+  7.000::numeric,
+  'la comparacion de proveedores no cuenta las unidades rechazadas'
 );
 
 set local role postgres;
@@ -501,6 +521,46 @@ select throws_ok(
   'P0001',
   'PURCHASE_RECEIPT_INSPECTION_IDEMPOTENCY_CONFLICT',
   'reutilizar la clave de correccion con otro payload falla'
+);
+
+select lives_ok(
+  $$
+    select public.receive_purchase_order_partial_inspected(jsonb_build_object(
+      'organization_id', 'c4c00000-0000-4000-8000-000000000001',
+      'purchase_order_id', (select id from public.purchase_orders where document_number = '001'),
+      'operation_key', 'c4c60000-0000-4000-8000-000000000011',
+      'items', jsonb_build_array(jsonb_build_object(
+        'purchase_order_item_id', (select id from public.purchase_order_items where purchase_order_id = (select id from public.purchase_orders where document_number = '001')),
+        'quantity', 3,
+        'fulfillment_mode', 'physical',
+        'location_id', 'c4c40000-0000-4000-8000-000000000001',
+        'lot', 'LOTE-E4C-REPOSICION',
+        'expiration_date', '2027-12-31',
+        'inspection', jsonb_build_object(
+          'inspected_quantity', 3,
+          'accepted_quantity', 3,
+          'rejected_quantity', 0,
+          'findings', '[]'::jsonb
+        )
+      ))
+    ))
+  $$,
+  'permite recibir reposicion por el saldo anteriormente rechazado'
+);
+select is(
+  (select status from public.purchase_orders where document_number = '001'),
+  'received',
+  'la orden se completa cuando todas las unidades ordenadas fueron aceptadas'
+);
+select is(
+  (select sum(receipt_item.quantity) from public.purchase_receipt_items receipt_item join public.purchase_receipts receipt on receipt.id = receipt_item.receipt_id where receipt.purchase_order_id = (select id from public.purchase_orders where document_number = '001')),
+  13.000::numeric,
+  'conserva las cantidades fisicas originales y de reposicion'
+);
+select is(
+  (select sum(movement.quantity) from public.inventory_movements movement join public.purchase_receipt_items receipt_item on receipt_item.id = movement.source_id join public.purchase_receipts receipt on receipt.id = receipt_item.receipt_id where receipt.purchase_order_id = (select id from public.purchase_orders where document_number = '001') and movement.source_type = 'purchase-receipt'),
+  10.000::numeric,
+  'solo las diez unidades aceptadas acumuladas ingresan al inventario'
 );
 
 select lives_ok(

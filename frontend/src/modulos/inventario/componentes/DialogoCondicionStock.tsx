@@ -39,6 +39,7 @@ interface Revision {
   posicion: string
   cantidad: string
   equivalencia: string
+  etiquetaKardex: string
 }
 
 export function DialogoCondicionStock(props: Props) {
@@ -59,7 +60,7 @@ function ContenidoCondicionStock({
   const [destino, setDestino] = useState<EstadoStock | ''>('')
   const [cantidad, setCantidad] = useState('')
   const [unidadId, setUnidadId] = useState('')
-  const [motivo, setMotivo] = useState('')
+  const [observacion, setObservacion] = useState('')
   const [revision, setRevision] = useState<Revision | null>(null)
   const [errores, setErrores] = useState<Record<string, string>>({})
   const [errorGuardado, setErrorGuardado] = useState('')
@@ -109,7 +110,7 @@ function ContenidoCondicionStock({
       ubicacionId: posicion?.ubicacionId ?? '', estadoOrigen: posicion?.estadoStock ?? 'available',
       estadoDestino: destino || undefined, cantidad, unidadEntradaId: unidadId || undefined,
       factorConversionEsperado: factor, lote: posicion?.lote ?? '',
-      fechaVencimiento: posicion?.fechaVencimiento ?? '', motivo,
+      fechaVencimiento: posicion?.fechaVencimiento ?? '', observacion,
     })
     const siguientes: Record<string, string> = {}
     if (!resultado.success) for (const issue of resultado.error.issues) {
@@ -136,6 +137,7 @@ function ContenidoCondicionStock({
       producto: producto.descripcion, posicion: `${almacen?.label} · ${descripcion(posicion)}`,
       cantidad: `${formato.format(Number(cantidad))} ${unidadNombre}`,
       equivalencia: factor !== 1 ? `Equivale a ${formato.format(cantidadBase)} ${unidadBase}` : '',
+      etiquetaKardex: `Cambio de condición: ${etiquetasEstadoStock[resultado.data.estadoOrigen]} → ${etiquetasEstadoStock[resultado.data.estadoDestino]}`,
     })
   }
   const confirmar = async () => {
@@ -189,7 +191,8 @@ function ContenidoCondicionStock({
             <dl className="space-y-4 border-y py-4 text-sm">
               <div><dt className="text-muted-foreground">Producto y posición</dt><dd className="mt-1 break-words font-medium">{revision.producto} · {revision.posicion}</dd></div>
               {revision.equivalencia ? <div><dt className="text-muted-foreground">Equivalencia</dt><dd>{revision.equivalencia}</dd></div> : null}
-              <div><dt className="text-muted-foreground">Motivo</dt><dd className="mt-1 break-words">{revision.datos.motivo}</dd></div>
+              <div><dt className="text-muted-foreground">Registro en Kardex</dt><dd className="mt-1 break-words">{revision.etiquetaKardex}</dd></div>
+              {revision.datos.observacion ? <div><dt className="text-muted-foreground">Observación</dt><dd className="mt-1 break-words">{revision.datos.observacion}</dd></div> : null}
             </dl>
             <p className="text-sm text-muted-foreground">Se conservarán el lote, vencimiento, ubicación y costo. Las unidades reservadas no se modificarán.</p>
             {errorGuardado ? <p role="alert" className="field-error">{errorGuardado}</p> : null}
@@ -197,10 +200,10 @@ function ContenidoCondicionStock({
         ) : (
           <form id="formulario-condicion-stock" onSubmit={revisar} noValidate className="space-y-5 overflow-y-auto px-5 py-6 sm:px-7">
             <SelectorProductoInventario id="condicion-producto" name="producto-condicion-stock" etiqueta="Producto" organizationId={organizationId} value={producto?.id ?? ''} selectedOption={producto} autoSeleccionarPrimeraOpcion={false} error={errores.productoId} onValueChange={(_, opcion) => {
-              setProducto(opcion ?? null); setAlmacen(null); setPosicionId(''); setDestino(''); setCantidad(''); setUnidadId(opcion?.unidadBaseId ?? ''); setErrores({})
+              setProducto(opcion ?? null); setAlmacen(null); setPosicionId(''); setDestino(''); setCantidad(''); setUnidadId(opcion?.unidadBaseId ?? ''); setObservacion(''); setErrores({})
             }} />
-            <Combobox id="condicion-almacen" label="Almacén" value={almacen?.value ?? ''} options={almacen ? [almacen] : []} loadOptions={cargarAlmacenes} minSearchLength={0} required disabled={!producto} error={errores.almacenId} placeholder={producto ? 'Buscar almacén con stock' : 'Selecciona primero un producto'} helperText="Solo aparecen almacenes con existencias no reservadas de este producto." onChange={(_, opcion) => { setAlmacen(opcion ?? null); setPosicionId(''); setDestino(''); setErrores({}) }} />
-            <Combobox id="condicion-posicion" label="Ubicación y lote" value={posicionId} options={elegibles.map((item) => ({ value: claveBucketAjusteStock(item), label: descripcion(item) }))} required disabled={!almacen || consultando || Boolean(errorBuckets)} error={errores.ubicacionId || errorBuckets} placeholder={!almacen ? 'Selecciona primero un almacén' : consultando ? 'Consultando existencias…' : 'Selecciona la posición exacta'} noOptionsMessage="No hay existencias no reservadas para cambiar de condición." onChange={(valor) => { setPosicionId(valor); setDestino(''); setErrores({}) }} />
+            <Combobox id="condicion-almacen" label="Almacén" value={almacen?.value ?? ''} options={almacen ? [almacen] : []} loadOptions={cargarAlmacenes} minSearchLength={0} required disabled={!producto} error={errores.almacenId} placeholder={producto ? 'Buscar almacén con stock' : 'Selecciona primero un producto'} helperText="Solo aparecen almacenes con existencias no reservadas de este producto." onChange={(_, opcion) => { setAlmacen(opcion ?? null); setPosicionId(''); setDestino(''); setObservacion(''); setErrores({}) }} />
+            <Combobox id="condicion-posicion" label="Ubicación y lote" value={posicionId} options={elegibles.map((item) => ({ value: claveBucketAjusteStock(item), label: descripcion(item) }))} required disabled={!almacen || consultando || Boolean(errorBuckets)} error={errores.ubicacionId || errorBuckets} placeholder={!almacen ? 'Selecciona primero un almacén' : consultando ? 'Consultando existencias…' : 'Selecciona la posición exacta'} noOptionsMessage="No hay existencias no reservadas para cambiar de condición." onChange={(valor) => { setPosicionId(valor); setDestino(''); setObservacion(''); setErrores({}) }} />
             {errorBuckets ? <Button type="button" variant="outline" disabled={consultando} onClick={() => void queryClient.invalidateQueries({ queryKey: ['inventory-adjustment-buckets', organizationId, producto?.id ?? '', almacen?.value ?? ''], exact: true })}>Reintentar consulta de stock</Button> : null}
             {clavesInconsistentes.size ? <p role="alert" className="text-sm text-destructive">Hay posiciones con unidades históricas incompatibles. Se excluyeron para evitar una conversión incorrecta.</p> : null}
             {posicion ? <div className="border-y py-4 text-sm" aria-label="Existencias de la posición">
@@ -217,7 +220,7 @@ function ContenidoCondicionStock({
             <div><label htmlFor="condicion-destino" className="field-label">Nueva condición *</label><select id="condicion-destino" className="field-control" disabled={!posicion} value={destino} onChange={(e) => setDestino(e.target.value as EstadoStock | '')} {...ariaCampo('estadoDestino')}>
               <option value="">Selecciona una condición</option>{condiciones.filter(([valor]) => valor !== posicion?.estadoStock).map(([valor, etiqueta]) => <option key={valor} value={valor}>{etiqueta}</option>)}
             </select>{mensajeError('estadoDestino')}</div>
-            <div><label htmlFor="condicion-motivo" className="field-label">Motivo *</label><input id="condicion-motivo" className="field-control" value={motivo} maxLength={180} placeholder="Ej. Inspección pendiente o liberación autorizada" onChange={(e) => setMotivo(e.target.value)} {...ariaCampo('motivo')} />{mensajeError('motivo')}</div>
+            <div><label htmlFor="condicion-observacion" className="field-label">Observación (opcional)</label><textarea id="condicion-observacion" className="field-control min-h-20" value={observacion} maxLength={600} placeholder="Agrega un detalle útil para la trazabilidad" onChange={(e) => setObservacion(e.target.value)} {...ariaCampo('observacion')} />{mensajeError('observacion')}</div>
             {Object.keys(errores).length ? <p role="alert" className="field-error">Revisa los campos indicados antes de continuar.</p> : null}
           </form>
         )}

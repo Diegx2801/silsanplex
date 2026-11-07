@@ -23,6 +23,7 @@ export function DialogoConfirmacionAnulacion({
   const [procesando, setProcesando] = useState(false)
   const [error, setError] = useState('')
   const [motivo, setMotivo] = useState('')
+  const esCierreParcial = compra.estado === 'parcialmente-recibida'
 
   const confirmar = async () => {
     setError('')
@@ -56,14 +57,16 @@ export function DialogoConfirmacionAnulacion({
             <Ban aria-hidden="true" className="size-5" />
           </div>
           <AlertDialogPrimitive.Title className="mt-5 text-xl font-semibold tracking-[-0.025em]">
-            Anular orden de compra
+            {esCierreParcial ? 'Cerrar saldo pendiente' : 'Anular orden de compra'}
           </AlertDialogPrimitive.Title>
           <AlertDialogPrimitive.Description className="mt-2 text-sm leading-6 text-muted-foreground">
-            La orden {compra.serie}-{compra.numero} quedará cerrada y ya no podrá editarse, emitirse ni recibirse. El inventario ya recibido no se alterará.
+            {esCierreParcial
+              ? `La orden ${compra.serie}-${compra.numero} dejará de aceptar reposiciones. Usa esta acción solo si el saldo se resolvió con una compensación documentada o no se recibirá. Este registro no procesa reembolsos ni pagos.`
+              : `La orden ${compra.serie}-${compra.numero} quedará anulada y ya no podrá editarse, emitirse ni recibirse. El inventario ya recibido no se alterará.`}
           </AlertDialogPrimitive.Description>
           <label className="mt-5 block">
-            <span className="field-label">Motivo *</span>
-            <textarea className="field-control min-h-20" maxLength={240} value={motivo} onChange={(evento) => setMotivo(evento.target.value)} placeholder="Explica por qué se cancela el saldo pendiente" />
+            <span className="field-label">{esCierreParcial ? 'Resolución / referencia *' : 'Motivo *'}</span>
+            <textarea className="field-control min-h-20" maxLength={240} value={motivo} onChange={(evento) => setMotivo(evento.target.value)} placeholder={esCierreParcial ? 'Ej. Nota de crédito NC-123 o saldo no repuesto' : 'Explica por qué se cancela la orden'} />
           </label>
           {error ? (
             <p role="alert" className="mt-4 border-s-4 border-destructive bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -73,11 +76,11 @@ export function DialogoConfirmacionAnulacion({
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <AlertDialogPrimitive.Cancel asChild>
               <Button type="button" variant="outline" size="lg" disabled={procesando}>
-                Conservar orden
+                {esCierreParcial ? 'Seguir recibiendo' : 'Conservar orden'}
               </Button>
             </AlertDialogPrimitive.Cancel>
             <Button type="button" variant="destructive" size="lg" disabled={procesando} onClick={() => void confirmar()}>
-              {procesando ? 'Anulando…' : 'Anular orden'}
+              {procesando ? (esCierreParcial ? 'Cerrando…' : 'Anulando…') : (esCierreParcial ? 'Cerrar saldo' : 'Anular orden')}
             </Button>
           </div>
         </AlertDialogPrimitive.Content>

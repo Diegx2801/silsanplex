@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { inventoryQueryKeys } from '../estado/inventoryQueryKeys'
-import { esquemaConfiguracionAlertasStock, type Almacen, type UbicacionAlmacen } from '../modelo/almacen'
+import { esquemaConfiguracionAlertasStock, type Almacen } from '../modelo/almacen'
 import type { ProductoInventarioOpcion } from '../modelo/productoInventarioRead'
 import { obtenerConfiguracionAlertasStock } from '../servicios/almacenService'
 import { SelectorProductoInventario } from './SelectorProductoInventario'
@@ -14,7 +14,6 @@ import { SelectorProductoInventario } from './SelectorProductoInventario'
 interface ConfiguracionAlertas {
   productoId: string
   almacenId: string
-  ubicacionId: string
   stockMinimo: number
   diasVencimiento: number
 }
@@ -22,12 +21,13 @@ interface ConfiguracionAlertas {
 interface Props {
   organizationId: string
   almacenes: readonly Almacen[]
-  ubicaciones: readonly UbicacionAlmacen[]
   abierto: boolean
   alCambiarAbierto: (abierto: boolean) => void
   alRestaurarFoco?: () => void
   configurar: (datos: ConfiguracionAlertas) => Promise<string | undefined>
 }
+
+const formatoEquivalencia = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 3 })
 
 /** Cada apertura inicia una edición independiente; los refrescos no pisan el borrador. */
 export function DialogoConfiguracionAlertas(props: Props) {
@@ -39,12 +39,11 @@ export function DialogoConfiguracionAlertas(props: Props) {
 }
 
 function ContenidoConfiguracion({
-  organizationId, almacenes, ubicaciones, alCambiarAbierto, alRestaurarFoco, configurar,
+  organizationId, almacenes, alCambiarAbierto, alRestaurarFoco, configurar,
 }: Props) {
   const [producto, setProducto] = useState<ProductoInventarioOpcion | null>(null)
   const [productoId, setProductoId] = useState('')
   const [almacenId, setAlmacenId] = useState('')
-  const [ubicacionId, setUbicacionId] = useState('')
   const [stockMinimo, setStockMinimo] = useState('0')
   const [diasVencimiento, setDiasVencimiento] = useState('30')
   const [identidadCargada, setIdentidadCargada] = useState('')
@@ -55,9 +54,6 @@ function ContenidoConfiguracion({
   const identidadHidratada = useRef('')
   const identidad = JSON.stringify([organizationId, productoId, almacenId])
   const almacenesActivos = useMemo(() => almacenes.filter((item) => item.activo), [almacenes])
-  const ubicacionesActivas = useMemo(() => ubicaciones.filter(
-    (item) => item.activa && item.almacenId === almacenId,
-  ), [almacenId, ubicaciones])
   const consulta = useQuery({
     queryKey: inventoryQueryKeys.stockPolicy(organizationId, productoId, almacenId),
     queryFn: () => obtenerConfiguracionAlertasStock(organizationId, productoId, almacenId),
@@ -68,34 +64,33 @@ function ContenidoConfiguracion({
     if (!productoId || !almacenId || !consulta.isSuccess || consulta.isFetching
       || identidadHidratada.current === identidad) return
     const guardada = consulta.data
-    const ubicacion = ubicacionesActivas.find((item) => item.id === guardada?.ubicacionId)
-    setUbicacionId(ubicacion?.id ?? ubicacionesActivas[0]?.id ?? '')
     setStockMinimo(String(guardada?.stockMinimo ?? 0))
     setDiasVencimiento(String(guardada?.diasVencimiento ?? 30))
     identidadHidratada.current = identidad
     setIdentidadCargada(identidad)
-  }, [almacenId, consulta.data, consulta.isFetching, consulta.isSuccess, identidad, productoId, ubicacionesActivas])
+  }, [almacenId, consulta.data, consulta.isFetching, consulta.isSuccess, identidad, productoId])
 
   const reiniciarConsulta = () => {
     identidadHidratada.current = ''
     setIdentidadCargada('')
-    setUbicacionId('')
     setStockMinimo('0')
     setDiasVencimiento('30')
     setErrores({})
     setErrorGuardado('')
   }
   const almacenValido = almacenesActivos.some((item) => item.id === almacenId)
-  const ubicacionValida = ubicacionesActivas.some((item) => item.id === ubicacionId)
   const cargada = identidadCargada === identidad && consulta.isSuccess && !consulta.isError
-  const puedeGuardar = cargada && almacenValido && ubicacionValida && !consulta.isFetching && !guardando
+  const puedeGuardar = cargada && almacenValido && !consulta.isFetching && !guardando
   const unidad = producto?.unidadMedida || 'unidad base'
+  const equivalencias = (producto?.unidadesEntrada ?? [])
+    .filter((item) => Number.isFinite(item.factorConversion) && item.factorConversion > 1)
+    .map((item) => `1 ${item.nombre} = ${formatoEquivalencia.format(item.factorConversion)} ${unidad}`)
 
   const guardar = async (evento: FormEvent<HTMLFormElement>) => {
     evento.preventDefault()
     if (!puedeGuardar || enCurso.current) return
     const resultado = esquemaConfiguracionAlertasStock.safeParse({
-      productoId, almacenId, ubicacionId, stockMinimo, diasVencimiento,
+      productoId, almacenId, stockMinimo, diasVencimiento,
     })
     if (!resultado.success) {
       const siguientes: Record<string, string> = {}
@@ -176,17 +171,14 @@ function ContenidoConfiguracion({
               <label className="field-label" htmlFor="alertas-stock-minimo">Stock mínimo ({unidad}) *</label>
               <input id="alertas-stock-minimo" type="number" min="0" max="99999999999.999" step="0.001" value={stockMinimo} onChange={(evento) => setStockMinimo(evento.target.value)} disabled={!cargada || guardando} className="field-control" required aria-invalid={Boolean(errores.stockMinimo)} aria-describedby="alertas-stock-ayuda alertas-stock-error" />
               <p id="alertas-stock-ayuda" className="field-help">Se compara con el stock asignable de todo el almacén, en {unidad}. Con 0, avisa al agotarse.</p>
+              {equivalencias.length ? <p className="field-help">Equivalencias: {equivalencias.join(' · ')}. Ingresa el mínimo en {unidad}.</p> : null}
               <p id="alertas-stock-error" className="field-error">{errores.stockMinimo}</p>
             </div>
             <div>
               <label className="field-label" htmlFor="alertas-dias">Avisar antes del vencimiento (días) *</label>
               <input id="alertas-dias" type="number" min="0" max="3650" step="1" value={diasVencimiento} onChange={(evento) => setDiasVencimiento(evento.target.value)} disabled={!cargada || guardando} className="field-control" required aria-invalid={Boolean(errores.diasVencimiento)} aria-describedby="alertas-dias-ayuda alertas-dias-error" />
-              <p id="alertas-dias-ayuda" className="field-help">Con 0, avisa solo de lotes vencidos o que vencen hoy. Sin configuración, se usan 30 días.</p>
+              <p id="alertas-dias-ayuda" className="field-help">Se evalúa cada lote de este producto en el almacén. Con 0, avisa solo de lotes vencidos o que vencen hoy. Sin configuración, se usan 30 días.</p>
               <p id="alertas-dias-error" className="field-error">{errores.diasVencimiento}</p>
-            </div>
-            <div className="sm:col-span-2">
-              <Combobox id="alertas-ubicacion" label="Ubicación predeterminada" value={ubicacionId} options={ubicacionesActivas.map((item) => ({ value: item.id, label: `${item.codigo} · ${item.nombre}` }))} required disabled={!cargada || guardando || !ubicacionesActivas.length} onChange={setUbicacionId} error={errores.ubicacionId} noOptionsMessage="No hay ubicaciones activas en este almacén." helperText="Se sugiere en operaciones que usan una ubicación predeterminada. No limita las alertas: se considera todo el almacén." />
-              {almacenId && !ubicacionesActivas.length ? <p className="field-help">Registra o activa una ubicación en este almacén para guardar la configuración.</p> : null}
             </div>
           </div>
           {errorGuardado ? <p role="alert" className="field-error mt-5">{errorGuardado}</p> : null}

@@ -12,8 +12,8 @@ vi.mock('./SelectorProductoInventario', () => ({
     id: string
     value: string
     autoSeleccionarPrimeraOpcion: boolean
-    onValueChange: (value: string, option: { id: string; unidadMedida: string }) => void
-  }) => <label htmlFor={id}>Producto<select id={id} value={value} data-autoselect={String(autoSeleccionarPrimeraOpcion)} onChange={(evento) => onValueChange(evento.target.value, { id: evento.target.value, unidadMedida: 'Unidad' })}>
+    onValueChange: (value: string, option: { id: string; unidadMedida: string; unidadesEntrada?: { id: string; nombre: string; factorConversion: number }[] }) => void
+  }) => <label htmlFor={id}>Producto<select id={id} value={value} data-autoselect={String(autoSeleccionarPrimeraOpcion)} onChange={(evento) => onValueChange(evento.target.value, { id: evento.target.value, unidadMedida: 'Paquete', unidadesEntrada: [{ id: 'unidad-1', nombre: 'Caja', factorConversion: 20 }] })}>
     <option value="">Selecciona un producto</option>
     <option value="30000000-0000-4000-8000-000000000001">Producto de prueba</option>
     <option value="30000000-0000-4000-8000-000000000002">Segundo producto</option>
@@ -32,8 +32,6 @@ vi.mock('@/components/ui/combobox', () => ({
 const organizationId = '10000000-0000-4000-8000-000000000001'
 const productId = '30000000-0000-4000-8000-000000000001'
 const warehouseId = '20000000-0000-4000-8000-000000000001'
-const locationId = '40000000-0000-4000-8000-000000000001'
-
 function renderDialogo() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   const configurar = vi.fn().mockResolvedValue(undefined)
@@ -42,7 +40,6 @@ function renderDialogo() {
     organizationId={organizationId}
     abierto
     almacenes={[{ id: warehouseId, codigo: 'CENTRAL', nombre: 'Central', direccion: '', activo: true }]}
-    ubicaciones={[{ id: locationId, almacenId: warehouseId, codigo: 'A-01', nombre: 'Anaquel 1', descripcion: '', activa: true }]}
     configurar={configurar}
     alCambiarAbierto={alCambiarAbierto}
   /></QueryClientProvider>)
@@ -67,17 +64,18 @@ describe('DialogoConfiguracionAlertas', () => {
   })
 
   it('carga los valores guardados, identifica la unidad base y conserva el borrador tras refetch', async () => {
-    obtenerConfiguracion.mockResolvedValue({ ubicacionId: locationId, stockMinimo: 5.25, diasVencimiento: 45 })
+    obtenerConfiguracion.mockResolvedValue({ stockMinimo: 5.25, diasVencimiento: 45 })
     const { client } = renderDialogo()
     seleccionarContexto()
-    await waitFor(() => expect(screen.getByLabelText('Stock mínimo (Unidad) *')).toHaveValue(5.25))
+    await waitFor(() => expect(screen.getByLabelText('Stock mínimo (Paquete) *')).toHaveValue(5.25))
     expect(screen.getByLabelText('Avisar antes del vencimiento (días) *')).toHaveValue(45)
-    expect(screen.getByLabelText('Ubicación predeterminada')).toHaveValue(locationId)
-    fireEvent.change(screen.getByLabelText('Stock mínimo (Unidad) *'), { target: { value: '12' } })
+    expect(screen.queryByLabelText('Ubicación predeterminada')).not.toBeInTheDocument()
+    expect(screen.getByText(/1 Caja = 20 Paquete/)).toBeVisible()
+    fireEvent.change(screen.getByLabelText('Stock mínimo (Paquete) *'), { target: { value: '12' } })
     fireEvent.change(screen.getByLabelText('Avisar antes del vencimiento (días) *'), { target: { value: '60' } })
-    obtenerConfiguracion.mockResolvedValue({ ubicacionId: locationId, stockMinimo: 2, diasVencimiento: 10 })
+    obtenerConfiguracion.mockResolvedValue({ stockMinimo: 2, diasVencimiento: 10 })
     await act(async () => { await client.refetchQueries({ queryKey: inventoryQueryKeys.stockPolicy(organizationId, productId, warehouseId) }) })
-    expect(screen.getByLabelText('Stock mínimo (Unidad) *')).toHaveValue(12)
+    expect(screen.getByLabelText('Stock mínimo (Paquete) *')).toHaveValue(12)
     expect(screen.getByLabelText('Avisar antes del vencimiento (días) *')).toHaveValue(60)
   })
 
@@ -86,12 +84,12 @@ describe('DialogoConfiguracionAlertas', () => {
     const { configurar, alCambiarAbierto } = renderDialogo()
     seleccionarContexto()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled())
-    expect(screen.getByLabelText('Stock mínimo (Unidad) *')).toHaveValue(0)
+    expect(screen.getByLabelText('Stock mínimo (Paquete) *')).toHaveValue(0)
     expect(screen.getByLabelText('Avisar antes del vencimiento (días) *')).toHaveValue(30)
     expect(screen.getByText(/Aún no hay configuración guardada/)).toBeVisible()
-    expect(screen.getByText(/No limita las alertas/)).toBeVisible()
+    expect(screen.getByText(/Se evalúa cada lote de este producto en el almacén/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Guardar configuración' }))
-    await waitFor(() => expect(configurar).toHaveBeenCalledWith({ productoId: productId, almacenId: warehouseId, ubicacionId: locationId, stockMinimo: 0, diasVencimiento: 30 }))
+    await waitFor(() => expect(configurar).toHaveBeenCalledWith({ productoId: productId, almacenId: warehouseId, stockMinimo: 0, diasVencimiento: 30 }))
     expect(alCambiarAbierto).toHaveBeenCalledWith(false)
   })
 
@@ -106,13 +104,13 @@ describe('DialogoConfiguracionAlertas', () => {
   })
 
   it('no reutiliza los valores del producto anterior al cambiar de combinación', async () => {
-    obtenerConfiguracion.mockResolvedValueOnce({ ubicacionId: locationId, stockMinimo: 5, diasVencimiento: 45 }).mockResolvedValue(null)
+    obtenerConfiguracion.mockResolvedValueOnce({ stockMinimo: 5, diasVencimiento: 45 }).mockResolvedValue(null)
     renderDialogo()
     seleccionarContexto()
-    await waitFor(() => expect(screen.getByLabelText('Stock mínimo (Unidad) *')).toHaveValue(5))
+    await waitFor(() => expect(screen.getByLabelText('Stock mínimo (Paquete) *')).toHaveValue(5))
     fireEvent.change(screen.getByLabelText('Producto'), { target: { value: '30000000-0000-4000-8000-000000000002' } })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled())
-    expect(screen.getByLabelText('Stock mínimo (Unidad) *')).toHaveValue(0)
+    expect(screen.getByLabelText('Stock mínimo (Paquete) *')).toHaveValue(0)
     expect(screen.getByLabelText('Avisar antes del vencimiento (días) *')).toHaveValue(30)
   })
 
@@ -122,10 +120,10 @@ describe('DialogoConfiguracionAlertas', () => {
     configurar.mockResolvedValue('No tienes permiso para cambiar esta configuración.')
     seleccionarContexto()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled())
-    fireEvent.change(screen.getByLabelText('Stock mínimo (Unidad) *'), { target: { value: '18' } })
+    fireEvent.change(screen.getByLabelText('Stock mínimo (Paquete) *'), { target: { value: '18' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar configuración' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('No tienes permiso')
-    expect(screen.getByLabelText('Stock mínimo (Unidad) *')).toHaveValue(18)
+    expect(screen.getByLabelText('Stock mínimo (Paquete) *')).toHaveValue(18)
     expect(alCambiarAbierto).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled()
   })

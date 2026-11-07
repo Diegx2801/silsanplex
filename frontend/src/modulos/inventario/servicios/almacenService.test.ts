@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   cambiarEstadoAlmacen,
   cambiarEstadoUbicacion,
+  configurarAlertas,
   crearAlmacen,
   crearUbicacion,
   editarAlmacen,
@@ -28,6 +29,7 @@ function crearQuery(data: Record<string, unknown>[] = [], count = data.length) {
   }
   query.range = vi.fn(() => Promise.resolve({ data, count, error: null }))
   query.maybeSingle = vi.fn(() => Promise.resolve({ data: data[0] ?? null, error: null }))
+  query.upsert = vi.fn(() => Promise.resolve({ error: null }))
   from.mockReturnValue(query)
   return query
 }
@@ -38,7 +40,7 @@ describe('reclasificación de posición exacta', () => {
   const datos = {
     productoId: 'producto-1', almacenId: 'almacen-1', ubicacionId: 'anaquel-1',
     estadoOrigen: 'available' as const, estadoDestino: 'quarantine' as const,
-    cantidad: '2', lote: 'LOTE-EXACTO', fechaVencimiento: '2029-01-01', motivo: 'Inspección',
+    cantidad: '2', lote: 'LOTE-EXACTO', fechaVencimiento: '2029-01-01', observacion: 'Inspección',
     unidadEntradaId: 'caja-1', factorConversionEsperado: 20,
   }
 
@@ -51,7 +53,8 @@ describe('reclasificación de posición exacta', () => {
       organization_id: 'org-1', operation_key: 'intento-estable', product_id: 'producto-1',
       warehouse_id: 'almacen-1', location_id: 'anaquel-1', source_status: 'available',
       destination_status: 'quarantine', quantity: '2', input_unit_id: 'caja-1',
-      expected_conversion_factor: 20, lot: 'LOTE-EXACTO', expiration_date: '2029-01-01', reason: 'Inspección',
+      expected_conversion_factor: 20, lot: 'LOTE-EXACTO', expiration_date: '2029-01-01',
+      reason: 'Cambio de condición: Disponible → Cuarentena', observation: 'Inspección',
     } })
   })
 
@@ -244,14 +247,12 @@ describe('configuración de control de stock', () => {
 
   it('recupera la política guardada por producto y almacén', async () => {
     const query = crearQuery([{
-      default_location_id: 'ubicacion-1',
       minimum_stock: '5.250',
       expiration_alert_days: 45,
     }])
 
     await expect(obtenerConfiguracionAlertasStock('org-1', 'producto-1', 'almacen-1'))
       .resolves.toEqual({
-        ubicacionId: 'ubicacion-1',
         stockMinimo: 5.25,
         diasVencimiento: 45,
       })
@@ -260,6 +261,20 @@ describe('configuración de control de stock', () => {
     expect(query.eq).toHaveBeenNthCalledWith(1, 'organization_id', 'org-1')
     expect(query.eq).toHaveBeenNthCalledWith(2, 'product_id', 'producto-1')
     expect(query.eq).toHaveBeenNthCalledWith(3, 'warehouse_id', 'almacen-1')
+  })
+
+  it('actualiza alertas sin alterar la ubicación predeterminada usada por otros flujos', async () => {
+    const query = crearQuery()
+
+    await configurarAlertas('org-1', 'user-1', {
+      productoId: 'producto-1', almacenId: 'almacen-1', stockMinimo: 12, diasVencimiento: 45,
+    })
+
+    expect(query.upsert).toHaveBeenCalledWith({
+      organization_id: 'org-1', product_id: 'producto-1', warehouse_id: 'almacen-1',
+      minimum_stock: 12, expiration_alert_days: 45, updated_by: 'user-1',
+    })
+    expect(query.upsert.mock.calls[0][0]).not.toHaveProperty('default_location_id')
   })
 
   it('retorna null cuando la combinación aún no tiene política guardada', async () => {

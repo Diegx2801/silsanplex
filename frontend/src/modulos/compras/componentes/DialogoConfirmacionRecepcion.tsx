@@ -176,7 +176,7 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
   const confirmar = async () => {
     setError('')
     setErroresFilas({})
-    const cantidades = new Map<string, number>()
+    const cantidadesAceptadas = new Map<string, number>()
     const errores: Record<string, ErroresFila> = {}
     const agregarError = (filaId: string, campo: CampoError, mensaje: string) => {
       const anterior = errores[filaId]?.[campo]
@@ -236,15 +236,16 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
           agregarError(fila.id, 'inspeccion', 'No registres motivos si no hay cantidad rechazada.')
         }
       }
-      if (Number.isFinite(cantidad) && cantidad > 0) {
-        cantidades.set(linea.id, (cantidades.get(linea.id) ?? 0) + cantidad)
+      const cantidadAceptada = esServicio ? cantidad : Number(fila.inspeccion?.cantidadAceptada)
+      if (Number.isFinite(cantidadAceptada) && cantidadAceptada > 0) {
+        cantidadesAceptadas.set(linea.id, (cantidadesAceptadas.get(linea.id) ?? 0) + cantidadAceptada)
       }
     }
 
     for (const linea of compra.lineas) {
-      if ((cantidades.get(linea.id) ?? 0) <= linea.cantidadPendiente) continue
+      if ((cantidadesAceptadas.get(linea.id) ?? 0) <= linea.cantidadPendiente) continue
       for (const fila of filas.filter((item) => item.purchaseOrderItemId === linea.id)) {
-        agregarError(fila.id, 'cantidad', `La suma supera el saldo pendiente (${linea.cantidadPendiente}).`)
+        agregarError(fila.id, 'cantidad', `La cantidad aceptada supera el saldo pendiente (${linea.cantidadPendiente}).`)
       }
     }
 
@@ -275,7 +276,7 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
         <DialogPrimitive.Content data-compras-touch-target className="fixed start-1/2 top-1/2 z-70 max-h-[90vh] w-[calc(100%-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto border bg-background p-5 shadow-xl outline-none sm:p-6" onCloseAutoFocus={(evento) => { evento.preventDefault(); alRestaurarFoco() }}>
           <div className="grid size-10 place-items-center rounded-full bg-accent text-primary"><PackageCheck aria-hidden="true" className="size-5" /></div>
           <DialogPrimitive.Title className="mt-4 text-xl font-semibold">Registrar recepción</DialogPrimitive.Title>
-          <DialogPrimitive.Description className="mt-2 text-sm leading-6 text-muted-foreground">Registra lo recibido físicamente y el resultado de la inspección. Solo la cantidad aceptada entra a inventario; los servicios se marcan atendidos sin generar stock.</DialogPrimitive.Description>
+          <DialogPrimitive.Description className="mt-2 text-sm leading-6 text-muted-foreground">Registra lo recibido físicamente y el resultado de la inspección. Solo lo aceptado entra al inventario y reduce el saldo; lo rechazado queda pendiente para reposición. Los servicios se marcan atendidos sin generar stock.</DialogPrimitive.Description>
           <div className="mt-5 space-y-5">
             {compra.lineas.filter((linea) => linea.cantidadPendiente > 0).map((linea) => (
               <section key={linea.id} className="border p-4">
@@ -285,9 +286,14 @@ export function DialogoConfirmacionRecepcion({ abierto, compra, ubicaciones, alC
                   </p>
                 ) : null}
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0"><h3 className="font-medium">{linea.productoDescripcion}</h3><p className="mt-1 font-mono text-xs text-muted-foreground">{linea.productoCodigo} · {linea.tipoProducto === 'service' ? 'Servicio' : linea.tipoProducto === 'good' ? 'Producto físico' : 'Tipo no regularizado'} · unidad {linea.unidadMedida} · pendiente {linea.cantidadPendiente}</p></div>
+                  <div className="min-w-0"><h3 className="font-medium">{linea.productoDescripcion}</h3><p className="mt-1 font-mono text-xs text-muted-foreground">{linea.productoCodigo} · {linea.tipoProducto === 'service' ? 'Servicio' : linea.tipoProducto === 'good' ? 'Producto físico' : 'Tipo no regularizado'} · unidad {linea.unidadMedida} · aceptado {linea.cantidadRecibida} · pendiente {linea.cantidadPendiente}</p></div>
                   <Button type="button" variant="outline" size="sm" onClick={() => agregarPartida(linea.id)}><Plus /> {linea.tipoProducto === 'service' ? 'Dividir atención' : 'Dividir lote'}</Button>
                 </div>
+                {(linea.cantidadRechazada ?? 0) > 0 && linea.cantidadPendiente > 0 ? (
+                  <p className="mt-3 border-s-4 border-amber-500 bg-amber-500/10 px-3 py-2 text-sm text-amber-950">
+                    Rechazado anteriormente: {linea.cantidadRechazada} {linea.unidadMedida}. No reduce el saldo; registra aquí la reposición cuando llegue.
+                  </p>
+                ) : null}
                 <div className="mt-4 space-y-3">
                   {filas.filter((fila) => fila.purchaseOrderItemId === linea.id).map((fila, indice, partidas) => {
                     const erroresFila = erroresFilas[fila.id]

@@ -17,7 +17,14 @@ interface LineaCompraFila {
   unit_cost: number
   lot: string | null
   expiration_date: string | null
-  purchase_receipt_items: { quantity: number }[]
+  purchase_receipt_items: {
+    quantity: number
+    purchase_receipt_inspections: {
+      accepted_quantity: number
+      rejected_quantity: number
+      status: 'completed' | 'voided'
+    }[] | null
+  }[]
 }
 
 interface CompraFila {
@@ -50,7 +57,7 @@ interface CompraFila {
 }
 
 const columnasCompra =
-  'id,supplier_id,supplier_document,supplier_name,document_type,series,document_number,issue_date,payment_due_date,expected_delivery_date,warehouse_id,warehouse,prices_include_tax,taxable_base,exempt_amount,unaffected_amount,subtotal,tax,total,tax_calculation_status,notes,status,issued_at,received_at,created_at,purchase_order_items(id,product_id,product_code,product_description,unit_of_measure,product_type,tax_affectation,batch_control,expiration_control,quantity,unit_cost,lot,expiration_date,products(expiration_control,is_active),purchase_receipt_items(quantity,fulfillment_mode))' as const
+  'id,supplier_id,supplier_document,supplier_name,document_type,series,document_number,issue_date,payment_due_date,expected_delivery_date,warehouse_id,warehouse,prices_include_tax,taxable_base,exempt_amount,unaffected_amount,subtotal,tax,total,tax_calculation_status,notes,status,issued_at,received_at,created_at,purchase_order_items(id,product_id,product_code,product_description,unit_of_measure,product_type,tax_affectation,batch_control,expiration_control,quantity,unit_cost,lot,expiration_date,products(expiration_control,is_active),purchase_receipt_items(quantity,purchase_receipt_inspections(accepted_quantity,rejected_quantity,status)))' as const
 
 const estados: Record<CompraFila['status'], EstadoCompra> = {
   draft: 'borrador',
@@ -62,8 +69,14 @@ const estados: Record<CompraFila['status'], EstadoCompra> = {
 }
 
 function mapearLinea(fila: LineaCompraFila): LineaCompra {
+  const inspecciones = fila.purchase_receipt_items.map((recepcion) =>
+    recepcion.purchase_receipt_inspections?.find((inspeccion) => inspeccion.status === 'completed'),
+  )
   const cantidadRecibida = fila.purchase_receipt_items.reduce(
-    (total, recepcion) => total + Number(recepcion.quantity), 0,
+    (total, recepcion, indice) => total + Number(inspecciones[indice]?.accepted_quantity ?? recepcion.quantity), 0,
+  )
+  const cantidadRechazada = inspecciones.reduce(
+    (total, inspeccion) => total + Number(inspeccion?.rejected_quantity ?? 0), 0,
   )
   return {
     id: fila.id,
@@ -78,6 +91,7 @@ function mapearLinea(fila: LineaCompraFila): LineaCompra {
     cantidad: Number(fila.quantity),
     cantidadRecibida,
     cantidadPendiente: Math.max(0, Number(fila.quantity) - cantidadRecibida),
+    cantidadRechazada,
     costoUnitario: Number(fila.unit_cost),
     lote: fila.lot ?? '',
     fechaVencimiento: fila.expiration_date ?? '',
