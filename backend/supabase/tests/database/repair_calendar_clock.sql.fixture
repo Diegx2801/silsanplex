@@ -1,0 +1,43 @@
+-- Deterministic clock seam: include only inside BEGIN/ROLLBACK in a disposable DB.
+-- CURRENT_DATE is emulated from the controlled instant AND the caller timezone;
+-- explicit Lima expressions retain their own timezone. No validator is bypassed.
+create function pg_temp.d06_now() returns timestamptz language plpgsql stable as $$
+declare instant text := current_setting('d06.test_instant', true);
+begin
+  if coalesce(instant, '') = '' then raise exception 'D06_TEST_CLOCK_REQUIRED'; end if;
+  return instant::timestamptz;
+end $$;
+create temporary table d06_original_functions(signature text primary key, definition text not null);
+insert into d06_original_functions
+select p.oid::regprocedure::text, pg_get_functiondef(p.oid) from pg_proc p where p.oid in (
+  'public.reserve_repair_part_unchecked(jsonb)'::regprocedure,
+  'public.consume_repair_part_unchecked(jsonb)'::regprocedure,
+  'public.inventory_bucket_state(uuid,uuid,uuid,uuid,text,text,date)'::regprocedure,
+  'public.assert_inventory_fefo_bucket(uuid,uuid,uuid,date)'::regprocedure
+);
+do $$ declare f record; definition text; begin
+  for f in select * from d06_original_functions loop
+    definition := regexp_replace(f.definition, '\mcurrent_date\M',
+      '(pg_temp.d06_now() at time zone pg_catalog.current_setting(''TimeZone''))::date', 'gi');
+    definition := regexp_replace(definition, '\m(pg_catalog\.)?(now|transaction_timestamp)\s*\(\s*\)', 'pg_temp.d06_now()', 'gi');
+    if definition = f.definition then raise exception 'D06_UNINSTRUMENTED_CLOCK: %', f.signature; end if;
+    execute definition;
+  end loop;
+end $$;
+create temporary table d06_original_views(name text primary key, definition text not null);
+insert into d06_original_views select name, pg_get_viewdef(('public.' || name)::regclass, true)
+from unnest(array['inventory_bucket_availability', 'inventory_fefo_candidates', 'inventory_expiration_alerts']) name;
+do $$ declare v record; definition text; begin
+  for v in select * from d06_original_views order by name loop
+    definition := regexp_replace(v.definition, '\mcurrent_date\M',
+      '(pg_temp.d06_now() at time zone pg_catalog.current_setting(''TimeZone''))::date', 'gi');
+    definition := regexp_replace(definition, '\m(pg_catalog\.)?(now|transaction_timestamp)\s*\(\s*\)', 'pg_temp.d06_now()', 'gi');
+    if definition = v.definition then raise exception 'D06_UNINSTRUMENTED_VIEW: %', v.name; end if;
+    execute format('create or replace view public.%I with (security_invoker=true) as %s', v.name, definition);
+  end loop;
+end $$;
+-- New evidence timestamps use that same instant; historical rows are not edited.
+alter table public.inventory_movements alter column created_at set default pg_temp.d06_now();
+alter table public.repair_part_consumptions alter column created_at set default pg_temp.d06_now();
+alter table public.repair_events alter column created_at set default pg_temp.d06_now();
+alter table public.audit_events alter column created_at set default pg_temp.d06_now();
