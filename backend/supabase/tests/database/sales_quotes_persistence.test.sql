@@ -94,11 +94,15 @@ values (
 );
 insert into public.organization_memberships (organization_id, user_id)
 values ('a9b00000-0000-4000-8000-000000000001', 'a9c00000-0000-4000-8000-000000000002');
+insert into auth.sessions(id, user_id, created_at, updated_at)
+values
+  ('a9c00000-0000-4000-8000-000000000001', 'a9c00000-0000-4000-8000-000000000001', now(), now()),
+  ('a9c00000-0000-4000-8000-000000000002', 'a9c00000-0000-4000-8000-000000000002', now(), now());
 
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
-  '{"sub":"a9c00000-0000-4000-8000-000000000001","role":"authenticated"}',
+  '{"sub":"a9c00000-0000-4000-8000-000000000001","role":"authenticated","session_id":"a9c00000-0000-4000-8000-000000000001"}',
   true
 );
 
@@ -230,13 +234,13 @@ select is((
 
 select set_config(
   'request.jwt.claims',
-  '{"sub":"a9c00000-0000-4000-8000-000000000002","role":"authenticated"}',
+  '{"sub":"a9c00000-0000-4000-8000-000000000002","role":"authenticated","session_id":"a9c00000-0000-4000-8000-000000000002"}',
   true
 );
 select is((select count(*) from public.sales_quotes), 0::bigint, 'un usuario sin SALES_VIEW no puede leer cotizaciones');
 select set_config(
   'request.jwt.claims',
-  '{"sub":"a9c00000-0000-4000-8000-000000000001","role":"authenticated"}',
+  '{"sub":"a9c00000-0000-4000-8000-000000000001","role":"authenticated","session_id":"a9c00000-0000-4000-8000-000000000001"}',
   true
 );
 

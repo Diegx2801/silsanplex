@@ -47,6 +47,10 @@ insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values
   ('d33c0000-0000-4000-8000-000000000001', 'd3.operador@test.local', '{"full_name":"Operador D3"}', now(), now()),
   ('d33c0000-0000-4000-8000-000000000002', 'd3.otro@test.local', '{"full_name":"Otro operador D3"}', now(), now());
+insert into auth.sessions(id, user_id, created_at, updated_at)
+values
+  ('d33c0000-0000-4000-8000-000000000001', 'd33c0000-0000-4000-8000-000000000001', now(), now()),
+  ('d33c0000-0000-4000-8000-000000000002', 'd33c0000-0000-4000-8000-000000000002', now(), now());
 insert into public.organization_memberships (organization_id, user_id)
 values
   ('d3300000-0000-4000-8000-000000000001', 'd33c0000-0000-4000-8000-000000000001'),
@@ -122,7 +126,7 @@ insert into public.warehouse_locations (
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
-  '{"sub":"d33c0000-0000-4000-8000-000000000001","role":"authenticated"}',
+  '{"sub":"d33c0000-0000-4000-8000-000000000001","role":"authenticated","session_id":"d33c0000-0000-4000-8000-000000000001"}',
   true
 );
 
@@ -159,7 +163,7 @@ select lives_ok($$select public.record_inventory_movement(jsonb_build_object(
 
 select set_config(
   'request.jwt.claims',
-  '{"sub":"d33c0000-0000-4000-8000-000000000002","role":"authenticated"}',
+  '{"sub":"d33c0000-0000-4000-8000-000000000002","role":"authenticated","session_id":"d33c0000-0000-4000-8000-000000000002"}',
   true
 );
 select public.record_inventory_movement(jsonb_build_object(
@@ -176,7 +180,7 @@ create temporary table d3_foreign_movement_ref (id uuid not null);
 insert into d3_foreign_movement_ref values (:'foreign_movement'::uuid);
 select set_config(
   'request.jwt.claims',
-  '{"sub":"d33c0000-0000-4000-8000-000000000001","role":"authenticated"}',
+  '{"sub":"d33c0000-0000-4000-8000-000000000001","role":"authenticated","session_id":"d33c0000-0000-4000-8000-000000000001"}',
   true
 );
 
@@ -462,7 +466,7 @@ insert into public.distribution_delivery_items (
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
-  '{"sub":"d33c0000-0000-4000-8000-000000000001","role":"authenticated"}',
+  '{"sub":"d33c0000-0000-4000-8000-000000000001","role":"authenticated","session_id":"d33c0000-0000-4000-8000-000000000001"}',
   true
 );
 select is(public.save_distribution_delivery(jsonb_build_object(

@@ -11,6 +11,8 @@ insert into public.organizations (id, name, slug) values
   ('b3b00000-0000-4000-8000-000000000001', 'Despachos uno', 'despachos-uno');
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at) values
   ('b3c00000-0000-4000-8000-000000000001', 'despachos@test.local', '{"full_name":"Despachos"}', now(), now());
+insert into auth.sessions(id, user_id, created_at, updated_at) values
+  ('b3c00000-0000-4000-8000-000000000001', 'b3c00000-0000-4000-8000-000000000001', now(), now());
 insert into public.organization_memberships (organization_id, user_id) values
   ('b3b00000-0000-4000-8000-000000000001', 'b3c00000-0000-4000-8000-000000000001');
 insert into public.user_roles (organization_id, user_id, role_code) values
@@ -51,7 +53,7 @@ insert into public.warehouse_locations (
    'b3c00000-0000-4000-8000-000000000001', 'b3c00000-0000-4000-8000-000000000001');
 
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"b3c00000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select set_config('request.jwt.claims', '{"sub":"b3c00000-0000-4000-8000-000000000001","role":"authenticated","session_id":"b3c00000-0000-4000-8000-000000000001"}', true);
 
 select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b3b00000-0000-4000-8000-000000000001',

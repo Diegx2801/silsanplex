@@ -297,7 +297,7 @@ try {
      runLog.push({ actualCostBenchmark: benchmarkActualCost({ sql, evidence }) })
    }
   if (!evidenceOnly) {
-    const tests = fs.readdirSync(path.join(backend, 'supabase/tests/database')).filter(n => process.argv.includes('--all-sql') || /^repairs?[_.].*\.sql$/.test(n) || n === 'authorization_permissions.test.sql')
+    const tests = fs.readdirSync(path.join(backend, 'supabase/tests/database')).filter(n => process.argv.includes('--all-sql') || /^repairs?[_.].*\.sql$/.test(n) || n === 'authorization_permissions.test.sql' || n === 'audit_session_access.test.sql')
       .filter(n => n.endsWith('.test.sql')).sort()
     // Check the migrated application before installing test-only pgTAP routines.
     const lintArgs = ['db', 'lint', '--level', 'warning', '--fail-on', 'warning', '--output-format', 'json']
@@ -446,6 +446,9 @@ try {
     if (!nonRepairableOnly && !technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-actual-cost.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-actual-cost-results.json')},log:'e2e-actual-cost.log'})
+    if (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+      'accessory-e2e/audit-session.spec.ts'],
+    {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-audit-session-results.json')},log:'e2e-audit-session.log'})
     runLog.push({ e2e: 'passed', suite: actualCostOnly ? 'actual-cost only' : technicalCompletionOnly ? 'technical-completion only' : nonRepairableOnly ? 'non-repairable only'
       : workflowE2e ? 'all workflow E2E, accessories, R28, R13 and R14' : 'repairs, accessories, R28, R13 and R14', api, web: ports.web })
   }

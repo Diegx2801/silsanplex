@@ -57,6 +57,8 @@ values (
 
 insert into public.organization_memberships (organization_id, user_id)
 values ('d3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111');
+insert into auth.sessions(id, user_id, created_at, updated_at)
+values ('e3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111', now(), now());
 insert into public.user_roles (organization_id, user_id, role_code)
 values ('d3111111-1111-4111-8111-111111111111', 'e3111111-1111-4111-8111-111111111111', 'LOGISTICA');
 
@@ -296,6 +298,7 @@ insert into public.distribution_deliveries (
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'e3111111-1111-4111-8111-111111111111', true);
+select set_config('request.jwt.claims', '{"sub":"e3111111-1111-4111-8111-111111111111","role":"authenticated","session_id":"e3111111-1111-4111-8111-111111111111"}', true);
 
 select is((select count(*) from public.distribution_deliveries), 1::bigint, 'se puede leer la entrega histórica');
 select is((select delivery_status from public.distribution_deliveries where id = 'f3111111-1111-4111-8111-111111111111'), 'programado', 'la fila histórica recibe estado por defecto');
