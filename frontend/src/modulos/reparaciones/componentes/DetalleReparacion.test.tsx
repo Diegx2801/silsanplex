@@ -243,6 +243,14 @@ function renderizarDetalle({
 }
 
 describe('DetalleReparacion acciones técnicas', () => {
+  it('presenta el detalle en un diálogo centrado y acotado al viewport', () => {
+    renderizarDetalle()
+
+    const dialogo = screen.getByRole('dialog')
+    expect(dialogo).toHaveClass('start-1/2', 'top-1/2', '-translate-x-1/2', '-translate-y-1/2', 'max-h-[92svh]', 'overflow-hidden', 'max-w-4xl')
+    expect(dialogo).not.toHaveClass('inset-y-0', 'end-0', 'slide-in-from-right')
+  })
+
   it('permite reintentar cuando falla la carga del detalle', () => {
     const reintentar = vi.fn()
     renderizarDetalle({ detalleSinCargar: true, errorDetalle: new Error('Error temporal'), alReintentarDetalle: reintentar })
