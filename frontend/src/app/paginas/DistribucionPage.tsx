@@ -15,7 +15,7 @@ import { DialogoDetalleEntrega } from '@/modulos/distribucion/componentes/Dialog
 import { DialogoResultadoEntrega } from '@/modulos/distribucion/componentes/DialogoResultadoEntrega'
 import { PedidosPorProgramar } from '@/modulos/distribucion/componentes/PedidosPorProgramar'
 import { useMovimientosDisponiblesDistribucion, useProgramacionesEntrega } from '@/modulos/distribucion/estado/useProgramacionesEntrega'
-import { obtenerLineasDisponiblesDistribucion, pedidoListoParaProgramarDistribucion } from '@/modulos/distribucion/modelo/pedidosProgramables'
+import { asignarMovimientosDisponibles, obtenerLineasDisponiblesDistribucion, pedidoListoParaProgramarDistribucion } from '@/modulos/distribucion/modelo/pedidosProgramables'
 import {
   esquemaDatosProgramacionEntrega,
   esquemaDatosReprogramacionEntrega,
@@ -33,7 +33,7 @@ import {
 } from '@/modulos/distribucion/modelo/programacionEntrega'
 import { formatearFechaDistribucion } from '@/modulos/distribucion/servicios/formatoDistribucion'
 import { DialogoDetalleOperacionVenta } from '@/modulos/ventas/componentes/DialogoDetalleOperacionVenta'
-import type { PedidoVenta } from '@/modulos/ventas/modelo/operacionVenta'
+import type { PedidoVenta, Venta } from '@/modulos/ventas/modelo/operacionVenta'
 import { usePedidosPersistentes } from '@/modulos/ventas/estado/usePedidosPersistentes'
 import { useVentasPersistentes } from '@/modulos/ventas/estado/useVentasPersistentes'
 
@@ -73,10 +73,15 @@ function normalizarBusqueda(valor: string) {
   return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-PE')
 }
 
-function etiquetaCumplimientoPedido(pedido: PedidoVenta) {
-  return pedido.estadoCumplimiento === 'dispatched'
-    ? 'Despachado · pendiente de entrega'
-    : 'Bienes despachados · venta en curso'
+function etiquetaCumplimientoPedido(pedido: PedidoVenta, venta?: Venta) {
+  const bienes = pedido.lineas.filter((linea) => linea.tipoProducto === 'good')
+  const faltanDespachar = bienes.some((linea) => {
+    const ventaLinea = venta?.lineas.find((item) => item.pedidoLineaId === linea.id)
+    return (ventaLinea?.cantidadPendiente ?? linea.cantidad) > 0
+  })
+  return faltanDespachar
+    ? 'Salida parcial · queda saldo en Ventas'
+    : 'Despachado · pendiente de entrega'
 }
 
 export function DistribucionPage() {
@@ -164,6 +169,7 @@ export function DistribucionPage() {
   )
   const pedidosProgramablesResumen = useMemo(() => pedidosPorProgramarVisibles.map((pedido) => {
     const lineasDisponibles = lineasDisponiblesPorPedido.get(pedido.id) ?? []
+    const venta = ventaPorPedido.get(pedido.id)
     return {
       id: pedido.id,
       numero: pedido.numero,
@@ -171,14 +177,13 @@ export function DistribucionPage() {
       clienteDocumento: pedido.clienteDocumento,
       almacenNombre: pedido.almacenNombre ?? 'No especificado',
       cantidadProductos: lineasDisponibles.length,
-      cantidadDisponible: lineasDisponibles.reduce(
-        (total, linea) => total + linea.cantidadDisponibleDistribucion,
-        0,
-      ),
-      estado: etiquetaCumplimientoPedido(pedido),
-      estadoListo: pedido.estadoCumplimiento === 'dispatched',
+      estado: etiquetaCumplimientoPedido(pedido, venta),
+      estadoListo: pedido.lineas.filter((linea) => linea.tipoProducto === 'good').every((linea) => {
+        const ventaLinea = venta?.lineas.find((item) => item.pedidoLineaId === linea.id)
+        return (ventaLinea?.cantidadPendiente ?? linea.cantidad) <= 0
+      }),
     }
-  }), [lineasDisponiblesPorPedido, pedidosPorProgramarVisibles])
+  }), [lineasDisponiblesPorPedido, pedidosPorProgramarVisibles, ventaPorPedido])
   const filtradas = filtrarProgramacionesEntrega(programaciones, {
     busqueda: busquedaDiferida,
     estado: filtroEstado,
@@ -226,18 +231,6 @@ export function DistribucionPage() {
     cantidadMaximaPlanificacion: maximaPorLinea.get(linea.id) ?? linea.cantidadDisponibleDistribucion,
     asignacionesMovimiento: lineasActualesPorId.get(linea.id)?.asignacionesMovimiento ?? [],
   }))
-  const cantidadAsignadaPorLinea = new Map(
-    lineasPedido.map((linea) => [
-      linea.id,
-      (linea.asignacionesMovimiento ?? []).reduce((total, asignacion) => total + asignacion.quantity, 0),
-    ]),
-  )
-  const movimientosPorLinea = new Map<string, typeof movimientosQuery.movimientos>()
-  for (const movimiento of movimientosQuery.movimientos) {
-    const movimientos = movimientosPorLinea.get(movimiento.orderLineId) ?? []
-    movimientos.push(movimiento)
-    movimientosPorLinea.set(movimiento.orderLineId, movimientos)
-  }
   const esRecojoCliente = datos.modalidad === 'recojo_cliente'
   const estadoRequiereTransporte = ['en_curso', 'en_destino', 'entregado', 'entrega_parcial'].includes(datos.estado)
   const requiereDatosTransporte = estadoRequiereTransporte && !esRecojoCliente
@@ -297,7 +290,7 @@ export function DistribucionPage() {
       return
     }
     if (!pedidoListoParaProgramarDistribucion(pedido, venta)) {
-      setMensaje('Completa el despacho de todos los bienes en Ventas antes de programar la entrega')
+      setMensaje('Primero registra en Ventas la salida física de al menos un bien del pedido')
       return
     }
     setEdicion(null)
@@ -336,7 +329,7 @@ export function DistribucionPage() {
       incidencias: [],
       lineas: lineasDisponibles.map((linea) => ({
         ...linea,
-        cantidad: linea.cantidadDisponibleDistribucion,
+        cantidad: 0,
         asignacionesMovimiento: [],
       })),
     })
@@ -392,20 +385,22 @@ export function DistribucionPage() {
       return
     }
     if (!edicion && pedido && !pedidoListoParaProgramarDistribucion(pedido, venta)) {
-      setMensaje('Completa el despacho de todos los bienes en Ventas antes de programar la entrega')
+      setMensaje('Primero registra en Ventas la salida física de al menos un bien del pedido')
       return
     }
     if (!resultado.data.lineas.some((linea) => linea.tipoProducto === 'good' && linea.cantidad > 0)) {
       setMensaje('Asigna al menos un bien con saldo disponible a este envío')
       return
     }
-    const lineaSinTrazabilidad = resultado.data.lineas.find((linea) => {
-      if (linea.tipoProducto !== 'good' || linea.cantidad <= 0) return false
-      const asignado = (linea.asignacionesMovimiento ?? []).reduce((total, asignacion) => total + asignacion.quantity, 0)
-      return asignado !== linea.cantidad
-    })
-    if (lineaSinTrazabilidad) {
-      setMensaje('Completa la asignación de movimientos para cada bien. La suma debe coincidir con la cantidad del envío.')
+    if (!reprogramacionEnCurso && (movimientosQuery.cargando || movimientosQuery.error)) {
+      setMensaje(movimientosQuery.error
+        ? 'No se pudieron actualizar las salidas físicas. Reintenta la consulta antes de programar.'
+        : 'Espera a que se actualicen las salidas físicas disponibles.')
+      return
+    }
+    const asignacion = asignarMovimientosDisponibles(resultado.data.lineas, movimientosQuery.movimientos)
+    if (asignacion.lineasSinSaldo.length) {
+      setMensaje('La disponibilidad cambió y ya no alcanza para este envío. Actualiza las salidas e intenta de nuevo.')
       return
     }
     const datosPersistentes = {
@@ -416,7 +411,7 @@ export function DistribucionPage() {
       ventaId: venta?.id ?? edicion?.ventaId ?? '',
       ventaNumero: venta?.numeroInterno ?? edicion?.ventaNumero ?? '',
     }
-    const error = await guardar(datosPersistentes, edicion?.id, resultado.data.lineas)
+    const error = await guardar(datosPersistentes, edicion?.id, asignacion.lineas)
     setMensaje(error ?? (edicion ? 'Distribución actualizada.' : 'Distribución programada.'))
     if (!error) {
       setFormularioAbierto(false)
@@ -658,7 +653,7 @@ export function DistribucionPage() {
           {cargandoPedidos || cargandoVentas ? (
             <p className="px-5 py-6 text-sm text-muted-foreground sm:px-6">Cargando pedidos persistentes…</p>
           ) : !pedidosPorProgramarFiltrados.length ? (
-            <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{pedidosPorProgramar.length ? 'No hay coincidencias' : 'No hay pedidos listos para programar'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{pedidosPorProgramar.length ? 'Prueba con otra búsqueda o limpia el filtro de almacén.' : 'Aquí aparecen pedidos de envío cuando todos sus bienes están despachados. Los despachos parciales continúan en Ventas y los recojos del cliente se gestionan allí.'}</p></div>
+            <div className="px-5 py-14 text-center sm:px-6"><Truck aria-hidden="true" className="mx-auto size-8 text-primary" /><h3 className="mt-4 font-semibold">{pedidosPorProgramar.length ? 'No hay coincidencias' : 'No hay pedidos listos para programar'}</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{pedidosPorProgramar.length ? 'Prueba con otra búsqueda o limpia el filtro de almacén.' : 'Aquí aparecen pedidos cuando Ventas ya registró la salida de al menos uno de sus bienes. Puedes programar lo despachado y crear otro envío cuando salga el saldo pendiente. Los recojos del cliente se gestionan en Ventas.'}</p></div>
           ) : (
             <PedidosPorProgramar
               pedidos={pedidosProgramablesResumen}
@@ -813,14 +808,11 @@ export function DistribucionPage() {
                   <div><label htmlFor="almacen-entrega" className="field-label">Almacén de salida (Ventas)</label><input id="almacen-entrega" value={pedidoSeleccionado?.almacenNombre ?? 'No especificado en el pedido'} readOnly className="field-control bg-muted/30" aria-readonly="true" /></div>
                 </div>
                 {lineasPedido.length ? <div className="border bg-muted/20 px-4 py-3">
-                  <div><p className="text-sm font-medium">Cantidades asignadas a este envío</p><p className="mt-1 text-xs text-muted-foreground">Puedes dividir los bienes despachados en varias entregas; cada una conserva su destino, guía y seguimiento.</p></div>
+                  <div><p className="text-sm font-medium">Cantidad de esta entrega</p><p className="mt-1 text-xs text-muted-foreground">Indica cuánto enviar ahora, sin superar lo ya despachado. Podrás programar otro envío cuando Ventas despache el saldo pendiente.</p></div>
                   <ul className="mt-3 divide-y">{lineasPedido.map((linea) => {
-                    const movimientos = movimientosPorLinea.get(linea.id) ?? []
-                    const cantidadAsignada = cantidadAsignadaPorLinea.get(linea.id) ?? 0
-                    const cantidadPendienteAsignar = Math.max(0, linea.cantidad - cantidadAsignada)
                     return <li key={linea.id} className="py-3">
                       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center">
-                        <div><p className="text-sm font-medium">{linea.productoDescripcion} <span className="font-normal text-muted-foreground">· {linea.unidadMedida}</span></p><p className="mt-1 text-xs text-muted-foreground">{linea.cantidadMaximaPlanificacion} disponibles para este envío · {linea.cantidadDespachada ?? 0} despachadas en Ventas</p></div>
+                        <div><p className="text-sm font-medium">{linea.productoDescripcion} <span className="font-normal text-muted-foreground">· {linea.unidadMedida}</span></p><p className="mt-1 text-xs text-muted-foreground">{linea.cantidadMaximaPlanificacion} disponibles para programar · {linea.cantidadDespachada ?? 0} despachadas en Ventas · {linea.cantidadPendiente ?? 0} pendientes de despacho</p></div>
                         <div><label htmlFor={'cantidad-envio-' + linea.id} className="field-label">Cantidad para este envío</label><input id={'cantidad-envio-' + linea.id} aria-label={'Cantidad de ' + linea.productoDescripcion + ' para este envío'} type="number" min="0" max={linea.cantidadMaximaPlanificacion} step="any" value={linea.cantidad || ''} onChange={(evento) => {
                           const cantidad = Number(evento.target.value)
                           setDatos((actuales) => ({
@@ -831,50 +823,11 @@ export function DistribucionPage() {
                           }))
                         }} className="field-control text-end font-mono tabular-nums" /></div>
                       </div>
-                      {linea.tipoProducto === 'good' && linea.cantidad > 0 ? (
-                        <div className="mt-3 border-s bg-background ps-4">
-                          <div className="flex flex-wrap items-baseline justify-between gap-2">
-                            <p className="text-xs font-semibold uppercase tracking-[.06em] text-primary">Lotes y salidas físicas</p>
-                            <p className={cantidadPendienteAsignar === 0 ? 'text-xs font-mono tabular-nums text-emerald-700' : 'text-xs font-mono tabular-nums text-amber-700'}>
-                              Asignado: {cantidadAsignada} · Pendiente: {cantidadPendienteAsignar}
-                            </p>
-                          </div>
-                          <p className="mt-1 text-xs text-muted-foreground">Selecciona explícitamente cuánto toma esta entrega de cada movimiento. No se aplica FEFO automático.</p>
-                          {movimientosQuery.cargando ? <p role="status" className="mt-2 text-xs text-muted-foreground">Cargando movimientos disponibles…</p> : null}
-                          {movimientosQuery.error ? <p role="alert" className="mt-2 text-xs text-destructive">No se pudieron cargar las salidas físicas. Reintenta antes de guardar.</p> : null}
-                          {!movimientosQuery.cargando && !movimientosQuery.error && !movimientos.length ? <p className="mt-2 text-xs text-amber-700">No hay movimientos físicos disponibles para esta línea.</p> : null}
-                          {movimientos.length ? <ul className="mt-3 space-y-2">{movimientos.map((movimiento) => {
-                            const asignacionActual = (linea.asignacionesMovimiento ?? []).find((asignacion) => asignacion.inventoryMovementId === movimiento.inventoryMovementId)?.quantity ?? 0
-                            return <li key={movimiento.inventoryMovementId} className="grid gap-3 border bg-muted/15 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_8rem] sm:items-center">
-                              <div className="text-xs">
-                                <p className="font-medium">Lote {movimiento.lote || 'sin lote'} · vence {movimiento.fechaVencimiento || 'sin vencimiento'}</p>
-                                <p className="mt-1 text-muted-foreground">{movimiento.almacen || 'Almacén no informado'} · ubicación {movimiento.ubicacionId || 'no informada'} · disponible {movimiento.cantidadDisponible}</p>
-                                <p className="mt-1 text-muted-foreground">Despacho: {movimiento.referenciaDocumento || movimiento.operationKey || 'referencia no disponible'}</p>
-                              </div>
-                              <div><label htmlFor={'movimiento-' + linea.id + '-' + movimiento.inventoryMovementId} className="field-label">Cantidad del lote</label><input id={'movimiento-' + linea.id + '-' + movimiento.inventoryMovementId} aria-label={'Cantidad del lote ' + (movimiento.lote || movimiento.inventoryMovementId)} type="number" min="0" max={movimiento.cantidadDisponible} step="any" value={asignacionActual || ''} onChange={(evento) => {
-                                const cantidad = Number(evento.target.value)
-                                setDatos((actuales) => ({
-                                  ...actuales,
-                                  lineas: actuales.lineas.map((actual) => {
-                                    if (actual.id !== linea.id) return actual
-                                    const asignaciones = (actual.asignacionesMovimiento ?? []).filter((asignacion) => asignacion.inventoryMovementId !== movimiento.inventoryMovementId)
-                                    return {
-                                      ...actual,
-                                      asignacionesMovimiento: cantidad > 0
-                                        ? [...asignaciones, { inventoryMovementId: movimiento.inventoryMovementId, quantity: cantidad }]
-                                        : asignaciones,
-                                    }
-                                  }),
-                                }))
-                              }} className="field-control text-end font-mono tabular-nums" /></div>
-                            </li>
-                          })}</ul> : null}
-                          <p className="mt-2 text-xs text-muted-foreground">Cantidad de entrega: {linea.cantidad} · Asignado a movimientos: {cantidadAsignada} · Pendiente por asignar: {cantidadPendienteAsignar}</p>
-                        </div>
-                      ) : null}
                     </li>
                   })}</ul>
-                  <p className="mt-2 border-t pt-3 text-xs leading-5 text-muted-foreground">El despacho de estos bienes ya quedó registrado en Ventas. Distribución solo asigna cantidades al envío y no vuelve a descontar inventario.</p>
+                  {movimientosQuery.cargando ? <p role="status" className="mt-3 border-t pt-3 text-xs text-muted-foreground">Actualizando disponibilidad de las salidas físicas…</p> : null}
+                  {movimientosQuery.error ? <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3 text-xs text-destructive"><span>No se pudieron consultar las salidas físicas. Reintenta antes de programar.</span><Button type="button" size="sm" variant="outline" onClick={() => void movimientosQuery.reintentar()}>Reintentar</Button></div> : null}
+                  <p className="mt-2 border-t pt-3 text-xs leading-5 text-muted-foreground">Distribución vinculará automáticamente cada cantidad con las salidas y lotes registrados en Ventas. No vuelve a descontar inventario.</p>
                 </div> : null}
               </section>
 
@@ -949,7 +902,7 @@ export function DistribucionPage() {
               )}
               </div>
             </div>
-            <footer className="flex shrink-0 justify-end gap-2 border-t bg-background px-6 py-4"><Button type="button" variant="outline" disabled={guardandoEstado} onClick={() => { setFormularioAbierto(false); setReprogramacionEnCurso(false); setMotivoReprogramacion('') }}>Cancelar</Button><Button type="submit" disabled={guardandoEstado}>{guardandoEstado ? 'Guardando…' : reprogramacionEnCurso ? 'Confirmar reprogramación' : edicion ? 'Guardar cambios' : 'Programar entrega'}</Button></footer>
+            <footer className="flex shrink-0 justify-end gap-2 border-t bg-background px-6 py-4"><Button type="button" variant="outline" disabled={guardandoEstado} onClick={() => { setFormularioAbierto(false); setReprogramacionEnCurso(false); setMotivoReprogramacion('') }}>Cancelar</Button><Button type="submit" disabled={guardandoEstado || (!reprogramacionEnCurso && (movimientosQuery.cargando || Boolean(movimientosQuery.error)))}>{guardandoEstado ? 'Guardando…' : reprogramacionEnCurso ? 'Confirmar reprogramación' : movimientosQuery.cargando ? 'Actualizando salidas…' : edicion ? 'Guardar cambios' : 'Programar entrega'}</Button></footer>
           </form>
           </DialogPrimitive.Content>
           </DialogPrimitive.Portal>

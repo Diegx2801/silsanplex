@@ -253,11 +253,11 @@ describe('programación de entrega', () => {
 
     const incompleto = esquemaDatosProgramacionEntrega.safeParse(base)
     expect(incompleto.success).toBe(false)
-    expect(incompleto.error?.issues.map((issue) => issue.path[0])).toEqual(expect.arrayContaining(['fechaEntrega', 'evidencia', 'conductor', 'vehiculo', 'placa']))
+    expect(incompleto.error?.issues.map((issue) => issue.path[0])).toEqual(expect.arrayContaining(['fechaEntrega', 'conductor', 'vehiculo', 'placa']))
 
     const completo = esquemaDatosProgramacionEntrega.safeParse({
       ...base,
-      fechaEntrega: '2026-09-03', evidencia: 'foto-entrega.jpg', conductor: 'Luis Pérez', vehiculo: 'Camioneta', placa: 'ABC-123',
+      fechaEntrega: '2026-09-03', conductor: 'Luis Pérez', vehiculo: 'Camioneta', placa: 'ABC-123',
     })
     expect(completo.success).toBe(true)
   })

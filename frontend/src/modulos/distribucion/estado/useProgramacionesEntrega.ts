@@ -97,7 +97,7 @@ export function useMovimientosDisponiblesDistribucion(orderId: string, deliveryI
 
   return {
     movimientos: query.data ?? [],
-    cargando: query.isLoading,
+    cargando: query.isFetching,
     error: query.error,
     reintentar: query.refetch,
   }

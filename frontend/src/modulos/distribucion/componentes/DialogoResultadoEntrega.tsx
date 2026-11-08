@@ -39,7 +39,6 @@ export function DialogoResultadoEntrega({
 }: DialogoResultadoEntregaProps) {
   const [modo, setModo] = useState<ModoResultado>('recibido')
   const [fecha, setFecha] = useState(fechaActualPeru())
-  const [evidencia, setEvidencia] = useState('')
   const [categoriaIncidencia, setCategoriaIncidencia] = useState<typeof CATEGORIAS_NO_ENTREGA[number]>('cliente_ausente')
   const [incidencia, setIncidencia] = useState('')
   const [cantidades, setCantidades] = useState<Record<string, string>>({})
@@ -54,7 +53,6 @@ export function DialogoResultadoEntrega({
     if (!abierto) return
     setModo('recibido')
     setFecha(fechaActualPeru())
-    setEvidencia('')
     setCategoriaIncidencia('cliente_ausente')
     setIncidencia('')
     setCantidades(Object.fromEntries(lineasParaInicializar.current.map((linea) => [linea.id, '0'])))
@@ -69,11 +67,10 @@ export function DialogoResultadoEntrega({
     setError('')
   }
 
-  const cambiar = <K extends 'modo' | 'fecha' | 'evidencia' | 'incidencia'>(campo: K, valor: K extends 'modo' ? ModoResultado : string) => {
+  const cambiar = <K extends 'modo' | 'fecha' | 'incidencia'>(campo: K, valor: K extends 'modo' ? ModoResultado : string) => {
     invalidarOperacionPendiente()
     if (campo === 'modo') setModo(valor as ModoResultado)
     if (campo === 'fecha') setFecha(valor)
-    if (campo === 'evidencia') setEvidencia(valor)
     if (campo === 'incidencia') setIncidencia(valor)
   }
 
@@ -131,7 +128,7 @@ export function DialogoResultadoEntrega({
       resultado: resultadoInferido,
       categoriaIncidencia: modo === 'no_entregado' ? categoriaIncidencia : undefined,
       fecha,
-      evidencia: modo === 'recibido' ? evidencia : '',
+      evidencia: '',
       incidencias: modo === 'no_entregado' ? incidencia.split(/[;\n]/).map((item) => item.trim()).filter(Boolean) : [],
       lineas: modo === 'recibido'
         ? entrega.lineas.map((linea) => ({ orderLineId: linea.id, cantidad: cantidadesNumericas[linea.id] ?? 0 })).filter((linea) => linea.cantidad > 0)
@@ -214,8 +211,6 @@ export function DialogoResultadoEntrega({
                   <div><label htmlFor="resultado-incidencia" className="field-label">Detalle del intento <span aria-hidden="true">*</span></label><textarea id="resultado-incidencia" required maxLength={200} rows={3} value={incidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('incidencia', evento.target.value)} className="field-control" placeholder="Describe brevemente lo ocurrido en esta visita…" /></div>
                 </div>
               )}
-
-              {modo === 'recibido' ? <div><label htmlFor="resultado-evidencia" className="field-label">Evidencia o constancia <span aria-hidden="true">*</span></label><input id="resultado-evidencia" required maxLength={255} value={evidencia} disabled={conciliacionPendiente || guardando} onChange={(evento) => cambiar('evidencia', evento.target.value)} className="field-control" placeholder="Nombre de archivo, referencia o URL" /><p className="mt-1 text-xs text-muted-foreground">Se conserva como referencia de la conformidad; este campo no adjunta archivos.</p></div> : null}
 
               <p className="border-s-2 border-primary/40 ps-3 text-xs leading-5 text-muted-foreground">Un intento sin entrega queda separado del rechazo expreso del cliente mediante su motivo. Registrar un intento fallido no descuenta stock; el saldo se calcula solo con lo recibido y cualquier devolución física requiere el proceso de recepción de Inventario.</p>
               {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}

@@ -47,8 +47,8 @@ delete from public.organizations where id = 'd5111111-1111-4111-8111-11111111111
 commit;
 
 begin;
-insert into public.organizations (id, name, slug)
-values ('d5111111-1111-4111-8111-111111111111', 'Distribucion asignacion concurrente', 'distribucion-asignacion-concurrente');
+insert into public.organizations (id, name, slug, legal_name)
+values ('d5111111-1111-4111-8111-111111111111', 'Distribucion asignacion concurrente', 'distribucion-asignacion-concurrente', 'Distribución asignación concurrente S.A.C.');
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values
   ('d51c0000-0000-4000-8000-000000000001', 'distribution.a@test.local', '{"full_name":"Distribution A"}', now(), now()),

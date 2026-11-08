@@ -25,13 +25,90 @@ export function pedidoListoParaProgramarDistribucion(
     || ['delivered', 'cancelled'].includes(estadoCumplimiento)
     || !bienesPedido.length) return false
 
-  return bienesPedido.every((bienPedido) => {
+  return bienesPedido.some((bienPedido) => {
     const bienVenta = venta.lineas.find((linea) => linea.tipoProducto === 'good' && linea.pedidoLineaId === bienPedido.id)
-    return bienVenta !== undefined
-      && bienVenta.cantidadDespachada !== undefined
-      && bienVenta.cantidadDespachada >= bienPedido.cantidad
-      && bienVenta.cantidadPendiente === 0
+    return (bienVenta?.cantidadDespachada ?? 0) > 0
   })
+}
+
+interface MovimientoDisponibleParaAsignacion {
+  inventoryMovementId: string
+  orderLineId: string
+  cantidadDisponible: number
+}
+
+/**
+ * Asigna una cantidad de entrega a las salidas que Ventas ya registró.
+ * Respeta primero las asignaciones existentes al editar y completa el saldo
+ * usando el orden estable entregado por Inventario (vencimiento, luego id).
+ */
+export function asignarMovimientosDisponibles<T extends {
+  id: string
+  tipoProducto?: 'good' | 'service'
+  cantidad: number
+  asignacionesMovimiento?: ReadonlyArray<{ inventoryMovementId: string; quantity: number }>
+}>(
+  lineas: readonly T[],
+  movimientos: readonly MovimientoDisponibleParaAsignacion[],
+) {
+  const cantidadesUsadasMil = new Map<string, number>()
+  const lineasSinSaldo: Array<{ id: string; cantidadRequerida: number; cantidadDisponible: number }> = []
+
+  const aMiliunidades = (cantidad: number) => Math.max(0, Math.round((cantidad + Number.EPSILON) * 1000))
+  const aCantidad = (cantidadMil: number) => cantidadMil / 1000
+
+  const lineasAsignadas = lineas.map((linea) => {
+    const cantidadRequeridaMil = aMiliunidades(linea.cantidad)
+    if (linea.tipoProducto !== 'good' || cantidadRequeridaMil <= 0) {
+      return { ...linea, asignacionesMovimiento: [] }
+    }
+
+    const movimientosLinea = movimientos.filter((movimiento) => movimiento.orderLineId === linea.id)
+    const disponiblesPorId = new Map(movimientosLinea.map((movimiento) => [movimiento.inventoryMovementId, movimiento]))
+    const asignacionesMil = new Map<string, number>()
+    let saldoMil = cantidadRequeridaMil
+
+    for (const asignacion of linea.asignacionesMovimiento ?? []) {
+      const movimiento = disponiblesPorId.get(asignacion.inventoryMovementId)
+      if (!movimiento || saldoMil <= 0) continue
+      const usadoMil = cantidadesUsadasMil.get(movimiento.inventoryMovementId) ?? 0
+      const disponibleMil = Math.max(0, aMiliunidades(movimiento.cantidadDisponible) - usadoMil)
+      const cantidadMil = Math.min(saldoMil, aMiliunidades(asignacion.quantity), disponibleMil)
+      if (cantidadMil <= 0) continue
+      asignacionesMil.set(movimiento.inventoryMovementId, cantidadMil)
+      cantidadesUsadasMil.set(movimiento.inventoryMovementId, usadoMil + cantidadMil)
+      saldoMil -= cantidadMil
+    }
+
+    for (const movimiento of movimientosLinea) {
+      if (saldoMil <= 0) break
+      const usadoMil = cantidadesUsadasMil.get(movimiento.inventoryMovementId) ?? 0
+      const disponibleMil = Math.max(0, aMiliunidades(movimiento.cantidadDisponible) - usadoMil)
+      const cantidadMil = Math.min(saldoMil, disponibleMil)
+      if (cantidadMil <= 0) continue
+      asignacionesMil.set(movimiento.inventoryMovementId, (asignacionesMil.get(movimiento.inventoryMovementId) ?? 0) + cantidadMil)
+      cantidadesUsadasMil.set(movimiento.inventoryMovementId, usadoMil + cantidadMil)
+      saldoMil -= cantidadMil
+    }
+
+    if (saldoMil > 0) {
+      lineasSinSaldo.push({
+        id: linea.id,
+        cantidadRequerida: aCantidad(cantidadRequeridaMil),
+        cantidadDisponible: aCantidad(cantidadRequeridaMil - saldoMil),
+      })
+    }
+
+    return {
+      ...linea,
+      asignacionesMovimiento: [...asignacionesMil].map(([inventoryMovementId, quantityMil]) => ({
+        inventoryMovementId,
+        quantity: aCantidad(quantityMil),
+      })),
+    }
+  })
+
+  return { lineas: lineasAsignadas, lineasSinSaldo }
 }
 
 /**

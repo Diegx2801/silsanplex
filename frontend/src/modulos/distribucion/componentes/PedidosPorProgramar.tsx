@@ -10,7 +10,6 @@ export interface PedidoPorProgramarResumen {
   clienteDocumento: string
   almacenNombre: string
   cantidadProductos: number
-  cantidadDisponible: number
   estado: string
   estadoListo: boolean
 }
@@ -63,12 +62,6 @@ export function PedidosPorProgramar({
                   <dt className="text-xs text-muted-foreground">Bienes</dt>
                   <dd className="mt-1 font-mono tabular-nums">
                     {pedido.cantidadProductos} producto{pedido.cantidadProductos === 1 ? '' : 's'}
-                  </dd>
-                </div>
-                <div className="col-span-2">
-                  <dt className="text-xs text-muted-foreground">Disponibles para asignar</dt>
-                  <dd className="mt-1 font-mono tabular-nums">
-                    {pedido.cantidadDisponible} unidades
                   </dd>
                 </div>
               </dl>
@@ -126,9 +119,6 @@ export function PedidosPorProgramar({
                 <td className="px-4 py-4 text-end">
                   <p className="font-mono tabular-nums">
                     {pedido.cantidadProductos} producto{pedido.cantidadProductos === 1 ? '' : 's'}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {pedido.cantidadDisponible} unidades sin asignar
                   </p>
                 </td>
                 <td className="px-4 py-4">

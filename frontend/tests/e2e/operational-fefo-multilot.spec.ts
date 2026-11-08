@@ -309,18 +309,13 @@ test('recibe, reserva, despacha y entrega dos lotes mediante FEFO', async ({ pag
   })
 
   let deliveryId = ''
-  await test.step('Programación asigna explícitamente tres unidades de cada movimiento', async () => {
+  await test.step('Programación distribuye la cantidad entre las salidas físicas disponibles', async () => {
     await page.goto('/distribucion')
     await page.getByRole('region', { name: 'Pedidos por programar' }).getByLabel('Buscar', { exact: true }).fill(f.reference)
     await page.getByRole('row').filter({ hasText: order.order_number }).getByRole('button', { name: 'Programar envío' }).click()
     const deliveryDialog = page.getByRole('dialog', { name: 'Programar entrega', exact: true })
     await expect(deliveryDialog).toBeVisible()
-    const lotAInput = deliveryDialog.getByRole('spinbutton', { name: `Cantidad del lote ${lotA}`, exact: true })
-    const lotBInput = deliveryDialog.getByRole('spinbutton', { name: `Cantidad del lote ${lotB}`, exact: true })
-    await expect(lotAInput).toBeVisible()
-    await expect(lotBInput).toBeVisible()
-    await lotAInput.fill('3')
-    await lotBInput.fill('3')
+    await deliveryDialog.getByRole('spinbutton', { name: `Cantidad de ${f.name} para este envío`, exact: true }).fill('6')
     await deliveryDialog.getByLabel(/^Referencia interna de despacho/).fill(f.reference)
     await deliveryDialog.getByLabel(/^Número de guía de remisión/).fill(`T001-${f.documentNumber}`)
     await deliveryDialog.locator('summary').filter({ hasText: 'Datos de ruta' }).click()
@@ -399,7 +394,6 @@ test('recibe, reserva, despacha y entrega dos lotes mediante FEFO', async ({ pag
     await article.getByRole('button', { name: 'Registrar resultado', exact: true }).click()
     const outcomeDialog = page.getByRole('dialog', { name: 'Registrar resultado de entrega' })
     await outcomeDialog.getByLabel('Recibido ahora', { exact: true }).fill('6')
-    await outcomeDialog.getByLabel(/^Evidencia o constancia/).fill(`Conformidad completa ${f.reference}`)
     await mutate(page, 'record_distribution_delivery_outcome', () => outcomeDialog.getByRole('button', { name: 'Confirmar entrega completa' }).click())
     await expect(outcomeDialog).toBeHidden()
 
@@ -418,7 +412,7 @@ test('recibe, reserva, despacha y entrega dos lotes mediante FEFO', async ({ pag
       organization_id: f.organizationId,
       delivery_id: deliveryId,
       result_status: 'entregado',
-      evidence: `Conformidad completa ${f.reference}`,
+      evidence: '',
     })
     const outcomeLines = await checked(rows('distribution_delivery_outcome_lines').eq('outcome_id', outcome.id))
     expect(outcomeLines).toHaveLength(1)
