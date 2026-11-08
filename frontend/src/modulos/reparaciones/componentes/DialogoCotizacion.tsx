@@ -63,7 +63,6 @@ interface DialogoCotizacionProps {
   esRevision?: boolean
   operacionPendiente?: CotizacionPendiente | null
   productos: readonly OpcionProductoReparacion[]
-  totalProductos?: number
   buscarProductos?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>>
   resolverProducto?: (id: string) => Promise<OpcionProductoReparacion | null>
   alCambiarApertura: (abierto: boolean) => void
@@ -77,7 +76,6 @@ export function DialogoCotizacion({
   esRevision = false,
   operacionPendiente,
   productos,
-  totalProductos = productos.length,
   buscarProductos,
   resolverProducto,
   alCambiarApertura,
@@ -227,12 +225,15 @@ export function DialogoCotizacion({
                           <div className="sm:col-span-1 lg:col-span-1">
                             <Controller name={`lineas.${indice}.productoId`} control={control} render={({ field: productoField }) =>
                               <SelectorCatalogoReparacion id={`cotizacion-producto-${field.id}`} etiqueta="Producto *"
-                                etiquetaBusqueda={`Buscar producto para línea ${indice + 1}`}
                                 valor={productoField.value} opcionesIniciales={productos}
-                                totalInicial={totalProductos} buscar={buscarProductos} resolver={resolverProducto}
+                                buscar={buscarProductos} resolver={resolverProducto}
                                 representar={(producto) => `${producto.codigo} · ${producto.descripcion}${producto.activo === false ? ' (inactivo)' : ''}`}
+                                textoSecundario={(producto) => producto.unidadMedida ? `Unidad base: ${producto.unidadMedida}` : undefined}
+                                palabrasClave={(producto) => [producto.codigo, producto.descripcion, producto.unidadMedida]}
                                 alCambiar={(valor, producto) => { productoField.onChange(valor); if (!lineas[indice]?.descripcion && producto) setValue(`lineas.${indice}.descripcion`, producto.descripcion) }}
-                                error={errorLinea?.productoId?.message} textoVacio="Selecciona repuesto" />
+                                alPerderFoco={productoField.onBlur}
+                                error={errorLinea?.productoId?.message} placeholder="Buscar producto…"
+                                ayuda="Código o descripción." noOptionsMessage="No hay productos activos disponibles." />
                             } />
                           </div>
                         ) : null}

@@ -80,17 +80,14 @@ export function useReparacionOpciones(
 
   return {
     clientes: clientesQuery.data?.elementos ?? [],
-    totalClientes: clientesQuery.data?.total ?? 0,
     clienteActual: clienteActualQuery.data ?? null,
     buscarClientes,
     resolverCliente,
     productos: productosQuery.data?.elementos ?? [],
-    totalProductos: productosQuery.data?.total ?? 0,
     productoActual: productoActualQuery.data ?? null,
     buscarProductos,
     resolverProducto,
     almacenes: almacenesQuery.data?.elementos ?? [],
-    totalAlmacenes: almacenesQuery.data?.total ?? 0,
     ubicaciones: ubicacionesIniciales,
     buscarAlmacenes,
     buscarUbicaciones,

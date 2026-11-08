@@ -82,6 +82,12 @@ function renderizarDialogo(
   return alGuardar
 }
 
+async function seleccionarOpcion(etiqueta: string, opcion: RegExp | string) {
+  const campo = screen.getByLabelText(etiqueta)
+  fireEvent.focus(campo)
+  fireEvent.click(await screen.findByRole('option', { name: opcion }))
+}
+
 describe('DialogoReparacion', () => {
   it('presenta el formulario centrado y limita su altura con scroll interno', () => {
     renderizarDialogo(null, true)
@@ -209,14 +215,10 @@ describe('DialogoReparacion', () => {
   it('permite conservar referencias ausentes de las listas activas', async () => {
     const alGuardar = renderizarDialogo(reparacion, true, [], [])
 
-    expect(screen.getByRole('option', {
-      name: 'Cliente prueba · DNI 00000001 (referencia histórica)',
-    })).toBeInTheDocument()
-    expect(screen.getByRole('option', {
-      name: 'PROD-1 · Equipo prueba (referencia histórica)',
-    })).toBeInTheDocument()
-    expect(screen.getByLabelText('Cliente *')).toHaveValue(clienteId)
-    expect(screen.getByLabelText('Producto o equipo *')).toHaveValue(productoId)
+    expect(screen.getByLabelText('Cliente *'))
+      .toHaveValue('Cliente prueba (referencia histórica)')
+    expect(screen.getByLabelText('Producto o equipo *'))
+      .toHaveValue('PROD-1 · Equipo prueba (referencia histórica)')
     expect(screen.getByLabelText('Número de serie (si existe)')).toHaveValue('SER-ORIGINAL')
 
     fireEvent.change(screen.getByLabelText('Notas de recepción'), {
@@ -269,9 +271,7 @@ describe('DialogoReparacion', () => {
       },
     ])
 
-    fireEvent.change(screen.getByLabelText('Producto o equipo *'), {
-      target: { value: otroProductoId },
-    })
+    await seleccionarOpcion('Producto o equipo *', /PROD-2 · Equipo sin serie/)
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
 
     await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(
@@ -301,22 +301,19 @@ describe('DialogoReparacion', () => {
         identidadEditable
         clientes={clientes}
         productos={[]}
-        totalProductos={1001}
-        buscarProductos={vi.fn().mockResolvedValue({ elementos: [productoRemoto], total: 1 })}
+        buscarProductos={vi.fn().mockResolvedValue({ elementos: [productoRemoto] })}
         alCambiarApertura={vi.fn()}
         alGuardar={alGuardar}
         alRestaurarFoco={vi.fn()}
       />,
     )
 
-    fireEvent.change(screen.getByLabelText('Cliente *'), { target: { value: clienteId } })
-    fireEvent.change(screen.getByLabelText('Buscar producto o equipo'), {
+    await seleccionarOpcion('Cliente *', /Cliente prueba/)
+    fireEvent.change(screen.getByLabelText('Producto o equipo *'), {
       target: { value: 'PROD-1001' },
     })
     await screen.findByRole('option', { name: /PROD-1001/ }, { timeout: 3_000 })
-    fireEvent.change(screen.getByLabelText('Producto o equipo *'), {
-      target: { value: productoRemoto.id },
-    })
+    fireEvent.click(screen.getByRole('option', { name: /PROD-1001/ }))
     fireEvent.change(screen.getByLabelText('Problema reportado *'), {
       target: { value: 'No enciende' },
     })
@@ -346,8 +343,8 @@ describe('DialogoReparacion', () => {
         alRestaurarFoco={vi.fn()}
       />,
     )
-    fireEvent.change(screen.getByLabelText('Cliente *'), { target: { value: clienteId } })
-    fireEvent.change(screen.getByLabelText('Producto o equipo *'), { target: { value: productoId } })
+    await seleccionarOpcion('Cliente *', /Cliente prueba/)
+    await seleccionarOpcion('Producto o equipo *', /PROD-1 · Equipo prueba/)
     fireEvent.change(screen.getByLabelText('Problema reportado *'), {
       target: { value: 'No enciende después del transporte' },
     })

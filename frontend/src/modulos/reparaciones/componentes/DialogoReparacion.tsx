@@ -116,8 +116,6 @@ interface DialogoReparacionProps {
   clientes: readonly OpcionClienteReparacion[]
   productos: readonly OpcionProductoReparacion[]
   cargandoOpciones?: boolean
-  totalClientes?: number
-  totalProductos?: number
   clienteActual?: OpcionClienteReparacion | null
   productoActual?: OpcionProductoReparacion | null
   buscarClientes?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionClienteReparacion>>
@@ -142,8 +140,6 @@ export function DialogoReparacion({
   clientes,
   productos,
   cargandoOpciones = false,
-  totalClientes = clientes.length,
-  totalProductos = productos.length,
   clienteActual,
   productoActual,
   buscarClientes,
@@ -370,13 +366,17 @@ export function DialogoReparacion({
                 </div>
                 {tipoSolicitante === 'internal' ? <CampoTexto etiqueta="Área solicitante *" placeholder="Ej. Almacén o Administración" error={errors.areaSolicitante?.message} {...register('areaSolicitante')} /> : <Controller name="clienteId" control={control} render={({ field }) =>
                   <SelectorCatalogoReparacion id="reparacion-cliente" etiqueta="Cliente *"
-                    etiquetaBusqueda="Buscar cliente" valor={field.value}
-                    opcionesIniciales={clientes} totalInicial={totalClientes}
+                    valor={field.value}
+                    opcionesIniciales={clientes}
                     opcionActual={clienteActual ?? clienteHistorico} buscar={buscarClientes}
                     resolver={resolverCliente}
-                    representar={(cliente) => `${cliente.nombre} · ${cliente.documento}${cliente.activo === false ? ' (referencia histórica)' : ''}`}
-                    alCambiar={field.onChange} error={errors.clienteId?.message}
-                    deshabilitado={cargandoOpciones} textoVacio="Selecciona un cliente" />
+                    representar={(cliente) => `${cliente.nombre}${cliente.activo === false ? ' (referencia histórica)' : ''}`}
+                    textoSecundario={(cliente) => [cliente.documento, cliente.nombreComercial].filter(Boolean).join(' · ')}
+                    palabrasClave={(cliente) => [cliente.nombre, cliente.nombreComercial, cliente.documento]}
+                    alCambiar={field.onChange} alPerderFoco={field.onBlur}
+                    error={errors.clienteId?.message} deshabilitado={cargandoOpciones}
+                    placeholder="Buscar cliente…" ayuda="Documento, nombre o razón social."
+                    noOptionsMessage="No hay clientes activos disponibles." />
                 } />}
                 <div>
                   <label htmlFor="reparacion-equipo-tipo" className="field-label">Identificación del equipo *</label>
@@ -386,18 +386,22 @@ export function DialogoReparacion({
                 </div>
                 {tipoEquipo === 'external' ? <CampoTexto etiqueta="Equipo recibido *" placeholder="Marca, modelo e identificación" error={errors.descripcionEquipoExterno?.message} {...register('descripcionEquipoExterno')} /> : <Controller name="productoId" control={control} render={({ field }) =>
                   <SelectorCatalogoReparacion id="reparacion-producto" etiqueta="Producto o equipo *"
-                    etiquetaBusqueda="Buscar producto o equipo" valor={field.value}
-                    opcionesIniciales={productos} totalInicial={totalProductos}
+                    valor={field.value}
+                    opcionesIniciales={productos}
                     opcionActual={productoActual ?? productoHistorico} buscar={buscarProductos}
                     resolver={resolverProducto}
                     representar={(item) => `${item.codigo} · ${item.descripcion}${item.activo === false ? ' (referencia histórica)' : ''}`}
+                    textoSecundario={(item) => item.unidadMedida ? `Unidad base: ${item.unidadMedida}` : undefined}
+                    palabrasClave={(item) => [item.codigo, item.descripcion, item.unidadMedida]}
                     alCambiar={(valor, opcion) => {
                       setProductoRemoto(opcion)
                       setProductoSeleccionadoExplicitamente(true)
                       field.onChange(valor)
                     }}
+                    alPerderFoco={field.onBlur}
                     error={errors.productoId?.message} deshabilitado={cargandoOpciones}
-                    textoVacio="Selecciona un producto" />
+                    placeholder="Buscar producto o equipo…" ayuda="Código o descripción del catálogo."
+                    noOptionsMessage="No hay productos activos disponibles." />
                 } />}
                 {tipoEquipo === 'external' || controlaSerie || (productoEsReferenciaOriginal && Boolean(numeroSerie)) ? (
                   <CampoTexto

@@ -276,7 +276,7 @@ describe('reparacionesService', () => {
       controlLote: false,
       controlVencimiento: false,
       activo: undefined,
-    }], total: 0 })
+    }] })
     expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
     expect(cadena.eq).toHaveBeenCalledWith('is_active', true)
     expect(cadena.range).toHaveBeenCalledWith(0, 24)
@@ -288,7 +288,7 @@ describe('reparacionesService', () => {
       legal_name: 'Objetivo 1001', trade_name: null, is_active: true }], error: null, count: 1001 }
     await expect(listarOpcionesClientesReparacion('org-1', {
       busqueda: 'Objetivo 1001', pagina: 41, tamanioPagina: 25,
-    })).resolves.toMatchObject({ total: 1001, elementos: [{ id: 'after-1000' }] })
+    })).resolves.toMatchObject({ elementos: [{ id: 'after-1000' }] })
     expect(cadena.or).toHaveBeenLastCalledWith(expect.stringContaining('legal_name.ilike.%Objetivo 1001%'))
     expect(cadena.range).toHaveBeenLastCalledWith(1000, 1024)
     expect(cadena.limit).not.toHaveBeenCalled()
@@ -298,7 +298,7 @@ describe('reparacionesService', () => {
       expiration_control: false, is_active: true }], error: null, count: 1001 }
     await expect(listarOpcionesProductosReparacion('org-1', {
       busqueda: 'P-1001', pagina: 41, tamanioPagina: 25,
-    })).resolves.toMatchObject({ total: 1001, elementos: [{ id: 'product-after-1000' }] })
+    })).resolves.toMatchObject({ elementos: [{ id: 'product-after-1000' }] })
     expect(cadena.or).toHaveBeenLastCalledWith(expect.stringContaining('code.ilike.%P-1001%'))
     expect(cadena.range).toHaveBeenLastCalledWith(1000, 1024)
   })
@@ -324,7 +324,7 @@ describe('reparacionesService', () => {
 
     await expect(listarOpcionesAlmacenesReparacion('org-1', {
       busqueda: 'ALM-1001', pagina: 41, tamanioPagina: 25,
-    })).resolves.toMatchObject({ total: 1001, elementos: [{ id: 'warehouse-1001' }] })
+    })).resolves.toMatchObject({ elementos: [{ id: 'warehouse-1001' }] })
 
     expect(supabaseMock.from).toHaveBeenCalledTimes(1)
     expect(supabaseMock.from).toHaveBeenCalledWith('warehouses')
@@ -339,7 +339,7 @@ describe('reparacionesService', () => {
 
     await expect(listarOpcionesUbicacionesReparacion('org-1', 'warehouse-1', {
       busqueda: 'objetivo', pagina: 2, tamanioPagina: 25,
-    })).resolves.toMatchObject({ total: 26, elementos: [{
+    })).resolves.toMatchObject({ elementos: [{
       id: 'location-26', almacenId: 'warehouse-1',
     }] })
 

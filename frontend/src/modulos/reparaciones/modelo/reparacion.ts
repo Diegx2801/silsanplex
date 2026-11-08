@@ -131,7 +131,6 @@ export interface ConsultaCatalogoReparacion {
 
 export interface ResultadoCatalogoReparacion<T> {
   elementos: T[]
-  total: number
 }
 
 export interface Reparacion {

@@ -165,11 +165,9 @@ interface DetalleReparacionProps {
   cargando: boolean
   error: unknown
   productos: readonly OpcionProductoReparacion[]
-  totalProductos?: number
   buscarProductos?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>>
   resolverProducto?: (id: string) => Promise<OpcionProductoReparacion | null>
   almacenes: readonly Almacen[]
-  totalAlmacenes?: number
   buscarAlmacenes?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<Almacen>>
   resolverAlmacen?: (id: string) => Promise<Almacen | null>
   resolverUbicacion?: (id: string) => Promise<UbicacionAlmacen | null>
@@ -253,11 +251,9 @@ export function DetalleReparacion({
   cargando,
   error,
   productos,
-  totalProductos = productos.length,
   buscarProductos,
   resolverProducto,
   almacenes,
-  totalAlmacenes = almacenes.length,
   buscarAlmacenes,
   resolverAlmacen,
   resolverUbicacion,
@@ -492,7 +488,6 @@ export function DetalleReparacion({
             esRevision={Boolean(accion.cotizacionPendiente?.quoteId) || accion.reparacion.estado === 'rejected'}
             operacionPendiente={accion.cotizacionPendiente}
             productos={productos}
-            totalProductos={totalProductos}
             buscarProductos={buscarProductos}
             resolverProducto={resolverProducto}
             alCambiarApertura={cerrarDialogo}
@@ -526,11 +521,9 @@ export function DetalleReparacion({
             abierto={accion.tipo === 'reserva'}
             reparacion={accion.reparacion}
             productos={productos}
-            totalProductos={totalProductos}
             buscarProductos={buscarProductos}
             resolverProducto={resolverProducto}
             almacenes={almacenesDisponibles}
-            totalAlmacenes={totalAlmacenes}
             buscarAlmacenes={buscarAlmacenes}
             resolverAlmacen={resolverAlmacen}
             ubicaciones={ubicacionesDisponibles}
