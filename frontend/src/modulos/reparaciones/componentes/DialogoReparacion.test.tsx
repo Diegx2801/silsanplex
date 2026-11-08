@@ -83,6 +83,14 @@ function renderizarDialogo(
 }
 
 describe('DialogoReparacion', () => {
+  it('presenta el formulario centrado y limita su altura con scroll interno', () => {
+    renderizarDialogo(null, true)
+
+    const dialogo = screen.getByRole('dialog', { name: 'Registrar reparación' })
+    expect(dialogo).toHaveClass('start-1/2', 'top-1/2', '-translate-x-1/2', '-translate-y-1/2', 'max-h-[92svh]', 'overflow-hidden')
+    expect(dialogo).not.toHaveClass('inset-y-0', 'end-0')
+  })
+
   it('recupera una creación antigua sin añadir una colección vacía al fingerprint', async () => {
     const datos = { ...datosReparacionInicial(), clienteId, productoId, problema: 'No enciende', notas: 'Incluye cable histórico' }
     const alGuardar = vi.fn().mockResolvedValue(undefined)
