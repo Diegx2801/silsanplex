@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import {
   datosReparacionInicial,
   esquemaDatosReparacion,
-  prioridadesReparacion,
   validarNumeroSerie,
   type DatosReparacion,
   type ConsultaCatalogoReparacion,
@@ -226,8 +225,7 @@ export function DialogoReparacion({
   }, [abierto, reparacion?.id])
 
   useEffect(() => {
-    if (errors.prioridad || errors.fechaEstimadaEntrega || errors.notas
-      || errors.referenciaCliente || errors.referenciaGarantia || errors.esGarantia || errors.accesorios) {
+    if (errors.referenciaCliente || errors.referenciaGarantia || errors.esGarantia) {
       setDatosAdicionalesAbiertos(true)
     }
   }, [errors])
@@ -427,7 +425,7 @@ export function DialogoReparacion({
               )}
             </section>
 
-            <section aria-label="Problema reportado" className="border-t px-5 py-6 sm:px-7">
+            <section aria-label="Problema reportado y recepción física" className="border-t px-5 py-6 sm:px-7">
               <CampoArea
                 etiqueta="Problema reportado *"
                 rows={4}
@@ -435,10 +433,19 @@ export function DialogoReparacion({
                 error={errors.problema?.message}
                 {...register('problema')}
               />
+              <div className="mt-5">
+                <CampoArea
+                  etiqueta="Estado físico y observaciones al recibir"
+                  rows={3}
+                  placeholder="Describe golpes, piezas faltantes u otros detalles visibles al recibir el equipo"
+                  error={errors.notas?.message}
+                  {...register('notas')}
+                />
+              </div>
               <p className="mt-3 text-sm text-muted-foreground">
                 {reparacion
-                  ? 'La fecha de recepción y el código se conservan. Puedes revisar los datos adicionales a continuación.'
-                  : 'El código y la fecha de recepción se asignan automáticamente. La prioridad inicial es Normal.'}
+                  ? 'El código y la fecha de recepción se conservan. Las referencias adicionales están debajo.'
+                  : 'El código y la fecha de recepción se asignan automáticamente. La prioridad y fecha estimada se definen durante el diagnóstico.'}
               </p>
             </section>
 
@@ -448,36 +455,15 @@ export function DialogoReparacion({
               onToggle={(evento) => setDatosAdicionalesAbiertos(evento.currentTarget.open)}
             >
               <summary className="cursor-pointer rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                Datos adicionales de recepción
+                Referencias y garantía
               </summary>
-              <p className="mt-2 text-sm text-muted-foreground">Accesorios, fecha estimada, prioridad y atención en garantía, cuando correspondan.</p>
+              <p className="mt-2 text-sm text-muted-foreground">Datos opcionales para relacionar el ingreso con un ticket o una cobertura.</p>
               <div className="mt-5">
               <div className="grid gap-5 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="reparacion-prioridad" className="field-label">Prioridad *</label>
-                  <select id="reparacion-prioridad" className="field-control" {...register('prioridad')}>
-                    {prioridadesReparacion.map((prioridad) => (
-                      <option key={prioridad.valor} value={prioridad.valor}>{prioridad.etiqueta}</option>
-                    ))}
-                  </select>
-                </div>
                 <CampoTexto
-                  etiqueta="Fecha estimada de entrega"
-                  type="date"
-                  error={errors.fechaEstimadaEntrega?.message}
-                  {...register('fechaEstimadaEntrega')}
-                />
-                <CampoArea
-                  etiqueta="Notas de recepción"
-                  rows={3}
-                  placeholder="Condición física del equipo u observaciones generales"
-                  error={errors.notas?.message}
-                  {...register('notas')}
-                />
-                <CampoTexto
-                  etiqueta="Referencia del cliente"
+                  etiqueta="Ticket o referencia externa"
                   autoComplete="off"
-                  placeholder="Ticket, llamada o referencia externa"
+                  placeholder="Número de ticket, llamada o documento"
                   error={errors.referenciaCliente?.message}
                   {...register('referenciaCliente')}
                 />
@@ -500,8 +486,16 @@ export function DialogoReparacion({
                 ) : <input type="hidden" {...register('referenciaGarantia')} />}
               </div>
               </div>
-              {!reparacion ? <FormularioAccesoriosRecepcion formulario={formulario} bloqueado={Boolean(datosCreacionPendiente)} /> : <p className="mt-4 text-sm text-muted-foreground">Los accesorios se corrigen desde su sección en el detalle de la reparación.</p>}
             </details>
+            {!reparacion ? (
+              <section aria-label="Accesorios recibidos" className="border-t px-5 py-5 sm:px-7">
+                <FormularioAccesoriosRecepcion formulario={formulario} bloqueado={Boolean(datosCreacionPendiente)} />
+              </section>
+            ) : (
+              <p className="border-t px-5 py-5 text-sm text-muted-foreground">
+                Los accesorios recibidos se revisan y corrigen desde su sección en el detalle de la reparación.
+              </p>
+            )}
 
           </form>
 

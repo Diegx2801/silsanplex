@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/features/auth/useAuth'
 import { Button } from '@/components/ui/button'
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import type { Reparacion } from '../modelo/reparacion'
 import { buscarProveedoresServicio, ejecutarAtencionComplementaria, listarAtencionComplementaria,
-  recuperarAtencionPendiente, type TipoComandoComplementario } from '../servicios/atencionComplementariaService'
+  obtenerProveedorServicio, recuperarAtencionPendiente, type TipoComandoComplementario } from '../servicios/atencionComplementariaService'
 
 type Editor = { tipo: TipoComandoComplementario; datos: Record<string, unknown>; version: number; clave: string; recuperado: boolean }
 const fecha = (valor: string | null) => valor ? new Intl.DateTimeFormat('es-PE', { dateStyle: 'medium', timeZone: 'America/Lima' }).format(new Date(valor)) : 'Pendiente de entrega'
@@ -17,17 +18,37 @@ export function AtencionComplementariaReparacion({ reparacion, puedeEditar, pued
   const queryClient = useQueryClient()
   const [abierto, setAbierto] = useState(false)
   const [editor, setEditor] = useState<Editor | null>(null)
-  const [busqueda, setBusqueda] = useState('')
   const [mensaje, setMensaje] = useState('')
   const [guardando, setGuardando] = useState(false)
   const ambito = `${organizationId}:${user?.id}:${reparacion.id}:complementary`
-  useEffect(() => { setEditor(null); setBusqueda(''); setMensaje(''); setAbierto(false) }, [ambito])
+  useEffect(() => { setEditor(null); setMensaje(''); setAbierto(false) }, [ambito])
   const tienePermiso = (tipo: TipoComandoComplementario) => tipo === 'configure_repair_service_warranty' ? puedeGarantia : puedeEditar
   const consulta = useQuery({ queryKey: ['repair-complementary', organizationId, reparacion.id, reparacion.lockVersion],
     queryFn: () => listarAtencionComplementaria(organizationId, reparacion.id), enabled: abierto && Boolean(organizationId) })
-  const proveedores = useQuery({ queryKey: ['repair-service-suppliers', organizationId, busqueda],
-    queryFn: () => buscarProveedoresServicio(organizationId, busqueda),
-    enabled: editor?.tipo === 'send_repair_external_service' && !editor.recuperado && Boolean(organizationId) })
+  const proveedorId = editor?.tipo === 'send_repair_external_service' ? String(editor.datos.supplier_id ?? '') : ''
+  const proveedorSeleccionado = useQuery({
+    queryKey: ['repair-service-supplier', organizationId, proveedorId],
+    queryFn: () => obtenerProveedorServicio(organizationId, proveedorId),
+    enabled: Boolean(organizationId && proveedorId),
+    staleTime: 30_000,
+  })
+  const opcionesProveedor = useMemo<ComboboxOption[]>(() => {
+    const proveedor = proveedorSeleccionado.data
+    return proveedor ? [{
+      value: proveedor.id,
+      label: proveedor.business_name,
+      secondaryText: proveedor.document_number,
+      disabled: !proveedor.is_active,
+    }] : []
+  }, [proveedorSeleccionado.data])
+  const cargarProveedores = useCallback(async (busqueda: string) => {
+    const resultados = await buscarProveedoresServicio(organizationId, busqueda)
+    return resultados.elementos.map((proveedor) => ({
+      value: proveedor.id,
+      label: proveedor.business_name,
+      secondaryText: proveedor.document_number,
+    }))
+  }, [organizationId])
   const iniciar = (tipo: TipoComandoComplementario, datos: Record<string, unknown>) => {
     try {
       const pendiente = recuperarAtencionPendiente(ambito)
@@ -75,7 +96,7 @@ export function AtencionComplementariaReparacion({ reparacion, puedeEditar, pued
         <ul className="mt-3 divide-y">{consulta.data.servicios.map((servicio) => <li key={servicio.id} className="py-3 text-sm"><p className="font-medium">{servicio.supplier_name_snapshot} · {servicio.returned_at ? 'Retornado' : 'Con el proveedor'}</p><p className="mt-1">{servicio.description}</p><p className="mt-1 text-muted-foreground">Enviado: {fecha(servicio.sent_at)}{servicio.expected_return_date ? ` · Retorno previsto: ${fecha(`${servicio.expected_return_date}T12:00:00-05:00`)}` : ''}{servicio.returned_at ? ` · Retornó: ${fecha(servicio.returned_at)}` : ''}</p>{servicio.cost_amount !== null ? <p className="mt-1">Costo declarado al retorno: {new Intl.NumberFormat('es-PE', { style: 'currency', currency: servicio.currency }).format(servicio.cost_amount)} · Las revisiones económicas se consultan en Costo real de reparación.</p> : null}</li>)}</ul>
       </section>
       <section aria-label="Garantía del servicio" className="mt-4 border-t pt-4">
-        <h3 className="font-medium">Garantía del trabajo realizado</h3>
+        <h3 className="font-medium">Garantía del servicio</h3>
          {['non_repairable', 'returned_unrepaired'].includes(reparacion.estado) ? <p className="mt-2 text-sm">La devolución sin reparar no inicia garantía de reparación exitosa.{garantia ? ` Promesa previa conservada: ${garantia.warranty_days} días · ${garantia.coverage}. No iniciada por este resultado.` : ''}</p>
            : garantia ? <><p className="mt-2 text-sm">{garantia.warranty_days} días desde la entrega · {garantia.coverage}</p><p className="mt-1 text-sm text-muted-foreground">Inicio: {fecha(garantia.starts_at)} · Fin: {fecha(garantia.ends_at)}</p></> : <p className="mt-2 text-sm text-muted-foreground">No se ha otorgado una garantía de servicio.</p>}
         {puedeConfigurarGarantia && !editor ? <Button type="button" variant="outline" className="mt-3" onClick={() => iniciar('configure_repair_service_warranty', { warranty_days: String(garantia?.warranty_days ?? ''), coverage: garantia?.coverage ?? '' })}>{garantia ? 'Editar garantía antes de entregar' : 'Configurar garantía'}</Button> : null}
@@ -86,8 +107,14 @@ export function AtencionComplementariaReparacion({ reparacion, puedeEditar, pued
       {editor.recuperado ? <p role="status" className="text-sm">Hay una operación pendiente de confirmar. Reintenta con los mismos datos para evitar duplicados.</p> : null}
       <fieldset disabled={guardando || editor.recuperado} className="grid gap-4 sm:grid-cols-2">
         {editor.tipo === 'send_repair_external_service' ? <>
-          <div className="sm:col-span-2"><label htmlFor="servicio-busqueda" className="field-label">Buscar proveedor</label><input id="servicio-busqueda" type="search" className="field-control" value={busqueda} onChange={(evento) => setBusqueda(evento.target.value)} /></div>
-          <div className="sm:col-span-2"><label htmlFor="servicio-proveedor" className="field-label">Proveedor *</label><select id="servicio-proveedor" className="field-control" required value={String(editor.datos.supplier_id)} onChange={(evento) => cambiar('supplier_id', evento.target.value)}><option value="">Selecciona un proveedor activo</option>{proveedores.data?.elementos.map((item) => <option key={item.id} value={item.id}>{item.business_name} · {item.document_number}</option>)}</select><p className="field-help">{proveedores.isLoading ? 'Buscando proveedores…' : proveedores.error ? proveedores.error.message : proveedores.data && proveedores.data.total > 25 ? 'Hay más resultados; escribe parte del nombre para acotar la búsqueda.' : 'Selecciona el proveedor que recibirá físicamente el equipo.'}</p></div>
+          <div className="sm:col-span-2">
+            <Combobox id="servicio-proveedor" label="Proveedor" required value={String(editor.datos.supplier_id)}
+              options={opcionesProveedor} onChange={(valor) => cambiar('supplier_id', valor)} loadOptions={cargarProveedores}
+              placeholder="Buscar proveedor…" helperText="Busca por razón social o RUC. Selecciona quién recibirá físicamente el equipo."
+              minSearchLength={2} noOptionsMessage="No hay proveedores activos disponibles."
+              noResultsMessage="No se encontraron proveedores activos." loadingMessage="Buscando proveedores…" />
+            {proveedorSeleccionado.error ? <p role="alert" className="field-error">No se pudo recuperar el proveedor seleccionado.</p> : null}
+          </div>
           <div className="sm:col-span-2"><label htmlFor="servicio-descripcion" className="field-label">Trabajo solicitado *</label><textarea id="servicio-descripcion" className="field-control min-h-20 py-2" required minLength={3} maxLength={2000} value={String(editor.datos.description)} onChange={(evento) => cambiar('description', evento.target.value)} /></div>
           <div><label htmlFor="servicio-retorno-previsto" className="field-label">Retorno previsto (si se acordó)</label><input id="servicio-retorno-previsto" type="date" className="field-control" value={String(editor.datos.expected_return_date)} onChange={(evento) => cambiar('expected_return_date', evento.target.value)} /></div>
         </> : editor.tipo === 'receive_repair_external_service' ? <>

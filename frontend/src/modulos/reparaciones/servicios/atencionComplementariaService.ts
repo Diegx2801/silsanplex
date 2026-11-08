@@ -11,6 +11,12 @@ export interface ServicioExterno {
 export interface GarantiaServicio {
   warranty_days: number; coverage: string; starts_at: string | null; ends_at: string | null
 }
+export interface OpcionProveedorServicio {
+  id: string
+  business_name: string
+  document_number: string
+  is_active: boolean
+}
 export type TipoComandoComplementario = 'send_repair_external_service' | 'receive_repair_external_service' | 'configure_repair_service_warranty'
 const esquema = z.object({
   tipo: z.enum(['send_repair_external_service', 'receive_repair_external_service', 'configure_repair_service_warranty']),
@@ -56,11 +62,24 @@ export async function listarAtencionComplementaria(organizationId: string, repai
   return { servicios: servicios.data as ServicioExterno[], garantia: garantia.data as GarantiaServicio | null }
 }
 export async function buscarProveedoresServicio(organizationId: string, busqueda: string) {
-  let consulta = supabase.from('suppliers').select('id,business_name,document_number', { count: 'exact' })
+  let consulta = supabase.from('suppliers').select('id,business_name,document_number,is_active', { count: 'exact' })
     .eq('organization_id', organizationId).eq('is_active', true)
-  const texto = busqueda.replace(/[%_,().]/g, ' ').trim().slice(0, 100)
-  if (texto) consulta = consulta.ilike('business_name', `%${texto}%`)
+  const texto = busqueda.replace(/[^\p{L}\p{N}\s-]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 100)
+  if (texto) {
+    const termino = `%${texto}%`
+    consulta = consulta.or(`business_name.ilike.${termino},document_number.ilike.${termino}`)
+  }
   const { data, error, count } = await consulta.order('business_name').limit(25)
   if (error) throw new Error('No se pudo buscar proveedores. Inténtalo otra vez.')
-  return { elementos: data as { id: string; business_name: string; document_number: string }[], total: count ?? 0 }
+  return { elementos: data as OpcionProveedorServicio[], total: count ?? 0 }
+}
+
+export async function obtenerProveedorServicio(organizationId: string, proveedorId: string) {
+  const { data, error } = await supabase.from('suppliers')
+    .select('id,business_name,document_number,is_active')
+    .eq('organization_id', organizationId)
+    .eq('id', proveedorId)
+    .maybeSingle()
+  if (error) throw new Error('No se pudo recuperar el proveedor de la operación pendiente.')
+  return data as OpcionProveedorServicio | null
 }

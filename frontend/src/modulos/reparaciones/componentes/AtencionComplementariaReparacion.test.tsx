@@ -2,10 +2,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Reparacion } from '../modelo/reparacion'
-const service = vi.hoisted(() => ({ listar: vi.fn(), ejecutar: vi.fn(), recuperar: vi.fn(), proveedores: vi.fn() }))
+const service = vi.hoisted(() => ({ listar: vi.fn(), ejecutar: vi.fn(), recuperar: vi.fn(), proveedores: vi.fn(), obtenerProveedor: vi.fn() }))
 vi.mock('@/features/auth/useAuth', () => ({ useAuth: () => ({ access: { organizationId: 'org' }, user: { id: 'user' } }) }))
 vi.mock('../servicios/atencionComplementariaService', () => ({ listarAtencionComplementaria: service.listar,
-  ejecutarAtencionComplementaria: service.ejecutar, recuperarAtencionPendiente: service.recuperar, buscarProveedoresServicio: service.proveedores }))
+  ejecutarAtencionComplementaria: service.ejecutar, recuperarAtencionPendiente: service.recuperar, buscarProveedoresServicio: service.proveedores,
+  obtenerProveedorServicio: service.obtenerProveedor }))
 import { AtencionComplementariaReparacion } from './AtencionComplementariaReparacion'
 
 function show(estado = 'in_repair', edit = true, warranty = true) {
@@ -26,6 +27,7 @@ describe('Servicio externo y garantía: permisos y claridad', () => {
     service.listar.mockResolvedValue({ servicios: [], garantia: null })
     service.recuperar.mockReturnValue(null)
     service.proveedores.mockResolvedValue({ elementos: [], total: 0 })
+    service.obtenerProveedor.mockResolvedValue(null)
     service.ejecutar.mockResolvedValue(undefined)
   })
 
@@ -48,6 +50,24 @@ describe('Servicio externo y garantía: permisos y claridad', () => {
     fireEvent.change(screen.getByLabelText('Costo total del servicio *'), { target: { value: '0' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar registro' }))
     await waitFor(() => expect(service.ejecutar).toHaveBeenCalledWith('org:user:repair:complementary', 'org', 'repair', 'receive_repair_external_service', { external_service_id: 'external', cost_amount: '0', currency: 'PEN' }, 9, expect.any(String)))
+  })
+
+  it('busca y selecciona el proveedor de servicio con el combobox reutilizable', async () => {
+    service.proveedores.mockResolvedValue({ elementos: [{ id: 'supplier', business_name: 'Taller Norte', document_number: '20123456789', is_active: true }], total: 1 })
+    service.obtenerProveedor.mockResolvedValue({ id: 'supplier', business_name: 'Taller Norte', document_number: '20123456789', is_active: true })
+    show()
+    open()
+    fireEvent.click(await screen.findByRole('button', { name: 'Enviar a proveedor' }))
+    const proveedor = screen.getByRole('combobox', { name: 'Proveedor' })
+    fireEvent.focus(proveedor)
+    fireEvent.change(proveedor, { target: { value: 'Taller' } })
+    fireEvent.click(await screen.findByRole('option', { name: /Taller Norte.*20123456789/ }))
+    fireEvent.change(screen.getByLabelText('Trabajo solicitado *'), { target: { value: 'Revisar equipo' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar registro' }))
+
+    await waitFor(() => expect(service.ejecutar).toHaveBeenCalledWith('org:user:repair:complementary', 'org', 'repair', 'send_repair_external_service', {
+      supplier_id: 'supplier', description: 'Revisar equipo', expected_return_date: '',
+    }, 9, expect.any(String)))
   })
 
   it('antes de entregar no inventa fechas de garantía', async () => {

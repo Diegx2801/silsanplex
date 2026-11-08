@@ -7,7 +7,7 @@ vi.mock('./NoReparableReparacion', () => ({ NoReparableReparacion: () => <div>De
 vi.mock('./DialogoEntregaAccesorios', () => ({ DialogoEntregaAccesorios: () => null, RecuperarEntregaAccesorios: () => null }))
 
 vi.mock('@/modulos/reparaciones/estado/useReparacionOpciones', () => ({
-  useTecnicosReparacion: () => ({ tecnicos: [], cargando: false, error: null }),
+  useTecnicosReparacion: () => ({ tecnicos: [], buscarTecnicos: vi.fn().mockResolvedValue([]), cargando: false, error: null }),
 }))
 vi.mock('@/modulos/inventario/estado/useCandidatosFefo', () => ({
   useCandidatosFefo: () => ({ candidatos: [], cargando: false, error: '' }),
@@ -154,6 +154,9 @@ function renderizarDetalle({
   resolverAlmacen,
   resolverUbicacion,
   detallePersonalizado,
+  detalleSinCargar = false,
+  errorDetalle,
+  alReintentarDetalle = vi.fn(),
   cargarLineasCotizacion,
   recuperarEstadoPendiente,
 }: {
@@ -170,6 +173,9 @@ function renderizarDetalle({
   resolverAlmacen?: (id: string) => Promise<import('@/modulos/inventario/modelo/almacen').Almacen | null>
   resolverUbicacion?: (id: string) => Promise<import('@/modulos/inventario/modelo/almacen').UbicacionAlmacen | null>
   detallePersonalizado?: DatosDetalleReparacion
+  detalleSinCargar?: boolean
+  errorDetalle?: unknown
+  alReintentarDetalle?: () => void
   cargarLineasCotizacion?: (id: string) => Promise<CotizacionReparacion['lineas']>
   recuperarEstadoPendiente?: (id: string) => import('../modelo/finalizacionTecnica').CambioEstadoPendiente | null
 } = {}) {
@@ -189,9 +195,9 @@ function renderizarDetalle({
   const construirElemento = (lockVersion = reparacionBase.lockVersion) => (
     <DetalleReparacion
       abierto
-      detalle={construirDetalle(lockVersion)}
+      detalle={detalleSinCargar ? undefined : construirDetalle(lockVersion)}
       cargando={false}
-      error={null}
+      error={errorDetalle ?? null}
       productos={[]}
       almacenes={[]}
       ubicaciones={[]}
@@ -208,6 +214,7 @@ function renderizarDetalle({
       puedeEntregar={false}
       alCambiarApertura={vi.fn()}
       alRestaurarFoco={vi.fn()}
+      alReintentarDetalle={alReintentarDetalle}
       alEditar={editar}
       alAsignar={operacion}
       alCambiarEstado={operacion}
@@ -236,6 +243,13 @@ function renderizarDetalle({
 }
 
 describe('DetalleReparacion acciones técnicas', () => {
+  it('permite reintentar cuando falla la carga del detalle', () => {
+    const reintentar = vi.fn()
+    renderizarDetalle({ detalleSinCargar: true, errorDetalle: new Error('Error temporal'), alReintentarDetalle: reintentar })
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    expect(reintentar).toHaveBeenCalledOnce()
+  })
+
   it.each([
     { technical_completion_version: 1, test_cycle_number: -1 },
     { technical_completion_version: 1 },

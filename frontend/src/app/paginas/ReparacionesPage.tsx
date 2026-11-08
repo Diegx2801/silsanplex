@@ -329,6 +329,7 @@ export function ReparacionesPage() {
         puedeEntregar={puedeEntregar}
         alCambiarApertura={(abierto) => { if (!abierto) setReparacionId(null) }}
         alRestaurarFoco={() => disparadorDetalle.current?.focus()}
+        alReintentarDetalle={() => void detalleConsulta.reintentar()}
         alEditar={abrirEdicionDesdeDetalle}
         alAsignar={(repairId, tecnicoId, lockVersion) => operaciones.asignar(repairId, tecnicoId, lockVersion)}
         alCambiarEstado={(repairId, estado, observacion, lockVersion, clave) => operaciones.cambiarEstado(repairId, estado, observacion, lockVersion, clave)}

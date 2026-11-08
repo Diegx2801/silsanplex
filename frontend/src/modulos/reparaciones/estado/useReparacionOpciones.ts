@@ -103,19 +103,23 @@ export function useReparacionOpciones(
 
 export function useTecnicosReparacion(
   habilitado: boolean,
-  busqueda: string,
 ) {
   const { access } = useAuth()
   const organizationId = access?.organizationId ?? ''
   const query = useQuery({
-    queryKey: ['repair-technicians', organizationId, busqueda],
-    queryFn: () => listarTecnicosReparacion(organizationId, busqueda, 100),
+    queryKey: ['repair-technicians', organizationId],
+    queryFn: () => listarTecnicosReparacion(organizationId, '', 25),
     enabled: Boolean(organizationId && habilitado),
     staleTime: 30_000,
   })
+  const buscarTecnicos = useCallback(
+    (busqueda: string) => listarTecnicosReparacion(organizationId, busqueda, 25),
+    [organizationId],
+  )
 
   return {
     tecnicos: query.data ?? [],
+    buscarTecnicos,
     cargando: query.isLoading,
     error: query.error,
   }

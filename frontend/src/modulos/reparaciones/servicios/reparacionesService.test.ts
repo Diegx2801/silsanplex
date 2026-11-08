@@ -437,6 +437,8 @@ describe('reparacionesService', () => {
 
     await registrarDiagnosticoReparacion('org-1', 'repair-1', {
       tecnicoId: '',
+      prioridad: 'high',
+      fechaEstimadaEntrega: '2026-09-15',
       sintomas: 'No enciende',
       causaEncontrada: 'Fuente dañada',
       solucionRecomendada: 'Cambiar fuente',
@@ -452,6 +454,8 @@ describe('reparacionesService', () => {
         repair_id: 'repair-1',
         expected_lock_version: 9,
         technician_id: null,
+        priority: 'high',
+        estimated_delivery_date: '2026-09-15',
         symptoms: 'No enciende',
         cause_found: 'Fuente dañada',
         recommended_solution: 'Cambiar fuente',

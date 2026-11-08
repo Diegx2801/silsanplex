@@ -136,17 +136,30 @@ describe('DialogoReparacion', () => {
     }), reparacion.id, false, undefined))
   })
 
-  it('prioriza los datos esenciales y deja la recepción adicional plegada', () => {
+  it('prioriza los datos esenciales, separa accesorios y deja referencias opcionales plegadas', () => {
     renderizarDialogo(null, true)
 
     expect(screen.getByLabelText('Problema reportado *')).toBeVisible()
-    expect(screen.getByText('Datos adicionales de recepción').closest('details')).not.toHaveAttribute('open')
+    expect(screen.getByLabelText('Estado físico y observaciones al recibir')).toBeVisible()
+    expect(screen.getByText('Referencias y garantía').closest('details')).not.toHaveAttribute('open')
+    expect(screen.getByRole('region', { name: 'Accesorios recibidos' })).toBeInTheDocument()
+    expect(screen.getByText('No se registraron accesorios o pertenencias en esta recepción.')).toBeVisible()
     expect(screen.queryByLabelText('ID de documento de venta')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Referencia de garantía')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Prioridad *')).toHaveValue('normal')
+    expect(screen.queryByLabelText('Prioridad *')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Fecha estimada de entrega')).not.toBeInTheDocument()
 
+    fireEvent.click(screen.getByText('Referencias y garantía'))
     fireEvent.click(screen.getByLabelText(/^Atención en garantía/))
     expect(screen.getByLabelText('Referencia de garantía')).toBeInTheDocument()
+  })
+
+  it('mantiene visible el error del accesorio sin abrir referencias y garantía', async () => {
+    renderizarDialogo(null, true)
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar accesorio' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar reparación' }))
+
+    expect(await screen.findByText('Indica el nombre del accesorio')).toBeVisible()
+    expect(screen.getByText('Referencias y garantía').closest('details')).not.toHaveAttribute('open')
   })
 
   it('conserva documentos y referencias históricas aunque no estén en la recepción esencial', async () => {
@@ -186,13 +199,16 @@ describe('DialogoReparacion', () => {
   })
 
   it('conserva la serie y envía cambios generales cuando la identidad está bloqueada', async () => {
-    const alGuardar = renderizarDialogo(reparacion, false)
+    const alGuardar = renderizarDialogo({
+      ...reparacion,
+      prioridad: 'high',
+      fechaEntregaEstimada: '2026-09-15',
+    }, false)
 
-    fireEvent.change(screen.getByLabelText('Prioridad *'), { target: { value: 'high' } })
     fireEvent.change(screen.getByLabelText('Problema reportado *'), {
       target: { value: 'No enciende con su cargador' },
     })
-    fireEvent.change(screen.getByLabelText('Notas de recepción'), {
+    fireEvent.change(screen.getByLabelText('Estado físico y observaciones al recibir'), {
       target: { value: 'Editar desde VENTAS' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))
@@ -203,6 +219,7 @@ describe('DialogoReparacion', () => {
         productoId,
         numeroSerie: 'SER-ORIGINAL',
         prioridad: 'high',
+        fechaEstimadaEntrega: '2026-09-15',
         problema: 'No enciende con su cargador',
         notas: 'Editar desde VENTAS',
       }),
@@ -221,7 +238,7 @@ describe('DialogoReparacion', () => {
       .toHaveValue('PROD-1 · Equipo prueba (referencia histórica)')
     expect(screen.getByLabelText('Número de serie (si existe)')).toHaveValue('SER-ORIGINAL')
 
-    fireEvent.change(screen.getByLabelText('Notas de recepción'), {
+    fireEvent.change(screen.getByLabelText('Estado físico y observaciones al recibir'), {
       target: { value: 'Actualización administrativa' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }))

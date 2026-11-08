@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const db = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }))
 vi.mock('@/lib/supabase', () => ({ supabase: db }))
-import { buscarProveedoresServicio, ejecutarAtencionComplementaria, listarAtencionComplementaria, recuperarAtencionPendiente } from './atencionComplementariaService'
+import { buscarProveedoresServicio, ejecutarAtencionComplementaria, listarAtencionComplementaria, obtenerProveedorServicio, recuperarAtencionPendiente } from './atencionComplementariaService'
 
 const key = 'bc900000-0000-4000-8000-000000000001'
 const otherKey = 'bc900000-0000-4000-8000-000000000002'
@@ -11,10 +11,10 @@ const data = { supplier_id: 'supplier', description: 'Trabajo solicitado', expec
 
 function chain(response: object) {
   const query = {
-    select: vi.fn(), eq: vi.fn(), order: vi.fn(), limit: vi.fn(), ilike: vi.fn(), maybeSingle: vi.fn(),
+    select: vi.fn(), eq: vi.fn(), order: vi.fn(), limit: vi.fn(), ilike: vi.fn(), or: vi.fn(), maybeSingle: vi.fn(),
     then: (resolve: (value: object) => unknown) => Promise.resolve(response).then(resolve),
   }
-  for (const method of [query.select, query.eq, query.order, query.limit, query.ilike]) method.mockReturnValue(query)
+  for (const method of [query.select, query.eq, query.order, query.limit, query.ilike, query.or]) method.mockReturnValue(query)
   query.maybeSingle.mockResolvedValue(response)
   return query
 }
@@ -78,8 +78,16 @@ describe('Atención complementaria: persistencia y contratos', () => {
     await expect(buscarProveedoresServicio('org', 'Taller%_(Norte),')).resolves.toEqual({ elementos: [], total: 30 })
     expect(query.eq).toHaveBeenCalledWith('organization_id', 'org')
     expect(query.eq).toHaveBeenCalledWith('is_active', true)
-    expect(query.ilike).toHaveBeenCalledWith('business_name', '%Taller   Norte%')
+    expect(query.or).toHaveBeenCalledWith('business_name.ilike.%Taller Norte%,document_number.ilike.%Taller Norte%')
     expect(query.limit).toHaveBeenCalledWith(25)
+  })
+
+  it('recupera el proveedor seleccionado dentro de su organización, aunque esté inactivo', async () => {
+    const query = chain({ data: { id: 'supplier', business_name: 'Taller Norte', document_number: '20123456789', is_active: false }, error: null })
+    db.from.mockReturnValue(query)
+    await expect(obtenerProveedorServicio('org', 'supplier')).resolves.toEqual({ id: 'supplier', business_name: 'Taller Norte', document_number: '20123456789', is_active: false })
+    expect(query.eq).toHaveBeenCalledWith('organization_id', 'org')
+    expect(query.eq).toHaveBeenCalledWith('id', 'supplier')
   })
 
   it('no presenta una ausencia de garantía ficticia cuando su consulta falla', async () => {

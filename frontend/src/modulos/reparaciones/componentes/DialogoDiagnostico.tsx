@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form'
 import { Button } from '@/components/ui/button'
 import {
   esquemaDatosDiagnostico,
+  prioridadesReparacion,
   type DatosDiagnostico,
   type Reparacion,
 } from '@/modulos/reparaciones/modelo/reparacion'
@@ -34,6 +35,8 @@ export function DialogoDiagnostico({
     resolver: zodResolver(esquemaDatosDiagnostico),
     defaultValues: {
       tecnicoId: reparacion.tecnicoAsignadoId ?? '',
+      prioridad: reparacion.prioridad,
+      fechaEstimadaEntrega: reparacion.fechaEntregaEstimada ?? '',
       sintomas: '',
       causaEncontrada: '',
       solucionRecomendada: '',
@@ -45,13 +48,15 @@ export function DialogoDiagnostico({
     if (abierto) {
       reset({
         tecnicoId: reparacion.tecnicoAsignadoId ?? '',
+        prioridad: reparacion.prioridad,
+        fechaEstimadaEntrega: reparacion.fechaEntregaEstimada ?? '',
         sintomas: '',
         causaEncontrada: '',
         solucionRecomendada: '',
         notas: '',
       })
     }
-  }, [abierto, reparacion.tecnicoAsignadoId, reset])
+  }, [abierto, reparacion.fechaEntregaEstimada, reparacion.prioridad, reparacion.tecnicoAsignadoId, reset])
 
   const guardar = async (datos: DatosDiagnostico) => {
     setMensaje('')
@@ -82,6 +87,34 @@ export function DialogoDiagnostico({
             </DialogPrimitive.Close>
           </header>
           <form id="formulario-diagnostico" className="grid gap-5 px-5 py-6 sm:grid-cols-2 sm:px-7" onSubmit={handleSubmit(guardar)}>
+            <section aria-labelledby="diagnostico-planificacion" className="border-b pb-5 sm:col-span-2">
+              <h2 id="diagnostico-planificacion" className="text-sm font-semibold">Planificación de atención</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Define la urgencia y una fecha orientativa después de revisar el equipo.
+              </p>
+              <div className="mt-4 grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="diagnostico-prioridad" className="field-label">Prioridad *</label>
+                  <select id="diagnostico-prioridad" className="field-control" aria-invalid={Boolean(errors.prioridad)} {...register('prioridad')}>
+                    {prioridadesReparacion.map((prioridad) => (
+                      <option key={prioridad.valor} value={prioridad.valor}>{prioridad.etiqueta}</option>
+                    ))}
+                  </select>
+                  {errors.prioridad ? <p className="field-error">{errors.prioridad.message}</p> : null}
+                </div>
+                <div>
+                  <label htmlFor="diagnostico-fecha-estimada" className="field-label">Fecha estimada de entrega</label>
+                  <input id="diagnostico-fecha-estimada" type="date" className="field-control" aria-invalid={Boolean(errors.fechaEstimadaEntrega)} {...register('fechaEstimadaEntrega')} />
+                  {errors.fechaEstimadaEntrega ? <p className="field-error">{errors.fechaEstimadaEntrega.message}</p> : (
+                    <p className="field-help">Es una fecha orientativa, no un compromiso de entrega.</p>
+                  )}
+                </div>
+              </div>
+            </section>
+            <div className="border border-border/70 bg-muted/25 px-4 py-3 sm:col-span-2">
+              <p className="field-label">Problema reportado en la recepción</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{reparacion.problema}</p>
+            </div>
             <div className="sm:col-span-2">
               <label htmlFor="diagnostico-sintomas" className="field-label">Síntomas observados *</label>
               <textarea id="diagnostico-sintomas" rows={5} className="field-control min-h-28 resize-y py-2" placeholder="Qué se verificó durante la revisión" aria-invalid={Boolean(errors.sintomas)} {...register('sintomas')} />

@@ -1,10 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Search, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { useDeferredValue, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import { useTecnicosReparacion } from '@/modulos/reparaciones/estado/useReparacionOpciones'
 import type { CambioEstadoPendiente } from '../modelo/finalizacionTecnica'
 import {
@@ -194,11 +195,32 @@ export function DialogoAsignacion({
   alCambiarApertura,
   alGuardar,
 }: DialogoAsignacionProps) {
-  const [busqueda, setBusqueda] = useState('')
-  const busquedaDiferida = useDeferredValue(busqueda)
   const [tecnicoId, setTecnicoId] = useState(reparacion.tecnicoAsignadoId ?? '')
   const [mensaje, setMensaje] = useState('')
-  const { tecnicos, cargando, error } = useTecnicosReparacion(abierto, busquedaDiferida)
+  const { tecnicos, buscarTecnicos, cargando, error } = useTecnicosReparacion(abierto)
+
+  const opcionesTecnicos: ComboboxOption[] = tecnicos.map((tecnico) => ({
+    value: tecnico.id,
+    label: tecnico.nombre || tecnico.correo,
+    secondaryText: tecnico.correo,
+  }))
+  if (reparacion.tecnicoAsignadoId && !tecnicos.some((tecnico) => tecnico.id === reparacion.tecnicoAsignadoId)) {
+    opcionesTecnicos.unshift({
+      value: reparacion.tecnicoAsignadoId,
+      label: 'Técnico actualmente asignado',
+      secondaryText: 'No aparece en la lista de personal activo.',
+      disabled: true,
+    })
+  }
+
+  const cargarTecnicos = async (busqueda: string): Promise<ComboboxOption[]> => {
+    const resultados = await buscarTecnicos(busqueda)
+    return resultados.map((tecnico) => ({
+      value: tecnico.id,
+      label: tecnico.nombre || tecnico.correo,
+      secondaryText: tecnico.correo,
+    }))
+  }
 
   useEffect(() => {
     if (abierto) setTecnicoId(reparacion.tecnicoAsignadoId ?? '')
@@ -229,17 +251,22 @@ export function DialogoAsignacion({
           </header>
           <div className="space-y-5 px-5 py-6 sm:px-7">
             <div>
-              <label htmlFor="buscar-tecnico-reparacion" className="field-label">Buscar técnico</label>
-              <div className="relative"><Search aria-hidden="true" className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input id="buscar-tecnico-reparacion" className="field-control ps-9" value={busqueda} onChange={(evento) => setBusqueda(evento.target.value)} placeholder="Nombre o correo" /></div>
-            </div>
-            <div>
-              <label htmlFor="tecnico-reparacion" className="field-label">Técnico *</label>
-              <select id="tecnico-reparacion" className="field-control" value={tecnicoId} onChange={(evento) => setTecnicoId(evento.target.value)} disabled={cargando}>
-                <option value="">{cargando ? 'Cargando técnicos…' : 'Selecciona un técnico'}</option>
-                {tecnicos.map((tecnico) => <option key={tecnico.id} value={tecnico.id}>{tecnico.nombre} · {tecnico.correo}</option>)}
-                {reparacion.tecnicoAsignadoId && !tecnicos.some((tecnico) => tecnico.id === reparacion.tecnicoAsignadoId) ? <option value={reparacion.tecnicoAsignadoId}>Técnico actualmente asignado</option> : null}
-              </select>
-              {error ? <p className="field-error">{error instanceof Error ? error.message : 'No se pudo cargar la lista de técnicos'}</p> : null}
+              <Combobox
+                id="tecnico-reparacion"
+                label="Técnico"
+                required
+                value={tecnicoId}
+                options={opcionesTecnicos}
+                onChange={setTecnicoId}
+                loadOptions={cargarTecnicos}
+                placeholder="Buscar técnico…"
+                helperText="Busca por nombre o correo. Solo se asigna personal activo de la organización."
+                noOptionsMessage="No hay técnicos activos disponibles."
+                noResultsMessage="No se encontraron técnicos con esa búsqueda."
+                loadingMessage="Buscando técnicos…"
+                disabled={cargando}
+              />
+              {error ? <p role="alert" className="field-error">{error instanceof Error ? error.message : 'No se pudo cargar la lista de técnicos'}</p> : null}
             </div>
             {mensaje ? <p role="alert" className="text-sm text-destructive">{mensaje}</p> : null}
           </div>
