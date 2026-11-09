@@ -41,16 +41,22 @@ describe('compraService', () => {
         notes: null, status: 'draft', issued_at: null,
         received_at: null, created_at: '2026-08-31T12:00:00.000Z', purchase_order_items: [{
           id: 'linea-1', product_id: 'producto-1', product_code: 'P-1',
-          product_description: 'Producto', unit_of_measure: 'UND', product_type: 'service', tax_affectation: 'exonerado', batch_control: false,
+          product_description: 'Producto', unit_of_measure: 'UND', product_type: 'good', tax_affectation: 'exonerado', batch_control: false,
           quantity: 2, unit_cost: 10, lot: null, expiration_date: null,
-          products: [{ expiration_control: false }], purchase_receipt_items: [],
+          products: [{ expiration_control: false, is_active: true }], purchase_receipt_items: [{
+            quantity: 2,
+            purchase_receipt_inspections: [{ accepted_quantity: 1, rejected_quantity: 1, status: 'completed' }],
+          }],
         }],
       }],
       error: null,
     }))
 
     await expect(listarCompras('org-1')).resolves.toEqual([
-      expect.objectContaining({ almacenId: 'almacen-1', almacen: 'Principal', lineas: [expect.objectContaining({ afectacionIgv: 'exonerado', tipoProducto: 'service' })] }),
+      expect.objectContaining({ almacenId: 'almacen-1', almacen: 'Principal', lineas: [expect.objectContaining({
+        afectacionIgv: 'exonerado', tipoProducto: 'good', cantidadRecibida: 1,
+        cantidadPendiente: 1, cantidadRechazada: 1,
+      })] }),
     ])
   })
 

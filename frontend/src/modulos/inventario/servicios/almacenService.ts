@@ -1,23 +1,24 @@
 import { supabase } from '@/lib/supabase'
 import { leerCapturaUnidadMovimiento } from '../modelo/capturaUnidadMovimiento'
-import type {
-  AlertaInventario,
-  Almacen,
-  ConsultaAlertasStock,
-  ConsultaKardex,
-  ConsultaStockDetallado,
-  ConsultaTransferencias,
-  ConsultaVencimientos,
-  ConfiguracionAlertasStock,
-  DatosAlmacen,
-  DatosReclasificacion,
-  DatosTransferencia,
-  DatosUbicacion,
-  MovimientoKardex,
-  SaldoInventario,
-  TransferenciaAlmacen,
-  UbicacionAlmacen,
-} from '@/modulos/inventario/modelo/almacen'
+import {
+  etiquetasEstadoStock,
+  type AlertaInventario,
+  type Almacen,
+  type ConsultaAlertasStock,
+  type ConsultaKardex,
+  type ConsultaStockDetallado,
+  type ConsultaTransferencias,
+  type ConsultaVencimientos,
+  type ConfiguracionAlertasStock,
+  type DatosAlmacen,
+  type DatosReclasificacion,
+  type DatosTransferencia,
+  type DatosUbicacion,
+  type MovimientoKardex,
+  type SaldoInventario,
+  type TransferenciaAlmacen,
+  type UbicacionAlmacen,
+} from '../modelo/almacen'
 import {
   crearResultadoPaginado,
   normalizarBusquedaInventario,
@@ -33,6 +34,7 @@ function errorAlmacen(error: { code?: string; message?: string }) {
   if (mensaje.includes('INVENTORY_RESERVED_STOCK')) return 'La cantidad afectaría unidades reservadas. Reduce la cantidad al stock no reservado de la posición.'
   if (mensaje.includes('RECLASSIFICATION_OPERATION_CONFLICT')) return 'El intento anterior corresponde a otros datos. Revisa la reclasificación antes de confirmar nuevamente.'
   if (mensaje.includes('RECLASSIFICATION_REASON_INVALID')) return 'Describe el motivo de la reclasificación con entre 3 y 180 caracteres.'
+  if (mensaje.includes('RECLASSIFICATION_OBSERVATION_INVALID')) return 'La observación de la reclasificación no puede superar 600 caracteres.'
   if (mensaje.includes('RECLASSIFICATION_UNIT_COST_INVALID')) return 'No se pudo verificar el costo de la posición. Revisa su valorización antes de cambiar la condición.'
   if (mensaje.includes('INVENTORY_MAXIMUM_STOCK_EXCEEDED')) return 'La operación superaría el stock máximo configurado para el producto.'
   if (mensaje.includes('TRANSFER_POSITION_MUST_DIFFER')) return 'Selecciona una ubicación de destino diferente a la de origen.'
@@ -479,7 +481,7 @@ export async function obtenerConfiguracionAlertasStock(
 ): Promise<ConfiguracionAlertasStock | null> {
   const { data, error } = await supabase
     .from('product_warehouse_settings')
-    .select('default_location_id,minimum_stock,expiration_alert_days')
+    .select('minimum_stock,expiration_alert_days')
     .eq('organization_id', organizationId)
     .eq('product_id', productId)
     .eq('warehouse_id', warehouseId)
@@ -489,7 +491,6 @@ export async function obtenerConfiguracionAlertasStock(
   if (!data) return null
 
   return {
-    ubicacionId: data.default_location_id,
     stockMinimo: Number(data.minimum_stock),
     diasVencimiento: Number(data.expiration_alert_days),
   }
@@ -498,7 +499,6 @@ export async function obtenerConfiguracionAlertasStock(
 export async function configurarAlertas(organizationId: string, userId: string, datos: {
   productoId: string
   almacenId: string
-  ubicacionId: string
   stockMinimo: number
   diasVencimiento: number
 }) {
@@ -506,7 +506,6 @@ export async function configurarAlertas(organizationId: string, userId: string, 
     organization_id: organizationId,
     product_id: datos.productoId,
     warehouse_id: datos.almacenId,
-    default_location_id: datos.ubicacionId,
     minimum_stock: datos.stockMinimo,
     expiration_alert_days: datos.diasVencimiento,
     updated_by: userId,
@@ -555,7 +554,8 @@ export async function reclasificarInventario(
     expected_conversion_factor: datos.factorConversionEsperado ?? null,
     lot: datos.lote,
     expiration_date: datos.fechaVencimiento,
-    reason: datos.motivo,
+    reason: `Cambio de condición: ${etiquetasEstadoStock[datos.estadoOrigen]} → ${etiquetasEstadoStock[datos.estadoDestino]}`,
+    observation: datos.observacion?.trim() || null,
   } })
   if (error) throw new Error(errorAlmacen(error))
 }

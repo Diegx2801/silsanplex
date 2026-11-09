@@ -9,6 +9,7 @@ import { DialogoEntregaAccesorios, RecuperarEntregaAccesorios } from './DialogoE
 import { DetalleEventoAccesorio } from './DetalleEventoAccesorio'
 import { NoReparableReparacion } from './NoReparableReparacion'
 import { DetalleEventoNoReparable } from './DetalleEventoNoReparable'
+import { FlujoReparacion } from './FlujoReparacion'
 import {
   Ban,
   CheckCircle2,
@@ -20,12 +21,10 @@ import {
   Pencil,
   Plus,
   ReceiptText,
-  Send,
-  UserRound,
   Wrench,
   X,
 } from 'lucide-react'
-import { Dialog as DialogPrimitive } from 'radix-ui'
+import { Dialog as DialogPrimitive, DropdownMenu as DropdownMenuPrimitive, Tabs } from 'radix-ui'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -56,7 +55,6 @@ import {
   estadoStockReparacionEsConsumible,
   estadoEsEditable,
   estadoEsTerminal,
-  obtenerTransicionesGenericas,
   tonosEstadoReparacion,
   type DatosConsumoParte,
   type DatosCotizacion,
@@ -165,11 +163,9 @@ interface DetalleReparacionProps {
   cargando: boolean
   error: unknown
   productos: readonly OpcionProductoReparacion[]
-  totalProductos?: number
   buscarProductos?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>>
   resolverProducto?: (id: string) => Promise<OpcionProductoReparacion | null>
   almacenes: readonly Almacen[]
-  totalAlmacenes?: number
   buscarAlmacenes?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<Almacen>>
   resolverAlmacen?: (id: string) => Promise<Almacen | null>
   resolverUbicacion?: (id: string) => Promise<UbicacionAlmacen | null>
@@ -184,6 +180,7 @@ interface DetalleReparacionProps {
   puedeEntregar: boolean
   alCambiarApertura: (abierto: boolean) => void
   alRestaurarFoco: () => void
+  alReintentarDetalle: () => void
   alEditar: () => void
   alAsignar: (reparacionId: string, tecnicoId: string, expectedLockVersion: number) => Promise<string | undefined>
   alCambiarEstado: (reparacionId: string, estado: EstadoReparacion, observacion: string, expectedLockVersion: number, operationKey: string) => Promise<string | undefined>
@@ -220,8 +217,21 @@ type TipoDialogoActivo =
   | 'entregar'
   | 'cancelar'
 
+type PestanaReparacion = 'resumen' | 'tecnica' | 'presupuesto' | 'entrega'
+
+type AccionGuiada =
+  | { tipo: 'dialogo'; dialogo: Exclude<TipoDialogoActivo, 'estado'>; etiqueta: string }
+  | { tipo: 'estado'; estado: EstadoReparacion; etiqueta: string }
+  | { tipo: 'pestana'; pestana: PestanaReparacion; etiqueta: string }
+
+const estadosConTrabajoTecnico: readonly EstadoReparacion[] = [
+  'received', 'warranty', 'diagnosis', 'quote_approved', 'in_repair', 'awaiting_parts', 'testing',
+]
+
 interface ContextoAccion {
   estadoPendiente?: CambioEstadoPendiente | null
+  estadoDestino?: EstadoReparacion
+  etiquetaEstado?: string
   tipo: TipoDialogoActivo
   reparacion: Reparacion
   cotizacion: CotizacionReparacion | null
@@ -253,11 +263,9 @@ export function DetalleReparacion({
   cargando,
   error,
   productos,
-  totalProductos = productos.length,
   buscarProductos,
   resolverProducto,
   almacenes,
-  totalAlmacenes = almacenes.length,
   buscarAlmacenes,
   resolverAlmacen,
   resolverUbicacion,
@@ -272,6 +280,7 @@ export function DetalleReparacion({
   puedeEntregar,
   alCambiarApertura,
   alRestaurarFoco,
+  alReintentarDetalle,
   alEditar,
   alAsignar,
   alCambiarEstado,
@@ -359,11 +368,24 @@ export function DetalleReparacion({
     return undefined
   }
 
-  const abrirDialogo = (tipo: TipoDialogoActivo) => {
+  const abrirDialogo = (
+    tipo: TipoDialogoActivo,
+    estadoDestino?: EstadoReparacion,
+    etiquetaEstado?: string,
+  ) => {
     if (!detalle) return
     try {
       const contexto = crearContextoAccion(tipo, detalle)
-      if (tipo === 'estado') contexto.estadoPendiente = recuperarEstadoPendiente(detalle.reparacion.id)
+      if (tipo === 'estado') {
+        const pendiente = recuperarEstadoPendiente(detalle.reparacion.id)
+        if (pendiente && estadoDestino && pendiente.estado !== estadoDestino) {
+          setMensaje('Hay otro avance pendiente de confirmar. Reinténtalo antes de iniciar uno nuevo.')
+          return
+        }
+        contexto.estadoPendiente = pendiente
+        contexto.estadoDestino = estadoDestino
+        contexto.etiquetaEstado = etiquetaEstado
+      }
       if (tipo === 'cotizacion') {
         contexto.cotizacionPendiente = recuperarCotizacionPendiente(
           detalle.reparacion.id,
@@ -413,7 +435,7 @@ export function DetalleReparacion({
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-foreground/25 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
           data-reparaciones-touch-target
-          className="fixed inset-y-0 end-0 z-50 flex w-full max-w-4xl flex-col border-s bg-background shadow-xl outline-none data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:animate-in data-[state=open]:slide-in-from-right"
+          className="fixed start-1/2 top-1/2 z-50 flex max-h-[92svh] w-[calc(100%-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background shadow-xl outline-none"
           onCloseAutoFocus={(evento) => {
             evento.preventDefault()
             alRestaurarFoco()
@@ -430,10 +452,11 @@ export function DetalleReparacion({
             </div>
           ) : error || !detalle ? (
             <div role="alert" className="grid min-h-80 place-items-center px-5 py-12 text-center sm:px-7">
-              <div><FileText aria-hidden="true" className="mx-auto size-8 text-destructive" /><p className="mt-4 font-medium">No se pudo cargar la reparación</p><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{error instanceof Error ? error.message : 'La reparación no está disponible o ya no pertenece a tu organización.'}</p></div>
+              <div><FileText aria-hidden="true" className="mx-auto size-8 text-destructive" /><p className="mt-4 font-medium">No se pudo cargar la reparación</p><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{error instanceof Error ? error.message : 'La reparación no está disponible o ya no pertenece a tu organización.'}</p><Button type="button" variant="outline" className="mt-5" onClick={alReintentarDetalle}>Reintentar</Button></div>
             </div>
           ) : (
             <DetalleContenido
+              key={detalle.reparacion.id}
               detalle={detalle}
               productos={productosDisponibles}
               almacenes={almacenesDisponibles}
@@ -449,6 +472,7 @@ export function DetalleReparacion({
               alEditar={alEditar}
               alAbrirDialogo={abrirDialogo}
               alRecuperarEstado={recuperarEstado}
+              recuperarEstadoPendiente={recuperarEstadoPendiente}
               alAbrirParte={abrirParte}
             />
           )}
@@ -463,6 +487,8 @@ export function DetalleReparacion({
             abierto={accion.tipo === 'estado'}
             reparacion={accion.reparacion}
             pendiente={accion.estadoPendiente}
+            estadoDestino={accion.estadoDestino}
+            etiquetaAccion={accion.etiquetaEstado}
             alCambiarApertura={cerrarDialogo}
             alGuardar={(estado, observacion, clave) => ejecutar(() => alCambiarEstado(accion.reparacion.id, estado, observacion, accion.estadoPendiente?.expectedLockVersion ?? accion.reparacion.lockVersion, clave), 'Estado actualizado.')}
           />
@@ -492,7 +518,6 @@ export function DetalleReparacion({
             esRevision={Boolean(accion.cotizacionPendiente?.quoteId) || accion.reparacion.estado === 'rejected'}
             operacionPendiente={accion.cotizacionPendiente}
             productos={productos}
-            totalProductos={totalProductos}
             buscarProductos={buscarProductos}
             resolverProducto={resolverProducto}
             alCambiarApertura={cerrarDialogo}
@@ -526,11 +551,9 @@ export function DetalleReparacion({
             abierto={accion.tipo === 'reserva'}
             reparacion={accion.reparacion}
             productos={productos}
-            totalProductos={totalProductos}
             buscarProductos={buscarProductos}
             resolverProducto={resolverProducto}
             almacenes={almacenesDisponibles}
-            totalAlmacenes={totalAlmacenes}
             buscarAlmacenes={buscarAlmacenes}
             resolverAlmacen={resolverAlmacen}
             ubicaciones={ubicacionesDisponibles}
@@ -589,6 +612,7 @@ export function DetalleReparacion({
 
 interface DetalleContenidoProps {
   alRecuperarEstado: () => void
+  recuperarEstadoPendiente: (reparacionId: string) => CambioEstadoPendiente | null
   detalle: DatosDetalleReparacion
   productos: readonly OpcionProductoReparacion[]
   almacenes: readonly Almacen[]
@@ -602,7 +626,7 @@ interface DetalleContenidoProps {
   puedeUsarPartes: boolean
   puedeEntregar: boolean
   alEditar: () => void
-  alAbrirDialogo: (dialogo: TipoDialogoActivo) => void
+  alAbrirDialogo: (dialogo: TipoDialogoActivo, estadoDestino?: EstadoReparacion, etiquetaEstado?: string) => void
   alAbrirParte: (dialogo: 'consumo' | 'cancelarParte', parte: ParteReparacion) => void
 }
 
@@ -611,7 +635,7 @@ interface CotizacionesDetalleProps {
   puedeCotizar: boolean
   puedeRevisar: boolean
   puedeAprobar: boolean
-  alAbrirDialogo: (dialogo: TipoDialogoActivo) => void
+  alAbrirDialogo: (dialogo: TipoDialogoActivo, estadoDestino?: EstadoReparacion, etiquetaEstado?: string) => void
   cargarLineasCotizacion?: (cotizacionId: string) => Promise<LineaCotizacionReparacion[]>
 }
 
@@ -722,6 +746,7 @@ function CotizacionesDetalle({
 
 function DetalleContenido({
   alRecuperarEstado,
+  recuperarEstadoPendiente,
   detalle,
   productos,
   almacenes,
@@ -739,12 +764,15 @@ function DetalleContenido({
   alAbrirParte,
 }: DetalleContenidoProps) {
   const reparacion = detalle.reparacion
+  const [estadoRecuperable, setEstadoRecuperable] = useState<'ninguno' | 'pendiente' | 'error'>('ninguno')
+  const [pestanaActiva, setPestanaActiva] = useState(() => pestanaSugeridaPorEstado(reparacion.estado))
+  const estadoAnterior = useRef(reparacion.estado)
   const cotizacionActiva = detalle.cotizacionActiva
   const editable = puedeEditar && estadoEsEditable(reparacion.estado)
-  const transiciones = puedeCambiarEstado
-    ? obtenerTransicionesGenericas(reparacion.estado)
-    : []
-   const puedeCancelar = puedeCambiarEstado && !estadoEsTerminal(reparacion.estado) && reparacion.estado !== 'non_repairable'
+  const puedeCancelar = puedeCambiarEstado
+    && !estadoEsTerminal(reparacion.estado)
+    && reparacion.estado !== 'non_repairable'
+    && !reparacion.servicioExternoPendiente
   const puedeCotizar = puedeEditar && (reparacion.estado === 'diagnosis' || reparacion.estado === 'quote_pending')
   const puedeRevisar = puedeEditar && reparacion.estado === 'rejected' && cotizacionActiva?.estado === 'rejected'
   const puedeAprobar = puedeAprobarCotizacion && reparacion.estado === 'waiting_customer_approval' && cotizacionActiva?.estado === 'pending'
@@ -757,6 +785,22 @@ function DetalleContenido({
   const puedeRegistrarPrueba = puedeActuarComoTecnico && reparacion.estado === 'testing'
   const puedeEntregarAhora = puedeEntregar && reparacion.estado === 'ready_for_delivery'
   const pruebasVigentes = detalle.pruebas.filter((prueba) => detalle.cicloPruebasActual > 0 && prueba.ciclo === detalle.cicloPruebasActual)
+  const repuestosPendientes = detalle.partes.some((parte) => parte.estado === 'reserved' && parte.cantidadConsumida < parte.cantidadSolicitada)
+  const mostrarPruebas = detalle.pruebas.length > 0 || detalle.cicloPruebasActual > 0
+    || ['testing', 'ready_for_delivery'].includes(reparacion.estado) || puedeRegistrarPrueba
+  useEffect(() => {
+    if (!puedeCambiarEstado) { setEstadoRecuperable('ninguno'); return }
+    try {
+      setEstadoRecuperable(recuperarEstadoPendiente(reparacion.id) ? 'pendiente' : 'ninguno')
+    } catch {
+      setEstadoRecuperable('error')
+    }
+  }, [reparacion.id, reparacion.lockVersion, puedeCambiarEstado, recuperarEstadoPendiente])
+  useEffect(() => {
+    if (estadoAnterior.current === reparacion.estado) return
+    estadoAnterior.current = reparacion.estado
+    setPestanaActiva(pestanaSugeridaPorEstado(reparacion.estado))
+  }, [reparacion.estado])
   const requisitosEntrega = [
     ...(!reparacion.tecnicoAsignadoId ? ['Asignar un técnico responsable.'] : []),
     ...(!pruebasVigentes.some((prueba) => prueba.aprobada) ? ['Registrar una prueba aprobada en el ciclo vigente.'] : []),
@@ -765,43 +809,108 @@ function DetalleContenido({
       ? ['Consumir o cancelar los saldos reservados; volver a reparación para resolverlos.'] : []),
   ]
   const guias: Record<EstadoReparacion, string> = {
-    received: 'Asigna al responsable e inicia el diagnóstico del equipo.',
+    received: reparacion.tecnicoAsignadoId ? 'Inicia el diagnóstico. Si se recibió por garantía, esa condición ya está indicada en la orden.' : 'Asigna al responsable para iniciar el diagnóstico.',
     diagnosis: reparacion.diagnosticoRegistrado
-      ? 'Revisa el diagnóstico. Prepara una cotización si corresponde o continúa con la reparación.'
+      ? 'Elige si corresponde preparar una cotización o iniciar directamente la reparación.'
       : 'Registra el diagnóstico antes de decidir el trabajo y el presupuesto.',
-    quote_pending: 'Prepara y envía la cotización para solicitar la aprobación del cliente.',
-    waiting_customer_approval: 'Registra la decisión del cliente sobre la cotización vigente antes de continuar.',
-    quote_approved: 'La cotización está aprobada. Continúa con el trabajo técnico y los repuestos necesarios.',
-    in_repair: 'Registra el trabajo realizado y resuelve los repuestos reservados antes de preparar la entrega.',
-    awaiting_parts: 'Resuelve los repuestos pendientes y vuelve a reparación cuando puedas continuar el trabajo.',
-    testing: requisitosEntrega.length ? 'Completa estos requisitos antes de marcar la orden como lista para entrega.' : 'Las pruebas del ciclo vigente están aprobadas. Puedes revisar el cambio a lista para entrega.',
-    ready_for_delivery: requisitosEntrega.length ? 'Revisa los requisitos pendientes antes de registrar la entrega.' : 'Registra la entrega del equipo al cliente para cerrar la orden.',
+    quote_pending: 'Completa o envía la cotización desde Presupuesto y repuestos.',
+    waiting_customer_approval: 'Registra la respuesta del cliente en la cotización vigente.',
+    quote_approved: 'La cotización está aprobada. Inicia el trabajo técnico.',
+    in_repair: repuestosPendientes
+      ? 'Registra el trabajo realizado y define si esperarás repuestos o iniciarás las pruebas.'
+      : 'Registra el trabajo realizado; cuando termine, inicia las pruebas.',
+    awaiting_parts: repuestosPendientes ? 'Revisa los repuestos pendientes. Reanuda el trabajo cuando estén disponibles.' : 'Los repuestos están resueltos. Reanuda la reparación.',
+    testing: pruebasVigentes.some((prueba) => !prueba.aprobada)
+      ? 'Hay una prueba fallida. Vuelve a reparación, corrige el problema e inicia un nuevo ciclo de pruebas.'
+      : pruebasVigentes.some((prueba) => prueba.aprobada)
+        ? 'Las pruebas están aprobadas. Prepara la entrega del equipo.'
+        : 'Registra las validaciones técnicas antes de entregar el equipo.',
+    ready_for_delivery: requisitosEntrega.length ? 'Resuelve los requisitos pendientes antes de registrar la entrega.' : 'Registra la entrega al cliente para cerrar la orden.',
     delivered: 'La orden está entregada. Puedes consultar el trabajo realizado, el presupuesto y el historial.',
     cancelled: 'La orden está cancelada. Su información y trazabilidad se conservan para consulta.',
     rejected: 'El presupuesto fue rechazado. Puedes consultar el motivo o preparar una revisión si corresponde.',
-     warranty: 'Revisa la atención en garantía y continúa con el diagnóstico o la reparación según corresponda.',
-     non_repairable: 'La conclusión técnica está registrada. Devuelve el equipo sin reparar o reabre su evaluación con motivo.',
-     returned_unrepaired: 'Equipo devuelto sin reparar. Una nueva evaluación requiere una nueva recepción; los accesorios pendientes conservan su custodia.',
+    warranty: reparacion.diagnosticoRegistrado ? 'Atención en garantía: inicia la reparación o consulta el diagnóstico registrado.' : 'Atención en garantía: inicia el diagnóstico del equipo.',
+    non_repairable: 'La conclusión técnica está registrada. Registra la devolución sin reparar para cerrar la orden.',
+    returned_unrepaired: 'Equipo devuelto sin reparar. Una nueva evaluación requiere una nueva recepción.',
   }
-  let siguienteAccion: { tipo: TipoDialogoActivo; etiqueta: string } | null = null
-  if (!estadoEsTerminal(reparacion.estado) && !reparacion.tecnicoAsignadoId && puedeAsignar) {
-    siguienteAccion = { tipo: 'asignacion', etiqueta: 'Asignar responsable' }
-  } else if (puedeRegistrarDiagnostico && !reparacion.diagnosticoRegistrado) {
-    siguienteAccion = { tipo: 'diagnostico', etiqueta: 'Completar diagnóstico' }
-  } else if (puedeAprobar) {
-    siguienteAccion = { tipo: 'aprobar', etiqueta: 'Registrar aprobación' }
-  } else if (puedeRevisar) {
-    siguienteAccion = { tipo: 'cotizacion', etiqueta: 'Preparar revisión' }
-  } else if (reparacion.estado === 'quote_pending' && puedeCotizar) {
-    siguienteAccion = { tipo: 'cotizacion', etiqueta: 'Preparar presupuesto' }
-  } else if (puedeRegistrarSolucion && reparacion.estado === 'in_repair' && !reparacion.solucionAplicadaRegistrada) {
-    siguienteAccion = { tipo: 'solucion', etiqueta: 'Completar trabajo realizado' }
-  } else if (puedeRegistrarPrueba && !pruebasVigentes.length) {
-    siguienteAccion = { tipo: 'prueba', etiqueta: 'Completar pruebas' }
-  } else if (puedeEntregarAhora && !requisitosEntrega.length) {
-    siguienteAccion = { tipo: 'entregar', etiqueta: 'Registrar entrega' }
-  } else if (transiciones.length) {
-    siguienteAccion = { tipo: 'estado', etiqueta: 'Revisar siguiente estado' }
+  const accionesSiguientes: AccionGuiada[] = []
+  const agregarEstado = (estado: EstadoReparacion, etiqueta: string) => {
+    if (puedeCambiarEstado) accionesSiguientes.push({ tipo: 'estado', estado, etiqueta })
+  }
+  const agregarDialogo = (dialogo: Exclude<TipoDialogoActivo, 'estado'>, etiqueta: string) => {
+    accionesSiguientes.push({ tipo: 'dialogo', dialogo, etiqueta })
+  }
+
+  switch (reparacion.estado) {
+    case 'received':
+      if (!reparacion.tecnicoAsignadoId && puedeAsignar) agregarDialogo('asignacion', 'Asignar responsable')
+      else agregarEstado('diagnosis', 'Iniciar diagnóstico')
+      break
+    case 'warranty':
+      agregarEstado(reparacion.diagnosticoRegistrado ? 'in_repair' : 'diagnosis', reparacion.diagnosticoRegistrado ? 'Iniciar reparación' : 'Iniciar diagnóstico')
+      break
+    case 'diagnosis':
+      if (!reparacion.diagnosticoRegistrado) {
+        if (puedeRegistrarDiagnostico) agregarDialogo('diagnostico', 'Registrar diagnóstico')
+      } else {
+        if (puedeCotizar || puedeRevisar || puedeAprobar) accionesSiguientes.push({ tipo: 'pestana', pestana: 'presupuesto', etiqueta: 'Preparar cotización' })
+        agregarEstado('in_repair', 'Iniciar reparación')
+      }
+      break
+    case 'quote_pending':
+    case 'waiting_customer_approval':
+    case 'rejected':
+      accionesSiguientes.push({ tipo: 'pestana', pestana: 'presupuesto', etiqueta: 'Revisar cotización' })
+      break
+    case 'quote_approved':
+      agregarEstado('in_repair', 'Iniciar reparación')
+      break
+    case 'in_repair':
+      if (puedeRegistrarSolucion && !reparacion.solucionAplicadaRegistrada) agregarDialogo('solucion', 'Registrar trabajo realizado')
+      else if (repuestosPendientes) {
+        agregarEstado('awaiting_parts', 'Esperar repuestos')
+        agregarEstado('testing', 'Iniciar pruebas')
+      } else agregarEstado('testing', 'Iniciar pruebas')
+      break
+    case 'awaiting_parts':
+      if (repuestosPendientes && puedeReservar) accionesSiguientes.push({ tipo: 'pestana', pestana: 'presupuesto', etiqueta: 'Revisar repuestos' })
+      else agregarEstado('in_repair', 'Reanudar reparación')
+      break
+    case 'testing':
+      if (pruebasVigentes.some((prueba) => !prueba.aprobada)) agregarEstado('in_repair', 'Volver a reparación')
+      else if (pruebasVigentes.some((prueba) => prueba.aprobada)) agregarEstado('ready_for_delivery', 'Preparar entrega')
+      else if (puedeRegistrarPrueba) agregarDialogo('prueba', 'Registrar pruebas')
+      break
+    case 'ready_for_delivery':
+      if (puedeEntregarAhora) agregarDialogo('entregar', 'Registrar entrega')
+      agregarEstado('in_repair', 'Reabrir reparación')
+      break
+    case 'non_repairable':
+      accionesSiguientes.push({ tipo: 'pestana', pestana: 'tecnica', etiqueta: 'Revisar devolución sin reparar' })
+      break
+    case 'delivered':
+    case 'cancelled':
+    case 'returned_unrepaired':
+      break
+  }
+
+  if (!reparacion.servicioExternoPendiente
+    && !reparacion.tecnicoAsignadoId
+    && puedeAsignar
+    && estadosConTrabajoTecnico.includes(reparacion.estado)) {
+    accionesSiguientes.splice(0, accionesSiguientes.length, {
+      tipo: 'dialogo',
+      dialogo: 'asignacion',
+      etiqueta: 'Asignar responsable',
+    })
+  }
+
+  if (reparacion.servicioExternoPendiente) {
+    accionesSiguientes.splice(0, accionesSiguientes.length, {
+      tipo: 'pestana',
+      pestana: 'entrega',
+      etiqueta: puedeEditar ? 'Registrar retorno del proveedor' : 'Revisar servicio externo',
+    })
   }
 
   return (
@@ -815,19 +924,33 @@ function DetalleContenido({
           </div>
            <span className="status-label" data-tone={tonosEstadoReparacion[reparacion.estado] === 'listo' ? 'listo' : tonosEstadoReparacion[reparacion.estado] === 'pendiente' || tonosEstadoReparacion[reparacion.estado] === 'espera' ? 'pendiente' : 'revision'}>{etiquetasEstadoReparacion[reparacion.estado]}</span>
         </div>
-        <div className="mt-5 flex flex-wrap gap-2">
-          {puedeCambiarEstado ? <Button type="button" variant="ghost" onClick={alRecuperarEstado}>Recuperar cambio de estado pendiente</Button> : null}
-          {editable ? <Button type="button" variant="outline" onClick={alEditar}><Pencil aria-hidden="true" /> Editar</Button> : null}
-          {puedeAsignar && !estadoEsTerminal(reparacion.estado) && siguienteAccion?.tipo !== 'asignacion' ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('asignacion')}><UserRound aria-hidden="true" /> {reparacion.tecnicoAsignadoId ? 'Reasignar técnico' : 'Asignar técnico'}</Button> : null}
-          {transiciones.length && siguienteAccion?.tipo !== 'estado' ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('estado')}><Wrench aria-hidden="true" /> Cambiar estado</Button> : null}
-          {puedeCancelar ? <Button type="button" variant="destructive" onClick={() => alAbrirDialogo('cancelar')}><Ban aria-hidden="true" /> Cancelar</Button> : null}
-          {puedeEntregarAhora && siguienteAccion?.tipo !== 'entregar' ? <Button type="button" disabled={Boolean(requisitosEntrega.length)} onClick={() => alAbrirDialogo('entregar')}><Send aria-hidden="true" /> Entregar</Button> : null}
-          {puedeAprobar ? <>
-            {siguienteAccion?.tipo !== 'aprobar' ? <Button type="button" onClick={() => alAbrirDialogo('aprobar')}><CheckCircle2 aria-hidden="true" /> Aprobar cotización</Button> : null}
-            <Button type="button" variant="destructive" onClick={() => alAbrirDialogo('rechazar')}><Ban aria-hidden="true" /> Rechazar cotización</Button>
-          </> : null}
-        </div>
+        {(estadoRecuperable !== 'ninguno' || editable || puedeAsignar && !estadoEsTerminal(reparacion.estado)
+          || puedeCancelar) ? <div className="mt-5 flex flex-wrap items-center gap-2">
+          {estadoRecuperable !== 'ninguno' && puedeCambiarEstado ? <Button type="button" variant="outline" onClick={alRecuperarEstado}>
+            {estadoRecuperable === 'pendiente' ? 'Reintentar avance pendiente' : 'Revisar avance pendiente'}
+          </Button> : null}
+          {estadoRecuperable === 'error' ? <p role="status" className="text-sm text-muted-foreground">No se pudo comprobar si hay un cambio pendiente.</p> : null}
+          {(editable || puedeAsignar && !estadoEsTerminal(reparacion.estado) && Boolean(reparacion.tecnicoAsignadoId)
+            || puedeCancelar) ? <DropdownMenuPrimitive.Root>
+            <DropdownMenuPrimitive.Trigger asChild>
+              <Button type="button" variant="outline">Más acciones</Button>
+            </DropdownMenuPrimitive.Trigger>
+            <DropdownMenuPrimitive.Portal>
+              <DropdownMenuPrimitive.Content align="start" sideOffset={4} collisionPadding={16} className="z-[80] min-w-52 rounded-md border bg-background p-1 shadow-lg outline-none">
+                {editable ? <DropdownMenuPrimitive.Item onSelect={alEditar} className="flex min-h-9 w-full cursor-pointer select-none items-center gap-2 rounded-sm px-2 text-left text-sm outline-none focus:bg-muted data-[disabled]:pointer-events-none data-[disabled]:opacity-50"><Pencil aria-hidden="true" className="size-4" /> Editar orden</DropdownMenuPrimitive.Item> : null}
+                {puedeAsignar && !estadoEsTerminal(reparacion.estado) && reparacion.tecnicoAsignadoId ? <DropdownMenuPrimitive.Item onSelect={() => alAbrirDialogo('asignacion')} className="flex min-h-9 w-full cursor-pointer select-none items-center rounded-sm px-2 text-left text-sm outline-none focus:bg-muted data-[disabled]:pointer-events-none data-[disabled]:opacity-50">Reasignar responsable</DropdownMenuPrimitive.Item> : null}
+                {puedeCancelar ? <DropdownMenuPrimitive.Item onSelect={() => alAbrirDialogo('cancelar')} className="flex min-h-9 w-full cursor-pointer select-none items-center gap-2 rounded-sm px-2 text-left text-sm text-destructive outline-none focus:bg-destructive/10 focus:text-destructive data-[disabled]:pointer-events-none data-[disabled]:opacity-50"><Ban aria-hidden="true" className="size-4" /> Cancelar orden</DropdownMenuPrimitive.Item> : null}
+              </DropdownMenuPrimitive.Content>
+            </DropdownMenuPrimitive.Portal>
+          </DropdownMenuPrimitive.Root> : null}
+        </div> : null}
       </header>
+
+      <FlujoReparacion
+        estado={reparacion.estado}
+        tieneCotizacion={detalle.cotizaciones.length > 0}
+        tieneDiagnostico={reparacion.diagnosticoRegistrado}
+      />
 
       <section aria-labelledby="reparacion-siguiente-paso" className="border-b bg-muted/25 px-5 py-4 sm:px-7">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -835,24 +958,30 @@ function DetalleContenido({
             <h2 id="reparacion-siguiente-paso" className="font-semibold">{estadoEsTerminal(reparacion.estado) && reparacion.estado !== 'rejected' ? 'Orden cerrada' : 'Siguiente paso'}</h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">{reparacion.servicioExternoPendiente ? 'El equipo está con un proveedor externo. Registra su retorno en Servicio externo y garantía antes de iniciar pruebas o preparar la entrega.' : guias[reparacion.estado]}</p>
           </div>
-          {siguienteAccion ? <Button type="button" onClick={() => alAbrirDialogo(siguienteAccion.tipo)}>{siguienteAccion.etiqueta}</Button> : null}
+          {estadoRecuperable === 'pendiente'
+            ? <p role="status" className="text-sm text-muted-foreground">Confirma primero el avance pendiente para evitar duplicar operaciones.</p>
+            : estadoRecuperable === 'ninguno' ? accionesSiguientes.map((accion, indice) => <Button
+            key={`${accion.tipo}:${accion.etiqueta}`}
+            type="button"
+            variant={indice === 0 ? 'default' : 'outline'}
+            disabled={accion.tipo === 'dialogo' && accion.dialogo === 'entregar' && Boolean(requisitosEntrega.length)}
+            onClick={() => {
+              if (accion.tipo === 'estado') alAbrirDialogo('estado', accion.estado, accion.etiqueta)
+              else if (accion.tipo === 'dialogo') alAbrirDialogo(accion.dialogo)
+              else setPestanaActiva(accion.pestana)
+            }}
+          >{accion.etiqueta}</Button>) : null}
         </div>
         {['testing', 'ready_for_delivery'].includes(reparacion.estado) && requisitosEntrega.length ? <ul aria-label="Requisitos pendientes para entregar" className="mt-3 list-disc space-y-1 ps-5 text-sm leading-6">{requisitosEntrega.map((requisito) => <li key={requisito}>{requisito}</li>)}</ul> : null}
       </section>
-      <nav aria-label="Secciones de la reparación" className="flex flex-wrap gap-x-5 gap-y-2 border-b px-5 py-3 text-sm sm:px-7">
-        {[
-          ['reparacion-seccion-resumen', 'Resumen'],
-          ['reparacion-seccion-tecnica', 'Trabajo técnico'],
-          ['reparacion-seccion-presupuesto', 'Presupuesto'],
-          ['reparacion-seccion-historial', 'Historial'],
-        ].map(([id, etiqueta]) => <a key={id} href={`#${id}`} className="rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={(evento) => {
-          evento.preventDefault()
-          const destino = document.getElementById(id)
-          if (destino instanceof HTMLDetailsElement) destino.open = true
-          destino?.focus({ preventScroll: true })
-          destino?.scrollIntoView?.({ block: 'start' })
-        }}>{etiqueta}</a>)}
-      </nav>
+      <Tabs.Root value={pestanaActiva} onValueChange={setPestanaActiva}>
+        <Tabs.List aria-label="Secciones de la reparación" className="sticky top-0 z-10 grid grid-cols-2 border-b bg-background px-5 py-2 sm:grid-cols-4 sm:px-7">
+          <Tabs.Trigger value="resumen" className="rounded-sm px-2 py-2 text-left text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=active]:font-semibold data-[state=active]:text-primary">Resumen</Tabs.Trigger>
+          <Tabs.Trigger value="tecnica" className="rounded-sm px-2 py-2 text-left text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=active]:font-semibold data-[state=active]:text-primary">Atención técnica</Tabs.Trigger>
+          <Tabs.Trigger value="presupuesto" className="rounded-sm px-2 py-2 text-left text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=active]:font-semibold data-[state=active]:text-primary">Presupuesto y repuestos</Tabs.Trigger>
+          <Tabs.Trigger value="entrega" className="rounded-sm px-2 py-2 text-left text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=active]:font-semibold data-[state=active]:text-primary">Entrega y trazabilidad</Tabs.Trigger>
+        </Tabs.List>
+        <Tabs.Content value="resumen" forceMount hidden={pestanaActiva !== 'resumen'} className="outline-none">
 
       <section id="reparacion-seccion-resumen" tabIndex={-1} aria-labelledby="reparacion-resumen" className="border-b px-5 py-6 outline-none sm:px-7">
         <h2 id="reparacion-resumen" className="flex items-center gap-2 font-semibold"><FileText aria-hidden="true" className="size-4 text-primary" /> Resumen de la orden</h2>
@@ -864,26 +993,35 @@ function DetalleContenido({
           <Dato etiqueta="Recepción" valor={<time dateTime={reparacion.recibidaEn}>{formatoFecha.format(new Date(reparacion.recibidaEn))}</time>} />
           <Dato etiqueta="Entrega estimada" valor={reparacion.fechaEntregaEstimada ? <time dateTime={reparacion.fechaEntregaEstimada}>{formatoFechaDia.format(new Date(`${reparacion.fechaEntregaEstimada}T12:00:00`))}</time> : 'Sin fecha'} />
           <Dato etiqueta="Técnico asignado" valor={reparacion.tecnicoAsignadoId ? abreviarId(reparacion.tecnicoAsignadoId) : 'Pendiente de asignación'} />
-          {reparacion.referenciaCliente ? <Dato etiqueta="Referencia del cliente" valor={reparacion.referenciaCliente} /> : null}
+          {reparacion.referenciaCliente ? <Dato etiqueta="Ticket o referencia externa" valor={reparacion.referenciaCliente} /> : null}
         </dl>
         <FechasReparacion reparacion={reparacion} requiereNuevaValidacion={(reparacion.estado === 'in_repair' && detalle.cicloPruebasActual > 0) || (reparacion.estado === 'testing' && detalle.cicloPruebasActual > 1)} />
         <div className="mt-3 border-t pt-4"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Problema reportado</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{reparacion.problema}</p></div>
-        {reparacion.notas ? <div className="mt-4 border-t pt-4"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Notas de recepción</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{reparacion.notas}</p></div> : null}
+        {reparacion.notas ? <div className="mt-4 border-t pt-4"><p className="font-mono text-[0.68rem] tracking-[0.06em] text-muted-foreground uppercase">Estado físico y observaciones al recibir</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{reparacion.notas}</p></div> : null}
       </section>
+        </Tabs.Content>
 
+        <Tabs.Content value="tecnica" forceMount hidden={pestanaActiva !== 'tecnica'} className="outline-none">
       <section id="reparacion-seccion-tecnica" tabIndex={-1} aria-labelledby="reparacion-diagnosticos" className="border-b px-5 py-6 outline-none sm:px-7">
-        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-diagnosticos" className="flex items-center gap-2 font-semibold"><Wrench aria-hidden="true" className="size-4 text-primary" /> Diagnóstico</h2><p className="mt-1 text-sm text-muted-foreground">Historial técnico de revisiones</p></div>{puedeRegistrarDiagnostico ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('diagnostico')}><Plus aria-hidden="true" /> Registrar diagnóstico</Button> : null}</div>
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-diagnosticos" className="flex items-center gap-2 font-semibold"><Wrench aria-hidden="true" className="size-4 text-primary" /> Diagnóstico</h2><p className="mt-1 text-sm text-muted-foreground">Historial técnico de revisiones</p></div>{puedeRegistrarDiagnostico && !accionesSiguientes.some((accion) => accion.tipo === 'dialogo' && accion.dialogo === 'diagnostico') ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('diagnostico')}><Plus aria-hidden="true" /> Registrar diagnóstico</Button> : null}</div>
         {detalle.diagnosticos.length ? <div className="mt-5 space-y-3">{detalle.diagnosticos.map((diagnostico) => <article key={diagnostico.id} className="border bg-muted/20 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><p className="font-medium">{diagnostico.sintomas}</p><time className="text-xs text-muted-foreground" dateTime={diagnostico.diagnosticadoEn}>{formatoFecha.format(new Date(diagnostico.diagnosticadoEn))}</time></div><dl className="mt-3 grid gap-x-5 sm:grid-cols-2"><Dato etiqueta="Causa encontrada" valor={mostrar(diagnostico.causaEncontrada)} /><Dato etiqueta="Solución recomendada" valor={mostrar(diagnostico.solucionRecomendada)} /></dl>{diagnostico.notas ? <p className="mt-2 border-t pt-3 text-sm leading-6 text-muted-foreground">{diagnostico.notas}</p> : null}</article>)}</div> : <p className="mt-5 border border-dashed px-4 py-5 text-sm text-muted-foreground">Todavía no hay diagnósticos registrados.</p>}
       </section>
 
       <section aria-labelledby="reparacion-solucion" className="border-b px-5 py-6 sm:px-7">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div><h2 id="reparacion-solucion" className="flex items-center gap-2 font-semibold"><Wrench aria-hidden="true" className="size-4 text-primary" /> Solución aplicada</h2><p className="mt-1 text-sm text-muted-foreground">Trabajo técnico realizado en el equipo</p></div>
-          {puedeRegistrarSolucion ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('solucion')}><Pencil aria-hidden="true" /> {reparacion.solucionAplicada ? 'Modificar solución' : 'Registrar solución'}</Button> : null}
+          {puedeRegistrarSolucion && !accionesSiguientes.some((accion) => accion.tipo === 'dialogo' && accion.dialogo === 'solucion') ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('solucion')}><Pencil aria-hidden="true" /> {reparacion.solucionAplicada ? 'Modificar solución' : 'Registrar solución'}</Button> : null}
         </div>
         <p className={`mt-5 whitespace-pre-wrap text-sm leading-6 ${reparacion.solucionAplicada ? '' : 'border border-dashed px-4 py-5 text-muted-foreground'}`}>{mostrar(reparacion.solucionAplicada, 'Todavía no hay una solución aplicada registrada.')}</p>
       </section>
 
+      {mostrarPruebas ? <section id="reparacion-seccion-pruebas" tabIndex={-1} aria-labelledby="reparacion-pruebas" className="border-b px-5 py-6 outline-none sm:px-7">
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-pruebas" className="flex items-center gap-2 font-semibold"><ClipboardCheck aria-hidden="true" className="size-4 text-primary" /> Pruebas</h2><p className="mt-1 text-sm text-muted-foreground">Validaciones antes de la entrega</p></div>{puedeRegistrarPrueba && !accionesSiguientes.some((accion) => accion.tipo === 'dialogo' && accion.dialogo === 'prueba') ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('prueba')}><Plus aria-hidden="true" /> Registrar prueba</Button> : null}</div><ResultadosPruebas pruebas={detalle.pruebas} cicloActual={detalle.cicloPruebasActual} /></section> : null}
+
+       <NoReparableReparacion key={`non-repairable:${reparacion.organizationId}:${reparacion.id}`} detalle={detalle} />
+        </Tabs.Content>
+
+        <Tabs.Content value="presupuesto" forceMount hidden={pestanaActiva !== 'presupuesto'} className="outline-none">
       <div id="reparacion-seccion-presupuesto" tabIndex={-1} className="outline-none">
       <CotizacionesDetalle
         key={detalle.cotizacionActiva?.id ?? 'sin-cotizacion'}
@@ -895,19 +1033,17 @@ function DetalleContenido({
         cargarLineasCotizacion={cargarLineasCotizacion}
       />
       </div>
-      <section aria-labelledby="reparacion-partes" className="border-b px-5 py-6 sm:px-7">
+      <section id="reparacion-seccion-repuestos" tabIndex={-1} aria-labelledby="reparacion-partes" className="border-b px-5 py-6 outline-none sm:px-7">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-partes" className="flex items-center gap-2 font-semibold"><Package aria-hidden="true" className="size-4 text-primary" /> Repuestos</h2><p className="mt-1 text-sm text-muted-foreground">Reservas, consumos y ubicación física</p></div>{puedeReservar ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('reserva')}><Plus aria-hidden="true" /> Reservar repuesto</Button> : null}</div>
         {detalle.partes.length ? <div className="mt-5 space-y-3">{detalle.partes.map((parte) => { const saldo = Math.max(0, parte.cantidadSolicitada - parte.cantidadConsumida); const puedeOperar = puedeUsarPartes && ['quote_approved', 'warranty', 'in_repair', 'awaiting_parts', 'testing'].includes(reparacion.estado); return <article key={parte.id} className="border bg-muted/20 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-medium">{parte.productoDescripcionSnapshot}</p><p className="mt-1 font-mono text-xs text-muted-foreground">{parte.productoCodigoSnapshot} · {etiquetasEstadoStockReparacion[parte.estadoStock]}</p></div><span className="status-label" data-tone={parte.estado === 'consumed' ? 'listo' : parte.estado === 'reserved' ? 'pendiente' : 'revision'}>{etiquetasEstadoParte[parte.estado]}</span></div><dl className="mt-4 grid grid-cols-2 gap-x-5 sm:grid-cols-4"><Dato etiqueta="Solicitado" valor={`${parte.cantidadSolicitada} ${unidadProducto(productos, parte.productoId)}`} /><Dato etiqueta="Consumido" valor={`${parte.cantidadConsumida} ${unidadProducto(productos, parte.productoId)}`} /><Dato etiqueta="Saldo" valor={<span className="font-semibold">{saldo}</span>} /><Dato etiqueta="Lote" valor={mostrar(parte.lote, 'Sin lote')} /></dl><p className="mt-3 border-t pt-3 text-xs text-muted-foreground">{nombreAlmacen(almacenes, parte.almacenId)} · {nombreUbicacion(ubicaciones, parte.ubicacionId)}</p>{puedeOperar && parte.estado === 'reserved' ? <div className="mt-3 flex flex-wrap justify-end gap-2 border-t pt-3"><Button type="button" variant="outline" size="sm" disabled={saldo <= 0} onClick={() => alAbrirParte('consumo', parte)}>Consumir saldo</Button><Button type="button" variant="ghost" size="sm" onClick={() => alAbrirParte('cancelarParte', parte)}>Cancelar reserva</Button></div> : null}{parte.consumos.length ? <ul className="mt-3 space-y-1 border-t pt-3 text-xs text-muted-foreground">{parte.consumos.map((consumo) => <li key={consumo.id} className="flex flex-wrap justify-between gap-2"><span>Consumo de {consumo.cantidad} · {formatoFecha.format(new Date(consumo.consumidoEn))}</span><span className="font-mono">{abreviarId(consumo.claveOperacion)}</span></li>)}</ul> : null}</article> })}</div> : <p className="mt-5 border border-dashed px-4 py-5 text-sm text-muted-foreground">No hay repuestos reservados para esta reparación.</p>}
       </section>
+      <CostoRealReparacion reparacion={reparacion} />
+        </Tabs.Content>
 
-      <section aria-labelledby="reparacion-pruebas" className="border-b px-5 py-6 sm:px-7">
-        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-pruebas" className="flex items-center gap-2 font-semibold"><ClipboardCheck aria-hidden="true" className="size-4 text-primary" /> Pruebas</h2><p className="mt-1 text-sm text-muted-foreground">Validaciones antes de la entrega</p></div>{puedeRegistrarPrueba ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('prueba')}><Plus aria-hidden="true" /> Registrar prueba</Button> : null}</div><ResultadosPruebas pruebas={detalle.pruebas} cicloActual={detalle.cicloPruebasActual} /></section>
-
-       <NoReparableReparacion key={`non-repairable:${reparacion.organizationId}:${reparacion.id}`} detalle={detalle} />
+        <Tabs.Content value="entrega" forceMount hidden={pestanaActiva !== 'entrega'} className="outline-none">
        <AccesoriosReparacion key={`accessories:${reparacion.organizationId}:${reparacion.id}`} reparacion={reparacion} puedeEditar={puedeEditar} puedeDevolver={puedeEntregar} />
       <RecuperarEntregaAccesorios reparacion={reparacion} />
       <AtencionComplementariaReparacion key={`${reparacion.organizationId}:${reparacion.id}`} reparacion={reparacion} puedeEditar={puedeEditar} puedeGarantia={puedeEntregar} />
-      <CostoRealReparacion reparacion={reparacion} />
       <AdjuntosReparacion reparacionId={reparacion.id} puedeAdjuntar={puedeEditar || puedeRealizarTecnica} />
       <details id="reparacion-seccion-historial" tabIndex={-1} className="px-5 py-6 outline-none sm:px-7">
         <summary className="cursor-pointer rounded-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Historial de la orden · {detalle.eventos.length} eventos</summary>
@@ -916,12 +1052,21 @@ function DetalleContenido({
       <section aria-labelledby="reparacion-linea-tiempo" className="pt-5">
          <div className="flex items-end justify-between gap-3"><div><h2 id="reparacion-linea-tiempo" className="flex items-center gap-2 font-semibold"><Clock3 aria-hidden="true" className="size-4 text-primary" /> Línea de tiempo</h2><p className="mt-1 text-sm text-muted-foreground">Registro inmutable de la orden</p></div><span className="font-mono text-xs text-muted-foreground">{detalle.eventos.length} EVENTOS</span></div>{detalle.eventos.length ? <ol className="mt-5 space-y-0 ps-2">{detalle.eventos.map((evento) => <li key={evento.id} className="relative border-s ps-5 pb-6 last:pb-0"><span className="absolute -start-1.5 top-1.5 size-3 rounded-full border-2 border-background bg-primary" /><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-medium">{etiquetaEvento(evento.tipo)}</p>{evento.estadoAnterior || evento.estadoNuevo ? <p className="mt-1 font-mono text-[0.68rem] text-muted-foreground uppercase">{evento.estadoAnterior ? etiquetasEstadoReparacion[evento.estadoAnterior as EstadoReparacion] ?? evento.estadoAnterior : 'Inicio'}{evento.estadoNuevo ? ` → ${etiquetasEstadoReparacion[evento.estadoNuevo as EstadoReparacion] ?? evento.estadoNuevo}` : ''}</p> : null}</div><time className="text-xs text-muted-foreground" dateTime={evento.creadoEn}>{formatoFecha.format(new Date(evento.creadoEn))}</time></div>{evento.observacion ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{evento.observacion}</p> : null}<DetalleEventoAccesorio evento={evento} /><DetalleEventoNoReparable evento={evento} eventos={detalle.eventos} /></li>)}</ol> : <p className="mt-5 text-sm text-muted-foreground">La actividad aparecerá aquí al avanzar la orden.</p>}</section>
       </details>
+        </Tabs.Content>
+      </Tabs.Root>
     </div>
   )
 }
 
 function prioridadLabel(prioridad: Reparacion['prioridad']) {
   return { low: 'Baja', normal: 'Normal', high: 'Alta', urgent: 'Urgente' }[prioridad]
+}
+
+function pestanaSugeridaPorEstado(estado: EstadoReparacion) {
+  if (['quote_pending', 'waiting_customer_approval', 'rejected', 'awaiting_parts'].includes(estado)) return 'presupuesto'
+  if (['diagnosis', 'quote_approved', 'in_repair', 'testing', 'warranty', 'non_repairable'].includes(estado)) return 'tecnica'
+  if (['ready_for_delivery', 'delivered', 'returned_unrepaired', 'cancelled'].includes(estado)) return 'entrega'
+  return 'resumen'
 }
 
 function unidadProducto(productos: readonly OpcionProductoReparacion[], productoId: string) {

@@ -65,6 +65,18 @@ function etiquetaDocumento(compra: Compra) {
   return `${compra.tipoDocumento} ${compra.serie}-${compra.numero}`
 }
 
+function resumenRechazoPendiente(compra: Compra) {
+  const lineas = compra.lineas.filter(
+    (linea) => (linea.cantidadRechazada ?? 0) > 0 && linea.cantidadPendiente > 0,
+  )
+  if (!lineas.length) return null
+  const detalle = lineas.slice(0, 2).map((linea) =>
+    `${linea.productoDescripcion}: ${linea.cantidadRechazada} rechazadas; ${linea.cantidadPendiente} por aceptar (${linea.unidadMedida})`,
+  )
+  if (lineas.length > 2) detalle.push(`y ${lineas.length - 2} productos más`)
+  return `Rechazo pendiente de resolución. ${detalle.join(' · ')}`
+}
+
 function EstadoCompraEtiqueta({ estado }: { estado: EstadoCompra }) {
   const etiquetas: Record<EstadoCompra, string> = {
     borrador: 'Pendiente',
@@ -532,6 +544,11 @@ export function ComprasPage() {
                         </dd>
                       </div>
                     </dl>
+                    {resumenRechazoPendiente(compra) ? (
+                      <p className="mt-3 border-s-4 border-amber-500 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-950">
+                        {resumenRechazoPendiente(compra)}. Recibe el reemplazo o cierra el saldo solo cuando la compensación esté documentada.
+                      </p>
+                    ) : null}
                     {compra.estado === 'borrador' && puedeGestionar ? (
                       <div className="mt-4 flex flex-wrap gap-2">
                         <Button
@@ -565,7 +582,7 @@ export function ComprasPage() {
                         </Button>
                         {puedeGestionar ? (
                           <Button type="button" variant="ghost" disabled={accionando} onClick={(evento) => solicitarAnulacion(evento, compra)}>
-                            <Ban aria-hidden="true" /> Anular
+                            <Ban aria-hidden="true" /> {compra.estado === 'parcialmente-recibida' ? 'Cerrar saldo' : 'Anular'}
                           </Button>
                         ) : null}
                       </div>
@@ -617,6 +634,11 @@ export function ComprasPage() {
                         </td>
                         <td className="px-4 py-4">
                           <EstadoCompraEtiqueta estado={compra.estado} />
+                          {resumenRechazoPendiente(compra) ? (
+                            <p className="mt-2 max-w-xs text-xs leading-5 text-amber-900">
+                              {resumenRechazoPendiente(compra)}
+                            </p>
+                          ) : null}
                         </td>
                         <td className="px-6 py-4">
                           {compra.estado === 'borrador' && puedeGestionar ? (
@@ -673,8 +695,8 @@ export function ComprasPage() {
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  title="Anular orden"
-                                  aria-label={`Anular ${etiquetaDocumento(compra)}`}
+                                  title={compra.estado === 'parcialmente-recibida' ? 'Cerrar saldo pendiente' : 'Anular orden'}
+                                  aria-label={`${compra.estado === 'parcialmente-recibida' ? 'Cerrar saldo de' : 'Anular'} ${etiquetaDocumento(compra)}`}
                                   disabled={accionando}
                                   onClick={(evento) => solicitarAnulacion(evento, compra)}
                                 >

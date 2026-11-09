@@ -173,13 +173,13 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 108
         lot: f.lot, expiration_date: f.expiration, warehouse_id: f.warehouseId, location_id: f.locationId })
       expect(Number(outbound.quantity)).toBe(4)
 
-      await test.step('Distribución asigna la línea al movimiento y lote despachados', async () => {
+      await test.step('Distribución vincula automáticamente la cantidad con la salida y lote despachados', async () => {
         await page.goto('/distribucion')
         await page.getByRole('region', { name: 'Pedidos por programar' }).getByLabel('Buscar', { exact: true }).fill(f.reference)
         await page.getByRole('row').filter({ hasText: order.order_number }).getByRole('button', { name: 'Programar envío' }).click()
         const dialog = page.getByRole('dialog', { name: 'Programar entrega', exact: true })
         await expect(dialog).toBeVisible()
-        await dialog.getByRole('spinbutton', { name: `Cantidad del lote ${f.lot}`, exact: true }).fill('4')
+        await dialog.getByRole('spinbutton', { name: `Cantidad de ${f.name} para este envío`, exact: true }).fill('4')
         await dialog.getByLabel(/^Referencia interna de despacho/).fill(f.reference)
         await dialog.getByLabel(/^Número de guía de remisión/).fill(`T001-${f.documentNumber}`)
         await dialog.locator('summary').filter({ hasText: 'Datos de ruta' }).click()
@@ -226,7 +226,6 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 108
         const dialog = page.getByRole('dialog', { name: 'Registrar resultado de entrega' })
         // A real partial receipt enables rescheduling without bypassing state rules.
         await dialog.getByLabel('Recibido ahora', { exact: true }).fill('2')
-        await dialog.getByLabel(/^Evidencia o constancia/).fill(`Parcial ${f.reference}`)
         await mutate(page, 'record_distribution_delivery_outcome', () => dialog.getByRole('button', { name: 'Confirmar entrega parcial' }).click())
         await expect(dialog).toBeHidden()
         await expect.poll(async () => (await checked(rows('distribution_deliveries').eq('id', delivery.id).single())).delivery_status).toBe('entrega_parcial')
@@ -241,7 +240,6 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 108
         await expect(rescheduleDialog).toBeHidden()
         await article.getByRole('button', { name: 'Registrar recepción adicional', exact: true }).click()
         await dialog.getByLabel('Recibido ahora', { exact: true }).fill('2')
-        await dialog.getByLabel(/^Evidencia o constancia/).fill(`Conformidad ${f.reference}`)
         await mutate(page, 'record_distribution_delivery_outcome', () => dialog.getByRole('button', { name: 'Confirmar entrega completa' }).click())
         await expect(dialog).toBeHidden()
         await page.reload()
@@ -258,7 +256,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 108
         expect(outcomes).toHaveLength(2)
         expect(outcomes.filter((outcome) => outcome.result_status === 'entrega_parcial')).toHaveLength(1)
         const complete = outcomes.find((outcome) => outcome.result_status === 'entregado')!
-        expect(complete).toMatchObject({ result_status: 'entregado', evidence: `Conformidad ${f.reference}` })
+        expect(complete).toMatchObject({ result_status: 'entregado', evidence: '' })
         const outcomeLines = await checked(rows('distribution_delivery_outcome_lines').in('outcome_id', outcomes.map((outcome) => outcome.id)))
         expect(outcomeLines).toHaveLength(2)
         expect(outcomeLines.every((line) => line.order_line_id === orderItem.id)).toBe(true)

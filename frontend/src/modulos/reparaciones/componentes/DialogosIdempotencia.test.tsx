@@ -84,22 +84,22 @@ describe('Claves de reintento de comandos', () => {
     expect(alGuardar.mock.calls[2][1]).not.toBe(alGuardar.mock.calls[0][1])
   })
 
-  it('busca y pagina almacenes remotos desde la reserva', async () => {
+  it('busca almacenes remotos desde la reserva con el combobox compartido', async () => {
     const almacenRemoto = { id: '00000000-0000-4000-8000-000000000099',
       codigo: 'A-1001', nombre: 'Almacén 1001', direccion: '', activo: true }
     const buscarAlmacenes = vi.fn().mockResolvedValue({
-      elementos: [almacenRemoto], total: 1001,
+      elementos: [almacenRemoto],
     })
     render(<DialogoReservaParte abierto reparacion={reparacion} productos={productos}
-      almacenes={almacenes} totalAlmacenes={1001} buscarAlmacenes={buscarAlmacenes}
+      almacenes={almacenes} buscarAlmacenes={buscarAlmacenes}
       ubicaciones={ubicaciones} alGuardar={vi.fn()} alCambiarApertura={vi.fn()} />)
 
-    fireEvent.change(screen.getByLabelText('Buscar almacén'), { target: { value: 'A-1001' } })
+    fireEvent.change(screen.getByLabelText('Almacén *'), { target: { value: 'A-1001' } })
     expect(await screen.findByRole('option', { name: 'A-1001 · Almacén 1001' })).toBeInTheDocument()
     expect(buscarAlmacenes).toHaveBeenCalledWith({
       busqueda: 'A-1001', pagina: 1, tamanioPagina: 25,
     })
-    expect(screen.getByText('1001 coincidencias · página 1 de 41')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Siguiente' })).not.toBeInTheDocument()
   })
 
   it('reutiliza la clave del borrador y genera otra para una intención distinta', async () => {

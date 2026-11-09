@@ -83,6 +83,22 @@ async function openRepair(page: Page, reference: string) {
   await expect(page.getByRole('button', { name: 'Cerrar detalle de reparación' })).toBeVisible()
 }
 
+async function openRepairTab(page: Page, name: string) {
+  const tab = page.getByRole('tab', { name, exact: true })
+  if (await tab.getAttribute('aria-selected') !== 'true') await tab.click()
+  await expect(tab).toHaveAttribute('aria-selected', 'true')
+}
+
+async function editRepair(page: Page) {
+  await page.getByRole('button', { name: 'Más acciones', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Editar orden', exact: true }).click()
+}
+
+async function openPartReservation(page: Page) {
+  await openRepairTab(page, 'Presupuesto y repuestos')
+  await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
+}
+
 async function repair(f: Fixture) {
   return checked(f.api.from('repairs').select('*').eq('organization_id', f.organizationId)
     .eq('customer_reference', f.reference).single())
@@ -92,29 +108,37 @@ async function createRepair(page: Page, f: Fixture) {
   await page.goto('/reparaciones')
   await page.getByRole('button', { name: 'Registrar reparación', exact: true }).first().click()
   const dialog = page.getByRole('dialog', { name: 'Registrar reparación', exact: true })
-  await dialog.getByLabel('Buscar cliente').fill(f.reference)
-  await expect(dialog.getByLabel('Cliente *', { exact: true }).locator(`option[value="${f.customerId}"]`)).toHaveCount(1)
-  await dialog.getByLabel('Cliente *', { exact: true }).selectOption(f.customerId)
-  await dialog.getByLabel('Buscar producto o equipo').fill(f.reference)
-  await expect(dialog.getByLabel('Producto o equipo *').locator(`option[value="${f.productId}"]`)).toHaveCount(1)
-  await dialog.getByLabel('Producto o equipo *').selectOption(f.productId)
+  await selectCatalogOption(dialog, 'Cliente', f.reference, f.reference)
+  await selectCatalogOption(dialog, 'Producto o equipo', f.reference, f.reference)
   await dialog.getByLabel('Problema reportado *').fill('Equipo no enciende')
   await fillCustomerReference(dialog, f.reference)
   return dialog
 }
 
+async function selectCatalogOption(
+  scope: Locator,
+  label: string,
+  query: string,
+  matchingText: string,
+) {
+  const field = scope.getByRole('combobox', { name: label, exact: true })
+  await field.fill(query)
+  const option = scope.getByRole('option').filter({ hasText: matchingText })
+  await expect(option).toBeVisible()
+  await option.click()
+  await expect(field).toHaveAttribute('aria-expanded', 'false')
+  await expect(field).not.toHaveValue('')
+}
+
 async function fillCustomerReference(dialog: Locator, reference: string) {
-  const field = dialog.getByLabel('Referencia del cliente')
-  await dialog.getByText('Datos adicionales de recepción', { exact: true }).click()
+  const field = dialog.getByLabel('Ticket o referencia externa')
+  await dialog.getByText('Referencias y garantía', { exact: true }).click()
   await expect(field).toBeVisible()
   await field.fill(reference)
 }
 
 async function selectWarehouse(dialog: Locator, f: Fixture) {
-  await dialog.getByLabel('Buscar almacén').fill(f.reference)
-  const warehouse = dialog.getByLabel('Almacén *', { exact: true })
-  await expect(warehouse.locator(`option[value="${f.warehouseId}"]`)).toHaveCount(1)
-  await warehouse.selectOption(f.warehouseId)
+  await selectCatalogOption(dialog, 'Almacén', f.reference, f.reference)
 }
 
 // Forward to real PostgreSQL, then lose the successful response. Never mock a
@@ -150,15 +174,14 @@ async function submitWithLostResponse(page: Page, dialog: Locator, rpc: string, 
   await intercepted.finish()
 }
 
-async function openStateChange(page: Page) {
-  await page.getByRole('button', { name: /^(Cambiar estado|Revisar siguiente estado)$/ }).click()
-  return page.getByRole('dialog', { name: 'Cambiar estado', exact: true })
+async function openStateChange(page: Page, action: string) {
+  await page.getByRole('button', { name: action, exact: true }).click()
+  return page.getByRole('dialog', { name: 'Confirmar avance', exact: true })
 }
 
-async function changeState(page: Page, state: string) {
-  const dialog = await openStateChange(page)
-  await dialog.getByLabel('Nuevo estado *').selectOption(state)
-  await dialog.getByRole('button', { name: 'Cambiar estado', exact: true }).click()
+async function changeState(page: Page, action: string) {
+  const dialog = await openStateChange(page, action)
+  await dialog.getByRole('button', { name: action, exact: true }).click()
   await expect(dialog).toBeHidden()
 }
 
@@ -169,18 +192,45 @@ async function prepareDiagnosis(page: Page, f: Fixture) {
   await openRepair(page, f.reference)
   await page.getByRole('button', { name: 'Asignar responsable', exact: true }).click()
   const assignment = page.getByRole('dialog', { name: 'Asignar técnico', exact: true })
-  await assignment.getByLabel('Técnico *').selectOption(f.userId)
+  await selectCatalogOption(assignment, 'Técnico', env('E2E_REPAIRS_EMAIL'), env('E2E_REPAIRS_EMAIL'))
   await assignment.getByRole('button', { name: 'Guardar asignación' }).click()
   await expect(assignment).toBeHidden()
-  await changeState(page, 'diagnosis')
+  await changeState(page, 'Iniciar diagnóstico')
 }
 
 async function quote(page: Page, action = 'Crear cotización') {
+  const budgetTab = page.getByRole('tab', { name: 'Presupuesto y repuestos', exact: true })
+  if (await budgetTab.getAttribute('aria-selected') !== 'true') {
+    const nextStep = page.getByRole('button', { name: /^(Preparar cotización|Revisar cotización)$/ })
+    await expect(nextStep).toBeVisible()
+    await nextStep.click()
+  }
+  await expect(budgetTab).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: action, exact: true }).click()
   const dialog = page.getByRole('dialog', { name: /Crear cotización|Crear revisión|Editar cotización/ })
   await dialog.getByLabel('Descripción *', { exact: true }).fill('Reparación de fuente')
   await dialog.getByLabel('Precio unitario *').fill('50')
   return dialog
+}
+
+async function approvePendingQuote(page: Page) {
+  const budgetTab = page.getByRole('tab', { name: 'Presupuesto y repuestos', exact: true })
+  if (await budgetTab.getAttribute('aria-selected') !== 'true') {
+    await page.getByRole('button', { name: 'Revisar cotización', exact: true }).click()
+  }
+  await expect(budgetTab).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('button', { name: 'Aprobar', exact: true }).click()
+  const approval = page.getByRole('dialog', { name: 'Aprobar cotización', exact: true })
+  await approval.getByRole('button', { name: 'Aprobar cotización', exact: true }).click()
+  await expect(approval).toBeHidden()
+}
+
+async function registerDiagnosis(page: Page, symptoms: string) {
+  await page.getByRole('button', { name: 'Registrar diagnóstico', exact: true }).click()
+  const diagnosis = page.getByRole('dialog', { name: 'Registrar diagnóstico', exact: true })
+  await diagnosis.getByLabel('Síntomas observados *').fill(symptoms)
+  await diagnosis.getByRole('button', { name: 'Guardar diagnóstico', exact: true }).click()
+  await expect(diagnosis).toBeHidden()
 }
 
 async function stock(api: SupabaseClient, productId: string) {
@@ -195,10 +245,10 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   await openRepair(page, f.reference)
   await page.getByRole('button', { name: 'Asignar responsable', exact: true }).click()
   const assignment = page.getByRole('dialog', { name: 'Asignar técnico', exact: true })
-  await assignment.getByLabel('Técnico *').selectOption(f.userId)
+  await selectCatalogOption(assignment, 'Técnico', env('E2E_REPAIRS_EMAIL'), env('E2E_REPAIRS_EMAIL'))
   await assignment.getByRole('button', { name: 'Guardar asignación' }).click()
   await expect(assignment).toBeHidden()
-  await changeState(page, 'diagnosis')
+  await changeState(page, 'Iniciar diagnóstico')
   await page.getByRole('button', { name: 'Registrar diagnóstico', exact: true }).click()
   const diagnosis = page.getByRole('dialog', { name: 'Registrar diagnóstico' })
   await diagnosis.getByLabel('Síntomas observados *').fill('Fuente sin salida')
@@ -219,16 +269,11 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   const submission = await quote(page, 'Editar borrador')
   await submission.getByRole('button', { name: 'Enviar a aprobación' }).click()
   await expect(submission).toBeHidden()
-  await page.getByRole('button', { name: 'Registrar aprobación', exact: true }).click()
-  const approval = page.getByRole('dialog', { name: 'Aprobar cotización', exact: true })
-  await approval.getByRole('button', { name: 'Aprobar cotización', exact: true }).click()
-  await expect(approval).toBeHidden()
-  await changeState(page, 'in_repair')
-  await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
+  await approvePendingQuote(page)
+  await changeState(page, 'Iniciar reparación')
+  await openPartReservation(page)
   const reservation = page.getByRole('dialog', { name: 'Reservar repuesto' })
-  await reservation.getByLabel('Buscar repuesto').fill(f.reference)
-  await expect(reservation.getByLabel('Producto *').locator(`option[value="${f.productId}"]`)).toHaveCount(1)
-  await reservation.getByLabel('Producto *', { exact: true }).selectOption(f.productId)
+  await selectCatalogOption(reservation, 'Producto', f.reference, f.reference)
   await selectWarehouse(reservation, f)
   await expect(reservation.getByText(/2 .*disponibles en esta posición/)).toBeVisible()
   await reservation.getByLabel('Cantidad solicitada *').fill('2')
@@ -237,7 +282,7 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   await expect(reservation.getByRole('alert')).toBeVisible()
   await page.reload()
   await openRepair(page, f.reference)
-  await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
+  await openPartReservation(page)
   const recoveredReservation = page.getByRole('dialog', { name: 'Reservar repuesto', exact: true })
   await expect(recoveredReservation.getByText('Se recuperó una reserva pendiente')).toBeVisible()
   await recoveredReservation.getByRole('button', { name: 'Reintentar reserva', exact: true }).click()
@@ -248,18 +293,15 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   const consumption = page.getByRole('dialog', { name: 'Consumir repuesto' })
   await submitWithLostResponse(page, consumption, 'consume_repair_part', 'Confirmar consumo')
   expect(await stock(f.api, f.productId)).toMatchObject({ physical_quantity: 0, reserved_quantity: 0, assignable_quantity: 0 })
-  await page.getByRole('button', { name: 'Registrar solución', exact: true }).click()
+  await openRepairTab(page, 'Atención técnica')
+  await page.getByRole('button', { name: 'Registrar trabajo realizado', exact: true }).click()
   const solution = page.getByRole('dialog', { name: 'Registrar solución aplicada' })
   await solution.getByLabel('Solución aplicada *').fill('Fuente reemplazada y calibrada')
   await solution.getByRole('button', { name: 'Guardar solución' }).click()
   await expect(solution).toBeHidden()
-  await changeState(page, 'testing')
-  const premature = await openStateChange(page)
-  await premature.getByLabel('Nuevo estado *').selectOption('ready_for_delivery')
-  await premature.getByRole('button', { name: 'Cambiar estado', exact: true }).click()
-  await expect(premature.getByRole('alert')).toContainText('prueba aprobada')
-  await premature.getByRole('button', { name: 'Cancelar', exact: true }).click()
-  await page.getByRole('button', { name: 'Registrar prueba', exact: true }).click()
+  await changeState(page, 'Iniciar pruebas')
+  await expect(page.getByRole('button', { name: 'Preparar entrega', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Registrar pruebas', exact: true }).click()
   const testing = page.getByRole('dialog', { name: 'Registrar prueba' })
   await testing.getByLabel('Tipo de prueba *').fill('Encendido')
   await testing.getByLabel('Resultado *', { exact: true }).fill('Equipo estable')
@@ -272,25 +314,17 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   await testing.getByRole('checkbox').uncheck()
   await testing.getByRole('button', { name: 'Guardar prueba' }).click()
   await expect(testing).toBeHidden()
-  await openStateChange(page)
-  await premature.getByLabel('Nuevo estado *').selectOption('ready_for_delivery')
-  await premature.getByRole('button', { name: 'Cambiar estado', exact: true }).click()
-  await expect(premature.getByRole('alert')).toContainText('prueba fallida')
-  await premature.getByRole('button', { name: 'Cancelar', exact: true }).click()
-  await changeState(page, 'in_repair')
-  await changeState(page, 'testing')
+  await expect(page.getByRole('button', { name: 'Preparar entrega', exact: true })).toHaveCount(0)
+  await changeState(page, 'Volver a reparación')
+  await changeState(page, 'Iniciar pruebas')
   const currentTests = page.getByRole('region', { name: 'Resultados del ciclo vigente' })
   const historicalTests = page.getByRole('region', { name: 'Historial de pruebas' })
   await expect(currentTests).toContainText('Ciclo vigente: 2')
   await expect(currentTests).toContainText('No hay pruebas registradas')
   await expect(historicalTests).toContainText('Falla bajo carga')
   await expect(historicalTests).toContainText('Equipo estable')
-  await openStateChange(page)
-  await premature.getByLabel('Nuevo estado *').selectOption('ready_for_delivery')
-  await premature.getByRole('button', { name: 'Cambiar estado', exact: true }).click()
-  await expect(premature.getByRole('alert')).toContainText('prueba aprobada')
-  await premature.getByRole('button', { name: 'Cancelar', exact: true }).click()
-  await page.getByRole('button', { name: 'Registrar prueba', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Preparar entrega', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Registrar pruebas', exact: true }).click()
   await testing.getByLabel('Tipo de prueba *').fill('Carga tras retrabajo')
   await testing.getByLabel('Resultado *', { exact: true }).fill('Carga estable tras ajuste')
   await testing.getByRole('checkbox').check()
@@ -298,7 +332,7 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   await expect(testing).toBeHidden()
   await expect(currentTests).toContainText('Carga estable tras ajuste')
   await expect(currentTests).not.toContainText('Falla bajo carga')
-  await changeState(page, 'ready_for_delivery')
+  await changeState(page, 'Preparar entrega')
   await page.getByRole('button', { name: 'Registrar entrega', exact: true }).click()
   const delivery = page.getByRole('dialog', { name: 'Entregar reparación' })
   await delivery.getByRole('button', { name: 'Confirmar entrega' }).click()
@@ -329,16 +363,8 @@ test('catálogos remotos permiten seleccionar después del registro 1000 y resol
   await page.goto('/reparaciones')
   await page.getByRole('button', { name: 'Registrar reparación', exact: true }).first().click()
   const dialog = page.getByRole('dialog', { name: 'Registrar reparación', exact: true })
-  expect(await dialog.getByLabel('Cliente *').getByRole('option').count()).toBeLessThanOrEqual(26)
-  expect(await dialog.getByLabel('Producto o equipo *').getByRole('option').count()).toBeLessThanOrEqual(26)
-  await dialog.getByRole('button', { name: 'Siguiente', exact: true }).first().click()
-  await expect(dialog.getByText(/página 2 de/).first()).toBeVisible()
-  await dialog.getByLabel('Buscar cliente').fill(catalogPrefix + '1001')
-  await expect(dialog.getByLabel('Cliente *').locator(`option[value="${catalogCustomerId}"]`)).toHaveCount(1)
-  await dialog.getByLabel('Cliente *').selectOption(catalogCustomerId)
-  await dialog.getByLabel('Buscar producto o equipo').fill(catalogPrefix + '1001')
-  await expect(dialog.getByLabel('Producto o equipo *').locator(`option[value="${catalogProductId}"]`)).toHaveCount(1)
-  await dialog.getByLabel('Producto o equipo *').selectOption(catalogProductId)
+  await selectCatalogOption(dialog, 'Cliente', catalogPrefix + '1001', catalogCustomerName)
+  await selectCatalogOption(dialog, 'Producto o equipo', catalogPrefix + '1001', catalogPrefix + '1001')
   await dialog.getByLabel('Problema reportado *').fill('Catálogo remoto verificable')
   await fillCustomerReference(dialog, f.reference)
   await dialog.getByRole('button', { name: 'Registrar reparación', exact: true }).click()
@@ -350,12 +376,12 @@ test('catálogos remotos permiten seleccionar después del registro 1000 y resol
   }))
   try {
     await openRepair(page, f.reference)
-    await page.getByRole('button', { name: 'Editar', exact: true }).click()
+    await editRepair(page)
     const edit = page.getByRole('dialog', { name: /Editar REP-/ })
-    await expect(edit.getByLabel('Cliente *')).toHaveValue(catalogCustomerId)
-    await expect(edit.getByLabel('Cliente *').locator(`option[value="${catalogCustomerId}"]`))
-      .toContainText('referencia histórica')
-    await expect(edit.getByLabel('Producto o equipo *')).toHaveValue(catalogProductId)
+    await expect(edit.getByRole('combobox', { name: 'Cliente', exact: true }))
+      .toHaveValue(`${catalogCustomerName} (referencia histórica)`)
+    await expect(edit.getByRole('combobox', { name: 'Producto o equipo', exact: true }))
+      .toHaveValue(`${catalogPrefix}1001 · ${catalogProductName}`)
     await edit.getByRole('button', { name: 'Cancelar', exact: true }).click()
   } finally {
     await checked(f.api.rpc('set_customer_status', {
@@ -373,10 +399,10 @@ test('catálogos remotos permiten seleccionar después del registro 1000 y resol
   await openRepair(page, f.reference)
   await page.getByRole('button', { name: 'Asignar responsable', exact: true }).click()
   const assignment = page.getByRole('dialog', { name: 'Asignar técnico', exact: true })
-  await assignment.getByLabel('Técnico *').selectOption(f.userId)
+  await selectCatalogOption(assignment, 'Técnico', env('E2E_REPAIRS_EMAIL'), env('E2E_REPAIRS_EMAIL'))
   await assignment.getByRole('button', { name: 'Guardar asignación' }).click()
   await expect(assignment).toBeHidden()
-  await changeState(page, 'diagnosis')
+  await changeState(page, 'Iniciar diagnóstico')
   await page.getByRole('button', { name: 'Registrar diagnóstico', exact: true }).click()
   const diagnosis = page.getByRole('dialog', { name: 'Registrar diagnóstico' })
   await diagnosis.getByLabel('Síntomas observados *').fill('Prueba de catálogo remoto')
@@ -385,16 +411,11 @@ test('catálogos remotos permiten seleccionar después del registro 1000 y resol
   const quotation = await quote(page)
   await quotation.getByRole('button', { name: 'Enviar a aprobación' }).click()
   await expect(quotation).toBeHidden()
-  await page.getByRole('button', { name: 'Registrar aprobación', exact: true }).click()
-  const approval = page.getByRole('dialog', { name: 'Aprobar cotización', exact: true })
-  await approval.getByRole('button', { name: 'Aprobar cotización', exact: true }).click()
-  await expect(approval).toBeHidden()
-  await changeState(page, 'in_repair')
-  await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
+  await approvePendingQuote(page)
+  await changeState(page, 'Iniciar reparación')
+  await openPartReservation(page)
   const reservation = page.getByRole('dialog', { name: 'Reservar repuesto' })
-  await reservation.getByLabel('Buscar repuesto').fill(catalogPrefix + '1001')
-  await expect(reservation.getByLabel('Producto *').locator(`option[value="${catalogProductId}"]`)).toHaveCount(1)
-  await reservation.getByLabel('Producto *').selectOption(catalogProductId)
+  await selectCatalogOption(reservation, 'Producto', catalogPrefix + '1001', catalogPrefix + '1001')
   await selectWarehouse(reservation, f)
   await expect(reservation.getByText(/2 .*disponibles en esta posición/)).toBeVisible()
   await reservation.getByRole('button', { name: 'Cancelar', exact: true }).click()
@@ -422,7 +443,7 @@ for (const recovery of ['reabrir', 'recargar'] as const) {
     else await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click()
     await page.getByRole('button', { name: 'Registrar reparación', exact: true }).first().click()
     await expect(dialog.getByRole('status')).toContainText('registro pendiente')
-    await expect(dialog.getByLabel('Referencia del cliente')).toHaveValue(f.reference)
+    await expect(dialog.getByLabel('Ticket o referencia externa')).toHaveValue(f.reference)
     await expect(dialog.getByLabel('Problema reportado *')).toHaveValue('Equipo no enciende')
     await dialog.getByRole('button', { name: 'Registrar reparación', exact: true }).click()
     await expect(dialog).toBeHidden()
@@ -437,25 +458,31 @@ for (const recovery of ['reabrir', 'recargar'] as const) {
 test('dos pestañas: una acción obsoleta se rechaza sin sobrescribir el cambio confirmado', async ({ page, context }) => {
   const f = await fixture(page)
   await prepareDiagnosis(page, f)
-  await openStateChange(page)
-  const stale = page.getByRole('dialog', { name: 'Cambiar estado', exact: true })
+  await page.getByRole('button', { name: 'Registrar diagnóstico', exact: true }).click()
+  const diagnosis = page.getByRole('dialog', { name: 'Registrar diagnóstico', exact: true })
+  await diagnosis.getByLabel('Síntomas observados *').fill('Falla de prueba de concurrencia')
+  await diagnosis.getByRole('button', { name: 'Guardar diagnóstico', exact: true }).click()
+  await expect(diagnosis).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Iniciar reparación', exact: true })).toBeVisible()
+  const stale = await openStateChange(page, 'Iniciar reparación')
   const other = await context.newPage()
   await openRepair(other, f.reference)
-  await changeState(other, 'quote_pending')
-  await stale.getByLabel('Nuevo estado *').selectOption('quote_pending')
-  await stale.getByRole('button', { name: 'Cambiar estado', exact: true }).click()
+  await changeState(other, 'Iniciar reparación')
+  await stale.getByRole('button', { name: 'Iniciar reparación', exact: true }).click()
   await expect(stale.getByRole('alert')).toContainText('cambió mientras')
-  expect((await repair(f)).status).toBe('quote_pending')
+  expect((await repair(f)).status).toBe('in_repair')
   await other.close()
 })
 
 test('rechazo y revisión conservan una sola vigente y permiten inspeccionar líneas históricas', async ({ page }) => {
   const f = await fixture(page)
   await prepareDiagnosis(page, f)
+  await registerDiagnosis(page, 'Equipo requiere revisión antes de cotizar')
   const first = await quote(page)
   await first.getByRole('button', { name: 'Enviar a aprobación' }).click()
   await expect(first).toBeHidden()
-  await page.getByRole('button', { name: 'Rechazar cotización', exact: true }).click()
+  await openRepairTab(page, 'Presupuesto y repuestos')
+  await page.getByRole('button', { name: 'Rechazar', exact: true }).click()
   const rejection = page.getByRole('dialog', { name: 'Rechazar cotización', exact: true })
   await rejection.getByLabel('Motivo *', { exact: true }).fill('Ajustar presupuesto')
   await rejection.getByRole('button', { name: 'Rechazar cotización', exact: true }).click()

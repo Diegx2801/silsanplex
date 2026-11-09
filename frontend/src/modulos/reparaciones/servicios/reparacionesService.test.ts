@@ -276,7 +276,7 @@ describe('reparacionesService', () => {
       controlLote: false,
       controlVencimiento: false,
       activo: undefined,
-    }], total: 0 })
+    }] })
     expect(cadena.eq).toHaveBeenCalledWith('organization_id', 'org-1')
     expect(cadena.eq).toHaveBeenCalledWith('is_active', true)
     expect(cadena.range).toHaveBeenCalledWith(0, 24)
@@ -288,7 +288,7 @@ describe('reparacionesService', () => {
       legal_name: 'Objetivo 1001', trade_name: null, is_active: true }], error: null, count: 1001 }
     await expect(listarOpcionesClientesReparacion('org-1', {
       busqueda: 'Objetivo 1001', pagina: 41, tamanioPagina: 25,
-    })).resolves.toMatchObject({ total: 1001, elementos: [{ id: 'after-1000' }] })
+    })).resolves.toMatchObject({ elementos: [{ id: 'after-1000' }] })
     expect(cadena.or).toHaveBeenLastCalledWith(expect.stringContaining('legal_name.ilike.%Objetivo 1001%'))
     expect(cadena.range).toHaveBeenLastCalledWith(1000, 1024)
     expect(cadena.limit).not.toHaveBeenCalled()
@@ -298,7 +298,7 @@ describe('reparacionesService', () => {
       expiration_control: false, is_active: true }], error: null, count: 1001 }
     await expect(listarOpcionesProductosReparacion('org-1', {
       busqueda: 'P-1001', pagina: 41, tamanioPagina: 25,
-    })).resolves.toMatchObject({ total: 1001, elementos: [{ id: 'product-after-1000' }] })
+    })).resolves.toMatchObject({ elementos: [{ id: 'product-after-1000' }] })
     expect(cadena.or).toHaveBeenLastCalledWith(expect.stringContaining('code.ilike.%P-1001%'))
     expect(cadena.range).toHaveBeenLastCalledWith(1000, 1024)
   })
@@ -324,7 +324,7 @@ describe('reparacionesService', () => {
 
     await expect(listarOpcionesAlmacenesReparacion('org-1', {
       busqueda: 'ALM-1001', pagina: 41, tamanioPagina: 25,
-    })).resolves.toMatchObject({ total: 1001, elementos: [{ id: 'warehouse-1001' }] })
+    })).resolves.toMatchObject({ elementos: [{ id: 'warehouse-1001' }] })
 
     expect(supabaseMock.from).toHaveBeenCalledTimes(1)
     expect(supabaseMock.from).toHaveBeenCalledWith('warehouses')
@@ -339,7 +339,7 @@ describe('reparacionesService', () => {
 
     await expect(listarOpcionesUbicacionesReparacion('org-1', 'warehouse-1', {
       busqueda: 'objetivo', pagina: 2, tamanioPagina: 25,
-    })).resolves.toMatchObject({ total: 26, elementos: [{
+    })).resolves.toMatchObject({ elementos: [{
       id: 'location-26', almacenId: 'warehouse-1',
     }] })
 
@@ -437,6 +437,8 @@ describe('reparacionesService', () => {
 
     await registrarDiagnosticoReparacion('org-1', 'repair-1', {
       tecnicoId: '',
+      prioridad: 'high',
+      fechaEstimadaEntrega: '2026-09-15',
       sintomas: 'No enciende',
       causaEncontrada: 'Fuente dañada',
       solucionRecomendada: 'Cambiar fuente',
@@ -452,6 +454,8 @@ describe('reparacionesService', () => {
         repair_id: 'repair-1',
         expected_lock_version: 9,
         technician_id: null,
+        priority: 'high',
+        estimated_delivery_date: '2026-09-15',
         symptoms: 'No enciende',
         cause_found: 'Fuente dañada',
         recommended_solution: 'Cambiar fuente',
@@ -610,6 +614,32 @@ describe('reparacionesService', () => {
     expect(ordenConsultas.filter((tabla) => tabla === 'repair_list')).toHaveLength(2)
     expect(ordenConsultas.filter((tabla) => tabla === 'repairs')).toHaveLength(2)
     expect(ordenConsultas.filter((tabla) => tabla === 'repair_quotes')).toHaveLength(2)
+  })
+
+  it('reconoce un diagnóstico registrado aunque el resumen legacy siga vacío', async () => {
+    const fecha = '2026-11-09T12:00:00Z'
+    supabaseMock.from.mockImplementation((tabla: string) => crearCadena(() => {
+      if (tabla === 'repair_list') return {
+        data: { ...crearFilaReparacion(4), status: 'diagnosis', diagnosis: null }, error: null,
+      }
+      if (tabla === 'repairs') return {
+        data: { lock_version: 4, current_test_cycle_number: 1 }, error: null,
+      }
+      if (tabla === 'repair_diagnostics') return {
+        data: [{ id: 'diagnosis-1', organization_id: 'org-1', repair_id: 'repair-1',
+          diagnosed_at: fecha, technician_id: 'technician-1', symptoms: 'No enciende',
+          cause_found: null, recommended_solution: null, notes: null, created_by: 'technician-1',
+          created_at: fecha }],
+        error: null,
+        count: 1,
+      }
+      return { data: [], error: null, count: 0 }
+    }))
+
+    const detalle = await obtenerDetalleReparacion('org-1', 'repair-1')
+
+    expect(detalle.reparacion.diagnosticoRegistrado).toBe(true)
+    expect(detalle.diagnosticos).toHaveLength(1)
   })
 
   it('consulta un solo resumen canónico para vigente, primera e historial en el detalle', async () => {

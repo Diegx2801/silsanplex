@@ -1,9 +1,24 @@
 begin;
 select no_plan();
 
-insert into public.organizations(id,name,slug) values
- ('ac190000-0000-4000-8000-000000000001','Stock control tests','stock-control-test'),
- ('ac190000-0000-4000-8000-000000000002','Foreign stock tests','foreign-stock-control-test');
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'organizations' and column_name = 'legal_name'
+  ) then
+    execute $sql$
+      insert into public.organizations(id,name,slug,legal_name) values
+        ('ac190000-0000-4000-8000-000000000001','Stock control tests','stock-control-test','Stock control tests'),
+        ('ac190000-0000-4000-8000-000000000002','Foreign stock tests','foreign-stock-control-test','Foreign stock tests')
+    $sql$;
+  else
+    insert into public.organizations(id,name,slug) values
+      ('ac190000-0000-4000-8000-000000000001','Stock control tests','stock-control-test'),
+      ('ac190000-0000-4000-8000-000000000002','Foreign stock tests','foreign-stock-control-test');
+  end if;
+end;
+$$;
 insert into auth.users(id,email,raw_user_meta_data,created_at,updated_at) values
  ('ac191000-0000-4000-8000-000000000001','stock-admin@test.local','{"full_name":"Stock admin"}',now(),now()),
  ('ac191000-0000-4000-8000-000000000002','stock-sales@test.local','{"full_name":"Stock sales"}',now(),now());

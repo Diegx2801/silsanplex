@@ -21,6 +21,7 @@ export function NoReparableReparacion({ detalle }: { detalle: DetalleReparacion 
   const [devolver, setDevolver] = useState(false)
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [estadoRecuperacion, setEstadoRecuperacion] = useState<'ninguno' | 'pendiente' | 'error'>('ninguno')
   const tecnico = hasPermission(PERMISSIONS.REPAIRS_CHANGE_STATUS) && hasPermission(PERMISSIONS.REPAIRS_PERFORM_TECHNICAL)
   const asignado = tecnico && Boolean(user?.id) && r.tecnicoAsignadoId === user?.id
   const declarar = puedeDeclararNoReparable(r.estado, r.tecnicoAsignadoId, user?.id, tecnico)
@@ -28,6 +29,11 @@ export function NoReparableReparacion({ detalle }: { detalle: DetalleReparacion 
   const eventoDevolucion = detalle.eventos?.find(e => e.tipo === 'RETURNED_UNREPAIRED')
   const ambito = `${r.organizationId}:${user?.id ?? ''}:${r.id}:non-repairable`
   useEffect(() => { setEditor(null); setDevolver(false); setError('') }, [ambito])
+  useEffect(() => {
+    if (!tecnico) { setEstadoRecuperacion('ninguno'); return }
+    try { setEstadoRecuperacion(recuperarNoReparable(ambito) ? 'pendiente' : 'ninguno') }
+    catch { setEstadoRecuperacion('error') }
+  }, [ambito, r.lockVersion, tecnico])
   const recuperar = () => {
     setError('')
     if (!tecnico) { setError('No tienes permiso para recuperar esta operación técnica.'); return }
@@ -48,7 +54,7 @@ export function NoReparableReparacion({ detalle }: { detalle: DetalleReparacion 
     }
     try {
       if (recuperarNoReparable(ambito)) {
-        setError('Hay una operación pendiente. Usa Recuperar decisión pendiente antes de iniciar otra intención.'); return
+        setError('Hay una operación pendiente. Usa Reintentar decisión pendiente antes de iniciar otra intención.'); return
       }
       setEditor({ tipo, diagnosis_id: detalle.diagnosticos[0]?.id ?? '', reason: '',
         decision_event_id: r.decisionNoReparable?.id ?? '', version: r.lockVersion, clave: crypto.randomUUID() })
@@ -77,6 +83,10 @@ export function NoReparableReparacion({ detalle }: { detalle: DetalleReparacion 
         queryClient.invalidateQueries({ queryKey: ['repairs', r.organizationId] })])
     }
   }
+  const mostrarSeccion = Boolean(r.decisionNoReparable) || r.estado === 'non_repairable'
+    || declarar && detalle.diagnosticos.length > 0
+    || tecnico && estadoRecuperacion !== 'ninguno'
+  if (!mostrarSeccion) return null
   return <section aria-label="Decisión técnica No reparable" className="border-b px-5 py-5 sm:px-7">
     <h2 className="font-semibold">Resultado No reparable</h2>
     {r.decisionNoReparable ? <div className="mt-3 space-y-2 text-sm">
@@ -94,7 +104,7 @@ export function NoReparableReparacion({ detalle }: { detalle: DetalleReparacion 
       {declarar ? <Button type="button" variant="outline" disabled={reservas || !detalle.diagnosticos.length} onClick={() => iniciar('declare_repair_non_repairable')}>Declarar No reparable</Button> : null}
       {asignado && r.estado === 'non_repairable' ? <Button type="button" variant="outline" onClick={() => iniciar('reopen_repair_non_repairable_assessment')}>Reabrir evaluación técnica</Button> : null}
       {r.estado === 'non_repairable' && hasPermission(PERMISSIONS.REPAIRS_DELIVER) ? <Button type="button" onClick={() => setDevolver(true)}>Devolver sin reparar</Button> : null}
-      {tecnico ? <Button type="button" variant="ghost" onClick={recuperar}>Recuperar decisión pendiente</Button> : null}
+      {tecnico && estadoRecuperacion !== 'ninguno' ? <Button type="button" variant="outline" onClick={recuperar}>{estadoRecuperacion === 'pendiente' ? 'Reintentar decisión pendiente' : 'Revisar decisión pendiente'}</Button> : null}
     </div>
     {error && !editor ? <p role="alert" className="mt-3 text-sm">{error}</p> : null}
     {devolver ? <DialogoEntregaAccesorios abierto sinReparar reparacion={r} alCambiarApertura={setDevolver} /> : null}

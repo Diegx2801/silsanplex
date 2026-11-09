@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAccesoriosReparacion } from '../estado/useAccesoriosReparacion'
 import { accesorioInicial, accesoriosPendientes, payloadAccesorio, esquemaComandoAccesorios, fechaAccesorio,
@@ -32,9 +32,18 @@ export function AccesoriosReparacion({ reparacion, puedeEditar, puedeDevolver }:
   const [editor, setEditor] = useState<Editor | null>(null)
   const [mensaje, setMensaje] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [estadoRecuperacion, setEstadoRecuperacion] = useState<'ninguno' | 'pendiente' | 'error'>('ninguno')
   const editable = puedeEditar && estadoEsEditable(reparacion.estado)
   const pendientes = accesoriosPendientes(consulta.data)
   const permitido = (tipo: Editor['tipo']) => tipo === 'devolver' ? puedeDevolver : puedeEditar
+  useEffect(() => {
+    if (consulta.isLoading || consulta.error || consulta.data?.lock_version == null || (!puedeEditar && !puedeDevolver)) {
+      setEstadoRecuperacion('ninguno')
+      return
+    }
+    try { setEstadoRecuperacion(recuperar() ? 'pendiente' : 'ninguno') }
+    catch { setEstadoRecuperacion('error') }
+  }, [consulta.data?.lock_version, consulta.error, consulta.isLoading, puedeEditar, puedeDevolver, recuperar])
   const iniciar = (tipo: Editor['tipo'], a?: AccesorioReparacion) => {
     setMensaje('')
     try {
@@ -80,13 +89,17 @@ export function AccesoriosReparacion({ reparacion, puedeEditar, puedeDevolver }:
   }
   const seleccionado = consulta.data?.accessories.find(a => a.id === editor?.accesorioId)
   const cambiarDatos = (campo: keyof DatosAccesorioRecepcion, valor: string | number) => setEditor(e => e ? { ...e, datos: { ...e.datos, [campo]: valor } } : null)
-  return <section aria-labelledby="reparacion-accesorios" className="border-b px-5 py-6 sm:px-7">
-    <h2 id="reparacion-accesorios" className="font-semibold">Accesorios recibidos y devolución</h2>
+  return <details className="border-b px-5 py-5 sm:px-7">
+    <summary id="reparacion-accesorios" className="cursor-pointer rounded-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      Accesorios y devolución
+      <span className="ms-2 text-sm font-normal text-muted-foreground">{consulta.isLoading ? 'Consultando…' : consulta.error ? 'No disponible' : consulta.data ? `${consulta.data.accessories.length} registros · ${pendientes.reduce((suma, accesorio) => suma + accesorio.quantity_pending, 0)} pendientes` : ''}</span>
+    </summary>
+    <div className="pt-4">
     {consulta.isLoading ? <p role="status" className="mt-3">Consultando accesorios…</p> : consulta.error ? <div role="alert" className="mt-3">
       <p>{consulta.error.message}</p><Button type="button" variant="outline" onClick={() => void consulta.refetch()}>Reintentar accesorios</Button></div> : consulta.data ? <>
       {!consulta.data.reviewed_at ? <p className="mt-2 text-sm text-muted-foreground">Recepción histórica sin revisión estructurada de accesorios. Conserva las notas originales; no se han inferido pertenencias ni devoluciones.</p>
         : !consulta.data.accessories.length ? <p className="mt-2 text-sm text-muted-foreground">Recepción revisada sin accesorios registrados.</p> : null}
-      <TablaAccesorios accesorios={consulta.data.accessories} />
+      {consulta.data.accessories.length ? <TablaAccesorios accesorios={consulta.data.accessories} /> : null}
       {pendientes.length ? <p role="status" className="mt-3 text-sm">Hay accesorios pendientes. La entrega ordinaria exige devolverlos; una excepción autorizada conserva los saldos reales.</p> : null}
       {consulta.data.accessories.map(a => <details key={a.id} className="mt-3 border p-3">
         <summary className="cursor-pointer text-sm font-medium">Registro de {a.name}</summary>
@@ -101,7 +114,7 @@ export function AccesoriosReparacion({ reparacion, puedeEditar, puedeDevolver }:
       </details>)}
       {!editor && editable ? <Button type="button" variant="outline" className="mt-3" onClick={() => iniciar('recibir')}>Registrar accesorio adicional</Button> : null}
     </> : null}
-    {!editor && (puedeEditar || puedeDevolver) ? <Button type="button" variant="ghost" className="mt-3" onClick={recuperarPendiente}>Recuperar operación de accesorios pendiente</Button> : null}
+    {!editor && estadoRecuperacion !== 'ninguno' && (puedeEditar || puedeDevolver) ? <Button type="button" variant="outline" className="mt-3" onClick={recuperarPendiente}>{estadoRecuperacion === 'pendiente' ? 'Reintentar operación pendiente' : 'Revisar operación pendiente'}</Button> : null}
     {editor ? <form aria-label="Operación de accesorios" className="mt-5 space-y-4 border p-4" onSubmit={confirmar}>
       <h3 className="font-medium">{editor.tipo === 'devolver' ? `Registrar devolución · ${seleccionado?.name ?? 'Accesorio'}` : editor.tipo === 'anular' ? 'Anular accesorio' : 'Corregir o registrar accesorio'}</h3>
       {editor.pendiente ? <p role="status">Se recuperó una operación pendiente. Se reenviarán los mismos datos y la misma clave.</p> : null}
@@ -119,5 +132,6 @@ export function AccesoriosReparacion({ reparacion, puedeEditar, puedeDevolver }:
       <div className="flex flex-wrap gap-2"><Button type="submit" disabled={guardando}>{guardando ? 'Guardando…' : editor.pendiente ? 'Reintentar operación de accesorios' : editor.tipo === 'devolver' ? 'Confirmar devolución' : 'Guardar accesorio'}</Button><Button type="button" variant="outline" disabled={guardando} onClick={() => setEditor(null)}>Cerrar operación de accesorios</Button></div>
     </form> : null}
     {mensaje ? <p role="alert" className="mt-3 text-sm">{mensaje}</p> : null}
-  </section>
+    </div>
+  </details>
 }

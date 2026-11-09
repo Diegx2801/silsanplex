@@ -58,9 +58,6 @@ export const esquemaResultadoEntrega = z.object({
   })).max(200).default([]),
 }).superRefine((resultado, contexto) => {
   if (['entregado', 'entrega_parcial'].includes(resultado.resultado)) {
-    if (!resultado.evidencia.trim()) {
-      contexto.addIssue({ code: 'custom', path: ['evidencia'], message: 'Registra la evidencia de entrega' })
-    }
     if (!resultado.lineas.some((linea) => linea.cantidad > 0)) {
       contexto.addIssue({ code: 'custom', path: ['lineas'], message: 'Ingresa al menos una cantidad recibida' })
     }
@@ -242,9 +239,6 @@ export const esquemaDatosProgramacionEntrega = z.object({
 
   if (ESTADOS_CON_ENTREGA_FISICA.includes(datos.estado as typeof ESTADOS_CON_ENTREGA_FISICA[number]) && !datos.fechaEntrega) {
     contexto.addIssue({ code: 'custom', path: ['fechaEntrega'], message: 'Registra la fecha real para confirmar la entrega' })
-  }
-  if (datos.estado === 'entregado' && !datos.evidencia.trim()) {
-    contexto.addIssue({ code: 'custom', path: ['evidencia'], message: 'Registra la evidencia de entrega antes de marcarla como entregada' })
   }
   if ((datos.estado === 'rechazado' || datos.estado === 'devuelto') && datos.incidencias.length === 0) {
     contexto.addIssue({ code: 'custom', path: ['incidencias'], message: 'Registra al menos una incidencia para este estado' })

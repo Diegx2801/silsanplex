@@ -115,7 +115,7 @@ select is((select sum(quantity) from public.inventory_movements where organizati
 select is((select count(*) from public.supplier_returns where organization_id = 'e4c00000-0000-4000-8000-000000000001'), 0::bigint, 'la concurrencia no crea devolucion por rechazo');
 select is((select count(*) from public.audit_events where organization_id = 'e4c00000-0000-4000-8000-000000000001' and action = 'PURCHASE_RECEIPT_INSPECTION_COMPLETED'), 1::bigint, 'la concurrencia crea una sola auditoria de inspeccion');
 select is((select count(*) from public.audit_events where organization_id = 'e4c00000-0000-4000-8000-000000000001' and action = 'PURCHASE_RECEIPT_CONFIRMED'), 1::bigint, 'la concurrencia crea una sola auditoria de recepcion');
-select is((select status from public.purchase_orders where organization_id = 'e4c00000-0000-4000-8000-000000000001' and document_number = '001'), 'received', 'la orden termina recibida una sola vez');
+select is((select status from public.purchase_orders where organization_id = 'e4c00000-0000-4000-8000-000000000001' and document_number = '001'), 'partially_received', 'la orden conserva pendiente la unidad rechazada');
 
 select extensions.dblink_disconnect('e4c_inspection_a');
 select extensions.dblink_disconnect('e4c_inspection_b');

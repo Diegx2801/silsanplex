@@ -63,7 +63,6 @@ interface DialogoCotizacionProps {
   esRevision?: boolean
   operacionPendiente?: CotizacionPendiente | null
   productos: readonly OpcionProductoReparacion[]
-  totalProductos?: number
   buscarProductos?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>>
   resolverProducto?: (id: string) => Promise<OpcionProductoReparacion | null>
   alCambiarApertura: (abierto: boolean) => void
@@ -77,7 +76,6 @@ export function DialogoCotizacion({
   esRevision = false,
   operacionPendiente,
   productos,
-  totalProductos = productos.length,
   buscarProductos,
   resolverProducto,
   alCambiarApertura,
@@ -153,7 +151,7 @@ export function DialogoCotizacion({
     <DialogPrimitive.Root open={abierto} onOpenChange={alCambiarApertura}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-foreground/30" />
-        <DialogPrimitive.Content data-reparaciones-touch-target className="fixed inset-y-0 end-0 z-[70] flex w-full max-w-4xl flex-col border-s bg-background shadow-xl outline-none data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:animate-in data-[state=open]:slide-in-from-right">
+        <DialogPrimitive.Content data-reparaciones-touch-target className="fixed start-1/2 top-1/2 z-[70] flex max-h-[92svh] w-[calc(100%-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg border bg-background shadow-xl outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0">
           <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7">
             <div>
               <DialogPrimitive.Title className="text-xl font-semibold">{esRevision && cotizacion ? `Crear revisión desde v${cotizacion.version}` : cotizacion ? `Editar cotización v${cotizacion.version}` : 'Crear cotización'}</DialogPrimitive.Title>
@@ -227,12 +225,15 @@ export function DialogoCotizacion({
                           <div className="sm:col-span-1 lg:col-span-1">
                             <Controller name={`lineas.${indice}.productoId`} control={control} render={({ field: productoField }) =>
                               <SelectorCatalogoReparacion id={`cotizacion-producto-${field.id}`} etiqueta="Producto *"
-                                etiquetaBusqueda={`Buscar producto para línea ${indice + 1}`}
                                 valor={productoField.value} opcionesIniciales={productos}
-                                totalInicial={totalProductos} buscar={buscarProductos} resolver={resolverProducto}
+                                buscar={buscarProductos} resolver={resolverProducto}
                                 representar={(producto) => `${producto.codigo} · ${producto.descripcion}${producto.activo === false ? ' (inactivo)' : ''}`}
+                                textoSecundario={(producto) => producto.unidadMedida ? `Unidad base: ${producto.unidadMedida}` : undefined}
+                                palabrasClave={(producto) => [producto.codigo, producto.descripcion, producto.unidadMedida]}
                                 alCambiar={(valor, producto) => { productoField.onChange(valor); if (!lineas[indice]?.descripcion && producto) setValue(`lineas.${indice}.descripcion`, producto.descripcion) }}
-                                error={errorLinea?.productoId?.message} textoVacio="Selecciona repuesto" />
+                                alPerderFoco={productoField.onBlur}
+                                error={errorLinea?.productoId?.message} placeholder="Buscar producto…"
+                                ayuda="Código o descripción." noOptionsMessage="No hay productos activos disponibles." />
                             } />
                           </div>
                         ) : null}

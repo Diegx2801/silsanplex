@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { enriquecerLineasPedidoConSaldos, obtenerLineasDisponiblesDistribucion, pedidoListoParaProgramarDistribucion } from './pedidosProgramables'
+import { asignarMovimientosDisponibles, enriquecerLineasPedidoConSaldos, obtenerLineasDisponiblesDistribucion, pedidoListoParaProgramarDistribucion } from './pedidosProgramables'
 
 const pedido = {
   estado: 'confirmado',
@@ -30,10 +30,25 @@ describe('pedidoListoParaProgramarDistribucion', () => {
   it.each([
     ['sin venta', undefined],
     ['venta sin líneas de producto', { estado: 'registrada', lineas: [] }],
-    ['producto parcialmente despachado', { estado: 'registrada', lineas: [{ pedidoLineaId: 'linea-pedido-1', tipoProducto: 'good', cantidadDespachada: 1, cantidadPendiente: 2 }] }],
     ['producto sin saldo de despacho conocido', { estado: 'despachada', lineas: [{ pedidoLineaId: 'linea-pedido-1', tipoProducto: 'good' }] }],
   ] as const)('rechaza un pedido %s', (_caso, venta) => {
     expect(pedidoListoParaProgramarDistribucion(pedido, venta as typeof ventaCompleta | undefined)).toBe(false)
+  })
+
+  it('permite distribuir lo que Ventas ya despachó aunque reste cantidad por despachar', () => {
+    const ventaParcial = {
+      estado: 'registrada',
+      lineas: [{ pedidoLineaId: 'linea-pedido-1', tipoProducto: 'good', cantidadDespachada: 1, cantidadPendiente: 2 }],
+    } as const
+    expect(pedidoListoParaProgramarDistribucion(pedido, ventaParcial)).toBe(true)
+  })
+
+  it('no habilita Distribución si aún no hay ningún bien despachado', () => {
+    const ventaSinDespacho = {
+      estado: 'registrada',
+      lineas: [{ pedidoLineaId: 'linea-pedido-1', tipoProducto: 'good', cantidadDespachada: 0, cantidadPendiente: 3 }],
+    } as const
+    expect(pedidoListoParaProgramarDistribucion(pedido, ventaSinDespacho)).toBe(false)
   })
 
   it.each([
@@ -91,5 +106,49 @@ describe('obtenerLineasDisponiblesDistribucion', () => {
       ventaCompleta,
       [{ id: 'activa', estado: 'en_curso', lineas: [{ id: 'linea-pedido-1', cantidad: 3 }] }],
     )).toEqual([])
+  })
+})
+
+describe('asignarMovimientosDisponibles', () => {
+  const movimientos = [
+    { inventoryMovementId: 'mov-1', orderLineId: 'linea-pedido-1', cantidadDisponible: 2 },
+    { inventoryMovementId: 'mov-2', orderLineId: 'linea-pedido-1', cantidadDisponible: 3 },
+  ] as const
+
+  it('reparte una cantidad de producto entre salidas existentes sin pedir asignación manual', () => {
+    const resultado = asignarMovimientosDisponibles([
+      { id: 'linea-pedido-1', tipoProducto: 'good' as const, cantidad: 4 },
+    ], movimientos)
+
+    expect(resultado.lineas[0].asignacionesMovimiento).toEqual([
+      { inventoryMovementId: 'mov-1', quantity: 2 },
+      { inventoryMovementId: 'mov-2', quantity: 2 },
+    ])
+    expect(resultado.lineasSinSaldo).toEqual([])
+  })
+
+  it('informa si la cantidad solicitada supera las salidas que aún se pueden asignar', () => {
+    const resultado = asignarMovimientosDisponibles([
+      { id: 'linea-pedido-1', tipoProducto: 'good' as const, cantidad: 6 },
+    ], movimientos)
+
+    expect(resultado.lineasSinSaldo).toEqual([{ id: 'linea-pedido-1', cantidadRequerida: 6, cantidadDisponible: 5 }])
+  })
+
+  it('conserva los movimientos previos al editar y solo completa el saldo pendiente', () => {
+    const resultado = asignarMovimientosDisponibles([
+      {
+        id: 'linea-pedido-1',
+        tipoProducto: 'good' as const,
+        cantidad: 3,
+        asignacionesMovimiento: [{ inventoryMovementId: 'mov-2', quantity: 2 }],
+      },
+    ], movimientos)
+
+    expect(resultado.lineas[0].asignacionesMovimiento).toEqual([
+      { inventoryMovementId: 'mov-2', quantity: 2 },
+      { inventoryMovementId: 'mov-1', quantity: 1 },
+    ])
+    expect(resultado.lineasSinSaldo).toEqual([])
   })
 })

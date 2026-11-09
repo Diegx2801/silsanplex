@@ -6,9 +6,14 @@ import { accesorioInicial } from '../modelo/accesorios'
 export function FormularioAccesoriosRecepcion({ formulario, bloqueado }: { formulario: UseFormReturn<DatosReparacion>; bloqueado: boolean }) {
   const { fields, append, remove } = useFieldArray({ control: formulario.control, name: 'accesorios' })
   const errores = formulario.formState.errors.accesorios
-  return <fieldset disabled={bloqueado} className="mt-5 border-t pt-5">
-    <legend className="pt-4 text-sm font-semibold">Accesorios recibidos</legend>
-    <p className="mt-1 text-sm text-muted-foreground">Registra pertenencias del equipo. No generan stock ni reservas. Puedes dejar la lista vacía.</p>
+  return <fieldset disabled={bloqueado} className="min-w-0">
+    <legend className="text-sm font-semibold">Accesorios recibidos</legend>
+    <p className="mt-1 text-sm text-muted-foreground">Registra cargadores, cables u otras pertenencias. No generan stock ni reservas.</p>
+    {fields.length === 0 ? (
+      <p className="mt-4 border border-dashed px-4 py-3 text-sm text-muted-foreground">
+        No se registraron accesorios o pertenencias en esta recepción.
+      </p>
+    ) : null}
     {fields.map((fila, indice) => <div key={fila.id} className="mt-4 grid gap-3 border p-4 sm:grid-cols-2" aria-label={`Accesorio ${indice + 1}`}>
       <div><label htmlFor={`accesorio-nombre-${indice}`} className="field-label">Accesorio {indice + 1} · Nombre *</label>
         <input id={`accesorio-nombre-${indice}`} className="field-control" maxLength={160} aria-invalid={Boolean(errores?.[indice]?.nombre)} {...formulario.register(`accesorios.${indice}.nombre`)} />

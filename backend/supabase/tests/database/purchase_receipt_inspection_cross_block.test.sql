@@ -209,8 +209,8 @@ select is(
 );
 select is(
   (select status from public.purchase_orders where document_number = 'BASE-001'),
-  'received',
-  'la orden completa fisicamente queda received aunque solo 90 entren a inventario'
+  'partially_received',
+  'la orden conserva pendiente la cantidad rechazada hasta completar o cerrar el saldo'
 );
 select results_eq(
   $$
@@ -223,8 +223,8 @@ select results_eq(
       'e4f20000-0000-4000-8000-000000000001', null, null
     )
   $$,
-  $$values (1, 1, 100.000::numeric, 100.000::numeric, 100.00::numeric, 1, 0, 0, 1, 1)$$,
-  'E4A conserva la cantidad fisica base y no usa 90 aceptadas'
+  $$values (1, 1, 100.000::numeric, 90.000::numeric, 90.00::numeric, 0, 1, 0, 1, 1)$$,
+  'E4A mide las unidades aceptadas y mantiene el saldo rechazado pendiente'
 );
 select results_eq(
   $$
@@ -239,8 +239,8 @@ select results_eq(
       and currency = 'PEN'
       and unit_of_measure = (select unit_of_measure from public.products where id = 'e4f50000-0000-4000-8000-000000000001')
   $$,
-  $$values ('comparable'::text, 'PEN'::text, 'Unidad'::text, 1, 100.000::numeric, 100.000::numeric, 100.00::numeric, 0, 1, 1)$$,
-  'E4B conserva la cantidad fisica base y no usa 90 aceptadas'
+  $$values ('comparable'::text, 'PEN'::text, 'Unidad'::text, 1, 100.000::numeric, 90.000::numeric, 90.00::numeric, 0, 1, 1)$$,
+  'E4B compara las unidades aceptadas sin contar las rechazadas como cumplimiento'
 );
 select results_eq(
   $$
@@ -252,8 +252,8 @@ select results_eq(
       and currency = 'PEN'
       and unit_of_measure = (select unit_of_measure from public.products where id = 'e4f50000-0000-4000-8000-000000000001')
   $$,
-  $$values (100.000::numeric, 1, 10.0000::numeric)$$,
-  'E2 conserva el evento fisico y el costo unitario original'
+  $$values (90.000::numeric, 1, 10.0000::numeric)$$,
+  'E2 conserva solo la cantidad aceptada y el costo unitario original'
 );
 select is(
   (select physical_quantity from public.inventory_bucket_balances where organization_id = 'e4f00000-0000-4000-8000-000000000001' and product_id = 'e4f50000-0000-4000-8000-000000000001' and lot = 'E4F-BASE-LOT'),
@@ -402,8 +402,8 @@ select results_eq(
     from public.supplier_operational_performance_facts
     where purchase_order_id = (select id from public.purchase_orders where document_number = 'PARTIAL-001')
   $$,
-  $$values (100.000::numeric, 70.000::numeric, false)$$,
-  'E4A conserva 100 ordenadas y 70 fisicas en closed_partial'
+  $$values (100.000::numeric, 65.000::numeric, false)$$,
+  'E4A conserva 100 ordenadas y solo 65 aceptadas en closed_partial'
 );
 select results_eq(
   $$
@@ -418,8 +418,8 @@ select results_eq(
       and currency = 'PEN'
       and unit_of_measure = (select unit_of_measure from public.products where id = 'e4f50000-0000-4000-8000-000000000001')
   $$,
-  $$values (2, 200.000::numeric, 170.000::numeric, 0, 1, 3)$$,
-  'E4B diferencia closed_partial y conserva 170 fisicas'
+  $$values (2, 200.000::numeric, 155.000::numeric, 1, 1, 3)$$,
+  'E4B diferencia closed_partial y suma solo las cantidades aceptadas'
 );
 
 select lives_ok(
@@ -566,8 +566,8 @@ select results_eq(
       'e4f20000-0000-4000-8000-000000000001', null, null
     )
   $$,
-  $$values (3, 210.000::numeric, 180.000::numeric, 2, 0, 1, 3, 1, 30.000::numeric)$$,
-  'E4A mantiene 180 fisicas y reporta la devolucion aparte'
+  $$values (3, 210.000::numeric, 165.000::numeric, 1, 1, 1, 3, 1, 30.000::numeric)$$,
+  'E4A cuenta cantidades aceptadas, estados reales y la devolucion por separado'
 );
 select results_eq(
   $$
@@ -583,8 +583,8 @@ select results_eq(
       and currency = 'PEN'
       and unit_of_measure = (select unit_of_measure from public.products where id = 'e4f50000-0000-4000-8000-000000000001')
   $$,
-  $$values (3, 210.000::numeric, 180.000::numeric, 2, 0, 1, 4, 1, 30.000::numeric, 3)$$,
-  'E4B mantiene 180 fisicas y no convierte la devolucion en rechazo'
+  $$values (3, 210.000::numeric, 165.000::numeric, 1, 1, 1, 4, 1, 30.000::numeric, 3)$$,
+  'E4B cuenta cantidades aceptadas y no convierte la devolucion en rechazo'
 );
 select results_eq(
   $$
@@ -596,8 +596,8 @@ select results_eq(
       and currency = 'PEN'
       and unit_of_measure = (select unit_of_measure from public.products where id = 'e4f50000-0000-4000-8000-000000000001')
   $$,
-  $$values (180.000::numeric, 4, 10.0000::numeric)$$,
-  'E2 conserva las cuatro recepciones fisicas y el precio historico'
+  $$values (165.000::numeric, 4, 10.0000::numeric)$$,
+  'E2 conserva las cuatro recepciones aceptadas y el precio historico'
 );
 select is(
   (select physical_quantity from public.inventory_product_stock_summary where organization_id = 'e4f00000-0000-4000-8000-000000000001' and product_id = 'e4f50000-0000-4000-8000-000000000001'),

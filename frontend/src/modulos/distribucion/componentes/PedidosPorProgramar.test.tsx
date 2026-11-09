@@ -10,7 +10,6 @@ const pedidos: PedidoPorProgramarResumen[] = [{
   clienteDocumento: '20548796321',
   almacenNombre: 'Almacén central',
   cantidadProductos: 2,
-  cantidadDisponible: 8,
   estado: 'Despachado · pendiente de entrega',
   estadoListo: true,
 }]
@@ -30,7 +29,7 @@ describe('PedidosPorProgramar', () => {
 
     const tarjetas = screen.getByRole('list', { name: 'Pedidos por programar' })
     expect(tarjetas).toHaveClass('lg:hidden')
-    expect(within(tarjetas).getByText('8 unidades')).toBeVisible()
+    expect(within(tarjetas).getByText('2 productos')).toBeVisible()
     expect(within(tarjetas).getByRole('button', { name: 'Programar envío' })).toBeVisible()
 
     const tabla = screen.getByRole('table', { name: 'Pedidos por programar' })

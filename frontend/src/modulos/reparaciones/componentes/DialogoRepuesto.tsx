@@ -26,11 +26,9 @@ interface DialogoReservaParteProps {
   abierto: boolean
   reparacion: Reparacion
   productos: readonly OpcionProductoReparacion[]
-  totalProductos?: number
   buscarProductos?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>>
   resolverProducto?: (id: string) => Promise<OpcionProductoReparacion | null>
   almacenes: readonly Almacen[]
-  totalAlmacenes?: number
   buscarAlmacenes?: (consulta: ConsultaCatalogoReparacion) => Promise<ResultadoCatalogoReparacion<Almacen>>
   resolverAlmacen?: (id: string) => Promise<Almacen | null>
   ubicaciones: readonly UbicacionAlmacen[]
@@ -43,11 +41,9 @@ export function DialogoReservaParte({
   abierto,
   reparacion,
   productos,
-  totalProductos = productos.length,
   buscarProductos,
   resolverProducto,
   almacenes,
-  totalAlmacenes = almacenes.length,
   buscarAlmacenes,
   resolverAlmacen,
   ubicaciones,
@@ -197,13 +193,17 @@ export function DialogoReservaParte({
             <div className="sm:col-span-2">
               <Controller name="productoId" control={control} render={({ field }) =>
                 <SelectorCatalogoReparacion id="reserva-producto" etiqueta="Producto *"
-                  etiquetaBusqueda="Buscar repuesto" valor={field.value}
-                  opcionesIniciales={productos} totalInicial={totalProductos}
+                  valor={field.value}
+                  opcionesIniciales={productos}
                   opcionActual={productoRemoto} buscar={buscarProductos}
                   resolver={resolverProducto}
                   representar={(item) => `${item.codigo} · ${item.descripcion}`}
+                  textoSecundario={(item) => item.unidadMedida ? `Unidad base: ${item.unidadMedida}` : undefined}
+                  palabrasClave={(item) => [item.codigo, item.descripcion, item.unidadMedida]}
                   alCambiar={(valor, opcion) => { setProductoRemoto(opcion); field.onChange(valor) }}
-                  error={errors.productoId?.message} textoVacio="Selecciona un producto" />
+                  alPerderFoco={field.onBlur}
+                  error={errors.productoId?.message} placeholder="Buscar repuesto…"
+                  ayuda="Código o descripción." noOptionsMessage="No hay productos activos disponibles." />
               } />
             </div>
             <div>
@@ -215,13 +215,17 @@ export function DialogoReservaParte({
             <div className="sm:col-span-2">
               <Controller name="almacenId" control={control} render={({ field }) =>
                 <SelectorCatalogoReparacion id="reserva-almacen" etiqueta="Almacén *"
-                  etiquetaBusqueda="Buscar almacén" valor={field.value}
-                  opcionesIniciales={almacenes} totalInicial={totalAlmacenes}
+                  valor={field.value}
+                  opcionesIniciales={almacenes}
                   opcionActual={almacenRemoto} buscar={buscarAlmacenes}
                   resolver={resolverAlmacen}
                   representar={(item) => `${item.codigo} · ${item.nombre}${item.activo ? '' : ' (inactivo)'}`}
+                  textoSecundario={(item) => item.direccion || undefined}
+                  palabrasClave={(item) => [item.codigo, item.nombre, item.direccion]}
                   alCambiar={(valor, opcion) => { setAlmacenRemoto(opcion); field.onChange(valor) }}
-                  error={errors.almacenId?.message} textoVacio="Selecciona un almacén" />
+                  alPerderFoco={field.onBlur}
+                  error={errors.almacenId?.message} placeholder="Buscar almacén…"
+                  ayuda="Código o nombre del almacén." noOptionsMessage="No hay almacenes activos disponibles." />
               } />
             </div>
             <input type="hidden" {...register('estadoStock')} />

@@ -15,17 +15,16 @@ function detalle(estado = 'diagnosis'): DetalleReparacion {
 const mostrar = (datos = detalle()) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><NoReparableReparacion detalle={datos} /></QueryClientProvider>)
 beforeEach(() => { vi.clearAllMocks(); mock.user = 'tech'; mock.permissions = ['REPAIRS_CHANGE_STATUS', 'REPAIRS_PERFORM_TECHNICAL']; mock.recuperar.mockReturnValue(null); mock.ejecutar.mockResolvedValue(undefined) })
 describe('decisión técnica B1', () => {
-  it.each(['non_repairable', 'returned_unrepaired', 'delivered', 'cancelled', 'rejected'])('recuperar sin pendiente en %s nunca crea una declaración', estado => {
+  it.each(['non_repairable', 'returned_unrepaired', 'delivered', 'cancelled', 'rejected'])('no ofrece recuperación sin operación pendiente en %s', estado => {
     mostrar(detalle(estado))
-    fireEvent.click(screen.getByRole('button', { name: 'Recuperar decisión pendiente' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('No hay una decisión pendiente')
+    expect(screen.queryByRole('button', { name: /decisión pendiente/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(mock.ejecutar).not.toHaveBeenCalled()
   })
   it('no sustituye creación por recuperación implícita cuando ya hay una intención pendiente', () => {
     mock.recuperar.mockReturnValue({ tipo: 'declare_repair_non_repairable', expectedLockVersion: 3, datos: { diagnosis_id: id, reason: 'Original' }, clave: id })
     mostrar(); fireEvent.click(screen.getByRole('button', { name: 'Declarar No reparable' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('Usa Recuperar decisión pendiente')
+    expect(screen.getByRole('alert')).toHaveTextContent('Usa Reintentar decisión pendiente')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
   it('permite confirmar el replay original tras reasignación sin ofrecer nuevas decisiones al técnico anterior', async () => {
@@ -33,22 +32,29 @@ describe('decisión técnica B1', () => {
     mock.recuperar.mockReturnValue(comando)
     const d = detalle('non_repairable'); d.reparacion.tecnicoAsignadoId = 'other-tech'; mostrar(d)
     expect(screen.queryByRole('button', { name: 'Reabrir evaluación técnica' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Recuperar decisión pendiente' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Reintentar decisión pendiente' }))
     fireEvent.click(screen.getByRole('button', { name: 'Reintentar decisión' }))
     await waitFor(() => expect(mock.ejecutar).toHaveBeenCalledWith(expect.any(String), id, id, expect.objectContaining({ expectedLockVersion: 3 }), id))
   })
   it('no ofrece recuperación ni creación sin las capacidades técnicas', () => {
     mock.permissions = ['REPAIRS_VIEW']; mostrar(detalle('non_repairable'))
-    expect(screen.queryByRole('button', { name: 'Recuperar decisión pendiente' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /decisión pendiente/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Declarar No reparable' })).not.toBeInTheDocument()
   })
   it('solo ofrece declarar al técnico con capacidades y asignación', () => {
     mock.user = 'admin'; mostrar()
     expect(screen.queryByRole('button', { name: 'Declarar No reparable' })).not.toBeInTheDocument()
   })
-  it('bloquea si hay reservas pendientes o falta diagnóstico', () => {
+  it('oculta la decisión No reparable antes de contar con diagnóstico', () => {
     const d = detalle(); d.diagnosticos = []; mostrar(d)
+    expect(screen.queryByRole('region', { name: 'Decisión técnica No reparable' })).not.toBeInTheDocument()
+  })
+  it('bloquea declarar No reparable si quedan reservas pendientes', () => {
+    const d = detalle()
+    d.partes = [{ estado: 'reserved', cantidadConsumida: 0, cantidadSolicitada: 1 } as DetalleReparacion['partes'][number]]
+    mostrar(d)
     expect(screen.getByRole('button', { name: 'Declarar No reparable' })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent('reservas pendientes')
   })
   it('envía diagnóstico y motivo sin inventar actor o fecha', async () => {
     mostrar(); fireEvent.click(screen.getByRole('button', { name: 'Declarar No reparable' }))
@@ -76,7 +82,7 @@ describe('decisión técnica B1', () => {
   })
   it('recupera el comando y la versión anteriores después de un cambio de estado', async () => {
     mock.recuperar.mockReturnValue({ tipo: 'declare_repair_non_repairable', expectedLockVersion: 3, datos: { diagnosis_id: id, reason: 'Original' }, clave: id })
-    mostrar(detalle('non_repairable')); fireEvent.click(screen.getByRole('button', { name: 'Recuperar decisión pendiente' }))
+    mostrar(detalle('non_repairable')); fireEvent.click(await screen.findByRole('button', { name: 'Reintentar decisión pendiente' }))
     expect(screen.getByLabelText('Motivo técnico *')).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Reintentar decisión' }))
     await waitFor(() => expect(mock.ejecutar).toHaveBeenCalledWith(expect.any(String), id, id, expect.objectContaining({ expectedLockVersion: 3 }), id))

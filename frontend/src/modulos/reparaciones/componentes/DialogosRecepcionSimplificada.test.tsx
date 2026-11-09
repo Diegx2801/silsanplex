@@ -10,16 +10,26 @@ const reparacion = {
   codigo: 'REP-0001',
   productoDescripcionSnapshot: 'Equipo prueba',
   tecnicoAsignadoId: null,
+  prioridad: 'normal',
+  fechaEntregaEstimada: '',
 } as Reparacion
 
 describe('Formularios técnicos simplificados', () => {
-  it('mantiene el diagnóstico específico y guarda sin notas genéricas', async () => {
+  it('incluye planificación y mantiene el diagnóstico específico', async () => {
     const alGuardar = vi.fn().mockResolvedValue(undefined)
     render(<DialogoDiagnostico abierto reparacion={reparacion} alCambiarApertura={vi.fn()} alGuardar={alGuardar} />)
     expect(screen.getByText('Detalle adicional del diagnóstico').closest('details')).not.toHaveAttribute('open')
+    expect(screen.getByLabelText('Prioridad *')).toHaveValue('normal')
+    fireEvent.change(screen.getByLabelText('Prioridad *'), { target: { value: 'urgent' } })
+    fireEvent.change(screen.getByLabelText('Fecha estimada de entrega'), { target: { value: '2026-11-20' } })
     fireEvent.change(screen.getByLabelText('Síntomas observados *'), { target: { value: 'No enciende durante la revisión' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar diagnóstico' }))
-    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(expect.objectContaining({ sintomas: 'No enciende durante la revisión', notas: '' })))
+    await waitFor(() => expect(alGuardar).toHaveBeenCalledWith(expect.objectContaining({
+      prioridad: 'urgent',
+      fechaEstimadaEntrega: '2026-11-20',
+      sintomas: 'No enciende durante la revisión',
+      notas: '',
+    })))
   })
 
   it('registra resultado y aprobación sin exigir mediciones adicionales', async () => {

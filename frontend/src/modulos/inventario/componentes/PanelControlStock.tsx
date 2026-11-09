@@ -27,7 +27,6 @@ interface Props {
   configurar: (datos: {
     productoId: string
     almacenId: string
-    ubicacionId: string
     stockMinimo: number
     diasVencimiento: number
   }) => Promise<string | undefined>

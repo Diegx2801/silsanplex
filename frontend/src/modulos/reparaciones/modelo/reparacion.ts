@@ -131,7 +131,6 @@ export interface ConsultaCatalogoReparacion {
 
 export interface ResultadoCatalogoReparacion<T> {
   elementos: T[]
-  total: number
 }
 
 export interface Reparacion {
@@ -457,6 +456,8 @@ export type DatosCotizacion = z.infer<typeof esquemaDatosCotizacion>
 
 export const esquemaDatosDiagnostico = z.object({
   tecnicoId: uuidOpcional,
+  prioridad: z.enum(['low', 'normal', 'high', 'urgent']),
+  fechaEstimadaEntrega: fechaOpcional,
   sintomas: z.string().trim().min(3, 'Describe los síntomas').max(4000),
   causaEncontrada: textoOpcional(4000),
   solucionRecomendada: textoOpcional(4000),

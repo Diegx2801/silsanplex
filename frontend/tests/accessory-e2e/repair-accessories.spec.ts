@@ -57,7 +57,13 @@ async function open(page: Page, f: Fixture) {
   await page.getByLabel('Buscar reparación').fill(f.reference)
   await expect(page.getByText('1 de 1 órdenes visibles')).toBeVisible()
   await page.getByRole('button',{name:/^(Ver detalle|Ver reparación)$/i}).click()
-  await expect(page.getByRole('heading',{name:'Accesorios recibidos y devolución'})).toBeVisible()
+  const deliveryTab=page.getByRole('tab',{name:'Entrega y trazabilidad',exact:true})
+  if (await deliveryTab.getAttribute('aria-selected')!=='true') await deliveryTab.click()
+  await expect(deliveryTab).toHaveAttribute('aria-selected','true')
+  const accessoriesSection=page.locator('details').filter({has:page.locator('#reparacion-accesorios')})
+  const accessoriesSummary=page.locator('#reparacion-accesorios')
+  await expect(accessoriesSummary).toBeVisible()
+  if (await accessoriesSection.getAttribute('open')===null) await accessoriesSummary.click()
   await expect(page.getByText('Consultando accesorios…',{exact:true})).toBeHidden()
 }
 async function create(page: Page, f: Fixture, withAccessories = true) {
@@ -69,9 +75,9 @@ async function create(page: Page, f: Fixture, withAccessories = true) {
   await dialog.getByLabel('Identificación del equipo *',{exact:true}).selectOption('external')
   await dialog.getByLabel('Equipo recibido *',{exact:true}).fill('Monitor de prueba aislado')
   await dialog.getByLabel('Problema reportado *',{exact:true}).fill('No enciende')
-  await dialog.getByText('Datos adicionales de recepción',{exact:true}).click()
-  await dialog.getByLabel('Referencia del cliente',{exact:true}).fill(f.reference)
-  await dialog.getByLabel('Notas de recepción',{exact:true}).fill('Condición general del equipo intacta')
+  await dialog.getByText('Referencias y garantía',{exact:true}).click()
+  await dialog.getByLabel('Ticket o referencia externa',{exact:true}).fill(f.reference)
+  await dialog.getByLabel('Estado físico y observaciones al recibir',{exact:true}).fill('Condición general del equipo intacta')
   if (withAccessories) {
     for (const [index,name] of ['Cable','Sensor','Estuche'].entries()) {
       const n=index+1
@@ -86,8 +92,9 @@ async function create(page: Page, f: Fixture, withAccessories = true) {
   await open(page,f)
 }
 async function record(page: Page,name: string) {
-  const details=page.locator('details').filter({has:page.getByText(`Registro de ${name}`,{exact:true})})
-  if (await details.getAttribute('open')===null) await details.getByText(`Registro de ${name}`,{exact:true}).click()
+  const summary=page.locator('details.mt-3 > summary').filter({hasText:`Registro de ${name}`})
+  const details=summary.locator('xpath=..')
+  if (await details.getAttribute('open')===null) await summary.click()
   return details
 }
 async function giveBack(page: Page,name: string,quantity: number) {
@@ -250,7 +257,7 @@ test('R33: respuesta perdida de devolución se recupera tras recargar sin duplic
   await form.getByRole('button',{name:'Confirmar devolución',exact:true}).click()
   await expect(page.getByRole('alert')).toContainText('No se pudo guardar')
   await page.reload(); await open(page,f)
-  await page.getByRole('button',{name:'Recuperar operación de accesorios pendiente',exact:true}).click()
+  await page.getByRole('button',{name:'Reintentar operación pendiente',exact:true}).click()
   await page.getByRole('button',{name:'Reintentar operación de accesorios',exact:true}).click()
   await expect(page.getByRole('form',{name:'Operación de accesorios'})).toBeHidden()
   expect(payloads).toHaveLength(2); expect(payloads[1]).toEqual(payloads[0])

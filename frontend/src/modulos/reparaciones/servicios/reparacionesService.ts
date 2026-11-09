@@ -313,6 +313,8 @@ const mensajesDominio: Array<[string, string]> = [
   ['REPAIR_PENDING_QUOTE_REQUIRED', 'Primero debes enviar una cotización pendiente de aprobación.'],
   ['REPAIR_DIAGNOSIS_STATE_REQUIRED', 'La reparación debe estar en diagnóstico para registrar este dato.'],
   ['REPAIR_DIAGNOSIS_SYMPTOMS_REQUIRED', 'Describe los síntomas antes de guardar el diagnóstico.'],
+  ['REPAIR_PRIORITY_INVALID', 'Selecciona una prioridad válida para la reparación.'],
+  ['REPAIR_ESTIMATED_DELIVERY_DATE_INVALID', 'Ingresa una fecha estimada de entrega válida.'],
   ['REPAIR_APPLIED_SOLUTION_REQUIRED', 'Describe la solución aplicada antes de guardar.'],
   ['REPAIR_QUOTE_ITEMS_REQUIRED', 'Agrega al menos una línea a la cotización.'],
   ['REPAIR_QUOTE_STATE_INVALID', 'La reparación no está en un estado que permita cotizar.'],
@@ -855,6 +857,11 @@ export async function obtenerDetalleReparacion(
     const cotizacionesSinLineas = filasCotizaciones.map((fila) =>
       mapearCotizacion(fila, []),
     )
+    const diagnosticos = filasDiagnosticos.map(mapearDiagnostico)
+    // `repairs.diagnosis` is a legacy summary that remains NULL when a valid
+    // diagnosis only records symptoms. The diagnosis history is the source of
+    // truth for whether the repair has been diagnosed.
+    reparacion.diagnosticoRegistrado = reparacion.diagnosticoRegistrado || diagnosticos.length > 0
     const cotizacionSeleccionada = seleccionarCotizacionActual(cotizacionesSinLineas)
     const lineasSeleccionadas = cotizacionSeleccionada
       ? await obtenerLineasCotizacionReparacion(organizationId, cotizacionSeleccionada.id)
@@ -894,7 +901,7 @@ export async function obtenerDetalleReparacion(
     return {
       cicloPruebasActual: (versionResult.data as { current_test_cycle_number: number }).current_test_cycle_number,
       reparacion,
-      diagnosticos: filasDiagnosticos.map(mapearDiagnostico),
+      diagnosticos,
       cotizaciones,
       cotizacionActiva,
       partes: filasPartes.map((parte) =>
@@ -933,15 +940,15 @@ export async function listarOpcionesClientesReparacion(
 ): Promise<ResultadoCatalogoReparacion<OpcionClienteReparacion>> {
   const rango = rangoCatalogo(consulta)
   let query = supabase.from('customers')
-    .select('id,document_type,document_number,legal_name,trade_name,is_active', { count: 'exact' })
+    .select('id,document_type,document_number,legal_name,trade_name,is_active')
     .eq('organization_id', organizationId).eq('is_active', true)
   const termino = escaparPatronIlike(normalizarBusquedaReparaciones(consulta.busqueda))
   if (termino) query = query.or(['document_number', 'legal_name', 'trade_name']
     .map((columna) => `${columna}.ilike.%${termino}%`).join(','))
-  const { data, error, count } = await query.order('legal_name', { ascending: true })
+  const { data, error } = await query.order('legal_name', { ascending: true })
     .order('id', { ascending: true }).range(rango.inicio, rango.fin)
   if (error) throw crearErrorReparacion(error, 'opciones')
-  return { elementos: ((data ?? []) as FilaClienteReparacion[]).map(mapearOpcionCliente), total: count ?? 0 }
+  return { elementos: ((data ?? []) as FilaClienteReparacion[]).map(mapearOpcionCliente) }
 }
 
 export async function listarOpcionesProductosReparacion(
@@ -950,15 +957,15 @@ export async function listarOpcionesProductosReparacion(
 ): Promise<ResultadoCatalogoReparacion<OpcionProductoReparacion>> {
   const rango = rangoCatalogo(consulta)
   let query = supabase.from('products')
-    .select('id,code,description,unit_of_measure,serial_control,batch_control,expiration_control,is_active', { count: 'exact' })
+    .select('id,code,description,unit_of_measure,serial_control,batch_control,expiration_control,is_active')
     .eq('organization_id', organizationId).eq('is_active', true)
   const termino = escaparPatronIlike(normalizarBusquedaReparaciones(consulta.busqueda))
   if (termino) query = query.or(`code.ilike.%${termino}%,description.ilike.%${termino}%`)
-  const { data, error, count } = await query.order('description', { ascending: true })
+  const { data, error } = await query.order('description', { ascending: true })
     .order('code', { ascending: true }).order('id', { ascending: true })
     .range(rango.inicio, rango.fin)
   if (error) throw crearErrorReparacion(error, 'opciones')
-  return { elementos: ((data ?? []) as FilaProductoReparacion[]).map(mapearOpcionProducto), total: count ?? 0 }
+  return { elementos: ((data ?? []) as FilaProductoReparacion[]).map(mapearOpcionProducto) }
 }
 
 export async function obtenerOpcionClienteReparacion(organizationId: string, id: string) {
@@ -1004,15 +1011,15 @@ export async function listarOpcionesAlmacenesReparacion(
 ): Promise<ResultadoCatalogoReparacion<Almacen>> {
   const rango = rangoCatalogo(consulta)
   let query = supabase.from('warehouses')
-    .select('id,code,name,address,is_active', { count: 'exact' })
+    .select('id,code,name,address,is_active')
     .eq('organization_id', organizationId).eq('is_active', true)
   const termino = escaparPatronIlike(normalizarBusquedaReparaciones(consulta.busqueda))
   if (termino) query = query.or(`code.ilike.%${termino}%,name.ilike.%${termino}%,address.ilike.%${termino}%`)
-  const { data, error, count } = await query.order('name', { ascending: true })
+  const { data, error } = await query.order('name', { ascending: true })
     .order('code', { ascending: true }).order('id', { ascending: true })
     .range(rango.inicio, rango.fin)
   if (error) throw crearErrorReparacion(error, 'opciones')
-  return { elementos: ((data ?? []) as FilaAlmacen[]).map(mapearAlmacenReparacion), total: count ?? 0 }
+  return { elementos: ((data ?? []) as FilaAlmacen[]).map(mapearAlmacenReparacion) }
 }
 
 export async function listarOpcionesUbicacionesReparacion(
@@ -1022,16 +1029,16 @@ export async function listarOpcionesUbicacionesReparacion(
 ): Promise<ResultadoCatalogoReparacion<UbicacionAlmacen>> {
   const rango = rangoCatalogo(consulta)
   let query = supabase.from('warehouse_locations')
-    .select('id,warehouse_id,code,name,description,is_active', { count: 'exact' })
+    .select('id,warehouse_id,code,name,description,is_active')
     .eq('organization_id', organizationId).eq('warehouse_id', almacenId)
     .eq('is_active', true)
   const termino = escaparPatronIlike(normalizarBusquedaReparaciones(consulta.busqueda))
   if (termino) query = query.or(`code.ilike.%${termino}%,name.ilike.%${termino}%,description.ilike.%${termino}%`)
-  const { data, error, count } = await query.order('name', { ascending: true })
+  const { data, error } = await query.order('name', { ascending: true })
     .order('code', { ascending: true }).order('id', { ascending: true })
     .range(rango.inicio, rango.fin)
   if (error) throw crearErrorReparacion(error, 'opciones')
-  return { elementos: ((data ?? []) as FilaUbicacion[]).map(mapearUbicacionReparacion), total: count ?? 0 }
+  return { elementos: ((data ?? []) as FilaUbicacion[]).map(mapearUbicacionReparacion) }
 }
 
 export async function obtenerOpcionAlmacenReparacion(organizationId: string, id: string) {
@@ -1184,6 +1191,8 @@ export async function registrarDiagnosticoReparacion(
       repair_id: reparacionId,
       expected_lock_version: expectedLockVersion,
       technician_id: normalizarTextoOpcional(datos.tecnicoId),
+      priority: datos.prioridad,
+      estimated_delivery_date: normalizarTextoOpcional(datos.fechaEstimadaEntrega),
       symptoms: datos.sintomas.trim(),
       cause_found: normalizarTextoOpcional(datos.causaEncontrada),
       recommended_solution: normalizarTextoOpcional(datos.solucionRecomendada),

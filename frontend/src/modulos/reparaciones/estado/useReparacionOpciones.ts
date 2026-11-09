@@ -80,17 +80,14 @@ export function useReparacionOpciones(
 
   return {
     clientes: clientesQuery.data?.elementos ?? [],
-    totalClientes: clientesQuery.data?.total ?? 0,
     clienteActual: clienteActualQuery.data ?? null,
     buscarClientes,
     resolverCliente,
     productos: productosQuery.data?.elementos ?? [],
-    totalProductos: productosQuery.data?.total ?? 0,
     productoActual: productoActualQuery.data ?? null,
     buscarProductos,
     resolverProducto,
     almacenes: almacenesQuery.data?.elementos ?? [],
-    totalAlmacenes: almacenesQuery.data?.total ?? 0,
     ubicaciones: ubicacionesIniciales,
     buscarAlmacenes,
     buscarUbicaciones,
@@ -106,19 +103,23 @@ export function useReparacionOpciones(
 
 export function useTecnicosReparacion(
   habilitado: boolean,
-  busqueda: string,
 ) {
   const { access } = useAuth()
   const organizationId = access?.organizationId ?? ''
   const query = useQuery({
-    queryKey: ['repair-technicians', organizationId, busqueda],
-    queryFn: () => listarTecnicosReparacion(organizationId, busqueda, 100),
+    queryKey: ['repair-technicians', organizationId],
+    queryFn: () => listarTecnicosReparacion(organizationId, '', 25),
     enabled: Boolean(organizationId && habilitado),
     staleTime: 30_000,
   })
+  const buscarTecnicos = useCallback(
+    (busqueda: string) => listarTecnicosReparacion(organizationId, busqueda, 25),
+    [organizationId],
+  )
 
   return {
     tecnicos: query.data ?? [],
+    buscarTecnicos,
     cargando: query.isLoading,
     error: query.error,
   }

@@ -25,7 +25,6 @@ export interface UbicacionAlmacen {
 }
 
 export interface ConfiguracionAlertasStock {
-  ubicacionId: string | null
   stockMinimo: number
   diasVencimiento: number
 }
@@ -189,7 +188,7 @@ export const esquemaReclasificacion = z.object({
   factorConversionEsperado: z.number().finite().positive().optional(),
   lote: z.string().trim().max(60),
   fechaVencimiento: z.string(),
-  motivo: z.string().trim().min(3, 'Describe el motivo con al menos 3 caracteres').max(180, 'El motivo admite hasta 180 caracteres'),
+  observacion: z.string().trim().max(600, 'La observación admite hasta 600 caracteres').optional(),
 }).refine((datos) => datos.estadoOrigen !== datos.estadoDestino, {
   message: 'Selecciona un estado diferente',
   path: ['estadoDestino'],
@@ -198,7 +197,6 @@ export const esquemaReclasificacion = z.object({
 export const esquemaConfiguracionAlertasStock = z.object({
   productoId: z.string().uuid('Selecciona un producto válido'),
   almacenId: z.string().uuid('Selecciona un almacén válido'),
-  ubicacionId: z.string().uuid('Selecciona una ubicación válida'),
   stockMinimo: z.string().trim().refine(
     (valor) => /^\d+(\.\d{1,3})?$/.test(valor) && Number(valor) >= 0 && Number(valor) <= 99999999999.999,
     'Ingresa un stock mínimo entre cero y 99,999,999,999.999 con hasta 3 decimales',

@@ -53,11 +53,11 @@ const ubicaciones: UbicacionAlmacen[] = [{
   activa: true,
 }]
 
-function renderDialog(alConfirmar = vi.fn().mockResolvedValue(undefined)) {
+function renderDialog(alConfirmar = vi.fn().mockResolvedValue(undefined), orden: Compra = compra) {
   render(
     <DialogoConfirmacionRecepcion
       abierto
-      compra={compra}
+      compra={orden}
       ubicaciones={ubicaciones}
       alCambiarApertura={vi.fn()}
       alConfirmar={alConfirmar}
@@ -121,6 +121,38 @@ describe('DialogoConfirmacionRecepcion', () => {
           observacion: '',
           motivos: [{ codigo: 'quality', cantidad: '2', texto: '' }],
         },
+      })],
+    })))
+  })
+
+  it('permite recibir una reposición aunque la cantidad física supere el saldo, si lo aceptado no lo excede', async () => {
+    const ordenConReposicion: Compra = {
+      ...compra,
+      estado: 'parcialmente-recibida',
+      lineas: [{
+        ...compra.lineas[0],
+        cantidad: 5,
+        cantidadRecibida: 4,
+        cantidadRechazada: 1,
+        cantidadPendiente: 1,
+      }],
+    }
+    const alConfirmar = renderDialog(undefined, ordenConReposicion)
+
+    expect(screen.getByText(/Rechazado anteriormente: 1 UND/)).toBeVisible()
+    fireEvent.change(screen.getByLabelText(/Cantidad \(UND\)/), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText('Cantidad aceptada'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText('Cantidad rechazada'), { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar motivo' }))
+    fireEvent.change(screen.getByLabelText('Cantidad'), { target: { value: '1' } })
+    fireEvent.change(screen.getByLabelText(/Lote/), { target: { value: 'LOTE-REPOSICION' } })
+    fireEvent.change(screen.getByLabelText(/Vencimiento/), { target: { value: '2027-09-01' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar recepción' }))
+
+    await waitFor(() => expect(alConfirmar).toHaveBeenCalledWith(expect.objectContaining({
+      lineas: [expect.objectContaining({
+        cantidad: '2',
+        inspeccion: expect.objectContaining({ cantidadAceptada: '1', cantidadRechazada: '1' }),
       })],
     })))
   })

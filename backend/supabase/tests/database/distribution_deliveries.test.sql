@@ -1,6 +1,6 @@
 begin;
 
-select plan(173);
+select plan(177);
 
 select has_column('public', 'orders', 'delivery_address_snapshot', 'D1 order destination snapshot column exists');
 select has_function('public', 'prepare_distribution_delivery_payload', array['jsonb'], 'D1 destination payload preparation exists');
@@ -342,7 +342,7 @@ select throws_ok($$
     'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-PENDING',
     'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 3, 'movement_allocations', jsonb_build_array(jsonb_build_object('inventory_movement_id', 'a3111111-1111-4111-8111-111111111192', 'quantity', 3))))
   ));
-$$, 'P0001', 'DISTRIBUTION_ORDER_NOT_DISPATCHED', 'rechaza una venta con despacho pendiente o parcial');
+$$, 'P0001', 'DISTRIBUTION_ALLOCATION_EXCEEDS_DISPATCHED', 'rechaza asignar más cantidad que las salidas físicas existentes');
 
 reset role;
 update public.inventory_reservations
@@ -386,6 +386,33 @@ insert into public.audit_events (
     ))
   )
 );
+update public.inventory_reservations
+set quantity_consumed = 1,
+    status = 'active'
+where source_type = 'order-item'
+  and source_id = 'a3111111-1111-4111-8111-111111111142';
+set local role authenticated;
+
+select lives_ok($$
+  select public.save_distribution_delivery(jsonb_build_object(
+    'organization_id', 'd3111111-1111-4111-8111-111111111111',
+    'order_id', 'a3111111-1111-4111-8111-111111111112',
+    'sale_id', 'a3111111-1111-4111-8111-111111111152',
+    'order_number', 'PED-N-001', 'customer_name', 'Cliente nuevo',
+    'issue_date', '2026-09-01', 'delivery_date', '2026-09-02',
+    'guide_number', 'G-N-PARTIAL', 'transport_type', 'interno',
+    'direction', 'Av. Nueva 123', 'numero_despacho', 'DES-N-PARTIAL',
+    'items', jsonb_build_array(jsonb_build_object('id', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 1, 'movement_allocations', jsonb_build_array(jsonb_build_object('inventory_movement_id', 'a3111111-1111-4111-8111-111111111192', 'quantity', 1))))
+  ));
+$$, 'permite programar únicamente la cantidad que ya salió físicamente');
+select is((select sum(quantity) from public.distribution_delivery_items where delivery_id = (select id from public.distribution_deliveries where guide_number = 'G-N-PARTIAL')), 1::numeric, 'el primer envío parcial conserva su cantidad exacta');
+
+reset role;
+delete from public.distribution_delivery_inventory_allocations
+where delivery_id = (select id from public.distribution_deliveries where guide_number = 'G-N-PARTIAL');
+delete from public.distribution_delivery_items
+where delivery_id = (select id from public.distribution_deliveries where guide_number = 'G-N-PARTIAL');
+delete from public.distribution_deliveries where guide_number = 'G-N-PARTIAL';
 update public.inventory_reservations
 set quantity_consumed = quantity,
     status = 'consumed'
@@ -803,11 +830,12 @@ select lives_ok($$
     'entregaId', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
     'expectedLockVersion', 9,
     'operationKey', '41111111-1111-4111-8111-111111111111',
-    'resultado', 'entrega_parcial', 'fecha', '2026-09-02', 'evidencia', 'firma parcial',
+    'resultado', 'entrega_parcial', 'fecha', '2026-09-02',
     'incidencias', '[]'::jsonb,
     'lineas', jsonb_build_array(jsonb_build_object('orderLineId', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 1))
   ));
 $$, 'registra atómicamente una recepción parcial por producto');
+select is((select evidence from public.distribution_delivery_outcomes where operation_key = '41111111-1111-4111-8111-111111111111'), '', 'la recepción no exige ni inventa constancia externa');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'entrega_parcial', 'la recepción parcial deja la entrega abierta');
 select is((select lock_version from public.distribution_deliveries where guide_number = 'G-N-001'), 10::bigint, 'el resultado parcial avanza la versión de concurrencia');
 select is((select quantity_delivered from public.distribution_delivery_outcome_lines where order_line_id = 'a3111111-1111-4111-8111-111111111142'), 1::numeric, 'conserva la cantidad recibida por línea');
@@ -866,7 +894,7 @@ select is(public.record_distribution_delivery_outcome(jsonb_build_object(
     'entregaId', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
     'expectedLockVersion', 9,
     'operationKey', '41111111-1111-4111-8111-111111111111',
-    'resultado', 'entrega_parcial', 'fecha', '2026-09-02', 'evidencia', 'firma parcial',
+    'resultado', 'entrega_parcial', 'fecha', '2026-09-02',
     'incidencias', '[]'::jsonb,
     'lineas', jsonb_build_array(jsonb_build_object('orderLineId', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 1))
   )), (select id from public.distribution_delivery_outcomes where operation_key = '41111111-1111-4111-8111-111111111111'), 'un reintento idempotente devuelve el mismo resultado');
@@ -902,11 +930,12 @@ select lives_ok($$
     'entregaId', (select id from public.distribution_deliveries where guide_number = 'G-N-001'),
     'expectedLockVersion', 12,
     'operationKey', '41111111-1111-4111-8111-111111111114',
-    'resultado', 'entregado', 'fecha', '2026-09-03', 'evidencia', 'firma final',
+    'resultado', 'entregado', 'fecha', '2026-09-03',
     'incidencias', '[]'::jsonb,
     'lineas', jsonb_build_array(jsonb_build_object('orderLineId', 'a3111111-1111-4111-8111-111111111142', 'cantidad', 2))
   ));
 $$, 'permite cerrar el saldo con una segunda recepción completa');
+select is((select evidence from public.distribution_delivery_outcomes where operation_key = '41111111-1111-4111-8111-111111111114'), '', 'permite confirmar una recepción completa sin constancia externa');
 select is((select delivery_status from public.distribution_deliveries where guide_number = 'G-N-001'), 'entregado', 'la segunda recepción cierra la entrega');
 select is((select sum(quantity_delivered) from public.distribution_delivery_outcome_lines where order_line_id = 'a3111111-1111-4111-8111-111111111142'), 3::numeric, 'el historial acumula exactamente la cantidad pedida');
 select is((select fulfillment_status from public.orders where id = 'a3111111-1111-4111-8111-111111111112'), 'delivered', 'proyecta el cierre al cumplimiento del pedido');

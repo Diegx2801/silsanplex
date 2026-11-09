@@ -64,9 +64,9 @@ describe('DialogoResultadoEntrega', () => {
     const { rerender, alCambiarApertura } = renderDialog(alConfirmar)
 
     fireEvent.change(screen.getByLabelText('Recibido ahora'), { target: { value: '6' } })
-    fireEvent.change(screen.getByLabelText(/^Evidencia o constancia/), { target: { value: 'CONSTANCIA-1' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar entrega completa' }))
     await waitFor(() => expect(alConfirmar).toHaveBeenCalledTimes(1))
+    expect(alConfirmar.mock.calls[0][0].evidencia).toBe('')
 
     const entregaActualizada = crearEntrega({
       lockVersion: 4,
@@ -80,7 +80,7 @@ describe('DialogoResultadoEntrega', () => {
         id: 'outcome-1',
         resultado: 'entregado',
         fecha,
-        evidencia: 'CONSTANCIA-1',
+        evidencia: '',
         incidencias: [],
         lineas: [{ orderLineId: '11111111-1111-4111-8111-111111111111', cantidad: 6 }],
       }],
@@ -95,7 +95,7 @@ describe('DialogoResultadoEntrega', () => {
     )
 
     expect(screen.getByLabelText('Recibido ahora')).toHaveValue(6)
-    expect(screen.getByLabelText(/^Evidencia o constancia/)).toHaveValue('CONSTANCIA-1')
+    expect(screen.queryByLabelText(/constancia|evidencia/i)).not.toBeInTheDocument()
     const confirmacion = screen.getByRole('button', { name: 'Confirmar entrega completa' })
     expect(confirmacion).toBeEnabled()
     fireEvent.click(confirmacion)
@@ -106,32 +106,23 @@ describe('DialogoResultadoEntrega', () => {
     expect(alCambiarApertura).toHaveBeenCalledWith(false)
   })
 
-  it('genera otra clave si se editan cantidades o evidencia después de un error', async () => {
+  it('genera otra clave si se cambia la cantidad después de un error', async () => {
     const alConfirmar = vi.fn<ConfirmarResultado>()
       .mockResolvedValueOnce('Fallo de red')
-      .mockResolvedValueOnce('Conflicto por evidencia')
       .mockResolvedValueOnce('Conflicto por cantidad')
     renderDialog(alConfirmar)
 
     fireEvent.change(screen.getByLabelText('Recibido ahora'), { target: { value: '6' } })
-    fireEvent.change(screen.getByLabelText(/^Evidencia o constancia/), { target: { value: 'CONSTANCIA-1' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar entrega completa' }))
     await waitFor(() => expect(alConfirmar).toHaveBeenCalledTimes(1))
 
-    fireEvent.change(screen.getByLabelText(/^Evidencia o constancia/), { target: { value: 'CONSTANCIA-2' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar entrega completa' }))
+    fireEvent.change(screen.getByLabelText('Recibido ahora'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar entrega parcial' }))
     await waitFor(() => expect(alConfirmar).toHaveBeenCalledTimes(2))
 
     expect(alConfirmar.mock.calls[1][1]).not.toBe(alConfirmar.mock.calls[0][1])
-    expect(alConfirmar.mock.calls[1][0].evidencia).toBe('CONSTANCIA-2')
-    expect(screen.getByRole('alert')).toHaveTextContent('Conflicto por evidencia')
-
-    fireEvent.change(screen.getByLabelText('Recibido ahora'), { target: { value: '5' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar entrega parcial' }))
-    await waitFor(() => expect(alConfirmar).toHaveBeenCalledTimes(3))
-
-    expect(alConfirmar.mock.calls[2][1]).not.toBe(alConfirmar.mock.calls[1][1])
-    expect(alConfirmar.mock.calls[2][0].lineas).toEqual([
+    expect(alConfirmar.mock.calls[1][0].evidencia).toBe('')
+    expect(alConfirmar.mock.calls[1][0].lineas).toEqual([
       { orderLineId: '11111111-1111-4111-8111-111111111111', cantidad: 5 },
     ])
     expect(screen.getByRole('alert')).toHaveTextContent('Conflicto por cantidad')

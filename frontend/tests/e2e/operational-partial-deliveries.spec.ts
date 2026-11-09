@@ -335,10 +335,6 @@ test('divide dos entregas y recupera una respuesta perdida del resultado', async
     const quantityField = dialog.getByRole('spinbutton', { name: 'Cantidad de ' + f.name + ' para este envío', exact: true })
     await expect(quantityField).toHaveAttribute('max', String(cantidad === 2 ? 6 : 4))
     await quantityField.fill(String(cantidad))
-    const lotAllocation = dialog.getByRole('spinbutton', { name: 'Cantidad del lote ' + f.lot, exact: true })
-    await expect(lotAllocation).toBeVisible()
-    await expect(lotAllocation).toHaveAttribute('max', String(cantidad === 2 ? 6 : 4))
-    await lotAllocation.fill(String(cantidad))
     await dialog.getByLabel(/^Referencia interna de despacho/).fill(referencia)
     await dialog.getByLabel(/^Número de guía de remisión/).fill(guia)
     await dialog.locator('summary').filter({ hasText: 'Datos de ruta' }).click()
@@ -362,7 +358,6 @@ test('divide dos entregas y recupera una respuesta perdida del resultado', async
     deliveryId: string,
     guide: string,
     cantidad: number,
-    evidence: string,
     mode: ModoResultadoE2E = 'normal',
   ): Promise<EvidenciaRecuperacion | undefined> {
     await page.goto('/distribucion?vista=seguimiento')
@@ -382,7 +377,6 @@ test('divide dos entregas y recupera una respuesta perdida del resultado', async
     await article.getByRole('button', { name: 'Registrar resultado', exact: true }).click()
     const outcomeDialog = page.getByRole('dialog', { name: 'Registrar resultado de entrega' })
     await outcomeDialog.getByLabel('Recibido ahora', { exact: true }).fill(String(cantidad))
-    await outcomeDialog.getByLabel(/^Evidencia o constancia/).fill(evidence)
 
     if (mode === 'normal') {
       await mutate(page, 'record_distribution_delivery_outcome', () => outcomeDialog.getByRole('button', { name: 'Confirmar entrega completa' }).click())
@@ -428,29 +422,17 @@ test('divide dos entregas y recupera una respuesta perdida del resultado', async
         return { first, replay }
       }
 
-      const evidenciaModificada = `${evidence} (referencia corregida)`
-      await outcomeDialog.getByLabel(/^Evidencia o constancia/).fill(evidenciaModificada)
+      await outcomeDialog.getByLabel('Recibido ahora', { exact: true }).fill(String(cantidad - 1))
       const rejectedResponsePromise = page.waitForResponse((response) =>
         new URL(response.url()).pathname === '/rest/v1/rpc/record_distribution_delivery_outcome'
         && response.request().method() === 'POST', { timeout: 15_000 })
-      await confirmButton.click()
+      await outcomeDialog.getByRole('button', { name: 'Confirmar entrega parcial', exact: true }).click()
       const rejectedResponse = await rejectedResponsePromise
       const changedAttempt = await interception.secondAttempt
       expect(changedAttempt.operationKey).not.toBe(first.operationKey)
-      expect(changedAttempt.payload.evidencia).toBe(evidenciaModificada)
+      expect(changedAttempt.payload.evidencia).toBe('')
       expect(changedAttempt.status).not.toBe(200)
       expect(rejectedResponse.ok(), 'Un comando nuevo sobre la entrega ya confirmada debe mostrarse como conflicto, no como éxito').toBe(false)
-      await expect(outcomeDialog).toBeVisible()
-      await expect(outcomeDialog.getByRole('alert')).toBeVisible()
-
-      await outcomeDialog.getByLabel('Recibido ahora').fill(String(cantidad - 1))
-      const quantityResponsePromise = page.waitForResponse('**/rest/v1/rpc/record_distribution_delivery_outcome')
-      await outcomeDialog.getByRole('button', { name: 'Confirmar entrega parcial', exact: true }).click()
-      const quantityResponse = await quantityResponsePromise
-      const quantityCommand = quantityResponse.request().postDataJSON() as { payload: { operationKey: string } }
-      expect(quantityCommand.payload.operationKey).not.toBe(changedAttempt.operationKey)
-      expect(quantityCommand.payload.operationKey).not.toBe(first.operationKey)
-      expect(quantityResponse.ok()).toBe(false)
       await expect(outcomeDialog).toBeVisible()
       await expect(outcomeDialog.getByRole('alert')).toBeVisible()
 
@@ -519,7 +501,6 @@ test('divide dos entregas y recupera una respuesta perdida del resultado', async
       delivery.id,
       guia1,
       2,
-      'Conformidad parcial de línea, primer envío ' + f.reference,
       phase2c2E2E ? 'retry-identical' : 'normal',
     )
     if (phase2c2E2E) {
@@ -528,7 +509,7 @@ test('divide dos entregas y recupera una respuesta perdida del resultado', async
       const versionBeforeConflicts = Number((await checked(rows('distribution_deliveries').eq('id', delivery.id).single())).lock_version)
       const conflictPayloads: Array<{ tipo: string; payload: Record<string, unknown> }> = [
         {
-          tipo: 'evidencia',
+          tipo: 'referencia',
           payload: { ...originalPayload, evidencia: `${String(originalPayload.evidencia)} modificada` },
         },
         {
@@ -645,7 +626,6 @@ test('divide dos entregas y recupera una respuesta perdida del resultado', async
       secondDeliveryId,
       guia2,
       4,
-      'Conformidad final de línea, segundo envío ' + f.reference,
       phase2c2E2E ? 'change-after-loss' : 'normal',
     )
 
@@ -837,11 +817,11 @@ test('divide dos entregas y recupera una respuesta perdida del resultado', async
           persistedLinesAfterReplay: 1,
         },
         incompatiblePayload: {
-          rejectedVariants: ['evidencia', 'cantidad'],
+          rejectedVariants: ['referencia', 'cantidad'],
           persistedOutcomesAfterRejections: 1,
           persistedLinesAfterRejections: 1,
         },
-        changedEvidence: {
+        changedPayload: {
           originalOperationKey: segundaRecuperacion?.first.operationKey,
           changedOperationKey: segundaRecuperacion?.changedAttempt?.operationKey,
           firstBackendStatus: segundaRecuperacion?.first.status,

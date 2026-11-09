@@ -47,16 +47,16 @@ function completar(cantidad = '2') {
   fireEvent.change(screen.getByLabelText('Cantidad a cambiar *'), { target: { value: cantidad } })
   fireEvent.change(screen.getByLabelText('Unidad de medida *'), { target: { value: producto.unidadesEntrada[1].id } })
   fireEvent.change(screen.getByLabelText('Nueva condición *'), { target: { value: 'quarantine' } })
-  fireEvent.change(screen.getByLabelText('Motivo *'), { target: { value: 'Inspección pendiente' } })
 }
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.buckets.mockReturnValue({ buckets: [bucket], consultando: false, error: '' })
 })
 describe('DialogoCondicionStock', () => {
-  it('no pide reconstruir lote, vencimiento, referencia ni observación', () => {
+  it('usa un motivo fijo y deja la observación opcional', () => {
     montar()
-    expect(screen.queryByLabelText(/Documento|Observación|Vencimiento|Estado actual/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Motivo *')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Observación (opcional)')).toBeVisible()
     expect(screen.getByLabelText('Almacén')).toHaveValue('')
     expect(screen.getByLabelText('Ubicación y lote')).toBeDisabled()
   })
@@ -72,15 +72,17 @@ describe('DialogoCondicionStock', () => {
   it('revisa, conserva posición y unidad capturada y cierra sólo al confirmar', async () => {
     const { reclasificar, cerrar } = montar()
     completar()
+    fireEvent.change(screen.getByLabelText('Observación (opcional)'), { target: { value: 'Inspección pendiente' } })
     fireEvent.click(screen.getByRole('button', { name: 'Revisar cambio' }))
     expect(reclasificar).not.toHaveBeenCalled()
     expect(screen.getByText('Equivale a 40 Unidad')).toBeVisible()
+    expect(screen.getByText('Cambio de condición: Disponible → Cuarentena')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar cambio' }))
     await waitFor(() => expect(cerrar).toHaveBeenCalledWith(false))
     expect(reclasificar).toHaveBeenCalledWith(expect.objectContaining({
       productoId: producto.id, almacenId: almacen.id, ubicacionId: ubicacion.id,
       estadoOrigen: 'available', estadoDestino: 'quarantine', lote: 'L-25', fechaVencimiento: '2027-01-01',
-      cantidad: '2', unidadEntradaId: producto.unidadesEntrada[1].id, factorConversionEsperado: 20, motivo: 'Inspección pendiente',
+      cantidad: '2', unidadEntradaId: producto.unidadesEntrada[1].id, factorConversionEsperado: 20, observacion: 'Inspección pendiente',
     }), expect.any(String))
   })
   it('conserva la clave idempotente al reintentar y al volver sin cambiar los datos', async () => {

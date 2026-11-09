@@ -7,6 +7,7 @@ const localE2eEnvironment = resolve(import.meta.dirname, '.env.e2e.local')
 const localFrontendEnvironment = resolve(import.meta.dirname, '.env.local')
 const isCI = process.env.CI === 'true'
 const isIsolated = process.env.SILSAN_PHASE2C2_E2E === '1'
+const repairsRunInIsolatedJob = process.env.SILSAN_E2E_SKIP_ISOLATED_REPAIRS === '1'
 
 if (!isIsolated && existsSync(localFrontendEnvironment)) {
   loadEnvFile(localFrontendEnvironment)
@@ -43,14 +44,22 @@ if (missingE2eVariables.length > 0) {
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // The full repair suite runs in the isolated Supabase job, which also runs
+  // its SQL, tenant-isolation, and accessory regressions. Avoid running it a
+  // second time against the shared inventory E2E database in CI.
+  ...(repairsRunInIsolatedJob ? { testIgnore: ['**/repairs.spec.ts'] } : {}),
   // Los escenarios comparten una organización local, usuarios E2E e inventario.
   // Serializar evita que una prueba altere el estado que otra está verificando.
   fullyParallel: false,
   workers: 1,
-  retries: isCI ? 2 : 0,
+  // Un reintento cubre fallos transitorios sin duplicar varias veces una suite lenta.
+  retries: isCI ? 1 : 0,
   reporter: 'list',
   use: {
     baseURL: 'http://127.0.0.1:5173',
+    // Selectores que ya no existen deben fallar rápido; los flujos completos
+    // conservan su límite de prueba de 120 s.
+    actionTimeout: 15_000,
     trace: 'on-first-retry',
     ...(isIsolated ? { timezoneId: 'America/Lima', serviceWorkers: 'block' as const } : {}),
   },

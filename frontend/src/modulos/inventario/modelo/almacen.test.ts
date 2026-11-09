@@ -59,7 +59,7 @@ describe('modelo de almacenes', () => {
   it('impide reclasificar al mismo estado', () => {
     const resultado = esquemaReclasificacion.safeParse({
       productoId: id(1), almacenId: id(2), ubicacionId: id(3), estadoOrigen: 'damaged',
-      estadoDestino: 'damaged', cantidad: '1', lote: 'L-01', fechaVencimiento: '', motivo: 'Revision',
+      estadoDestino: 'damaged', cantidad: '1', lote: 'L-01', fechaVencimiento: '',
     })
     expect(resultado.success).toBe(false)
   })
@@ -67,22 +67,31 @@ describe('modelo de almacenes', () => {
   it('admite unidad alternativa en reclasificación y conserva la cantidad capturada', () => {
     expect(esquemaReclasificacion.parse({
       productoId: id(1), almacenId: id(2), ubicacionId: id(3), estadoOrigen: 'available',
-      estadoDestino: 'quarantine', cantidad: '2', lote: 'L-01', fechaVencimiento: '', motivo: 'Inspección',
+      estadoDestino: 'quarantine', cantidad: '2', lote: 'L-01', fechaVencimiento: '', observacion: 'Inspección',
       unidadEntradaId: id(4), factorConversionEsperado: 20,
     })).toMatchObject({ cantidad: '2', unidadEntradaId: id(4), factorConversionEsperado: 20 })
+  })
+
+  it('permite omitir la observación o registrarla de forma opcional', () => {
+    const base = {
+      productoId: id(1), almacenId: id(2), ubicacionId: id(3), estadoOrigen: 'available' as const,
+      estadoDestino: 'quarantine' as const, cantidad: '1', lote: 'L-01', fechaVencimiento: '',
+    }
+    expect(esquemaReclasificacion.safeParse(base).success).toBe(true)
+    expect(esquemaReclasificacion.safeParse({ ...base, observacion: 'Envase dañado' }).success).toBe(true)
   })
 
   it.each([0, -1, Infinity, NaN])('rechaza equivalencia de reclasificación inválida: %s', (factorConversionEsperado) => {
     expect(esquemaReclasificacion.safeParse({
       productoId: id(1), almacenId: id(2), ubicacionId: id(3), estadoOrigen: 'available',
-      estadoDestino: 'quarantine', cantidad: '2', lote: 'L-01', fechaVencimiento: '', motivo: 'Inspección',
+      estadoDestino: 'quarantine', cantidad: '2', lote: 'L-01', fechaVencimiento: '',
       factorConversionEsperado,
     }).success).toBe(false)
   })
 
   it('acepta stock mínimo cero para alertar cuando se agote', () => {
     expect(esquemaConfiguracionAlertasStock.safeParse({
-      productoId: id(1), almacenId: id(2), ubicacionId: id(3),
+      productoId: id(1), almacenId: id(2),
       stockMinimo: '0', diasVencimiento: '30',
     }).success).toBe(true)
   })
