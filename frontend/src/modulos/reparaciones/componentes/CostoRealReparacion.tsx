@@ -26,6 +26,7 @@ export function PanelCostoReal({ reparacion: r }: { reparacion: Reparacion }) {
   const gestionar = hasPermission(PERMISSIONS.REPAIRS_MANAGE_ACTUAL_COST)
   const confirmar = hasPermission(PERMISSIONS.REPAIRS_CONFIRM_ACTUAL_COST)
   const [offset, setOffset] = useState(0)
+  const [desgloseAbierto, setDesgloseAbierto] = useState(false)
   const [editor, setEditor] = useState<Editor | null>(null)
   const [mensaje, setMensaje] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -159,7 +160,7 @@ export function PanelCostoReal({ reparacion: r }: { reparacion: Reparacion }) {
           <summary className="cursor-pointer font-medium">¿Qué falta revisar? ({resumen.pending.length})</summary>
           <ul className="mt-2 list-disc space-y-1 ps-5">{resumen.pending.map((p,i) => <li key={`${p.source_id}:${i}`}>{motivosCosto[p.reason] ?? p.reason}</li>)}</ul>
         </details> : null}
-        {consulta.data.items.length > 0 ? <details className="rounded-md border px-3 py-2">
+        {consulta.data.items.length > 0 ? <details className="rounded-md border px-3 py-2" open={desgloseAbierto} onToggle={e => setDesgloseAbierto(e.currentTarget.open)}>
           <summary className="cursor-pointer font-medium">Ver desglose ({consulta.data.total_items})</summary>
           <div className="mt-3 space-y-3">{consulta.data.items.map(item => <article className="border-t pt-3" key={`${item.source_kind}:${item.source_id}`}>
             <h4 className="font-medium">{etiquetasComponenteCosto[item.source_kind] ?? item.source_kind} · {item.title}</h4>
