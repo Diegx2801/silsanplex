@@ -102,6 +102,8 @@ interface DialogoCambioEstadoProps {
   reparacion: Reparacion
   alCambiarApertura: (abierto: boolean) => void
   pendiente?: CambioEstadoPendiente | null
+  estadoDestino?: EstadoReparacion
+  etiquetaAccion?: string
   alGuardar: (estado: EstadoReparacion, observacion: string, operationKey: string) => Promise<string | undefined>
 }
 
@@ -109,10 +111,15 @@ export function DialogoCambioEstado({
   abierto,
   reparacion,
   pendiente,
+  estadoDestino,
+  etiquetaAccion,
   alCambiarApertura,
   alGuardar,
 }: DialogoCambioEstadoProps) {
-  const opciones = pendiente ? [pendiente.estado as EstadoReparacion] : obtenerTransicionesGenericas(reparacion.estado)
+  const destino = pendiente?.estado ?? estadoDestino
+  const destinoPermitido = Boolean(destino && (pendiente
+    ? pendiente.estado === destino
+    : obtenerTransicionesGenericas(reparacion.estado).includes(destino)))
   const [clave, setClave] = useState('')
   const [mensaje, setMensaje] = useState('')
   const {
@@ -123,23 +130,23 @@ export function DialogoCambioEstado({
     formState: { errors, isSubmitting },
   } = useForm<DatosCambioEstado>({
     resolver: zodResolver(esquemaCambioEstado),
-    defaultValues: { estado: opciones[0] ?? '', observacion: '' },
+    defaultValues: { estado: destino ?? '', observacion: '' },
   })
 
   useEffect(() => {
     if (abierto) {
-      reset({ estado: pendiente?.estado ?? obtenerTransicionesGenericas(reparacion.estado)[0] ?? '', observacion: pendiente?.observacion ?? '' })
+      reset({ estado: destino ?? '', observacion: pendiente?.observacion ?? '' })
       setClave(pendiente?.clave ?? crypto.randomUUID())
     }
-  }, [abierto, pendiente, reparacion.estado, reset])
+  }, [abierto, destino, pendiente, reset])
 
   const guardar = async (datos: DatosCambioEstado) => {
-    if (!opciones.includes(datos.estado as EstadoReparacion)) {
-      setError('estado', { message: 'El estado ya no está disponible para este flujo' })
+    if (!destino || !destinoPermitido || datos.estado !== destino) {
+      setError('estado', { message: 'El avance seleccionado ya no está disponible para este flujo' })
       return
     }
     setMensaje('')
-    const error = await alGuardar(datos.estado as EstadoReparacion, datos.observacion, clave)
+    const error = await alGuardar(destino, datos.observacion, clave)
     if (error) {
       setMensaje(error)
       return
@@ -153,16 +160,18 @@ export function DialogoCambioEstado({
         <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-foreground/30" />
         <DialogPrimitive.Content data-reparaciones-touch-target className="fixed start-1/2 top-1/2 z-[70] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 border bg-background shadow-xl outline-none">
           <header className="flex items-start justify-between gap-4 border-b px-5 py-5 sm:px-7">
-            <div><DialogPrimitive.Title className="text-xl font-semibold">Cambiar estado</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">{reparacion.codigo} · Estado actual: {etiquetasEstadoReparacion[reparacion.estado]}</DialogPrimitive.Description></div>
+            <div><DialogPrimitive.Title className="text-xl font-semibold">{pendiente ? 'Reintentar avance' : 'Confirmar avance'}</DialogPrimitive.Title><DialogPrimitive.Description className="mt-1 text-sm leading-6 text-muted-foreground">{reparacion.codigo} · {destino ? `Pasará de ${etiquetasEstadoReparacion[reparacion.estado]} a ${etiquetasEstadoReparacion[destino]}.` : 'No se pudo determinar el siguiente paso.'}</DialogPrimitive.Description></div>
             <DialogPrimitive.Close asChild><button type="button" aria-label="Cerrar cambio de estado" className="grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><X aria-hidden="true" className="size-5" /></button></DialogPrimitive.Close>
           </header>
           <form id="formulario-cambio-estado" className="grid gap-5 px-5 py-6 sm:px-7" onSubmit={handleSubmit(guardar)}>
             {pendiente ? <p role="status">Operación recuperada: se conservan intención, versión y clave originales.</p> : null}
             <div>
-              <label htmlFor="estado-destino-reparacion" className="field-label">Nuevo estado *</label>
-              <select id="estado-destino-reparacion" className="field-control" aria-invalid={Boolean(errors.estado)} {...register('estado')} disabled={isSubmitting}>
-                {opciones.map((estado) => <option key={estado} value={estado}>{etiquetasEstadoReparacion[estado]}</option>)}
-              </select>
+              <span className="field-label">Destino del avance</span>
+              <div className="field-control flex min-h-10 items-center font-medium" aria-live="polite">
+                {destino ? `${etiquetasEstadoReparacion[reparacion.estado]} → ${etiquetasEstadoReparacion[destino]}` : 'Paso no disponible'}
+              </div>
+              <input type="hidden" {...register('estado')} />
+              <p className="field-help">El destino lo define el paso que seleccionaste; no necesitas elegir un estado manualmente.</p>
               {errors.estado ? <p className="field-error">{errors.estado.message}</p> : null}
             </div>
             <div>
@@ -174,7 +183,7 @@ export function DialogoCambioEstado({
           {mensaje ? <p role="alert" className="border-t bg-destructive/10 px-5 py-3 text-sm text-destructive sm:px-7">{mensaje}</p> : null}
           <footer className="flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
             <DialogPrimitive.Close asChild><Button type="button" variant="outline">Cancelar</Button></DialogPrimitive.Close>
-            <Button type="submit" form="formulario-cambio-estado" disabled={isSubmitting || !opciones.length}>{pendiente ? 'Reintentar cambio de estado' : 'Cambiar estado'}</Button>
+            <Button type="submit" form="formulario-cambio-estado" disabled={isSubmitting || !destinoPermitido}>{pendiente ? 'Reintentar avance' : etiquetaAccion ?? 'Confirmar avance'}</Button>
           </footer>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

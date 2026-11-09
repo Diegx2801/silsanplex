@@ -9,6 +9,7 @@ import { DialogoEntregaAccesorios, RecuperarEntregaAccesorios } from './DialogoE
 import { DetalleEventoAccesorio } from './DetalleEventoAccesorio'
 import { NoReparableReparacion } from './NoReparableReparacion'
 import { DetalleEventoNoReparable } from './DetalleEventoNoReparable'
+import { FlujoReparacion } from './FlujoReparacion'
 import {
   Ban,
   CheckCircle2,
@@ -54,7 +55,6 @@ import {
   estadoStockReparacionEsConsumible,
   estadoEsEditable,
   estadoEsTerminal,
-  obtenerTransicionesGenericas,
   tonosEstadoReparacion,
   type DatosConsumoParte,
   type DatosCotizacion,
@@ -217,8 +217,21 @@ type TipoDialogoActivo =
   | 'entregar'
   | 'cancelar'
 
+type PestanaReparacion = 'resumen' | 'tecnica' | 'presupuesto' | 'entrega'
+
+type AccionGuiada =
+  | { tipo: 'dialogo'; dialogo: Exclude<TipoDialogoActivo, 'estado'>; etiqueta: string }
+  | { tipo: 'estado'; estado: EstadoReparacion; etiqueta: string }
+  | { tipo: 'pestana'; pestana: PestanaReparacion; etiqueta: string }
+
+const estadosConTrabajoTecnico: readonly EstadoReparacion[] = [
+  'received', 'warranty', 'diagnosis', 'quote_approved', 'in_repair', 'awaiting_parts', 'testing',
+]
+
 interface ContextoAccion {
   estadoPendiente?: CambioEstadoPendiente | null
+  estadoDestino?: EstadoReparacion
+  etiquetaEstado?: string
   tipo: TipoDialogoActivo
   reparacion: Reparacion
   cotizacion: CotizacionReparacion | null
@@ -355,11 +368,24 @@ export function DetalleReparacion({
     return undefined
   }
 
-  const abrirDialogo = (tipo: TipoDialogoActivo) => {
+  const abrirDialogo = (
+    tipo: TipoDialogoActivo,
+    estadoDestino?: EstadoReparacion,
+    etiquetaEstado?: string,
+  ) => {
     if (!detalle) return
     try {
       const contexto = crearContextoAccion(tipo, detalle)
-      if (tipo === 'estado') contexto.estadoPendiente = recuperarEstadoPendiente(detalle.reparacion.id)
+      if (tipo === 'estado') {
+        const pendiente = recuperarEstadoPendiente(detalle.reparacion.id)
+        if (pendiente && estadoDestino && pendiente.estado !== estadoDestino) {
+          setMensaje('Hay otro avance pendiente de confirmar. Reinténtalo antes de iniciar uno nuevo.')
+          return
+        }
+        contexto.estadoPendiente = pendiente
+        contexto.estadoDestino = estadoDestino
+        contexto.etiquetaEstado = etiquetaEstado
+      }
       if (tipo === 'cotizacion') {
         contexto.cotizacionPendiente = recuperarCotizacionPendiente(
           detalle.reparacion.id,
@@ -461,6 +487,8 @@ export function DetalleReparacion({
             abierto={accion.tipo === 'estado'}
             reparacion={accion.reparacion}
             pendiente={accion.estadoPendiente}
+            estadoDestino={accion.estadoDestino}
+            etiquetaAccion={accion.etiquetaEstado}
             alCambiarApertura={cerrarDialogo}
             alGuardar={(estado, observacion, clave) => ejecutar(() => alCambiarEstado(accion.reparacion.id, estado, observacion, accion.estadoPendiente?.expectedLockVersion ?? accion.reparacion.lockVersion, clave), 'Estado actualizado.')}
           />
@@ -598,7 +626,7 @@ interface DetalleContenidoProps {
   puedeUsarPartes: boolean
   puedeEntregar: boolean
   alEditar: () => void
-  alAbrirDialogo: (dialogo: TipoDialogoActivo) => void
+  alAbrirDialogo: (dialogo: TipoDialogoActivo, estadoDestino?: EstadoReparacion, etiquetaEstado?: string) => void
   alAbrirParte: (dialogo: 'consumo' | 'cancelarParte', parte: ParteReparacion) => void
 }
 
@@ -607,7 +635,7 @@ interface CotizacionesDetalleProps {
   puedeCotizar: boolean
   puedeRevisar: boolean
   puedeAprobar: boolean
-  alAbrirDialogo: (dialogo: TipoDialogoActivo) => void
+  alAbrirDialogo: (dialogo: TipoDialogoActivo, estadoDestino?: EstadoReparacion, etiquetaEstado?: string) => void
   cargarLineasCotizacion?: (cotizacionId: string) => Promise<LineaCotizacionReparacion[]>
 }
 
@@ -741,10 +769,10 @@ function DetalleContenido({
   const estadoAnterior = useRef(reparacion.estado)
   const cotizacionActiva = detalle.cotizacionActiva
   const editable = puedeEditar && estadoEsEditable(reparacion.estado)
-  const transiciones = puedeCambiarEstado
-    ? obtenerTransicionesGenericas(reparacion.estado)
-    : []
-   const puedeCancelar = puedeCambiarEstado && !estadoEsTerminal(reparacion.estado) && reparacion.estado !== 'non_repairable'
+  const puedeCancelar = puedeCambiarEstado
+    && !estadoEsTerminal(reparacion.estado)
+    && reparacion.estado !== 'non_repairable'
+    && !reparacion.servicioExternoPendiente
   const puedeCotizar = puedeEditar && (reparacion.estado === 'diagnosis' || reparacion.estado === 'quote_pending')
   const puedeRevisar = puedeEditar && reparacion.estado === 'rejected' && cotizacionActiva?.estado === 'rejected'
   const puedeAprobar = puedeAprobarCotizacion && reparacion.estado === 'waiting_customer_approval' && cotizacionActiva?.estado === 'pending'
@@ -757,6 +785,7 @@ function DetalleContenido({
   const puedeRegistrarPrueba = puedeActuarComoTecnico && reparacion.estado === 'testing'
   const puedeEntregarAhora = puedeEntregar && reparacion.estado === 'ready_for_delivery'
   const pruebasVigentes = detalle.pruebas.filter((prueba) => detalle.cicloPruebasActual > 0 && prueba.ciclo === detalle.cicloPruebasActual)
+  const repuestosPendientes = detalle.partes.some((parte) => parte.estado === 'reserved' && parte.cantidadConsumida < parte.cantidadSolicitada)
   const mostrarPruebas = detalle.pruebas.length > 0 || detalle.cicloPruebasActual > 0
     || ['testing', 'ready_for_delivery'].includes(reparacion.estado) || puedeRegistrarPrueba
   useEffect(() => {
@@ -780,41 +809,108 @@ function DetalleContenido({
       ? ['Consumir o cancelar los saldos reservados; volver a reparación para resolverlos.'] : []),
   ]
   const guias: Record<EstadoReparacion, string> = {
-    received: 'Asigna al responsable e inicia el diagnóstico del equipo.',
+    received: reparacion.tecnicoAsignadoId ? 'Inicia el diagnóstico. Si se recibió por garantía, esa condición ya está indicada en la orden.' : 'Asigna al responsable para iniciar el diagnóstico.',
     diagnosis: reparacion.diagnosticoRegistrado
-      ? 'Revisa el diagnóstico. Prepara una cotización si corresponde o continúa con la reparación.'
+      ? 'Elige si corresponde preparar una cotización o iniciar directamente la reparación.'
       : 'Registra el diagnóstico antes de decidir el trabajo y el presupuesto.',
-    quote_pending: 'Prepara y envía la cotización para solicitar la aprobación del cliente.',
-    waiting_customer_approval: 'Registra la decisión del cliente sobre la cotización vigente antes de continuar.',
-    quote_approved: 'La cotización está aprobada. Continúa con el trabajo técnico y los repuestos necesarios.',
-    in_repair: 'Registra el trabajo realizado y resuelve los repuestos reservados antes de preparar la entrega.',
-    awaiting_parts: 'Resuelve los repuestos pendientes y vuelve a reparación cuando puedas continuar el trabajo.',
-    testing: requisitosEntrega.length ? 'Completa estos requisitos antes de marcar la orden como lista para entrega.' : 'Las pruebas del ciclo vigente están aprobadas. Puedes revisar el cambio a lista para entrega.',
-    ready_for_delivery: requisitosEntrega.length ? 'Revisa los requisitos pendientes antes de registrar la entrega.' : 'Registra la entrega del equipo al cliente para cerrar la orden.',
+    quote_pending: 'Completa o envía la cotización desde Presupuesto y repuestos.',
+    waiting_customer_approval: 'Registra la respuesta del cliente en la cotización vigente.',
+    quote_approved: 'La cotización está aprobada. Inicia el trabajo técnico.',
+    in_repair: repuestosPendientes
+      ? 'Registra el trabajo realizado y define si esperarás repuestos o iniciarás las pruebas.'
+      : 'Registra el trabajo realizado; cuando termine, inicia las pruebas.',
+    awaiting_parts: repuestosPendientes ? 'Revisa los repuestos pendientes. Reanuda el trabajo cuando estén disponibles.' : 'Los repuestos están resueltos. Reanuda la reparación.',
+    testing: pruebasVigentes.some((prueba) => !prueba.aprobada)
+      ? 'Hay una prueba fallida. Vuelve a reparación, corrige el problema e inicia un nuevo ciclo de pruebas.'
+      : pruebasVigentes.some((prueba) => prueba.aprobada)
+        ? 'Las pruebas están aprobadas. Prepara la entrega del equipo.'
+        : 'Registra las validaciones técnicas antes de entregar el equipo.',
+    ready_for_delivery: requisitosEntrega.length ? 'Resuelve los requisitos pendientes antes de registrar la entrega.' : 'Registra la entrega al cliente para cerrar la orden.',
     delivered: 'La orden está entregada. Puedes consultar el trabajo realizado, el presupuesto y el historial.',
     cancelled: 'La orden está cancelada. Su información y trazabilidad se conservan para consulta.',
     rejected: 'El presupuesto fue rechazado. Puedes consultar el motivo o preparar una revisión si corresponde.',
-     warranty: 'Revisa la atención en garantía y continúa con el diagnóstico o la reparación según corresponda.',
-     non_repairable: 'La conclusión técnica está registrada. Devuelve el equipo sin reparar o reabre su evaluación con motivo.',
-     returned_unrepaired: 'Equipo devuelto sin reparar. Una nueva evaluación requiere una nueva recepción; los accesorios pendientes conservan su custodia.',
+    warranty: reparacion.diagnosticoRegistrado ? 'Atención en garantía: inicia la reparación o consulta el diagnóstico registrado.' : 'Atención en garantía: inicia el diagnóstico del equipo.',
+    non_repairable: 'La conclusión técnica está registrada. Registra la devolución sin reparar para cerrar la orden.',
+    returned_unrepaired: 'Equipo devuelto sin reparar. Una nueva evaluación requiere una nueva recepción.',
   }
-  let siguienteAccion: { tipo: TipoDialogoActivo; etiqueta: string } | null = null
-  if (!estadoEsTerminal(reparacion.estado) && !reparacion.tecnicoAsignadoId && puedeAsignar) {
-    siguienteAccion = { tipo: 'asignacion', etiqueta: 'Asignar responsable' }
-  } else if (puedeRegistrarDiagnostico && !reparacion.diagnosticoRegistrado) {
-    siguienteAccion = { tipo: 'diagnostico', etiqueta: 'Completar diagnóstico' }
-  } else if (puedeAprobar) {
-    siguienteAccion = { tipo: 'aprobar', etiqueta: 'Registrar aprobación' }
-  } else if (puedeRevisar) {
-    siguienteAccion = { tipo: 'cotizacion', etiqueta: 'Preparar revisión' }
-  } else if (puedeRegistrarSolucion && reparacion.estado === 'in_repair' && !reparacion.solucionAplicadaRegistrada) {
-    siguienteAccion = { tipo: 'solucion', etiqueta: 'Completar trabajo realizado' }
-  } else if (puedeRegistrarPrueba && !pruebasVigentes.length) {
-    siguienteAccion = { tipo: 'prueba', etiqueta: 'Completar pruebas' }
-  } else if (puedeEntregarAhora) {
-    siguienteAccion = { tipo: 'entregar', etiqueta: 'Registrar entrega' }
-  } else if (transiciones.length && reparacion.estado !== 'quote_pending') {
-    siguienteAccion = { tipo: 'estado', etiqueta: 'Revisar siguiente estado' }
+  const accionesSiguientes: AccionGuiada[] = []
+  const agregarEstado = (estado: EstadoReparacion, etiqueta: string) => {
+    if (puedeCambiarEstado) accionesSiguientes.push({ tipo: 'estado', estado, etiqueta })
+  }
+  const agregarDialogo = (dialogo: Exclude<TipoDialogoActivo, 'estado'>, etiqueta: string) => {
+    accionesSiguientes.push({ tipo: 'dialogo', dialogo, etiqueta })
+  }
+
+  switch (reparacion.estado) {
+    case 'received':
+      if (!reparacion.tecnicoAsignadoId && puedeAsignar) agregarDialogo('asignacion', 'Asignar responsable')
+      else agregarEstado('diagnosis', 'Iniciar diagnóstico')
+      break
+    case 'warranty':
+      agregarEstado(reparacion.diagnosticoRegistrado ? 'in_repair' : 'diagnosis', reparacion.diagnosticoRegistrado ? 'Iniciar reparación' : 'Iniciar diagnóstico')
+      break
+    case 'diagnosis':
+      if (!reparacion.diagnosticoRegistrado) {
+        if (puedeRegistrarDiagnostico) agregarDialogo('diagnostico', 'Registrar diagnóstico')
+      } else {
+        if (puedeCotizar || puedeRevisar || puedeAprobar) accionesSiguientes.push({ tipo: 'pestana', pestana: 'presupuesto', etiqueta: 'Preparar cotización' })
+        agregarEstado('in_repair', 'Iniciar reparación')
+      }
+      break
+    case 'quote_pending':
+    case 'waiting_customer_approval':
+    case 'rejected':
+      accionesSiguientes.push({ tipo: 'pestana', pestana: 'presupuesto', etiqueta: 'Revisar cotización' })
+      break
+    case 'quote_approved':
+      agregarEstado('in_repair', 'Iniciar reparación')
+      break
+    case 'in_repair':
+      if (puedeRegistrarSolucion && !reparacion.solucionAplicadaRegistrada) agregarDialogo('solucion', 'Registrar trabajo realizado')
+      else if (repuestosPendientes) {
+        agregarEstado('awaiting_parts', 'Esperar repuestos')
+        agregarEstado('testing', 'Iniciar pruebas')
+      } else agregarEstado('testing', 'Iniciar pruebas')
+      break
+    case 'awaiting_parts':
+      if (repuestosPendientes && puedeReservar) accionesSiguientes.push({ tipo: 'pestana', pestana: 'presupuesto', etiqueta: 'Revisar repuestos' })
+      else agregarEstado('in_repair', 'Reanudar reparación')
+      break
+    case 'testing':
+      if (pruebasVigentes.some((prueba) => !prueba.aprobada)) agregarEstado('in_repair', 'Volver a reparación')
+      else if (pruebasVigentes.some((prueba) => prueba.aprobada)) agregarEstado('ready_for_delivery', 'Preparar entrega')
+      else if (puedeRegistrarPrueba) agregarDialogo('prueba', 'Registrar pruebas')
+      break
+    case 'ready_for_delivery':
+      if (puedeEntregarAhora) agregarDialogo('entregar', 'Registrar entrega')
+      agregarEstado('in_repair', 'Reabrir reparación')
+      break
+    case 'non_repairable':
+      accionesSiguientes.push({ tipo: 'pestana', pestana: 'tecnica', etiqueta: 'Revisar devolución sin reparar' })
+      break
+    case 'delivered':
+    case 'cancelled':
+    case 'returned_unrepaired':
+      break
+  }
+
+  if (!reparacion.servicioExternoPendiente
+    && !reparacion.tecnicoAsignadoId
+    && puedeAsignar
+    && estadosConTrabajoTecnico.includes(reparacion.estado)) {
+    accionesSiguientes.splice(0, accionesSiguientes.length, {
+      tipo: 'dialogo',
+      dialogo: 'asignacion',
+      etiqueta: 'Asignar responsable',
+    })
+  }
+
+  if (reparacion.servicioExternoPendiente) {
+    accionesSiguientes.splice(0, accionesSiguientes.length, {
+      tipo: 'pestana',
+      pestana: 'entrega',
+      etiqueta: puedeEditar ? 'Registrar retorno del proveedor' : 'Revisar servicio externo',
+    })
   }
 
   return (
@@ -829,13 +925,13 @@ function DetalleContenido({
            <span className="status-label" data-tone={tonosEstadoReparacion[reparacion.estado] === 'listo' ? 'listo' : tonosEstadoReparacion[reparacion.estado] === 'pendiente' || tonosEstadoReparacion[reparacion.estado] === 'espera' ? 'pendiente' : 'revision'}>{etiquetasEstadoReparacion[reparacion.estado]}</span>
         </div>
         {(estadoRecuperable !== 'ninguno' || editable || puedeAsignar && !estadoEsTerminal(reparacion.estado)
-          || transiciones.length > 0 || puedeCancelar || puedeAprobar) ? <div className="mt-5 flex flex-wrap items-center gap-2">
+          || puedeCancelar) ? <div className="mt-5 flex flex-wrap items-center gap-2">
           {estadoRecuperable !== 'ninguno' && puedeCambiarEstado ? <Button type="button" variant="outline" onClick={alRecuperarEstado}>
-            {estadoRecuperable === 'pendiente' ? 'Reintentar cambio pendiente' : 'Revisar cambio pendiente'}
+            {estadoRecuperable === 'pendiente' ? 'Reintentar avance pendiente' : 'Revisar avance pendiente'}
           </Button> : null}
           {estadoRecuperable === 'error' ? <p role="status" className="text-sm text-muted-foreground">No se pudo comprobar si hay un cambio pendiente.</p> : null}
           {(editable || puedeAsignar && !estadoEsTerminal(reparacion.estado) && Boolean(reparacion.tecnicoAsignadoId)
-            || transiciones.length > 0 && siguienteAccion?.tipo !== 'estado' || puedeCancelar || puedeAprobar) ? <DropdownMenuPrimitive.Root>
+            || puedeCancelar) ? <DropdownMenuPrimitive.Root>
             <DropdownMenuPrimitive.Trigger asChild>
               <Button type="button" variant="outline">Más acciones</Button>
             </DropdownMenuPrimitive.Trigger>
@@ -843,8 +939,6 @@ function DetalleContenido({
               <DropdownMenuPrimitive.Content align="start" sideOffset={4} collisionPadding={16} className="z-[80] min-w-52 rounded-md border bg-background p-1 shadow-lg outline-none">
                 {editable ? <DropdownMenuPrimitive.Item onSelect={alEditar} className="flex min-h-9 w-full cursor-pointer select-none items-center gap-2 rounded-sm px-2 text-left text-sm outline-none focus:bg-muted data-[disabled]:pointer-events-none data-[disabled]:opacity-50"><Pencil aria-hidden="true" className="size-4" /> Editar orden</DropdownMenuPrimitive.Item> : null}
                 {puedeAsignar && !estadoEsTerminal(reparacion.estado) && reparacion.tecnicoAsignadoId ? <DropdownMenuPrimitive.Item onSelect={() => alAbrirDialogo('asignacion')} className="flex min-h-9 w-full cursor-pointer select-none items-center rounded-sm px-2 text-left text-sm outline-none focus:bg-muted data-[disabled]:pointer-events-none data-[disabled]:opacity-50">Reasignar responsable</DropdownMenuPrimitive.Item> : null}
-                {transiciones.length > 0 && siguienteAccion?.tipo !== 'estado' ? <DropdownMenuPrimitive.Item onSelect={() => alAbrirDialogo('estado')} className="flex min-h-9 w-full cursor-pointer select-none items-center rounded-sm px-2 text-left text-sm outline-none focus:bg-muted data-[disabled]:pointer-events-none data-[disabled]:opacity-50">Cambiar estado</DropdownMenuPrimitive.Item> : null}
-                {puedeAprobar && cotizacionActiva ? <DropdownMenuPrimitive.Item onSelect={() => alAbrirDialogo('rechazar')} className="flex min-h-9 w-full cursor-pointer select-none items-center rounded-sm px-2 text-left text-sm outline-none focus:bg-muted data-[disabled]:pointer-events-none data-[disabled]:opacity-50">Rechazar cotización</DropdownMenuPrimitive.Item> : null}
                 {puedeCancelar ? <DropdownMenuPrimitive.Item onSelect={() => alAbrirDialogo('cancelar')} className="flex min-h-9 w-full cursor-pointer select-none items-center gap-2 rounded-sm px-2 text-left text-sm text-destructive outline-none focus:bg-destructive/10 focus:text-destructive data-[disabled]:pointer-events-none data-[disabled]:opacity-50"><Ban aria-hidden="true" className="size-4" /> Cancelar orden</DropdownMenuPrimitive.Item> : null}
               </DropdownMenuPrimitive.Content>
             </DropdownMenuPrimitive.Portal>
@@ -852,13 +946,31 @@ function DetalleContenido({
         </div> : null}
       </header>
 
+      <FlujoReparacion
+        estado={reparacion.estado}
+        tieneCotizacion={detalle.cotizaciones.length > 0}
+        tieneDiagnostico={reparacion.diagnosticoRegistrado}
+      />
+
       <section aria-labelledby="reparacion-siguiente-paso" className="border-b bg-muted/25 px-5 py-4 sm:px-7">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1 basis-64">
             <h2 id="reparacion-siguiente-paso" className="font-semibold">{estadoEsTerminal(reparacion.estado) && reparacion.estado !== 'rejected' ? 'Orden cerrada' : 'Siguiente paso'}</h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">{reparacion.servicioExternoPendiente ? 'El equipo está con un proveedor externo. Registra su retorno en Servicio externo y garantía antes de iniciar pruebas o preparar la entrega.' : guias[reparacion.estado]}</p>
           </div>
-          {siguienteAccion ? <Button type="button" disabled={siguienteAccion.tipo === 'entregar' && Boolean(requisitosEntrega.length)} onClick={() => alAbrirDialogo(siguienteAccion.tipo)}>{siguienteAccion.etiqueta}</Button> : null}
+          {estadoRecuperable === 'pendiente'
+            ? <p role="status" className="text-sm text-muted-foreground">Confirma primero el avance pendiente para evitar duplicar operaciones.</p>
+            : estadoRecuperable === 'ninguno' ? accionesSiguientes.map((accion, indice) => <Button
+            key={`${accion.tipo}:${accion.etiqueta}`}
+            type="button"
+            variant={indice === 0 ? 'default' : 'outline'}
+            disabled={accion.tipo === 'dialogo' && accion.dialogo === 'entregar' && Boolean(requisitosEntrega.length)}
+            onClick={() => {
+              if (accion.tipo === 'estado') alAbrirDialogo('estado', accion.estado, accion.etiqueta)
+              else if (accion.tipo === 'dialogo') alAbrirDialogo(accion.dialogo)
+              else setPestanaActiva(accion.pestana)
+            }}
+          >{accion.etiqueta}</Button>) : null}
         </div>
         {['testing', 'ready_for_delivery'].includes(reparacion.estado) && requisitosEntrega.length ? <ul aria-label="Requisitos pendientes para entregar" className="mt-3 list-disc space-y-1 ps-5 text-sm leading-6">{requisitosEntrega.map((requisito) => <li key={requisito}>{requisito}</li>)}</ul> : null}
       </section>
@@ -891,20 +1003,20 @@ function DetalleContenido({
 
         <Tabs.Content value="tecnica" forceMount hidden={pestanaActiva !== 'tecnica'} className="outline-none">
       <section id="reparacion-seccion-tecnica" tabIndex={-1} aria-labelledby="reparacion-diagnosticos" className="border-b px-5 py-6 outline-none sm:px-7">
-        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-diagnosticos" className="flex items-center gap-2 font-semibold"><Wrench aria-hidden="true" className="size-4 text-primary" /> Diagnóstico</h2><p className="mt-1 text-sm text-muted-foreground">Historial técnico de revisiones</p></div>{puedeRegistrarDiagnostico ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('diagnostico')}><Plus aria-hidden="true" /> Registrar diagnóstico</Button> : null}</div>
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-diagnosticos" className="flex items-center gap-2 font-semibold"><Wrench aria-hidden="true" className="size-4 text-primary" /> Diagnóstico</h2><p className="mt-1 text-sm text-muted-foreground">Historial técnico de revisiones</p></div>{puedeRegistrarDiagnostico && !accionesSiguientes.some((accion) => accion.tipo === 'dialogo' && accion.dialogo === 'diagnostico') ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('diagnostico')}><Plus aria-hidden="true" /> Registrar diagnóstico</Button> : null}</div>
         {detalle.diagnosticos.length ? <div className="mt-5 space-y-3">{detalle.diagnosticos.map((diagnostico) => <article key={diagnostico.id} className="border bg-muted/20 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><p className="font-medium">{diagnostico.sintomas}</p><time className="text-xs text-muted-foreground" dateTime={diagnostico.diagnosticadoEn}>{formatoFecha.format(new Date(diagnostico.diagnosticadoEn))}</time></div><dl className="mt-3 grid gap-x-5 sm:grid-cols-2"><Dato etiqueta="Causa encontrada" valor={mostrar(diagnostico.causaEncontrada)} /><Dato etiqueta="Solución recomendada" valor={mostrar(diagnostico.solucionRecomendada)} /></dl>{diagnostico.notas ? <p className="mt-2 border-t pt-3 text-sm leading-6 text-muted-foreground">{diagnostico.notas}</p> : null}</article>)}</div> : <p className="mt-5 border border-dashed px-4 py-5 text-sm text-muted-foreground">Todavía no hay diagnósticos registrados.</p>}
       </section>
 
       <section aria-labelledby="reparacion-solucion" className="border-b px-5 py-6 sm:px-7">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div><h2 id="reparacion-solucion" className="flex items-center gap-2 font-semibold"><Wrench aria-hidden="true" className="size-4 text-primary" /> Solución aplicada</h2><p className="mt-1 text-sm text-muted-foreground">Trabajo técnico realizado en el equipo</p></div>
-          {puedeRegistrarSolucion ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('solucion')}><Pencil aria-hidden="true" /> {reparacion.solucionAplicada ? 'Modificar solución' : 'Registrar solución'}</Button> : null}
+          {puedeRegistrarSolucion && !accionesSiguientes.some((accion) => accion.tipo === 'dialogo' && accion.dialogo === 'solucion') ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('solucion')}><Pencil aria-hidden="true" /> {reparacion.solucionAplicada ? 'Modificar solución' : 'Registrar solución'}</Button> : null}
         </div>
         <p className={`mt-5 whitespace-pre-wrap text-sm leading-6 ${reparacion.solucionAplicada ? '' : 'border border-dashed px-4 py-5 text-muted-foreground'}`}>{mostrar(reparacion.solucionAplicada, 'Todavía no hay una solución aplicada registrada.')}</p>
       </section>
 
       {mostrarPruebas ? <section id="reparacion-seccion-pruebas" tabIndex={-1} aria-labelledby="reparacion-pruebas" className="border-b px-5 py-6 outline-none sm:px-7">
-        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-pruebas" className="flex items-center gap-2 font-semibold"><ClipboardCheck aria-hidden="true" className="size-4 text-primary" /> Pruebas</h2><p className="mt-1 text-sm text-muted-foreground">Validaciones antes de la entrega</p></div>{puedeRegistrarPrueba ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('prueba')}><Plus aria-hidden="true" /> Registrar prueba</Button> : null}</div><ResultadosPruebas pruebas={detalle.pruebas} cicloActual={detalle.cicloPruebasActual} /></section> : null}
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 id="reparacion-pruebas" className="flex items-center gap-2 font-semibold"><ClipboardCheck aria-hidden="true" className="size-4 text-primary" /> Pruebas</h2><p className="mt-1 text-sm text-muted-foreground">Validaciones antes de la entrega</p></div>{puedeRegistrarPrueba && !accionesSiguientes.some((accion) => accion.tipo === 'dialogo' && accion.dialogo === 'prueba') ? <Button type="button" variant="outline" onClick={() => alAbrirDialogo('prueba')}><Plus aria-hidden="true" /> Registrar prueba</Button> : null}</div><ResultadosPruebas pruebas={detalle.pruebas} cicloActual={detalle.cicloPruebasActual} /></section> : null}
 
        <NoReparableReparacion key={`non-repairable:${reparacion.organizationId}:${reparacion.id}`} detalle={detalle} />
         </Tabs.Content>

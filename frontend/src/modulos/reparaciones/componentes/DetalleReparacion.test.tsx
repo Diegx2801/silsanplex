@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('./AdjuntosReparacion', () => ({ AdjuntosReparacion: () => <div>Adjuntos de la orden</div> }))
 vi.mock('./AtencionComplementariaReparacion', () => ({ AtencionComplementariaReparacion: () => <div>Atención complementaria</div> }))
@@ -147,6 +147,7 @@ function crearDetalle(
 function renderizarDetalle({
   estado = 'diagnosis',
   puedeEditar = false,
+  puedeAsignar = false,
   puedeCambiarEstado = true,
   puedeRealizarTecnica = true,
   puedeUsarPartes = false,
@@ -166,6 +167,7 @@ function renderizarDetalle({
 }: {
   estado?: EstadoReparacion
   puedeEditar?: boolean
+  puedeAsignar?: boolean
   puedeCambiarEstado?: boolean
   puedeRealizarTecnica?: boolean
   puedeUsarPartes?: boolean
@@ -211,7 +213,7 @@ function renderizarDetalle({
       cargarLineasCotizacion={cargarLineasCotizacion}
       recuperarEstadoPendiente={recuperarEstadoPendiente}
       puedeEditar={puedeEditar}
-      puedeAsignar={false}
+      puedeAsignar={puedeAsignar}
       puedeCambiarEstado={puedeCambiarEstado}
       puedeRealizarTecnica={puedeRealizarTecnica}
       puedeAprobarCotizacion={false}
@@ -266,6 +268,81 @@ describe('DetalleReparacion acciones técnicas', () => {
   ] as const)('abre la sección útil por defecto en %s', (estado, pestana) => {
     renderizarDetalle({ estado })
     expect(screen.getByRole('tab', { name: pestana })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('muestra el proceso y señala la etapa actual sin confundir la cotización opcional', () => {
+    renderizarDetalle({ estado: 'diagnosis' })
+
+    const flujo = screen.getByRole('region', { name: 'Progreso de reparación' })
+    expect(flujo.querySelector('[aria-current="step"]')).toHaveTextContent('Diagnóstico')
+    expect(flujo).toHaveTextContent('Cotización')
+    expect(flujo).toHaveTextContent('Opcional')
+  })
+
+  it.each([
+    ['quote_pending', 'En preparación'],
+    ['waiting_customer_approval', 'Esperando cliente'],
+    ['rejected', 'Rechazada'],
+    ['quote_approved', 'Aprobada'],
+  ] as const)('explica la situación de la cotización en %s', (estado, etiqueta) => {
+    renderizarDetalle({ estado })
+
+    expect(screen.getByRole('region', { name: 'Progreso de reparación' })).toHaveTextContent(etiqueta)
+  })
+
+  it('ubica una reparación en garantía según el trabajo que realmente falta', () => {
+    const detalle = crearDetalle('warranty')
+    detalle.reparacion = { ...detalle.reparacion, diagnosticoRegistrado: true }
+    renderizarDetalle({ detallePersonalizado: detalle, puedeEditar: true })
+
+    const flujo = screen.getByRole('region', { name: 'Progreso de reparación' })
+    expect(flujo.querySelector('[aria-current="step"]')).toHaveTextContent('Reparación')
+    expect(screen.getByRole('button', { name: 'Iniciar reparación' })).toBeVisible()
+  })
+
+  it('prioriza asignar un responsable antes de ofrecer trabajo técnico', () => {
+    const detalle = crearDetalle('diagnosis')
+    detalle.reparacion = {
+      ...detalle.reparacion,
+      diagnosticoRegistrado: true,
+      tecnicoAsignadoId: null,
+    }
+    renderizarDetalle({ detallePersonalizado: detalle, puedeAsignar: true })
+
+    expect(screen.getByRole('button', { name: 'Asignar responsable' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Iniciar reparación' })).not.toBeInTheDocument()
+  })
+
+  it('prioriza el retorno de un servicio externo y no ofrece avances bloqueados', () => {
+    const detalle = crearDetalle('in_repair')
+    detalle.reparacion = { ...detalle.reparacion, servicioExternoPendiente: true }
+    renderizarDetalle({ detallePersonalizado: detalle, puedeEditar: true })
+
+    expect(screen.getByRole('button', { name: 'Registrar retorno del proveedor' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Iniciar pruebas' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cancelar orden' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar retorno del proveedor' }))
+
+    expect(screen.getByRole('tab', { name: 'Entrega y trazabilidad' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('distingue preparar cotización de iniciar reparación y navega al presupuesto', () => {
+    renderizarDetalle({ estado: 'diagnosis', puedeEditar: true })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preparar cotización' }))
+
+    expect(screen.getByRole('tab', { name: 'Presupuesto y repuestos' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'Crear cotización' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Iniciar reparación' })).toBeVisible()
+  })
+
+  it('no ofrece el selector genérico de estado en Más acciones', () => {
+    renderizarDetalle({ estado: 'diagnosis' })
+    fireEvent.click(screen.getByRole('button', { name: 'Más acciones' }))
+
+    expect(screen.queryByRole('menuitem', { name: 'Cambiar estado' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Revisar siguiente estado' })).not.toBeInTheDocument()
   })
 
   it('orienta al nuevo paso cuando cambia el estado de la orden', () => {
@@ -335,29 +412,29 @@ describe('DetalleReparacion acciones técnicas', () => {
   it.each(['testing', 'ready_for_delivery', 'delivered', 'cancelled', 'non_repairable', 'returned_unrepaired'] as const)('no muestra recuperación de estado sin pendiente en %s', estado => {
     const { operacion } = renderizarDetalle({ estado })
     expect(screen.queryByRole('button', { name: /cambio pendiente/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('dialog', { name: 'Cambiar estado' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Confirmar avance' })).not.toBeInTheDocument()
     expect(operacion).not.toHaveBeenCalled()
   })
 
   it('recupera transición ya confirmada con clave y versión originales desde lista para entrega', async () => {
     const pendiente = { estado: 'ready_for_delivery' as const, observacion: 'Validado anteriormente', expectedLockVersion: 3, clave: crypto.randomUUID() }
     const { operacion } = renderizarDetalle({ estado: 'ready_for_delivery', recuperarEstadoPendiente: () => pendiente })
-    fireEvent.click(await screen.findByRole('button', { name: 'Reintentar cambio pendiente' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Reintentar avance pendiente' }))
     expect(screen.getByLabelText('Observación (opcional)')).toHaveValue(pendiente.observacion)
-    fireEvent.click(screen.getByRole('button', { name: 'Reintentar cambio de estado' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar avance' }))
     await waitFor(() => expect(operacion).toHaveBeenCalledWith('repair-1', pendiente.estado, pendiente.observacion, 3, pendiente.clave))
   })
   it('guía el próximo trabajo sin ofrecer acciones técnicas sin permiso', () => {
     renderizarDetalle({ estado: 'testing', puedeCambiarEstado: false, puedeRealizarTecnica: false })
     expect(screen.getByRole('heading', { name: 'Siguiente paso' })).toBeVisible()
     expect(screen.getByRole('list', { name: 'Requisitos pendientes para entregar' })).toHaveTextContent('Registrar una prueba aprobada')
-    expect(screen.queryByRole('button', { name: 'Completar pruebas' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Revisar siguiente estado' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Registrar pruebas' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Iniciar reparación' })).not.toBeInTheDocument()
   })
 
   it('ofrece completar las pruebas y advierte reservas antes de preparar la entrega', () => {
     renderizarDetalle({ estado: 'testing', conParte: true })
-    expect(screen.getByRole('button', { name: 'Completar pruebas' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Registrar pruebas' })).toBeVisible()
     expect(screen.getByRole('list', { name: 'Requisitos pendientes para entregar' })).toHaveTextContent('Consumir o cancelar los saldos reservados')
   })
 
@@ -484,7 +561,9 @@ describe('DetalleReparacion acciones técnicas', () => {
   })
 
   it('permite modificar la solución aplicada existente', () => {
-    renderizarDetalle({ estado: 'in_repair', solucionAplicada: 'Fuente reemplazada' })
+    const detalle = crearDetalle('in_repair', 'Fuente reemplazada')
+    detalle.reparacion = { ...detalle.reparacion, solucionAplicadaRegistrada: true }
+    renderizarDetalle({ detallePersonalizado: detalle })
 
     fireEvent.click(screen.getByRole('button', { name: 'Modificar solución' }))
 
@@ -607,14 +686,17 @@ describe('DetalleReparacion acciones técnicas', () => {
       resultadoOperacion: 'La reparación cambió mientras realizabas esta acción.',
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revisar siguiente estado' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar reparación' }))
     rerenderDetalle(99)
-    fireEvent.click(screen.getByRole('button', { name: 'Cambiar estado' }))
+    const dialogo = screen.getByRole('dialog', { name: 'Confirmar avance' })
+    expect(within(dialogo).getByText('En diagnóstico → En reparación')).toBeInTheDocument()
+    expect(within(dialogo).queryByLabelText('Nuevo estado *')).not.toBeInTheDocument()
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Iniciar reparación' }))
 
     await waitFor(() => {
-      expect(operacion).toHaveBeenCalledWith('repair-1', 'quote_pending', '', 4, expect.stringMatching(/^[0-9a-f-]{36}$/))
+      expect(operacion).toHaveBeenCalledWith('repair-1', 'in_repair', '', 4, expect.stringMatching(/^[0-9a-f-]{36}$/))
     })
-    expect(screen.getByRole('heading', { name: 'Cambiar estado' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Confirmar avance' })).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('La reparación cambió mientras realizabas esta acción.')
     expect(screen.queryByText('Estado actualizado.')).not.toBeInTheDocument()
   })
@@ -633,7 +715,7 @@ describe('DetalleReparacion acciones técnicas', () => {
 
   it('muestra errores remotos de prueba a nivel de formulario y conserva la entrada', async () => {
     renderizarDetalle({ estado: 'testing', resultadoOperacion: 'Conflicto de versión' })
-    fireEvent.click(screen.getByRole('button', { name: 'Registrar prueba' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar pruebas' }))
     const resultado = screen.getByLabelText('Resultado *')
     fireEvent.change(screen.getByLabelText('Tipo de prueba *'), {
       target: { value: 'Encendido' },
