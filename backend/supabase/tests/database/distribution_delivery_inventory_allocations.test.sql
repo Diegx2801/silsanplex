@@ -39,10 +39,10 @@ select is(
   'allocation.quantity tiene constraint positivo'
 );
 
-insert into public.organizations (id, name, slug, legal_name)
+insert into public.organizations (id, name, slug)
 values
-  ('d3300000-0000-4000-8000-000000000001', 'D3 explícito', 'd3-explicito', 'D3 explícito S.A.C.'),
-  ('d3300000-0000-4000-8000-000000000002', 'D3 otra organización', 'd3-otra-organizacion', 'D3 otra organización S.A.C.');
+  ('d3300000-0000-4000-8000-000000000001', 'D3 explícito', 'd3-explicito'),
+  ('d3300000-0000-4000-8000-000000000002', 'D3 otra organización', 'd3-otra-organizacion');
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values
   ('d33c0000-0000-4000-8000-000000000001', 'd3.operador@test.local', '{"full_name":"Operador D3"}', now(), now()),

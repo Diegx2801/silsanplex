@@ -27,8 +27,8 @@ select has_trigger(
   'la cancelación comercial actualiza el cumplimiento'
 );
 
-insert into public.organizations (id, name, slug, legal_name)
-values ('f2100000-0000-4000-8000-000000000001', 'Cumplimiento de prueba', 'cumplimiento-prueba', 'Cumplimiento de prueba S.A.C.');
+insert into public.organizations (id, name, slug)
+values ('f2100000-0000-4000-8000-000000000001', 'Cumplimiento de prueba', 'cumplimiento-prueba');
 
 insert into public.customers (id, organization_id, document_type, document_number, legal_name)
 values (

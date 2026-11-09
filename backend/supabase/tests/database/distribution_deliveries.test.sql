@@ -43,8 +43,8 @@ select ok((select relrowsecurity from pg_class where oid = 'public.distribution_
 select is(has_table_privilege('authenticated', 'public.distribution_deliveries', 'SELECT'), true, 'authenticated consulta distribución');
 select is(has_table_privilege('authenticated', 'public.distribution_deliveries', 'INSERT'), false, 'authenticated no inserta directamente');
 
-insert into public.organizations (id, name, slug, legal_name)
-values ('d3111111-1111-4111-8111-111111111111', 'Distribución de prueba', 'distribucion-prueba', 'Distribución de prueba S.A.C.');
+insert into public.organizations (id, name, slug)
+values ('d3111111-1111-4111-8111-111111111111', 'Distribución de prueba', 'distribucion-prueba');
 
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values (

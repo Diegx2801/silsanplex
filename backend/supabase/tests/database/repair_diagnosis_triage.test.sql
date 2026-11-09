@@ -12,8 +12,8 @@ create function pg_temp.rdt_claim(text) returns text language sql as $$
   )::text, true)
 $$;
 
-insert into public.organizations(id, name, slug, legal_name)
-values (pg_temp.rdt_id('org'), 'Diagnosis triage tests', 'diagnosis-triage-tests', 'Diagnosis triage tests SAC');
+insert into public.organizations(id, name, slug)
+values (pg_temp.rdt_id('org'), 'Diagnosis triage tests', 'diagnosis-triage-tests');
 insert into auth.users(id, email, raw_user_meta_data, created_at, updated_at)
 values (pg_temp.rdt_id('admin'), 'diagnosis-triage@example.invalid',
   '{"full_name":"Diagnosis triage admin"}', now(), now());
