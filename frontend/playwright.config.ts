@@ -7,6 +7,7 @@ const localE2eEnvironment = resolve(import.meta.dirname, '.env.e2e.local')
 const localFrontendEnvironment = resolve(import.meta.dirname, '.env.local')
 const isCI = process.env.CI === 'true'
 const isIsolated = process.env.SILSAN_PHASE2C2_E2E === '1'
+const repairsRunInIsolatedJob = process.env.SILSAN_E2E_SKIP_ISOLATED_REPAIRS === '1'
 
 if (!isIsolated && existsSync(localFrontendEnvironment)) {
   loadEnvFile(localFrontendEnvironment)
@@ -43,6 +44,10 @@ if (missingE2eVariables.length > 0) {
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // The full repair suite runs in the isolated Supabase job, which also runs
+  // its SQL, tenant-isolation, and accessory regressions. Avoid running it a
+  // second time against the shared inventory E2E database in CI.
+  ...(repairsRunInIsolatedJob ? { testIgnore: ['**/repairs.spec.ts'] } : {}),
   // Los escenarios comparten una organización local, usuarios E2E e inventario.
   // Serializar evita que una prueba altere el estado que otra está verificando.
   fullyParallel: false,

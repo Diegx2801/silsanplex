@@ -230,6 +230,8 @@ jobs:
       - name: Ejecutar pruebas E2E
         run: npm run test:e2e:typecheck && npm run test:e2e:local
         working-directory: frontend
+        env:
+          SILSAN_E2E_SKIP_ISOLATED_REPAIRS: '1'
 
       - name: Conservar diagnóstico de fallos E2E
         # Debe correr también tras un timeout/cancelación para conservar trazas Playwright.

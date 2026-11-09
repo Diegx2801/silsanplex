@@ -183,6 +183,13 @@ async function prepareDiagnosis(page: Page, f: Fixture) {
 }
 
 async function quote(page: Page, action = 'Crear cotización') {
+  const budgetTab = page.getByRole('tab', { name: 'Presupuesto y repuestos', exact: true })
+  if (await budgetTab.getAttribute('aria-selected') !== 'true') {
+    const nextStep = page.getByRole('button', { name: /^(Preparar cotización|Revisar cotización)$/ })
+    await expect(nextStep).toBeVisible()
+    await nextStep.click()
+  }
+  await expect(budgetTab).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: action, exact: true }).click()
   const dialog = page.getByRole('dialog', { name: /Crear cotización|Crear revisión|Editar cotización/ })
   await dialog.getByLabel('Descripción *', { exact: true }).fill('Reparación de fuente')
@@ -425,6 +432,7 @@ test('dos pestañas: una acción obsoleta se rechaza sin sobrescribir el cambio 
   await diagnosis.getByLabel('Síntomas observados *').fill('Falla de prueba de concurrencia')
   await diagnosis.getByRole('button', { name: 'Guardar diagnóstico', exact: true }).click()
   await expect(diagnosis).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Iniciar reparación', exact: true })).toBeVisible()
   const stale = await openStateChange(page, 'Iniciar reparación')
   const other = await context.newPage()
   await openRepair(other, f.reference)

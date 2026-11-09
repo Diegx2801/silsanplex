@@ -857,6 +857,11 @@ export async function obtenerDetalleReparacion(
     const cotizacionesSinLineas = filasCotizaciones.map((fila) =>
       mapearCotizacion(fila, []),
     )
+    const diagnosticos = filasDiagnosticos.map(mapearDiagnostico)
+    // `repairs.diagnosis` is a legacy summary that remains NULL when a valid
+    // diagnosis only records symptoms. The diagnosis history is the source of
+    // truth for whether the repair has been diagnosed.
+    reparacion.diagnosticoRegistrado = reparacion.diagnosticoRegistrado || diagnosticos.length > 0
     const cotizacionSeleccionada = seleccionarCotizacionActual(cotizacionesSinLineas)
     const lineasSeleccionadas = cotizacionSeleccionada
       ? await obtenerLineasCotizacionReparacion(organizationId, cotizacionSeleccionada.id)
@@ -896,7 +901,7 @@ export async function obtenerDetalleReparacion(
     return {
       cicloPruebasActual: (versionResult.data as { current_test_cycle_number: number }).current_test_cycle_number,
       reparacion,
-      diagnosticos: filasDiagnosticos.map(mapearDiagnostico),
+      diagnosticos,
       cotizaciones,
       cotizacionActiva,
       partes: filasPartes.map((parte) =>

@@ -616,6 +616,32 @@ describe('reparacionesService', () => {
     expect(ordenConsultas.filter((tabla) => tabla === 'repair_quotes')).toHaveLength(2)
   })
 
+  it('reconoce un diagnóstico registrado aunque el resumen legacy siga vacío', async () => {
+    const fecha = '2026-11-09T12:00:00Z'
+    supabaseMock.from.mockImplementation((tabla: string) => crearCadena(() => {
+      if (tabla === 'repair_list') return {
+        data: { ...crearFilaReparacion(4), status: 'diagnosis', diagnosis: null }, error: null,
+      }
+      if (tabla === 'repairs') return {
+        data: { lock_version: 4, current_test_cycle_number: 1 }, error: null,
+      }
+      if (tabla === 'repair_diagnostics') return {
+        data: [{ id: 'diagnosis-1', organization_id: 'org-1', repair_id: 'repair-1',
+          diagnosed_at: fecha, technician_id: 'technician-1', symptoms: 'No enciende',
+          cause_found: null, recommended_solution: null, notes: null, created_by: 'technician-1',
+          created_at: fecha }],
+        error: null,
+        count: 1,
+      }
+      return { data: [], error: null, count: 0 }
+    }))
+
+    const detalle = await obtenerDetalleReparacion('org-1', 'repair-1')
+
+    expect(detalle.reparacion.diagnosticoRegistrado).toBe(true)
+    expect(detalle.diagnosticos).toHaveLength(1)
+  })
+
   it('consulta un solo resumen canónico para vigente, primera e historial en el detalle', async () => {
     const evidencia = { event_id: '9007199254740993', completed_at: '2026-11-01T05:00:00Z', test_cycle_number: 2,
       actor_user_id: null, actor_name: null, assigned_technician_id: null, assigned_technician_name: null }
