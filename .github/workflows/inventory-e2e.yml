@@ -160,11 +160,10 @@ jobs:
         if: always()
         run: python -B backend/scripts/sunat_phase2a_ci.py stop
 
-  playwright:
-    name: Inventario y Reparaciones E2E
+  inventory-e2e:
+    name: Inventario E2E — flujo principal
     runs-on: ubuntu-latest
-    # La última ejecución correcta tardó ~22 min; deja margen para variación del runner.
-    timeout-minutes: 35
+    timeout-minutes: 25
 
     steps:
       - name: Descargar repositorio
@@ -232,6 +231,51 @@ jobs:
         run: npm run test:e2e:typecheck && npm run test:e2e:local
         working-directory: frontend
 
+      - name: Conservar diagnóstico de fallos E2E
+        # Debe correr también tras un timeout/cancelación para conservar trazas Playwright.
+        if: always() && (failure() || cancelled())
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Detener Supabase local
+        if: always()
+        run: npm run db:stop -- --no-backup
+        working-directory: backend
+
+  repairs-isolated:
+    name: Reparaciones — pruebas aisladas R06-R33
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v5
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Instalar dependencias del backend
+        run: npm ci
+        working-directory: backend
+
+      - name: Instalar dependencias del frontend
+        run: npm ci
+        working-directory: frontend
+
+      - name: Instalar Chromium para Playwright
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
       - name: Validar accesorios R06-R33 con SQL y E2E aislados
         run: npm run test:repairs:isolated
         working-directory: frontend
@@ -247,17 +291,25 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Conservar diagnóstico de fallos E2E
-        # Debe correr también tras un timeout/cancelación para conservar trazas Playwright.
-        if: always() && (failure() || cancelled())
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-test-results
-          path: frontend/test-results/
-          if-no-files-found: ignore
-          retention-days: 7
+  playwright:
+    # Keep the required PR check name; fail unless both suites pass.
+    name: Inventario y Reparaciones E2E
+    needs: [inventory-e2e, repairs-isolated]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
 
-      - name: Detener Supabase local
-        if: always()
-        run: npm run db:stop -- --no-backup
-        working-directory: backend
+    steps:
+      - name: Exigir éxito de las dos suites
+        env:
+          INVENTORY_RESULT: ${{ needs.inventory-e2e.result }}
+          REPAIRS_RESULT: ${{ needs.repairs-isolated.result }}
+        run: |
+          if [ "$INVENTORY_RESULT" != "success" ]; then
+            echo "La validación E2E principal de Inventario falló o fue cancelada: $INVENTORY_RESULT"
+            exit 1
+          fi
+          if [ "$REPAIRS_RESULT" != "success" ]; then
+            echo "La validación aislada R06-R33 de Reparaciones falló o fue cancelada: $REPAIRS_RESULT"
+            exit 1
+          fi
