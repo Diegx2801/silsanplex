@@ -53,8 +53,8 @@ async function prepare(page: Page, browser: Browser, withAccessories = false) {
   await form.getByLabel('Identificación del equipo *', { exact: true }).selectOption('external')
   await form.getByLabel('Equipo recibido *', { exact: true }).fill('Monitor B1 no inventariable')
   await form.getByLabel('Problema reportado *', { exact: true }).fill('No enciende')
-  await form.getByText('Datos adicionales de recepción', { exact: true }).click()
-  await form.getByLabel('Referencia del cliente', { exact: true }).fill(reference)
+  await form.getByText('Referencias y garantía', { exact: true }).click()
+  await form.getByLabel('Ticket o referencia externa', { exact: true }).fill(reference)
   if (withAccessories) {
     await form.getByRole('button', { name: 'Agregar accesorio', exact: true }).click()
     await form.getByLabel('Accesorio 1 · Nombre *', { exact: true }).fill('Cable B1')
