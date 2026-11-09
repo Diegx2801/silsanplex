@@ -98,8 +98,8 @@ async function returnDialog(page: Page, f: Fixture) {
   return dialog
 }
 async function noPendingRecovery(page: Page) {
-  await page.getByRole('button', { name: 'Recuperar decisión pendiente', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Decisión técnica No reparable', exact: true }).getByRole('alert')).toContainText('No hay una decisión pendiente')
+  const section = page.getByRole('region', { name: 'Decisión técnica No reparable', exact: true })
+  await expect(section.getByRole('button', { name: /decisión pendiente/i })).toHaveCount(0)
   await expect(page.getByRole('dialog', { name: 'Confirmar No reparable', exact: true })).toHaveCount(0)
   await expect(page.getByRole('dialog', { name: 'Reabrir evaluación técnica', exact: true })).toHaveCount(0)
 }
@@ -151,7 +151,9 @@ test('B1: recepción, técnico, decisión y devolución con accesorios, historia
   expect((await order(f.admin, f.reference)).lock_version).toBe(r.lock_version)
   expect(await checked(f.admin.api.from('repair_tests').select('id').eq('repair_id', r.id))).toHaveLength(0)
   await page.reload(); await open(page, f.reference)
+  await page.getByRole('tab', { name: 'Atención técnica', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Decisión técnica No reparable', exact: true }).getByText('Circuito principal destruido sin reparación posible', { exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'Entrega y trazabilidad', exact: true }).click()
   await page.getByText(/Historial de la orden ·/).click()
   await expect(page.getByText('Equipo devuelto sin reparar', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Cerrar detalle de reparación', exact: true }).click()
@@ -176,6 +178,8 @@ test('B1: excepción autorizada y regularización posterior sin reapertura ni ga
   await dialog.getByRole('button', { name: 'Confirmar devolución excepcional sin reparar', exact: true }).click()
   await expect(dialog).toBeHidden()
   await page.reload(); await open(page, f.reference)
+  await page.getByRole('tab', { name: 'Entrega y trazabilidad', exact: true }).click()
+  await page.locator('#reparacion-accesorios').click()
   const record = page.locator('details').filter({ has: page.getByText('Registro de Cable B1', { exact: true }) })
   await record.getByText('Registro de Cable B1', { exact: true }).click()
   await record.getByRole('button', { name: 'Registrar devolución de Cable B1', exact: true }).click()
@@ -259,6 +263,7 @@ test('B1: reevaluación motivada conserva decisiones y diagnósticos anteriores'
   expect(r.status).toBe('diagnosis'); expect(r.non_repairable_decision_event_id).toBeNull()
   expect(r.assigned_technician_id).toBe(identities.admin.id)
   await page.reload(); await open(page, f.reference)
+  await page.getByRole('tab', { name: 'Entrega y trazabilidad', exact: true }).click()
   await page.getByText(/Historial de la orden ·/).click()
   await expect(page.getByText('Decisión No reparable revocada para reevaluación', { exact: true })).toBeVisible()
   const history = page.locator('[data-event-type="NON_REPAIRABLE_DECLARED"]')
@@ -289,7 +294,7 @@ test('B1: recuperación de decisión y devolución confirmadas con respuesta per
   await checked(f.admin.api.rpc('assign_repair', { requested_organization_id: f.admin.identity.organizationId, requested_repair_id: f.id,
     requested_technician_id: identities.admin.id, requested_expected_lock_version: committed.lock_version }))
   await f.technicalPage.reload(); await open(f.technicalPage, f.reference)
-  await f.technicalPage.getByRole('button', { name: 'Recuperar decisión pendiente', exact: true }).click()
+  await f.technicalPage.getByRole('button', { name: 'Reintentar decisión pendiente', exact: true }).click()
   decisionDialog = f.technicalPage.getByRole('dialog', { name: 'Confirmar No reparable', exact: true })
   await decisionDialog.getByRole('button', { name: 'Reintentar decisión', exact: true }).click(); await expect(decisionDialog).toBeHidden()
   expect(declarations).toHaveLength(2); expect(declarations[1]).toEqual(declarations[0])
