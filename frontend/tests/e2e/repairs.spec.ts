@@ -197,6 +197,26 @@ async function quote(page: Page, action = 'Crear cotización') {
   return dialog
 }
 
+async function approvePendingQuote(page: Page) {
+  const budgetTab = page.getByRole('tab', { name: 'Presupuesto y repuestos', exact: true })
+  if (await budgetTab.getAttribute('aria-selected') !== 'true') {
+    await page.getByRole('button', { name: 'Revisar cotización', exact: true }).click()
+  }
+  await expect(budgetTab).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('button', { name: 'Aprobar', exact: true }).click()
+  const approval = page.getByRole('dialog', { name: 'Aprobar cotización', exact: true })
+  await approval.getByRole('button', { name: 'Aprobar cotización', exact: true }).click()
+  await expect(approval).toBeHidden()
+}
+
+async function registerDiagnosis(page: Page, symptoms: string) {
+  await page.getByRole('button', { name: 'Registrar diagnóstico', exact: true }).click()
+  const diagnosis = page.getByRole('dialog', { name: 'Registrar diagnóstico', exact: true })
+  await diagnosis.getByLabel('Síntomas observados *').fill(symptoms)
+  await diagnosis.getByRole('button', { name: 'Guardar diagnóstico', exact: true }).click()
+  await expect(diagnosis).toBeHidden()
+}
+
 async function stock(api: SupabaseClient, productId: string) {
   return checked(api.from('inventory_product_stock_summary')
     .select('physical_quantity,reserved_quantity,assignable_quantity').eq('product_id', productId).single())
@@ -233,10 +253,7 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   const submission = await quote(page, 'Editar borrador')
   await submission.getByRole('button', { name: 'Enviar a aprobación' }).click()
   await expect(submission).toBeHidden()
-  await page.getByRole('button', { name: 'Registrar aprobación', exact: true }).click()
-  const approval = page.getByRole('dialog', { name: 'Aprobar cotización', exact: true })
-  await approval.getByRole('button', { name: 'Aprobar cotización', exact: true }).click()
-  await expect(approval).toBeHidden()
+  await approvePendingQuote(page)
   await changeState(page, 'Iniciar reparación')
   await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
   const reservation = page.getByRole('dialog', { name: 'Reservar repuesto' })
@@ -377,10 +394,7 @@ test('catálogos remotos permiten seleccionar después del registro 1000 y resol
   const quotation = await quote(page)
   await quotation.getByRole('button', { name: 'Enviar a aprobación' }).click()
   await expect(quotation).toBeHidden()
-  await page.getByRole('button', { name: 'Registrar aprobación', exact: true }).click()
-  const approval = page.getByRole('dialog', { name: 'Aprobar cotización', exact: true })
-  await approval.getByRole('button', { name: 'Aprobar cotización', exact: true }).click()
-  await expect(approval).toBeHidden()
+  await approvePendingQuote(page)
   await changeState(page, 'Iniciar reparación')
   await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
   const reservation = page.getByRole('dialog', { name: 'Reservar repuesto' })
@@ -446,6 +460,7 @@ test('dos pestañas: una acción obsoleta se rechaza sin sobrescribir el cambio 
 test('rechazo y revisión conservan una sola vigente y permiten inspeccionar líneas históricas', async ({ page }) => {
   const f = await fixture(page)
   await prepareDiagnosis(page, f)
+  await registerDiagnosis(page, 'Equipo requiere revisión antes de cotizar')
   const first = await quote(page)
   await first.getByRole('button', { name: 'Enviar a aprobación' }).click()
   await expect(first).toBeHidden()
