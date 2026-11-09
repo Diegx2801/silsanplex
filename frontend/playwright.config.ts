@@ -47,10 +47,14 @@ export default defineConfig({
   // Serializar evita que una prueba altere el estado que otra está verificando.
   fullyParallel: false,
   workers: 1,
-  retries: isCI ? 2 : 0,
+  // Un reintento cubre fallos transitorios sin duplicar varias veces una suite lenta.
+  retries: isCI ? 1 : 0,
   reporter: 'list',
   use: {
     baseURL: 'http://127.0.0.1:5173',
+    // Selectores que ya no existen deben fallar rápido; los flujos completos
+    // conservan su límite de prueba de 120 s.
+    actionTimeout: 15_000,
     trace: 'on-first-retry',
     ...(isIsolated ? { timezoneId: 'America/Lima', serviceWorkers: 'block' as const } : {}),
   },

@@ -163,7 +163,8 @@ jobs:
   playwright:
     name: Inventario y Reparaciones E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # La última ejecución correcta tardó ~22 min; deja margen para variación del runner.
+    timeout-minutes: 35
 
     steps:
       - name: Descargar repositorio
