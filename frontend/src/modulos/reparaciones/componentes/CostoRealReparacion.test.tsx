@@ -27,11 +27,10 @@ describe('R14 sección económica',()=>{
    expect(screen.getByText(/Hay PEN y USD/)).toBeVisible()
    expect(screen.queryByText(/^Total confirmado:/)).not.toBeInTheDocument()
  })
- it('recuperar sin pendiente no abre una nueva operación ni envía',()=>{
+ it('oculta la recuperación cuando no hay una operación pendiente',()=>{
    mock.permissions.add('REPAIRS_MANAGE_ACTUAL_COST')
    render(<PanelCostoReal reparacion={reparacion}/>)
-   fireEvent.click(screen.getByRole('button',{name:'Recuperar operación económica pendiente'}))
-   expect(screen.getByText('No hay una operación económica pendiente de confirmar en esta pestaña.')).toBeVisible()
+   expect(screen.queryByRole('button',{name:/operación pendiente/})).not.toBeInTheDocument()
    expect(screen.queryByRole('form',{name:'Operación económica'})).not.toBeInTheDocument()
    expect(mock.execute).not.toHaveBeenCalled()
  })
@@ -40,7 +39,7 @@ describe('R14 sección económica',()=>{
    const pendiente={tipo:'record_repair_actual_cost',datos:{category:'labor',description:'Original',amount:'4.00',currency:'PEN',cost_basis:'not_applicable',incurred_on:'2026-10-01',reason:'Original reason',evidence_reference:'Original doc'},expectedLockVersion:1,clave:crypto.randomUUID()}
    mock.recover.mockReturnValue(pendiente)
    render(<PanelCostoReal reparacion={reparacion}/>)
-   fireEvent.click(screen.getByRole('button',{name:'Recuperar operación económica pendiente'}))
+   fireEvent.click(await screen.findByRole('button',{name:'Reintentar operación pendiente'}))
    expect(screen.getByLabelText(/^Importe real/)).toHaveValue('4.00')
    expect(screen.getByLabelText(/^Importe real/)).toBeDisabled()
    fireEvent.submit(screen.getByRole('form',{name:'Operación económica'}))

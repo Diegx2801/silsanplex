@@ -5,6 +5,7 @@ import type { Reparacion } from '../modelo/reparacion'
 const estado=vi.hoisted(()=>({data:undefined as unknown,error:null as Error|null,isLoading:false,guardar:vi.fn(),recuperar:vi.fn(),refetch:vi.fn()}))
 vi.mock('../estado/useAccesoriosReparacion',()=>({useAccesoriosReparacion:()=>({consulta:estado,guardar:estado.guardar,recuperar:estado.recuperar})}))
 import { AccesoriosReparacion } from './AccesoriosReparacion'
+const abrirSeccion = () => fireEvent.click(screen.getByText(/^Accesorios y devolución/))
 const id='a0000000-0000-4000-8000-000000000001'
 const reparacion={id:'repair',organizationId:'org',estado:'received',lockVersion:7} as Reparacion
 const cable:AccesorioReparacion={id,organization_id:'org',repair_id:'repair',name:'Cable',quantity_received:3,quantity_returned:1,quantity_pending:2,
@@ -14,6 +15,7 @@ beforeEach(()=>{vi.clearAllMocks();estado.data={reviewed_at:'2026-10-29T12:00:00
 describe('Detalle y custodia de accesorios',()=>{
   it('muestra recibidos, devueltos, pendientes y responsables reales',()=>{
     render(<AccesoriosReparacion reparacion={reparacion} puedeEditar puedeDevolver />)
+    abrirSeccion()
     expect(screen.getByRole('row',{name:/Cable/})).toHaveTextContent('3')
     fireEvent.click(screen.getByText('Registro de Cable'))
     expect(screen.getByText(/Recibido por Recepcionista/)).toBeVisible()
@@ -23,6 +25,7 @@ describe('Detalle y custodia de accesorios',()=>{
   it('diferencia histórico de vacío revisado',()=>{
     estado.data={reviewed_at:null,lock_version:7,accessories:[]}
     const {rerender}=render(<AccesoriosReparacion reparacion={reparacion} puedeEditar={false} puedeDevolver={false} />)
+    abrirSeccion()
     expect(screen.getByText(/Recepción histórica/)).toBeVisible()
     estado.data={reviewed_at:'date',lock_version:7,accessories:[]}
     rerender(<AccesoriosReparacion reparacion={reparacion} puedeEditar={false} puedeDevolver={false} />)
@@ -31,21 +34,25 @@ describe('Detalle y custodia de accesorios',()=>{
   it('error de lectura no presenta ausencia ni acciones nuevas',()=>{
     estado.error=new Error('Consulta fallida')
     render(<AccesoriosReparacion reparacion={reparacion} puedeEditar puedeDevolver />)
+    abrirSeccion()
     expect(screen.getByRole('alert')).toHaveTextContent('Consulta fallida')
     expect(screen.queryByText('Registrar accesorio adicional')).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('Reintentar accesorios'));expect(estado.refetch).toHaveBeenCalled()
   })
   it('explica estado de carga',()=>{
     estado.isLoading=true;render(<AccesoriosReparacion reparacion={reparacion} puedeEditar puedeDevolver />)
+    abrirSeccion()
     expect(screen.getByRole('status')).toHaveTextContent('Consultando accesorios')
   })
   it('usuario de consulta no recibe escrituras',()=>{
     render(<AccesoriosReparacion reparacion={reparacion} puedeEditar={false} puedeDevolver={false} />)
+    abrirSeccion()
     fireEvent.click(screen.getByText('Registro de Cable'))
     expect(screen.queryByText('Registrar devolución de Cable')).not.toBeInTheDocument()
   })
   it.each(['delivered','cancelled','rejected'] as const)('permite devolver sin reabrir %s',async estadoOrden=>{
     render(<AccesoriosReparacion reparacion={{...reparacion,estado:estadoOrden}} puedeEditar puedeDevolver />)
+    abrirSeccion()
     fireEvent.click(screen.getByText('Registro de Cable'));fireEvent.click(screen.getByText('Registrar devolución de Cable'))
     fireEvent.change(screen.getByLabelText('Cantidad a devolver *'),{target:{value:'1'}})
     fireEvent.click(screen.getByText('Confirmar devolución'))
@@ -55,6 +62,7 @@ describe('Detalle y custodia de accesorios',()=>{
   it('conserva entrada al detectar un conflicto',async()=>{
     estado.guardar.mockRejectedValue(new Error('La reparación cambió mientras realizabas esta acción.'))
     render(<AccesoriosReparacion reparacion={reparacion} puedeEditar puedeDevolver />)
+    abrirSeccion()
     fireEvent.click(screen.getByText('Registro de Cable'));fireEvent.click(screen.getByText('Registrar devolución de Cable'))
     fireEvent.change(screen.getByLabelText('Cantidad a devolver *'),{target:{value:'1'}});fireEvent.click(screen.getByText('Confirmar devolución'))
     expect(await screen.findByRole('alert')).toHaveTextContent('cambió mientras')
@@ -64,7 +72,8 @@ describe('Detalle y custodia de accesorios',()=>{
     estado.data={reviewed_at:'date',lock_version:8,accessories:[{...cable,quantity_returned:3,quantity_pending:0}]}
     estado.recuperar.mockReturnValue({tipo:'record_repair_accessory_return',expectedLockVersion:7,datos:{returns:[{accessory_id:id,quantity:2,observation:'Original'}]},clave:id})
     render(<AccesoriosReparacion reparacion={reparacion} puedeEditar puedeDevolver />)
-    fireEvent.click(screen.getByText('Recuperar operación de accesorios pendiente'))
+    abrirSeccion()
+    fireEvent.click(await screen.findByRole('button',{name:'Reintentar operación pendiente'}))
     expect(screen.getByLabelText('Cantidad a devolver *')).toBeDisabled()
     fireEvent.click(screen.getByText('Reintentar operación de accesorios'))
     await waitFor(()=>expect(estado.guardar).toHaveBeenCalledWith(expect.objectContaining({expectedLockVersion:7}),id))

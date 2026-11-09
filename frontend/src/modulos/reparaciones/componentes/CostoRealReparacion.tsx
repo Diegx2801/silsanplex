@@ -30,11 +30,17 @@ export function PanelCostoReal({ reparacion: r }: { reparacion: Reparacion }) {
   const [mensaje, setMensaje] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [aceptado, setAceptado] = useState(false)
+  const [estadoRecuperacion, setEstadoRecuperacion] = useState<'ninguno' | 'pendiente' | 'error'>('ninguno')
   const ambito = `${r.organizationId}:${user?.id ?? ''}:${r.id}:actual-cost`
   const consulta = useQuery({ queryKey: ['repair-actual-cost', r.organizationId, r.id, r.lockVersion, offset],
     queryFn: () => obtenerDetalleCosto(r.organizationId, r.id, offset) })
   const coherente = consulta.data?.summary.lock_version === r.lockVersion
   const puede = (tipo: ComandoCostoReal['tipo']) => tipo === 'confirm_repair_actual_cost_review' ? confirmar : gestionar
+  useEffect(() => {
+    if (!gestionar && !confirmar) { setEstadoRecuperacion('ninguno'); return }
+    try { setEstadoRecuperacion(recuperarCostoPendiente(ambito) ? 'pendiente' : 'ninguno') }
+    catch { setEstadoRecuperacion('error') }
+  }, [ambito, confirmar, gestionar, r.lockVersion])
   const invalidar = async () => {
     await Promise.all([client.invalidateQueries({ queryKey: ['repair-actual-cost', r.organizationId, r.id] }),
       client.invalidateQueries({ queryKey: ['repair-cost-page', r.organizationId] }),
@@ -147,7 +153,7 @@ export function PanelCostoReal({ reparacion: r }: { reparacion: Reparacion }) {
         <div className="flex gap-2"><Button variant="outline" disabled={!offset} onClick={() => setOffset(n => Math.max(0,n-25))}>Página económica anterior</Button>
           <Button variant="outline" disabled={offset+25>=Math.max(consulta.data.total_items,consulta.data.total_history)} onClick={() => setOffset(n => n+25)}>Página económica siguiente</Button></div>
       </> : <p role="status">La orden cambió; actualizando el costo y su versión…</p>}
-    {gestionar || confirmar ? <Button variant="ghost" onClick={recuperar}>Recuperar operación económica pendiente</Button> : <p>Solo consulta. Las capacidades económicas se asignan explícitamente; no se heredan de ADMIN, VENTAS o técnico.</p>}
+    {gestionar || confirmar ? estadoRecuperacion !== 'ninguno' ? <Button variant="outline" onClick={recuperar}>{estadoRecuperacion === 'pendiente' ? 'Reintentar operación pendiente' : 'Revisar operación pendiente'}</Button> : null : <p>Solo consulta. Las capacidades económicas se asignan explícitamente; no se heredan de ADMIN, VENTAS o técnico.</p>}
     {editor ? <form aria-label="Operación económica" className="space-y-3 border-t pt-4" onSubmit={guardar}>
       <h4 className="font-semibold">{esConfirmacion ? 'Revisión del alcance económico' : esLinea ? 'Costo de trabajo o gasto real' : 'Evidencia de fuente económica'}</h4>
       {editor.pendiente ? <p role="status">Intención recuperada: se conservan datos, versión y clave originales.</p> : null}

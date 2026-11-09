@@ -23,6 +23,10 @@ import type {
 
 import { DetalleReparacion } from './DetalleReparacion'
 
+const seleccionarPestana = (nombre: string) => fireEvent.mouseDown(
+  screen.getByRole('tab', { name: nombre }), { button: 0, ctrlKey: false },
+)
+
 const reparacionBase: Reparacion = {
   id: 'repair-1',
   organizationId: 'org-1',
@@ -192,10 +196,11 @@ function renderizarDetalle({
       lockVersion,
     },
   })
-  const construirElemento = (lockVersion = reparacionBase.lockVersion) => (
-    <DetalleReparacion
+  const construirElemento = (lockVersion = reparacionBase.lockVersion, estadoActual = detalleBase.reparacion.estado) => {
+    const detalleActual = construirDetalle(lockVersion)
+    return <DetalleReparacion
       abierto
-      detalle={detalleSinCargar ? undefined : construirDetalle(lockVersion)}
+      detalle={detalleSinCargar ? undefined : { ...detalleActual, reparacion: { ...detalleActual.reparacion, estado: estadoActual } }}
       cargando={false}
       error={errorDetalle ?? null}
       productos={[]}
@@ -231,14 +236,14 @@ function renderizarDetalle({
       alEntregar={operacion}
       alCancelar={operacion}
     />
-  )
+  }
   const resultado = render(construirElemento())
   return {
     editar,
     operacion,
     registrarSolucion,
     revisarCotizacion,
-    rerenderDetalle: (lockVersion: number) => resultado.rerender(construirElemento(lockVersion)),
+    rerenderDetalle: (lockVersion: number, estadoActual?: EstadoReparacion) => resultado.rerender(construirElemento(lockVersion, estadoActual)),
   }
 }
 
@@ -249,6 +254,28 @@ describe('DetalleReparacion acciones técnicas', () => {
     const dialogo = screen.getByRole('dialog')
     expect(dialogo).toHaveClass('start-1/2', 'top-1/2', '-translate-x-1/2', '-translate-y-1/2', 'max-h-[92svh]', 'overflow-hidden', 'max-w-4xl')
     expect(dialogo).not.toHaveClass('inset-y-0', 'end-0', 'slide-in-from-right')
+  })
+
+  it.each([
+    ['received', 'Resumen'],
+    ['quote_pending', 'Presupuesto y repuestos'],
+    ['awaiting_parts', 'Presupuesto y repuestos'],
+    ['quote_approved', 'Atención técnica'],
+    ['in_repair', 'Atención técnica'],
+    ['ready_for_delivery', 'Entrega y trazabilidad'],
+  ] as const)('abre la sección útil por defecto en %s', (estado, pestana) => {
+    renderizarDetalle({ estado })
+    expect(screen.getByRole('tab', { name: pestana })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('orienta al nuevo paso cuando cambia el estado de la orden', () => {
+    const { rerenderDetalle } = renderizarDetalle({ estado: 'received' })
+    seleccionarPestana('Atención técnica')
+    expect(screen.getByRole('tab', { name: 'Atención técnica' })).toHaveAttribute('aria-selected', 'true')
+
+    rerenderDetalle(5, 'quote_pending')
+
+    expect(screen.getByRole('tab', { name: 'Presupuesto y repuestos' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('permite reintentar cuando falla la carga del detalle', () => {
@@ -270,7 +297,8 @@ describe('DetalleReparacion acciones técnicas', () => {
       estadoAnterior: 'testing', estadoNuevo: 'ready_for_delivery', actorId: null, observacion: 'Transición importada', metadata, creadoEn: '2026-11-01T05:00:00Z' }]
     detalle.reparacion.finalizacionesTecnicas = []
     renderizarDetalle({ detallePersonalizado: detalle })
-    fireEvent.click(screen.getByRole('link', { name: 'Historial' }))
+    seleccionarPestana('Entrega y trazabilidad')
+    fireEvent.click(screen.getByText(/Historial de la orden/))
     expect(screen.getByText('Transición importada')).toBeVisible()
     expect(screen.queryByText(/Finalización técnica verificable · ciclo/)).not.toBeInTheDocument()
     expect(screen.getByText('Primera finalización histórica verificable: No registrada')).toBeVisible()
@@ -283,7 +311,8 @@ describe('DetalleReparacion acciones técnicas', () => {
     const actual = { ...primera, event_id: '9007199254740995', test_cycle_number: 2, completed_at: '2026-11-01T05:00:00Z' }
     detalle.reparacion = { ...detalle.reparacion, primeraFinalizacionTecnica: primera, finalizacionTecnica: actual, finalizacionesTecnicas: [primera, actual] }
     renderizarDetalle({ detallePersonalizado: detalle })
-    fireEvent.click(screen.getByRole('link', { name: 'Historial' }))
+    seleccionarPestana('Entrega y trazabilidad')
+    fireEvent.click(screen.getByText(/Historial de la orden/))
     expect(screen.getAllByText(/Finalización técnica verificable · ciclo/)).toHaveLength(2)
     expect(screen.getByText(/Primera finalización histórica verificable:/)).toHaveTextContent(primera.event_id)
   })
@@ -303,10 +332,9 @@ describe('DetalleReparacion acciones técnicas', () => {
     expect(document.querySelector('time[datetime="2026-11-02"]')).toHaveTextContent('2 nov')
   })
 
-  it.each(['testing', 'ready_for_delivery', 'delivered', 'cancelled', 'non_repairable', 'returned_unrepaired'] as const)('recuperar sin pendiente en %s no abre otra intención', estado => {
+  it.each(['testing', 'ready_for_delivery', 'delivered', 'cancelled', 'non_repairable', 'returned_unrepaired'] as const)('no muestra recuperación de estado sin pendiente en %s', estado => {
     const { operacion } = renderizarDetalle({ estado })
-    fireEvent.click(screen.getByRole('button', { name: 'Recuperar cambio de estado pendiente' }))
-    expect(screen.getByText('No hay un cambio de estado pendiente de confirmar en esta pestaña.')).toBeVisible()
+    expect(screen.queryByRole('button', { name: /cambio pendiente/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: 'Cambiar estado' })).not.toBeInTheDocument()
     expect(operacion).not.toHaveBeenCalled()
   })
@@ -314,7 +342,7 @@ describe('DetalleReparacion acciones técnicas', () => {
   it('recupera transición ya confirmada con clave y versión originales desde lista para entrega', async () => {
     const pendiente = { estado: 'ready_for_delivery' as const, observacion: 'Validado anteriormente', expectedLockVersion: 3, clave: crypto.randomUUID() }
     const { operacion } = renderizarDetalle({ estado: 'ready_for_delivery', recuperarEstadoPendiente: () => pendiente })
-    fireEvent.click(screen.getByRole('button', { name: 'Recuperar cambio de estado pendiente' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Reintentar cambio pendiente' }))
     expect(screen.getByLabelText('Observación (opcional)')).toHaveValue(pendiente.observacion)
     fireEvent.click(screen.getByRole('button', { name: 'Reintentar cambio de estado' }))
     await waitFor(() => expect(operacion).toHaveBeenCalledWith('repair-1', pendiente.estado, pendiente.observacion, 3, pendiente.clave))
@@ -333,11 +361,12 @@ describe('DetalleReparacion acciones técnicas', () => {
     expect(screen.getByRole('list', { name: 'Requisitos pendientes para entregar' })).toHaveTextContent('Consumir o cancelar los saldos reservados')
   })
 
-  it('abre el historial desde la navegación sin alterar el estado de la reparación', () => {
+  it('abre el historial desde su sección sin alterar el estado de la reparación', () => {
     const { operacion } = renderizarDetalle()
+    seleccionarPestana('Entrega y trazabilidad')
     const historial = screen.getByText(/Historial de la orden/).closest('details')
     expect(historial).not.toHaveAttribute('open')
-    fireEvent.click(screen.getByRole('link', { name: 'Historial' }))
+    fireEvent.click(screen.getByText(/Historial de la orden/))
     expect(historial).toHaveAttribute('open')
     expect(operacion).not.toHaveBeenCalled()
   })
@@ -378,6 +407,8 @@ describe('DetalleReparacion acciones técnicas', () => {
 
     renderizarDetalle({ detallePersonalizado, cargarLineasCotizacion })
 
+    seleccionarPestana('Presupuesto y repuestos')
+
     expect(screen.getByText('Reparación aprobada')).toBeInTheDocument()
     expect(cargarLineasCotizacion).not.toHaveBeenCalled()
 
@@ -414,6 +445,8 @@ describe('DetalleReparacion acciones técnicas', () => {
 
     renderizarDetalle({ conParte: true, resolverAlmacen, resolverUbicacion })
 
+    seleccionarPestana('Presupuesto y repuestos')
+
     expect(await screen.findByText(/ALM-OLD · Almacén histórico · UBI-OLD · Ubicación histórica/))
       .toBeInTheDocument()
     expect(resolverAlmacen).toHaveBeenCalledWith('warehouse-1')
@@ -431,6 +464,7 @@ describe('DetalleReparacion acciones técnicas', () => {
   it('envía la solución por la acción especializada en un estado no terminal', async () => {
     const { registrarSolucion } = renderizarDetalle({ estado: 'received' })
 
+    seleccionarPestana('Atención técnica')
     expect(screen.queryByRole('button', { name: 'Registrar diagnóstico' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Registrar solución' }))
 
@@ -481,10 +515,24 @@ describe('DetalleReparacion acciones técnicas', () => {
   it('permite a VENTAS abrir la edición general sin permisos técnicos', () => {
     const { editar } = renderizarDetalle({ puedeEditar: true, puedeCambiarEstado: false })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Más acciones' }), { key: 'Enter' })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Editar orden' }))
 
     expect(editar).toHaveBeenCalledOnce()
     expect(screen.queryByRole('button', { name: 'Registrar diagnóstico' })).not.toBeInTheDocument()
+  })
+
+  it('muestra una sola acción para continuar un borrador de cotización pendiente', () => {
+    renderizarDetalle({ estado: 'quote_pending', puedeEditar: true })
+
+    expect(screen.queryByRole('button', { name: 'Preparar presupuesto' })).not.toBeInTheDocument()
+    const abrirCotizacion = screen.getByRole('button', { name: 'Crear cotización' })
+    expect(abrirCotizacion).toBeVisible()
+    fireEvent.click(abrirCotizacion)
+
+    const dialogoCotizacion = screen.getByRole('dialog', { name: 'Crear cotización' })
+    expect(dialogoCotizacion).toHaveClass('top-1/2', '-translate-x-1/2')
+    expect(dialogoCotizacion).not.toHaveClass('inset-y-0', 'end-0')
   })
 
   it('no permite modificar la solución en estados terminales', () => {
@@ -505,12 +553,15 @@ describe('DetalleReparacion acciones técnicas', () => {
   it('oculta el consumo de repuestos durante testing', () => {
     renderizarDetalle({ estado: 'testing', puedeUsarPartes: true, conParte: true })
 
+    seleccionarPestana('Presupuesto y repuestos')
+
     expect(screen.queryByRole('button', { name: 'Consumir saldo' })).not.toBeInTheDocument()
   })
 
   it('limpia un error de solución al cerrar y volver a abrir el diálogo', async () => {
     renderizarDetalle({ estado: 'received', resultadoSolucion: 'Error remoto' })
 
+    seleccionarPestana('Atención técnica')
     fireEvent.click(screen.getByRole('button', { name: 'Registrar solución' }))
     fireEvent.change(screen.getByLabelText('Solución aplicada *'), {
       target: { value: 'Fuente reemplazada' },
