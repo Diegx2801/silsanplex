@@ -55,7 +55,7 @@ async function labor(page:Page,amount='12.50',currency='PEN',other=false) {
  await form.getByLabel('Tipo de costo').selectOption(other?'other':'labor')
  await form.getByLabel('Concepto *',{exact:true}).fill(other?'Transporte documentado':'Diagnóstico y reparación reales')
  await form.getByLabel('Fecha del costo *',{exact:true}).fill(today())
- await form.getByLabel('Monto *',{exact:true}).fill(amount);await form.getByLabel('Moneda *',{exact:true}).selectOption(currency)
+ await form.getByLabel('Monto *').fill(amount);await form.getByLabel('Moneda *',{exact:true}).selectOption(currency)
  await evidence(form);await form.getByRole('button',{name:'Guardar costo',exact:true}).click()
  await expect(form).toBeHidden();await expect(page.getByRole('region',{name:'Consulta de costo real'}).getByRole('heading',{name:'Costo parcial',exact:true})).toBeVisible()
 }
@@ -119,9 +119,10 @@ test('R14: consumo real inicia pendiente y solo una procedencia de compra homog�
 })
 test('R14: costo de proveedor requiere base documentada y conserva importe original',async({page})=>{
  const f=await prepare(page);await external(f);await open(page,f.reference)
- await expect(page.getByRole('list',{name:'Pendientes económicos'}).getByText(/falta verificar su base económica/)).toBeVisible();await verifyExternal(page)
+ const article=page.getByRole('article').filter({has:page.getByRole('heading',{name:/Servicios externos ·/})}).first()
+ await expect(article.getByText(/falta verificar su base económica/)).toBeVisible();await verifyExternal(page)
  await confirm(page);expect((await detail(f)).summary.total.currency).toBe('USD')
- await expect(page.getByText(/Declarado originalmente al retorno: 30.00 USD/)).toBeVisible()
+ await expect(page.getByText(/Costo declarado al retorno: US\$ 30\.00\./)).toBeVisible()
 })
 test('R14: fuentes pendientes bloquean la confirmación y no crean una revisión',async({page})=>{
  const f=await prepare(page);await external(f);await open(page,f.reference)
