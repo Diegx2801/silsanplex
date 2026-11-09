@@ -83,6 +83,22 @@ async function openRepair(page: Page, reference: string) {
   await expect(page.getByRole('button', { name: 'Cerrar detalle de reparación' })).toBeVisible()
 }
 
+async function openRepairTab(page: Page, name: string) {
+  const tab = page.getByRole('tab', { name, exact: true })
+  if (await tab.getAttribute('aria-selected') !== 'true') await tab.click()
+  await expect(tab).toHaveAttribute('aria-selected', 'true')
+}
+
+async function editRepair(page: Page) {
+  await page.getByRole('button', { name: 'Más acciones', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Editar orden', exact: true }).click()
+}
+
+async function openPartReservation(page: Page) {
+  await openRepairTab(page, 'Presupuesto y repuestos')
+  await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
+}
+
 async function repair(f: Fixture) {
   return checked(f.api.from('repairs').select('*').eq('organization_id', f.organizationId)
     .eq('customer_reference', f.reference).single())
@@ -255,7 +271,7 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   await expect(submission).toBeHidden()
   await approvePendingQuote(page)
   await changeState(page, 'Iniciar reparación')
-  await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
+  await openPartReservation(page)
   const reservation = page.getByRole('dialog', { name: 'Reservar repuesto' })
   await selectCatalogOption(reservation, 'Producto', f.reference, f.reference)
   await selectWarehouse(reservation, f)
@@ -266,7 +282,7 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   await expect(reservation.getByRole('alert')).toBeVisible()
   await page.reload()
   await openRepair(page, f.reference)
-  await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
+  await openPartReservation(page)
   const recoveredReservation = page.getByRole('dialog', { name: 'Reservar repuesto', exact: true })
   await expect(recoveredReservation.getByText('Se recuperó una reserva pendiente')).toBeVisible()
   await recoveredReservation.getByRole('button', { name: 'Reintentar reserva', exact: true }).click()
@@ -277,14 +293,15 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   const consumption = page.getByRole('dialog', { name: 'Consumir repuesto' })
   await submitWithLostResponse(page, consumption, 'consume_repair_part', 'Confirmar consumo')
   expect(await stock(f.api, f.productId)).toMatchObject({ physical_quantity: 0, reserved_quantity: 0, assignable_quantity: 0 })
-  await page.getByRole('button', { name: 'Registrar solución', exact: true }).click()
+  await openRepairTab(page, 'Atención técnica')
+  await page.getByRole('button', { name: 'Registrar trabajo realizado', exact: true }).click()
   const solution = page.getByRole('dialog', { name: 'Registrar solución aplicada' })
   await solution.getByLabel('Solución aplicada *').fill('Fuente reemplazada y calibrada')
   await solution.getByRole('button', { name: 'Guardar solución' }).click()
   await expect(solution).toBeHidden()
   await changeState(page, 'Iniciar pruebas')
   await expect(page.getByRole('button', { name: 'Preparar entrega', exact: true })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Registrar prueba', exact: true }).click()
+  await page.getByRole('button', { name: 'Registrar pruebas', exact: true }).click()
   const testing = page.getByRole('dialog', { name: 'Registrar prueba' })
   await testing.getByLabel('Tipo de prueba *').fill('Encendido')
   await testing.getByLabel('Resultado *', { exact: true }).fill('Equipo estable')
@@ -307,7 +324,7 @@ test('flujo completo con reintentos reales: creación, cotización, reserva, con
   await expect(historicalTests).toContainText('Falla bajo carga')
   await expect(historicalTests).toContainText('Equipo estable')
   await expect(page.getByRole('button', { name: 'Preparar entrega', exact: true })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Registrar prueba', exact: true }).click()
+  await page.getByRole('button', { name: 'Registrar pruebas', exact: true }).click()
   await testing.getByLabel('Tipo de prueba *').fill('Carga tras retrabajo')
   await testing.getByLabel('Resultado *', { exact: true }).fill('Carga estable tras ajuste')
   await testing.getByRole('checkbox').check()
@@ -359,7 +376,7 @@ test('catálogos remotos permiten seleccionar después del registro 1000 y resol
   }))
   try {
     await openRepair(page, f.reference)
-    await page.getByRole('button', { name: 'Editar', exact: true }).click()
+    await editRepair(page)
     const edit = page.getByRole('dialog', { name: /Editar REP-/ })
     await expect(edit.getByRole('combobox', { name: 'Cliente', exact: true }))
       .toHaveValue(`${catalogCustomerName} (referencia histórica)`)
@@ -396,7 +413,7 @@ test('catálogos remotos permiten seleccionar después del registro 1000 y resol
   await expect(quotation).toBeHidden()
   await approvePendingQuote(page)
   await changeState(page, 'Iniciar reparación')
-  await page.getByRole('button', { name: 'Reservar repuesto', exact: true }).click()
+  await openPartReservation(page)
   const reservation = page.getByRole('dialog', { name: 'Reservar repuesto' })
   await selectCatalogOption(reservation, 'Producto', catalogPrefix + '1001', catalogPrefix + '1001')
   await selectWarehouse(reservation, f)
@@ -464,7 +481,8 @@ test('rechazo y revisión conservan una sola vigente y permiten inspeccionar lí
   const first = await quote(page)
   await first.getByRole('button', { name: 'Enviar a aprobación' }).click()
   await expect(first).toBeHidden()
-  await page.getByRole('button', { name: 'Rechazar cotización', exact: true }).click()
+  await openRepairTab(page, 'Presupuesto y repuestos')
+  await page.getByRole('button', { name: 'Rechazar', exact: true }).click()
   const rejection = page.getByRole('dialog', { name: 'Rechazar cotización', exact: true })
   await rejection.getByLabel('Motivo *', { exact: true }).fill('Ajustar presupuesto')
   await rejection.getByRole('button', { name: 'Rechazar cotización', exact: true }).click()
