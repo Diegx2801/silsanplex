@@ -1,5 +1,5 @@
 import { Download, ChevronLeft, ChevronRight } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { PERMISSIONS } from '@/features/auth/permissions'
@@ -20,6 +20,14 @@ import { listarKardexReporte } from '@/modulos/reportes/servicios/kardexReporteS
 interface Props {
   organizationId: string
   almacenes: Almacen[]
+  usarFiltrosCompartidos?: boolean
+  fechaDesde?: string
+  fechaHasta?: string
+  almacenId?: string
+  pagina?: number
+  habilitado?: boolean
+  alCambiarPagina?: (pagina: number) => void
+  productoInicial?: ProductoInventarioOpcion | null
 }
 
 const formatoCantidad = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 3 })
@@ -51,7 +59,18 @@ function etiquetaOrigen(movimiento: MovimientoKardexReporte) {
   return etiquetas[movimiento.tipoOrigen] ?? 'Sin referencia registrada'
 }
 
-export function ReporteKardex({ organizationId, almacenes }: Props) {
+export function ReporteKardex({
+  organizationId,
+  almacenes,
+  usarFiltrosCompartidos = false,
+  fechaDesde: fechaDesdeCompartida,
+  fechaHasta: fechaHastaCompartida,
+  almacenId: almacenIdCompartido,
+  pagina: paginaCompartida,
+  habilitado = true,
+  alCambiarPagina,
+  productoInicial,
+}: Props) {
   const { hasPermission } = useAuth()
   const puedeExportar = hasPermission(PERMISSIONS.INVENTORY_EXPORT)
   const [consulta, setConsulta] = useState<ConsultaKardexReporte>(() => ({
@@ -65,35 +84,55 @@ export function ReporteKardex({ organizationId, almacenes }: Props) {
   const [exportando, setExportando] = useState(false)
   const [mensajeExportacion, setMensajeExportacion] = useState('')
   const [errorExportacion, setErrorExportacion] = useState('')
-  const rangoInvalido = Boolean(consulta.fechaDesde && consulta.fechaHasta && consulta.fechaDesde > consulta.fechaHasta)
-  const periodoCompleto = Boolean(consulta.fechaDesde && consulta.fechaHasta)
-  const kardex = useReporteKardex(organizationId, consulta, periodoCompleto && !rangoInvalido)
+  const filtros: ConsultaKardexReporte = {
+    ...consulta,
+    pagina: paginaCompartida ?? consulta.pagina,
+    fechaDesde: fechaDesdeCompartida ?? consulta.fechaDesde,
+    fechaHasta: fechaHastaCompartida ?? consulta.fechaHasta,
+    almacenId: almacenIdCompartido ?? consulta.almacenId,
+  }
+  const rangoInvalido = Boolean(filtros.fechaDesde && filtros.fechaHasta && filtros.fechaDesde > filtros.fechaHasta)
+  const periodoCompleto = Boolean(filtros.fechaDesde && filtros.fechaHasta)
+  const kardex = useReporteKardex(organizationId, filtros, habilitado && periodoCompleto && !rangoInvalido)
   const elementos = kardex.data?.elementos ?? []
+
+  useEffect(() => {
+    if (!productoInicial) return
+    setProductoSeleccionado(productoInicial)
+    setConsulta((actual) => ({ ...actual, productoId: productoInicial.id, pagina: 1 }))
+    alCambiarPagina?.(1)
+  }, [alCambiarPagina, productoInicial])
 
   const cambiarFiltro = (cambios: Partial<ConsultaKardexReporte>) => {
     setConsulta((actual) => ({ ...actual, ...cambios, pagina: 1 }))
+    alCambiarPagina?.(1)
     setMensajeExportacion('')
     setErrorExportacion('')
   }
 
+  const cambiarPagina = (pagina: number) => {
+    if (alCambiarPagina) alCambiarPagina(pagina)
+    else setConsulta((actual) => ({ ...actual, pagina }))
+  }
+
   const exportar = async () => {
-    if (!puedeExportar || !consulta.productoId || rangoInvalido || !periodoCompleto || exportando) return
+    if (!puedeExportar || !filtros.productoId || rangoInvalido || !periodoCompleto || exportando) return
     setExportando(true)
     setMensajeExportacion('')
     setErrorExportacion('')
     try {
-      const resultado = await listarKardexReporte(organizationId, consulta, true)
+      const resultado = await listarKardexReporte(organizationId, filtros, true)
       const productoCodigo = productoSeleccionado?.codigo ?? elementos[0]?.productoCodigo ?? 'producto'
       const productoDescripcion = productoSeleccionado?.descripcion ?? elementos[0]?.productoDescripcion ?? ''
-      const almacen = almacenes.find((opcion) => opcion.id === consulta.almacenId)?.nombre ?? ''
+      const almacen = almacenes.find((opcion) => opcion.id === filtros.almacenId)?.nombre ?? ''
       const { descargarKardex } = await import('@/modulos/reportes/servicios/exportarKardex')
       descargarKardex(resultado.elementos, {
         productoCodigo,
         productoDescripcion,
         almacen,
-        lote: consulta.lote.trim(),
-        fechaDesde: consulta.fechaDesde,
-        fechaHasta: consulta.fechaHasta,
+        lote: filtros.lote.trim(),
+        fechaDesde: filtros.fechaDesde,
+        fechaHasta: filtros.fechaHasta,
       })
       setMensajeExportacion(`${resultado.total} movimientos exportados en Excel.`)
     } catch (error) {
@@ -105,7 +144,7 @@ export function ReporteKardex({ organizationId, almacenes }: Props) {
 
   return (
     <section aria-labelledby="reporte-kardex-titulo" className="ledger-sheet">
-      <div className="grid gap-4 border-b px-5 py-5 sm:px-6 xl:grid-cols-[minmax(16rem,1fr)_14rem_12rem_12rem] xl:items-end">
+      <div className="grid gap-4 border-b px-5 py-5 sm:px-6 xl:grid-cols-[minmax(16rem,1fr)_14rem] xl:items-end">
         <div>
           <h2 id="reporte-kardex-titulo" className="text-lg font-semibold">Kardex detallado</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -114,21 +153,23 @@ export function ReporteKardex({ organizationId, almacenes }: Props) {
               : 'Consulta el historial físico con saldos acumulados y trazabilidad.'}
           </p>
         </div>
-        <label className="field-label">
-          Desde
-          <input type="date" value={consulta.fechaDesde} onChange={(evento) => cambiarFiltro({ fechaDesde: evento.target.value })} className="field-control" />
-        </label>
-        <label className="field-label">
-          Hasta
-          <input type="date" value={consulta.fechaHasta} onChange={(evento) => cambiarFiltro({ fechaHasta: evento.target.value })} className="field-control" />
-        </label>
-        <label className="field-label">
-          Almacén
-          <select value={consulta.almacenId} onChange={(evento) => cambiarFiltro({ almacenId: evento.target.value })} className="field-control">
-            <option value="">Todos</option>
-            {almacenes.map((almacen) => <option key={almacen.id} value={almacen.id}>{almacen.nombre}</option>)}
-          </select>
-        </label>
+        {!usarFiltrosCompartidos ? <>
+          <label className="field-label">
+            Desde
+            <input type="date" value={consulta.fechaDesde} onChange={(evento) => cambiarFiltro({ fechaDesde: evento.target.value })} className="field-control" />
+          </label>
+          <label className="field-label">
+            Hasta
+            <input type="date" value={consulta.fechaHasta} onChange={(evento) => cambiarFiltro({ fechaHasta: evento.target.value })} className="field-control" />
+          </label>
+          <label className="field-label">
+            Almacén
+            <select value={consulta.almacenId} onChange={(evento) => cambiarFiltro({ almacenId: evento.target.value })} className="field-control">
+              <option value="">Todos</option>
+              {almacenes.map((almacen) => <option key={almacen.id} value={almacen.id}>{almacen.nombre}</option>)}
+            </select>
+          </label>
+        </> : null}
       </div>
 
       <div className="grid gap-4 border-b bg-muted/20 px-5 py-4 sm:px-6 md:grid-cols-2">
@@ -139,7 +180,7 @@ export function ReporteKardex({ organizationId, almacenes }: Props) {
           organizationId={organizationId}
           requerido={false}
           autoSeleccionarPrimeraOpcion={false}
-          value={consulta.productoId}
+          value={filtros.productoId}
           selectedOption={productoSeleccionado}
           onValueChange={(productoId, producto) => {
             setProductoSeleccionado(producto ?? null)
@@ -150,7 +191,7 @@ export function ReporteKardex({ organizationId, almacenes }: Props) {
           Lote (opcional)
           <input
             type="search"
-            value={consulta.lote}
+            value={filtros.lote}
             onChange={(evento) => cambiarFiltro({ lote: evento.target.value })}
             className="field-control"
             maxLength={60}
@@ -167,7 +208,7 @@ export function ReporteKardex({ organizationId, almacenes }: Props) {
           <Button
             type="button"
             variant="outline"
-            disabled={!consulta.productoId || !periodoCompleto || rangoInvalido || !kardex.data?.total || kardex.data.total > MAXIMO_FILAS_EXPORTACION_KARDEX || exportando}
+          disabled={!filtros.productoId || !periodoCompleto || rangoInvalido || !kardex.data?.total || kardex.data.total > MAXIMO_FILAS_EXPORTACION_KARDEX || exportando}
             onClick={() => void exportar()}
           >
             <Download aria-hidden="true" />
@@ -176,11 +217,11 @@ export function ReporteKardex({ organizationId, almacenes }: Props) {
         ) : null}
       </div>
 
-      {rangoInvalido ? (
+      {usarFiltrosCompartidos && !habilitado ? null : rangoInvalido ? (
         <p role="alert" className="px-5 py-8 text-sm text-destructive sm:px-6">La fecha inicial no puede ser posterior a la fecha final.</p>
       ) : !periodoCompleto ? (
         <p role="status" className="px-5 py-8 text-sm text-muted-foreground sm:px-6">Selecciona ambas fechas para consultar el periodo.</p>
-      ) : !consulta.productoId ? (
+      ) : !filtros.productoId ? (
         <p role="status" className="px-5 py-8 text-sm text-muted-foreground sm:px-6">Selecciona un producto para consultar su Kardex detallado.</p>
       ) : (
         <EstadoListadoInventario
@@ -232,13 +273,13 @@ export function ReporteKardex({ organizationId, almacenes }: Props) {
               <div className="flex flex-col gap-3 border-t px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <p className="text-sm text-muted-foreground">
                   {kardex.isFetching ? 'Actualizando… ' : ''}
-                  Mostrando {elementos.length ? (consulta.pagina - 1) * kardex.data.tamanioPagina + 1 : 0}–{(consulta.pagina - 1) * kardex.data.tamanioPagina + elementos.length} de {kardex.data.total} movimientos
+                  Mostrando {elementos.length ? (filtros.pagina - 1) * kardex.data.tamanioPagina + 1 : 0}–{(filtros.pagina - 1) * kardex.data.tamanioPagina + elementos.length} de {kardex.data.total} movimientos
                   {puedeExportar && kardex.data.total > MAXIMO_FILAS_EXPORTACION_KARDEX ? ' · Reduce el filtro para exportar (máximo 10 000).' : ''}
                 </p>
                 <nav aria-label="Paginación del Kardex detallado" className="flex items-center gap-2">
-                  <Button type="button" variant="outline" size="icon" aria-label="Página anterior del Kardex" disabled={kardex.isFetching || consulta.pagina <= 1} onClick={() => setConsulta((actual) => ({ ...actual, pagina: actual.pagina - 1 }))}><ChevronLeft aria-hidden="true" /></Button>
-                  <span className="min-w-24 text-center font-mono text-xs tabular-nums text-muted-foreground">PÁGINA {consulta.pagina} / {kardex.data.totalPaginas}</span>
-                  <Button type="button" variant="outline" size="icon" aria-label="Página siguiente del Kardex" disabled={kardex.isFetching || consulta.pagina >= kardex.data.totalPaginas} onClick={() => setConsulta((actual) => ({ ...actual, pagina: actual.pagina + 1 }))}><ChevronRight aria-hidden="true" /></Button>
+                  <Button type="button" variant="outline" size="icon" aria-label="Página anterior del Kardex" disabled={kardex.isFetching || filtros.pagina <= 1} onClick={() => cambiarPagina(filtros.pagina - 1)}><ChevronLeft aria-hidden="true" /></Button>
+                  <span className="min-w-24 text-center font-mono text-xs tabular-nums text-muted-foreground">PÁGINA {filtros.pagina} / {kardex.data.totalPaginas}</span>
+                  <Button type="button" variant="outline" size="icon" aria-label="Página siguiente del Kardex" disabled={kardex.isFetching || filtros.pagina >= kardex.data.totalPaginas} onClick={() => cambiarPagina(filtros.pagina + 1)}><ChevronRight aria-hidden="true" /></Button>
                 </nav>
               </div>
             ) : null}

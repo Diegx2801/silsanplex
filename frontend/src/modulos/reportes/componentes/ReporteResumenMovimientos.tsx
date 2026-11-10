@@ -7,12 +7,22 @@ import { etiquetasEstadoStock, type Almacen } from '@/modulos/inventario/modelo/
 import {
   crearPeriodoUltimos30Dias,
   type ConsultaResumenMovimientos,
+  type ResumenMovimientoInventario,
 } from '@/modulos/reportes/modelo/reporteMovimientos'
 import { useReporteMovimientos } from '@/modulos/reportes/estado/useReporteMovimientos'
 
 interface Props {
   organizationId: string
   almacenes: Almacen[]
+  usarFiltrosCompartidos?: boolean
+  fechaDesde?: string
+  fechaHasta?: string
+  almacenId?: string
+  pagina?: number
+  habilitado?: boolean
+  alCambiarPagina?: (pagina: number) => void
+  alVerKardex?: (fila: ResumenMovimientoInventario) => void
+  productoKardexCargandoId?: string | null
 }
 
 const formatoCantidad = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 3 })
@@ -28,7 +38,19 @@ function useDebouncedValue<T>(value: T, delay = 300) {
   return valor
 }
 
-export function ReporteResumenMovimientos({ organizationId, almacenes }: Props) {
+export function ReporteResumenMovimientos({
+  organizationId,
+  almacenes,
+  usarFiltrosCompartidos = false,
+  fechaDesde: fechaDesdeCompartida,
+  fechaHasta: fechaHastaCompartida,
+  almacenId: almacenIdCompartido,
+  pagina: paginaCompartida,
+  habilitado = true,
+  alCambiarPagina,
+  alVerKardex,
+  productoKardexCargandoId,
+}: Props) {
   const periodoInicial = crearPeriodoUltimos30Dias()
   const [consulta, setConsulta] = useState<ConsultaResumenMovimientos>(() => ({
     pagina: 1,
@@ -37,21 +59,33 @@ export function ReporteResumenMovimientos({ organizationId, almacenes }: Props) 
     almacenId: '',
   }))
   const busqueda = useDebouncedValue(consulta.busqueda)
-  const rangoInvalido = Boolean(consulta.fechaDesde && consulta.fechaHasta && consulta.fechaDesde > consulta.fechaHasta)
-  const periodoCompleto = Boolean(consulta.fechaDesde && consulta.fechaHasta)
+  const filtros: ConsultaResumenMovimientos = {
+    ...consulta,
+    pagina: paginaCompartida ?? consulta.pagina,
+    fechaDesde: fechaDesdeCompartida ?? consulta.fechaDesde,
+    fechaHasta: fechaHastaCompartida ?? consulta.fechaHasta,
+    almacenId: almacenIdCompartido ?? consulta.almacenId,
+  }
+  const rangoInvalido = Boolean(filtros.fechaDesde && filtros.fechaHasta && filtros.fechaDesde > filtros.fechaHasta)
+  const periodoCompleto = Boolean(filtros.fechaDesde && filtros.fechaHasta)
   const reporte = useReporteMovimientos(
     organizationId,
-    { ...consulta, busqueda },
-    periodoCompleto && !rangoInvalido,
+    { ...filtros, busqueda },
+    habilitado && periodoCompleto && !rangoInvalido,
   )
   const elementos = reporte.data?.elementos ?? []
   const cambiarFiltro = (cambios: Partial<ConsultaResumenMovimientos>) => {
     setConsulta((actual) => ({ ...actual, ...cambios, pagina: 1 }))
+    alCambiarPagina?.(1)
+  }
+  const cambiarPagina = (pagina: number) => {
+    if (alCambiarPagina) alCambiarPagina(pagina)
+    else setConsulta((actual) => ({ ...actual, pagina }))
   }
 
   return (
     <section aria-labelledby="reporte-movimientos-titulo" className="ledger-sheet">
-      <div className="grid gap-4 border-b px-5 py-5 sm:px-6 md:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_12rem_12rem_14rem] xl:items-end">
+      <div className="grid gap-4 border-b px-5 py-5 sm:px-6 md:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_minmax(15rem,20rem)] xl:items-end">
         <div>
           <h2 id="reporte-movimientos-titulo" className="text-lg font-semibold">
             Resumen de movimientos de inventario
@@ -72,44 +106,30 @@ export function ReporteResumenMovimientos({ organizationId, almacenes }: Props) 
             placeholder="Producto o almacén"
           />
         </label>
-        <label className="field-label">
-          Desde
-          <input
-            type="date"
-            value={consulta.fechaDesde}
-            onChange={(evento) => cambiarFiltro({ fechaDesde: evento.target.value })}
-            className="field-control"
-          />
-        </label>
-        <label className="field-label">
-          Hasta
-          <input
-            type="date"
-            value={consulta.fechaHasta}
-            onChange={(evento) => cambiarFiltro({ fechaHasta: evento.target.value })}
-            className="field-control"
-          />
-        </label>
-        <label className="field-label md:col-span-2 xl:col-span-1">
-          Almacén
-          <select
-            value={consulta.almacenId}
-            onChange={(evento) => cambiarFiltro({ almacenId: evento.target.value })}
-            className="field-control"
-          >
-            <option value="">Todos</option>
-            {almacenes.map((almacen) => (
-              <option key={almacen.id} value={almacen.id}>{almacen.nombre}</option>
-            ))}
-          </select>
-        </label>
+        {!usarFiltrosCompartidos ? <>
+          <label className="field-label">
+            Desde
+            <input type="date" value={consulta.fechaDesde} onChange={(evento) => cambiarFiltro({ fechaDesde: evento.target.value })} className="field-control" />
+          </label>
+          <label className="field-label">
+            Hasta
+            <input type="date" value={consulta.fechaHasta} onChange={(evento) => cambiarFiltro({ fechaHasta: evento.target.value })} className="field-control" />
+          </label>
+          <label className="field-label md:col-span-2 xl:col-span-1">
+            Almacén
+            <select value={consulta.almacenId} onChange={(evento) => cambiarFiltro({ almacenId: evento.target.value })} className="field-control">
+              <option value="">Todos</option>
+              {almacenes.map((almacen) => <option key={almacen.id} value={almacen.id}>{almacen.nombre}</option>)}
+            </select>
+          </label>
+        </> : null}
       </div>
 
       <p className="border-b px-5 py-3 text-sm leading-6 text-muted-foreground sm:px-6">
-        Las cantidades se separan por producto, unidad, almacén y condición. La variación del periodo no representa el stock actual.
+        Entradas incluyen recepciones y ajustes positivos; salidas, despachos y ajustes negativos. Las cantidades se separan por producto, unidad, almacén y condición. La variación del periodo no representa el stock actual.
       </p>
 
-      {rangoInvalido ? (
+      {usarFiltrosCompartidos && !habilitado ? null : rangoInvalido ? (
         <p role="alert" className="px-5 py-8 text-sm text-destructive sm:px-6">
           La fecha inicial no puede ser posterior a la fecha final.
         </p>
@@ -128,7 +148,16 @@ export function ReporteResumenMovimientos({ organizationId, almacenes }: Props) 
           <div aria-busy={reporte.isFetching} className={reporte.isFetching ? 'opacity-70' : undefined}>
             {reporte.isFetching ? <p role="status" className="sr-only">Actualizando resumen de movimientos.</p> : null}
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[64rem] text-left text-sm">
+              <table className="w-full min-w-[54rem] text-left text-sm xl:table-fixed">
+                <colgroup>
+                  <col className="w-[24%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[14%]" />
+                </colgroup>
                 <caption className="sr-only">
                   Entradas, salidas y variación por producto, almacén y condición durante el periodo elegido
                 </caption>
@@ -148,8 +177,11 @@ export function ReporteResumenMovimientos({ organizationId, almacenes }: Props) 
                     <tr key={`${fila.productoId}-${fila.almacenId ?? fila.almacen}-${fila.estado}-${fila.unidadMedida}-${indice}`}>
                       <th scope="row" className="px-5 py-4 font-normal">
                         <span className="font-mono text-xs text-primary">{fila.productoCodigo}</span>
-                        <p className="font-medium text-foreground">{fila.productoDescripcion}</p>
+                        <p className="break-words font-medium text-foreground">{fila.productoDescripcion}</p>
                         <p className="mt-1 text-xs text-muted-foreground">Unidad: {fila.unidadMedida || 'No especificada'}</p>
+                        {alVerKardex ? <Button type="button" variant="ghost" size="sm" className="mt-2 h-8 px-2" disabled={productoKardexCargandoId === fila.productoId} onClick={() => alVerKardex(fila)}>
+                          {productoKardexCargandoId === fila.productoId ? 'Abriendo Kardex…' : 'Ver Kardex'}
+                        </Button> : null}
                       </th>
                       <td className="px-4 py-4">{fila.almacen || 'Sin nombre de almacén'}</td>
                       <td className="px-4 py-4">
@@ -177,7 +209,7 @@ export function ReporteResumenMovimientos({ organizationId, almacenes }: Props) 
             {reporte.data ? (
               <div className="flex flex-col gap-3 border-t px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <p className="text-sm text-muted-foreground">
-                  Mostrando {elementos.length ? (consulta.pagina - 1) * reporte.data.tamanioPagina + 1 : 0}–{(consulta.pagina - 1) * reporte.data.tamanioPagina + elementos.length} de {reporte.data.total} grupos
+                  Mostrando {elementos.length ? (filtros.pagina - 1) * reporte.data.tamanioPagina + 1 : 0}–{(filtros.pagina - 1) * reporte.data.tamanioPagina + elementos.length} de {reporte.data.total} grupos
                   {reporte.isFetching ? <span role="status"> · Actualizando…</span> : null}
                 </p>
                 <nav aria-label="Paginación del resumen de movimientos" className="flex items-center gap-2">
@@ -186,21 +218,21 @@ export function ReporteResumenMovimientos({ organizationId, almacenes }: Props) 
                     variant="outline"
                     size="icon"
                     aria-label="Página anterior del resumen"
-                    disabled={reporte.isFetching || consulta.pagina <= 1}
-                    onClick={() => setConsulta((actual) => ({ ...actual, pagina: actual.pagina - 1 }))}
+                    disabled={reporte.isFetching || filtros.pagina <= 1}
+                    onClick={() => cambiarPagina(filtros.pagina - 1)}
                   >
                     <ChevronLeft aria-hidden="true" />
                   </Button>
                   <span className="min-w-24 text-center font-mono text-xs tabular-nums text-muted-foreground">
-                    PÁGINA {consulta.pagina} / {reporte.data.totalPaginas}
+                    PÁGINA {filtros.pagina} / {reporte.data.totalPaginas}
                   </span>
                   <Button
                     type="button"
                     variant="outline"
                     size="icon"
                     aria-label="Página siguiente del resumen"
-                    disabled={reporte.isFetching || consulta.pagina >= reporte.data.totalPaginas}
-                    onClick={() => setConsulta((actual) => ({ ...actual, pagina: actual.pagina + 1 }))}
+                    disabled={reporte.isFetching || filtros.pagina >= reporte.data.totalPaginas}
+                    onClick={() => cambiarPagina(filtros.pagina + 1)}
                   >
                     <ChevronRight aria-hidden="true" />
                   </Button>
