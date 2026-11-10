@@ -475,10 +475,13 @@ try {
       // Run the exact workflow test files first while the operational fixture
       // still verifies that only the seeded SILSAN tenant exists.
       playwrightCommand.push(...['auth','customers','inventory-fefo','operational-flow','operational-fefo-multilot',
-        'operational-partial-deliveries','repairs','sales','sales-price-history'].map(name=>`e2e/${name}.spec.ts`))
+        'operational-partial-deliveries','repairs','sales'].map(name=>`e2e/${name}.spec.ts`))
     } else {
-      playwrightCommand.push('tests/e2e/repairs.spec.ts', 'tests/e2e/sales-price-history.spec.ts')
+      playwrightCommand.push('tests/e2e/repairs.spec.ts')
     }
+    // This guarded test must not be discovered by the generic e2e project,
+    // which also runs against a different CI-owned Supabase instance.
+    playwrightCommand.push('accessory-e2e/sales-price-history.spec.ts')
     if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath, playwrightCommand,
       { cwd: frontend, env, log: 'e2e.log' })
     // Both modes keep SILSAN exclusive until the strict operational preflight

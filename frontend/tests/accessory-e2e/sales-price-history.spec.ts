@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { expect } from '@playwright/test'
-import { test } from './fixtures/test.js'
-import { checked, operationalFixture, selectRemote } from './fixtures/operational.js'
+import { test } from '../e2e/fixtures/test.js'
+import { checked, operationalFixture, selectRemote } from '../e2e/fixtures/operational.js'
 
 // This suite writes only to the identity-checked disposable project made by
 // test-repair-accessories.mjs. Never run against the user's local databases.
