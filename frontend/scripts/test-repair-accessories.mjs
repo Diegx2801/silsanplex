@@ -302,7 +302,7 @@ try {
      runLog.push({ actualCostBenchmark: benchmarkActualCost({ sql, evidence }) })
    }
   if (!evidenceOnly) {
-    const tests = fs.readdirSync(path.join(backend, 'supabase/tests/database')).filter(n => process.argv.includes('--all-sql') || /^repairs?[_.].*\.sql$/.test(n) || n === 'authorization_permissions.test.sql' || n === 'audit_session_access.test.sql')
+    const tests = fs.readdirSync(path.join(backend, 'supabase/tests/database')).filter(n => process.argv.includes('--all-sql') || /^repairs?[_.].*\.sql$/.test(n) || n === 'authorization_permissions.test.sql' || n === 'audit_session_access.test.sql' || n === 'customer_sale_price_history.test.sql')
       .filter(n => n.endsWith('.test.sql')).sort()
     // Check the migrated application before installing test-only pgTAP routines.
     const lintArgs = ['db', 'lint', '--level', 'warning', '--fail-on', 'warning', '--output-format', 'json']
@@ -479,6 +479,9 @@ try {
     } else {
       playwrightCommand.push('tests/e2e/repairs.spec.ts')
     }
+    // This guarded test must not be discovered by the generic e2e project,
+    // which also runs against a different CI-owned Supabase instance.
+    playwrightCommand.push('accessory-e2e/sales-price-history.spec.ts')
     if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath, playwrightCommand,
       { cwd: frontend, env, log: 'e2e.log' })
     // Both modes keep SILSAN exclusive until the strict operational preflight

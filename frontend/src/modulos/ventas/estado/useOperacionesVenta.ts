@@ -19,6 +19,7 @@ import {
   type CantidadCumplimientoServicio,
 } from '@/modulos/ventas/servicios/ventasService'
 import { cotizacionesQueryKeys } from '@/modulos/ventas/estado/useCotizacionesPersistentes'
+import { historialPreciosKey } from '@/modulos/ventas/estado/useHistorialPreciosVenta'
 
 interface UseOperacionesVentaProps {
   cotizaciones: readonly Cotizacion[]
@@ -78,6 +79,7 @@ export function useOperacionesVenta({
       registrarVentaPersistente(organizationId, pedidoId, datos),
     onSuccess: async () => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: historialPreciosKey(organizationId) }),
         queryClient.invalidateQueries({ queryKey: ventasQueryKey }),
         queryClient.invalidateQueries({ queryKey: pedidosQueryKey }),
       ])
