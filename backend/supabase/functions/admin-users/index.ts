@@ -11,6 +11,7 @@ import {
 } from '../_shared/authorization.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 import { errorResponse, jsonResponse } from '../_shared/responses.ts'
+import { InvitationAccessError, inviteUserForAdministrator } from './invitations.ts'
 import {
   adminUserRequestSchema,
   type AdminUserRequest,
@@ -110,7 +111,9 @@ async function createUser(
   adminClient: SupabaseClient,
   actor: User,
 ) {
-  const { data, error } = await adminClient.auth.admin.inviteUserByEmail(
+  const { data, error } = await inviteUserForAdministrator(
+    adminClient,
+    actor,
     request.email,
     {
       data: {
@@ -384,6 +387,14 @@ Deno.serve(async (request) => {
 
     return jsonResponse({ data: result }, 200, headers)
   } catch (error) {
+    if (error instanceof InvitationAccessError) {
+      return errorResponse(
+        { code: 'ADMIN_ACCESS_REQUIRED', message: databaseErrorMessages.ADMIN_ACCESS_REQUIRED },
+        403,
+        headers,
+      )
+    }
+
     if (error instanceof z.ZodError || error instanceof SyntaxError) {
       return errorResponse(
         { code: 'INVALID_REQUEST', message: 'Los datos enviados no son válidos.' },

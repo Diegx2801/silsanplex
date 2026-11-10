@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Session } from '@supabase/supabase-js'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -384,31 +384,64 @@ describe('AuthProvider', () => {
   it('conserva la sesión ante un fallo transitorio de revalidación', async () => {
     configureActiveAccess()
     mocks.getSession.mockResolvedValue({ data: { session }, error: null })
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     renderProvider()
 
     await waitFor(() => {
       expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+      expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
+      expect(screen.getByTestId('permission-state')).toHaveTextContent('permitido')
+      expect(screen.getByTestId('protected-content')).toBeInTheDocument()
     })
-    mocks.rpc.mockImplementation(async (functionName: string) => {
+
+    const temporaryDataKey = 'silsanplex.productos-temporales.v1'
+    const temporaryData = '[{"productId":"product-temporary"}]'
+    window.sessionStorage.setItem(temporaryDataKey, temporaryData)
+
+    const rpcCallsBeforeFocus = mocks.rpc.mock.calls.length
+    const respuesta503 = {
+      data: null,
+      error: { status: 503, message: 'Service unavailable' },
+    }
+    let resolverRespuesta!: (value: typeof respuesta503) => void
+    const respuestaControlada = new Promise<typeof respuesta503>((resolve) => {
+      resolverRespuesta = resolve
+    })
+
+    mocks.rpc.mockImplementation((functionName: string) => {
       if (functionName === 'current_auth_session_is_active') {
-        return {
-          data: null,
-          error: { status: 503, message: 'Service unavailable' },
-        }
+        return respuestaControlada
       }
 
-      return { data: ['USERS_MANAGE'], error: null }
+      return Promise.resolve({ data: ['USERS_MANAGE'], error: null })
     })
 
-    window.dispatchEvent(new Event('focus'))
-
-    await waitFor(() => {
-      expect(consoleError).toHaveBeenCalled()
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
     })
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(rpcCallsBeforeFocus + 1)
+    expect(mocks.rpc.mock.calls[rpcCallsBeforeFocus]).toEqual([
+      'current_auth_session_is_active',
+    ])
+
+    const revalidationPromise = mocks.rpc.mock.results[rpcCallsBeforeFocus]
+      ?.value as Promise<typeof respuesta503> | undefined
+    expect(revalidationPromise).toBeDefined()
+
+    let respuestaRecibida: typeof respuesta503 | undefined
+    await act(async () => {
+      resolverRespuesta(respuesta503)
+      respuestaRecibida = await revalidationPromise
+    })
+
+    expect(respuestaRecibida).toEqual(respuesta503)
     expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+    expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
+    expect(screen.getByTestId('permission-state')).toHaveTextContent('permitido')
+    expect(screen.getByTestId('protected-content')).toBeInTheDocument()
     expect(mocks.signOut).not.toHaveBeenCalled()
-    consoleError.mockRestore()
+    expect(window.sessionStorage.getItem(temporaryDataKey)).toBe(temporaryData)
+    expect(mocks.rpc).toHaveBeenCalledTimes(rpcCallsBeforeFocus + 1)
   })
 
   it('conserva el error de getSession si INITIAL_SESSION llega después con sesión nula', async () => {

@@ -5,7 +5,7 @@ Supabase administra autenticación, datos multiempresa, RLS, funciones y auditor
 Durante el MVP, cada identidad puede tener una sola membresía activa. Una
 organización representa un cliente de la plataforma; sus administradores no
 pueden crear otras organizaciones. Los permisos efectivos se derivan de los
-roles en PostgreSQL y deben aplicarse también mediante RLS o RPC en cada módulo
+roles y las asignaciones directas en PostgreSQL y deben aplicarse mediante RLS o RPC en cada módulo
 operativo que se incorpore.
 
 ## Desarrollo local
