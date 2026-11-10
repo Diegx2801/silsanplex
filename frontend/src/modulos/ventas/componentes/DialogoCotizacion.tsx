@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { Controller, useFieldArray, useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
+import { UltimoPrecioVenta } from '@/modulos/ventas/componentes/HistorialPreciosVenta'
 import { fechaPeruEnDias } from '@/lib/fechas'
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import type { Cliente } from '@/modulos/clientes/modelo/cliente'
@@ -473,6 +474,16 @@ export function DialogoCotizacion({
                           </p>
                         </div>
                       </div>
+                      {abierto && productoSeleccionado && clienteId && <UltimoPrecioVenta
+                        key={clienteId + productoSeleccionado.id}
+                        clienteId={clienteId}
+                        productoId={productoSeleccionado.id}
+                        unidad={productoSeleccionado.unidadMedida}
+                        afectacion={afectacionPorProducto(productoSeleccionado.id)}
+                        incluyeIgv={preciosIncluyenIgv}
+                        minimo={obtenerPrecioMinimoCotizacion(productoSeleccionado, preciosIncluyenIgv)}
+                        alUsar={(precio) => setValue(`lineas.${indice}.precioUnitario`, precio, { shouldValidate: true, shouldDirty: true })}
+                      />}
                     </article>
                   )
                 })}

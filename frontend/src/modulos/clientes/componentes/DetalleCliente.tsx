@@ -3,6 +3,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { HistorialPreciosVenta } from '@/modulos/ventas/componentes/HistorialPreciosVenta'
 import { useAuth } from '@/features/auth/useAuth'
 import { PERMISSIONS } from '@/features/auth/permissions'
 import { fechaActualPeru, formatearFechaCalendarioPeru, formatearFechaHoraPeru } from '@/lib/fechas'
@@ -153,6 +154,9 @@ export function DetalleCliente({
               ) : <p className="mt-3 text-sm text-muted-foreground">Sin direcciones de entrega adicionales.</p>}
             </section>
 
+            {abierto && puedeConsultarCotizaciones && <div className="px-5 sm:px-7">
+              <HistorialPreciosVenta key={cliente.id} clienteId={cliente.id} />
+            </div>}
             {puedeConsultarCotizaciones ? (
               <section className="border-t px-5 py-6 sm:px-7" aria-labelledby="detalle-cliente-cotizaciones">
                 <div className="flex flex-wrap items-start justify-between gap-4">

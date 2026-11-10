@@ -133,3 +133,6 @@ describe('DetalleCliente', () => {
     expect(screen.queryByRole('heading', { name: 'Cotizaciones' })).not.toBeInTheDocument()
   })
 })
+vi.mock('@/modulos/ventas/estado/useHistorialPreciosVenta', () => ({
+  useHistorialPreciosVenta: () => ({ permitido: false, filas: [] }),
+}))

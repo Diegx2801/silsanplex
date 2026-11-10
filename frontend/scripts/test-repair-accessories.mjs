@@ -302,7 +302,7 @@ try {
      runLog.push({ actualCostBenchmark: benchmarkActualCost({ sql, evidence }) })
    }
   if (!evidenceOnly) {
-    const tests = fs.readdirSync(path.join(backend, 'supabase/tests/database')).filter(n => process.argv.includes('--all-sql') || /^repairs?[_.].*\.sql$/.test(n) || n === 'authorization_permissions.test.sql' || n === 'audit_session_access.test.sql')
+    const tests = fs.readdirSync(path.join(backend, 'supabase/tests/database')).filter(n => process.argv.includes('--all-sql') || /^repairs?[_.].*\.sql$/.test(n) || n === 'authorization_permissions.test.sql' || n === 'audit_session_access.test.sql' || n === 'customer_sale_price_history.test.sql')
       .filter(n => n.endsWith('.test.sql')).sort()
     // Check the migrated application before installing test-only pgTAP routines.
     const lintArgs = ['db', 'lint', '--level', 'warning', '--fail-on', 'warning', '--output-format', 'json']
@@ -475,9 +475,9 @@ try {
       // Run the exact workflow test files first while the operational fixture
       // still verifies that only the seeded SILSAN tenant exists.
       playwrightCommand.push(...['auth','customers','inventory-fefo','operational-flow','operational-fefo-multilot',
-        'operational-partial-deliveries','repairs','sales'].map(name=>`e2e/${name}.spec.ts`))
+        'operational-partial-deliveries','repairs','sales','sales-price-history'].map(name=>`e2e/${name}.spec.ts`))
     } else {
-      playwrightCommand.push('tests/e2e/repairs.spec.ts')
+      playwrightCommand.push('tests/e2e/repairs.spec.ts', 'tests/e2e/sales-price-history.spec.ts')
     }
     if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath, playwrightCommand,
       { cwd: frontend, env, log: 'e2e.log' })

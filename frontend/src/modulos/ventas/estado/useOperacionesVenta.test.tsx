@@ -77,6 +77,25 @@ describe('useOperacionesVenta', () => {
     expect(aceptar).not.toHaveBeenCalled()
   })
 
+  it('invalida todos los historiales de precios de la organización tras registrar una venta', async () => {
+    mocks.listarPedidosPersistentes.mockResolvedValue([])
+    mocks.listarVentasPersistentes.mockResolvedValue([])
+    mocks.registrarVentaPersistente.mockResolvedValue('venta-nueva')
+    const cliente = crearCliente()
+    const key = ['customer-sale-prices', 'org-1', 'actor', 'cliente', { productoId: 'producto' }]
+    cliente.setQueryData(key, [{ unit_price: 10 }])
+    const { result } = renderHook(() => useOperacionesVenta({ cotizaciones: [] }), {
+      wrapper: ({ children }) => <QueryClientProvider client={cliente}>{children}</QueryClientProvider>,
+    })
+    await act(async () => {
+      expect(await result.current.registrarVenta('pedido-1', {
+        tipoDocumento: 'nota-venta', serie: 'NV', numeroDocumento: '1',
+        fechaVenta: '2026-11-10', almacen: 'Almacén de prueba',
+      })).toBeUndefined()
+    })
+    expect(cliente.getQueryState(key)?.isInvalidated).toBe(true)
+  })
+
   it('lee pedidos/ventas desde Supabase y crea el pedido de forma asíncrona', async () => {
     mocks.listarPedidosPersistentes.mockResolvedValue([])
     mocks.listarVentasPersistentes.mockResolvedValue([])
