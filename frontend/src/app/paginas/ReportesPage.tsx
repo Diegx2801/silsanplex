@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Tabs } from 'radix-ui'
 
+import { PERMISSIONS } from '@/features/auth/permissions'
 import { useAuth } from '@/features/auth/useAuth'
 import { useAlmacenes } from '@/modulos/inventario/estado/useAlmacenes'
 import type { ProductoInventarioOpcion } from '@/modulos/inventario/modelo/productoInventarioRead'
@@ -25,7 +26,7 @@ function mostrarFecha(fecha: string) {
 }
 
 export function ReportesPage() {
-  const { access } = useAuth()
+  const { access, hasPermission } = useAuth()
   const organizationId = access?.organizationId ?? ''
   const gestion = useAlmacenes()
   const [pestana, setPestana] = useState<PestanaReportes>('resumen')
@@ -160,6 +161,7 @@ export function ReportesPage() {
             alCambiarPagina={setPaginaResumen}
             alVerKardex={(fila) => void abrirKardex(fila)}
             productoKardexCargandoId={productoCargandoId}
+            puedeExportar={hasPermission(PERMISSIONS.INVENTORY_EXPORT)}
           />
         </Tabs.Content>
 

@@ -1,7 +1,8 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { listarKardexGeneralParaExportar } from '@/modulos/reportes/servicios/kardexReporteService'
 import { EstadoListadoInventario } from '@/modulos/inventario/componentes/EstadoListadoInventario'
 import { etiquetasEstadoStock, type Almacen } from '@/modulos/inventario/modelo/almacen'
 import {
@@ -23,6 +24,7 @@ interface Props {
   alCambiarPagina?: (pagina: number) => void
   alVerKardex?: (fila: ResumenMovimientoInventario) => void
   productoKardexCargandoId?: string | null
+  puedeExportar?: boolean
 }
 
 const formatoCantidad = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 3 })
@@ -50,6 +52,7 @@ export function ReporteResumenMovimientos({
   alCambiarPagina,
   alVerKardex,
   productoKardexCargandoId,
+  puedeExportar = false,
 }: Props) {
   const periodoInicial = crearPeriodoUltimos30Dias()
   const [consulta, setConsulta] = useState<ConsultaResumenMovimientos>(() => ({
@@ -58,6 +61,9 @@ export function ReporteResumenMovimientos({
     busqueda: '',
     almacenId: '',
   }))
+  const [exportando, setExportando] = useState(false)
+  const [mensajeExportacion, setMensajeExportacion] = useState('')
+  const [errorExportacion, setErrorExportacion] = useState('')
   const busqueda = useDebouncedValue(consulta.busqueda)
   const filtros: ConsultaResumenMovimientos = {
     ...consulta,
@@ -74,18 +80,50 @@ export function ReporteResumenMovimientos({
     habilitado && periodoCompleto && !rangoInvalido,
   )
   const elementos = reporte.data?.elementos ?? []
+  useEffect(() => {
+    setMensajeExportacion('')
+    setErrorExportacion('')
+  }, [busqueda, filtros.almacenId, filtros.fechaDesde, filtros.fechaHasta])
+
   const cambiarFiltro = (cambios: Partial<ConsultaResumenMovimientos>) => {
     setConsulta((actual) => ({ ...actual, ...cambios, pagina: 1 }))
     alCambiarPagina?.(1)
+    setMensajeExportacion('')
+    setErrorExportacion('')
   }
   const cambiarPagina = (pagina: number) => {
     if (alCambiarPagina) alCambiarPagina(pagina)
     else setConsulta((actual) => ({ ...actual, pagina }))
   }
 
+  const exportarTodosLosMovimientos = async () => {
+    if (!puedeExportar || !organizationId || !periodoCompleto || rangoInvalido || exportando) return
+    setExportando(true)
+    setMensajeExportacion('')
+    setErrorExportacion('')
+    try {
+      const resultado = await listarKardexGeneralParaExportar(organizationId, {
+        fechaDesde: filtros.fechaDesde,
+        fechaHasta: filtros.fechaHasta,
+        almacenId: filtros.almacenId,
+        busqueda,
+      })
+      const { descargarKardexGeneral } = await import('@/modulos/reportes/servicios/exportarKardex')
+      descargarKardexGeneral(resultado.elementos, {
+        fechaDesde: filtros.fechaDesde,
+        fechaHasta: filtros.fechaHasta,
+      })
+      setMensajeExportacion(`${resultado.total.toLocaleString('es-PE')} movimientos exportados en Excel.`)
+    } catch (error) {
+      setErrorExportacion(error instanceof Error ? error.message : 'No se pudo exportar el detalle de movimientos.')
+    } finally {
+      setExportando(false)
+    }
+  }
+
   return (
     <section aria-labelledby="reporte-movimientos-titulo" className="ledger-sheet">
-      <div className="grid gap-4 border-b px-5 py-5 sm:px-6 md:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_minmax(15rem,20rem)] xl:items-end">
+      <div className="grid gap-4 border-b px-5 py-5 sm:px-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,27rem)] xl:items-end">
         <div>
           <h2 id="reporte-movimientos-titulo" className="text-lg font-semibold">
             Resumen de movimientos de inventario
@@ -96,16 +134,28 @@ export function ReporteResumenMovimientos({
               : 'Agrupa el Kardex por producto, almacén y condición.'}
           </p>
         </div>
-        <label className="field-label">
-          Buscar
-          <input
-            type="search"
-            value={consulta.busqueda}
-            onChange={(evento) => cambiarFiltro({ busqueda: evento.target.value })}
-            className="field-control"
-            placeholder="Producto o almacén"
-          />
-        </label>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="field-label min-w-0 flex-1">
+            Buscar
+            <input
+              type="search"
+              value={consulta.busqueda}
+              onChange={(evento) => cambiarFiltro({ busqueda: evento.target.value })}
+              className="field-control"
+              placeholder="Producto o almacén"
+            />
+          </label>
+          {puedeExportar ? <Button
+            type="button"
+            variant="outline"
+            className="shrink-0 whitespace-nowrap"
+            disabled={!periodoCompleto || rangoInvalido || busqueda !== consulta.busqueda || exportando || reporte.isFetching || !reporte.data?.totalMovimientos}
+            onClick={() => void exportarTodosLosMovimientos()}
+          >
+            <Download aria-hidden="true" />
+            {exportando ? 'Preparando…' : 'Exportar detalle a Excel'}
+          </Button> : null}
+        </div>
         {!usarFiltrosCompartidos ? <>
           <label className="field-label">
             Desde
@@ -242,6 +292,8 @@ export function ReporteResumenMovimientos({
           </div>
         </EstadoListadoInventario>
       )}
+      {mensajeExportacion ? <p role="status" aria-live="polite" className="border-t px-5 py-3 text-sm text-primary sm:px-6">{mensajeExportacion}</p> : null}
+      {errorExportacion ? <p role="alert" className="border-t px-5 py-3 text-sm text-destructive sm:px-6">{errorExportacion}</p> : null}
     </section>
   )
 }
