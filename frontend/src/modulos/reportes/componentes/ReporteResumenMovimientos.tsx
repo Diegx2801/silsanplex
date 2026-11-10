@@ -135,7 +135,7 @@ export function ReporteResumenMovimientos({
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <label className="field-label min-w-0 flex-1">
+          <label className="field-label mb-0 min-w-0 flex-1">
             Buscar
             <input
               type="search"
@@ -148,7 +148,7 @@ export function ReporteResumenMovimientos({
           {puedeExportar ? <Button
             type="button"
             variant="outline"
-            className="shrink-0 whitespace-nowrap"
+            className="min-h-10 shrink-0 whitespace-nowrap"
             disabled={!periodoCompleto || rangoInvalido || busqueda !== consulta.busqueda || exportando || reporte.isFetching || !reporte.data?.totalMovimientos}
             onClick={() => void exportarTodosLosMovimientos()}
           >
