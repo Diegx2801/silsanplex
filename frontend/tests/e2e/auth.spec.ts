@@ -159,6 +159,30 @@ test.describe('sesión del administrador', () => {
 })
 
 test.describe('sesión sin administración', () => {
+  test('rechaza invitaciones por API antes de llamar a Auth Admin', async ({ page, request }) => {
+    await signIn(page, memberEmail, memberPassword)
+    const accessToken = await page.evaluate(() => {
+      const key = Object.keys(localStorage).find(
+        (name) => name.startsWith('sb-') && name.endsWith('-auth-token'),
+      )
+      const session = JSON.parse(localStorage.getItem(key ?? '') ?? 'null') as {
+        access_token?: string
+      } | null
+      if (!session?.access_token) throw new Error('Falta la sesión ficticia E2E.')
+      return session.access_token
+    })
+    const response = await request.post(`${supabaseUrl}/functions/v1/admin-users`, {
+      headers: { apikey: supabasePublishableKey, authorization: `Bearer ${accessToken}` },
+      data: {
+        action: 'create', email: 'blocked-invitation@example.invalid',
+        fullName: 'Blocked fictional invitation', phone: '',
+        isAdmin: false, permissionCodes: ['CUSTOMERS_VIEW'],
+      },
+    })
+    expect(response.status()).toBe(403)
+    expect(await response.json()).toMatchObject({ error: { code: 'ADMIN_ACCESS_REQUIRED' } })
+  })
+
   test('impide acceder al control de usuarios', async ({ page }) => {
     await signIn(page, memberEmail, memberPassword)
     await page.goto('/usuarios')
