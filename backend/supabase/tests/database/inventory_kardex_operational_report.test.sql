@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(24);
@@ -95,7 +96,7 @@ values
 set local session_replication_role = origin;
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e2a10000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('e2a10000-0000-4000-8000-000000000001')::text, true);
 
 select is(
   (public.inventory_kardex_report_read('e2a00000-0000-4000-8000-000000000001', 'e2a20000-0000-4000-8000-000000000001', '2026-09-01', '2026-09-04', 'e2a30000-0000-4000-8000-000000000001', 'LOTE-A', 25, 0, false) ->> 'total_count')::integer,
@@ -178,7 +179,7 @@ select throws_ok(
   'la exportación no permite descargar una página parcial'
 );
 
-select set_config('request.jwt.claim.sub', 'e2a10000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('e2a10000-0000-4000-8000-000000000002')::text, true);
 select throws_ok(
   $$select public.inventory_kardex_report_read('e2a00000-0000-4000-8000-000000000001', 'e2a20000-0000-4000-8000-000000000001', '2026-09-01', '2026-09-30', null, '', 10000, 0, true)$$,
   '42501', null,

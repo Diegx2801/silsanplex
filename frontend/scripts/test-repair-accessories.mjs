@@ -13,6 +13,10 @@ import { benchmarkTechnicalCompletion } from './lib/repair-technical-completion-
 import { benchmarkActualCost } from './lib/repair-actual-cost-benchmark.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+// Supabase publishes pg_prove to GHCR with the same OCI index digest as ECR's 3.36 image.
+// Pin the index and platform so test runners never resolve a mutable tag or contact ECR.
+const PG_PROVE_IMAGE = 'ghcr.io/supabase/pg_prove@sha256:eda7c5e68719e9c8287e78c017118407b48df904a51c935f5ab6098b8c0bc6bc'
+const PG_PROVE_PLATFORM = 'linux/amd64'
 const cli = path.join(root, 'backend/node_modules', process.platform === 'win32'
   ? '@supabase/cli-windows-x64/bin/supabase.exe' : `@supabase/cli-${process.platform}-${process.arch}/bin/supabase`)
 const tempParent = process.env.SILSAN_AUDIT_TEMP || path.join(os.tmpdir(), 'opencode')
@@ -33,7 +37,8 @@ const sqlOnly = process.argv.includes('--sql-only')
 const nonRepairableOnly = process.argv.includes('--non-repairable-only')
 const technicalCompletionOnly = process.argv.includes('--technical-completion-only')
 const actualCostOnly = process.argv.includes('--actual-cost-only')
-const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly || technicalCompletionOnly || actualCostOnly
+const sessionOnly = process.argv.includes('--audit-session-only')
+const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly || technicalCompletionOnly || actualCostOnly || sessionOnly
 const checksOnly = process.argv.includes('--checks-only')
 const workflowE2e = process.argv.includes('--workflow-e2e')
 const runLog = []
@@ -46,7 +51,7 @@ function runCaptured(executable, args, options = {}) {
   const redact = value => value.replace(/("(?:SECRET_KEY|JWT_SECRET|ANON_KEY|SERVICE_ROLE_KEY)"\s*:\s*")[^"]*"/g, '$1[REDACTED]"')
   if (options.log) fs.writeFileSync(path.join(evidence, options.log), redact(output))
   if (options.print !== false) process.stdout.write(output)
-  return { status: result.status, stdout, stderr, error: result.error }
+  return { status: result.status, stdout, stderr, error: result.error, signal: result.signal }
 }
 function run(executable, args, options = {}) {
   const result = runCaptured(executable, args, options)
@@ -143,7 +148,7 @@ try {
   started = true
   // E2E uses the real isolated admin-users Edge Function; no mocked grants.
   // Only named source folders are copied, never an application .env file.
-  run(cli, ['start', '-x', `realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,${sqlOnly ? 'edge-runtime,' : ''}logflare,vector,supavisor`],
+  run(cli, ['start', '-x', `realtime,imgproxy,mailpit,postgres-meta,studio,${sqlOnly ? 'edge-runtime,' : ''}logflare,vector,supavisor`],
     { cwd: backend, log: 'migrations-start.log', print: false })
   verify()
   if (upgrade) {
@@ -327,11 +332,56 @@ try {
     }, null, 2))
     assertSupabaseDbLintSucceeded(lintResult)
     sql('create extension if not exists pgtap with schema extensions;')
-    const tap = run('docker', ['run','--rm','--network',`supabase_network_${project}`,
-      '--mount',`type=bind,source=${path.join(backend,'supabase/tests/database')},target=/tests,readonly`,
-      '-e','PGPASSWORD=postgres','public.ecr.aws/supabase/pg_prove:3.36','pg_prove','--nocolor','--verbose',
-      '-h',`supabase_db_${project}`,'-U','postgres','-d','postgres',...tests.map(n => `/tests/${n}`)],
-    { log: 'sql-tests.log', print: false })
+    const runSqlTests = (names, log) => {
+      if (!names.length) return ''
+      const pull = runCaptured('docker', ['pull', `--platform=${PG_PROVE_PLATFORM}`, PG_PROVE_IMAGE],
+        { log: 'pg-prove-pull.log', print: false })
+      fs.writeFileSync(path.join(evidence, 'pg-prove-pull.json'), JSON.stringify({
+        image: PG_PROVE_IMAGE, platform: PG_PROVE_PLATFORM, status: pull.status,
+        signal: pull.signal ?? null, spawnError: pull.error?.message ?? null,
+      }, null, 2))
+      assert.equal(pull.status, 0,
+        `pg_prove image download failed before SQL tests; see pg-prove-pull.log (${pull.error?.message ?? `exit ${pull.status}`})`)
+
+      const inspect = runCaptured('docker', ['image', 'inspect', '--format', '{{.Os}}|{{.Architecture}}|{{json .RepoDigests}}', PG_PROVE_IMAGE],
+        { log: 'pg-prove-image-inspect.log', print: false })
+      fs.writeFileSync(path.join(evidence, 'pg-prove-image.json'), JSON.stringify({
+        image: PG_PROVE_IMAGE, platform: PG_PROVE_PLATFORM, status: inspect.status,
+        signal: inspect.signal ?? null, spawnError: inspect.error?.message ?? null,
+        inspection: inspect.stdout.trim(), stderr: inspect.stderr.trim(),
+      }, null, 2))
+      assert.equal(inspect.status, 0,
+        `pg_prove image inspection failed before SQL tests; see pg-prove-image-inspect.log (${inspect.error?.message ?? `exit ${inspect.status}`})`)
+      const [osName, architecture, repoDigestsRaw] = inspect.stdout.trim().split('|')
+      const repoDigests = JSON.parse(repoDigestsRaw)
+      assert.equal(`${osName}/${architecture}`, PG_PROVE_PLATFORM,
+        'Unexpected pg_prove platform; see pg-prove-image.json')
+      assert.ok(repoDigests.includes(PG_PROVE_IMAGE),
+        'Pulled pg_prove image does not report the pinned repository digest; see pg-prove-image.json')
+
+      const containerIdFile = path.join(evidence, 'pg-prove-container-id.txt')
+      const result = runCaptured('docker', ['run','--pull=never',`--platform=${PG_PROVE_PLATFORM}`,'--cidfile',containerIdFile,
+        '--rm','--network',`supabase_network_${project}`,
+        '--mount',`type=bind,source=${path.join(backend,'supabase/tests/database')},target=/tests,readonly`,
+        '-e','PGPASSWORD=postgres',PG_PROVE_IMAGE,'pg_prove','--nocolor','--verbose',
+        '-h',`supabase_db_${project}`,'-U','postgres','-d','postgres',...names.map(n => `/tests/${n}`)],
+        { log, print: false })
+      const containerId = fs.existsSync(containerIdFile) ? fs.readFileSync(containerIdFile, 'utf8').trim() : null
+      const tapFailure = /(?:^|\n)not ok\s+\d|Result:\s*FAIL|Dubious, test returned|Looks like you failed/m.test(result.stdout + result.stderr)
+      const failureStage = result.status === 0 ? 'success'
+        : result.error || result.status === null || [125,126,127].includes(result.status) ? 'container-execution-failed'
+          : tapFailure ? 'sql-assertion-failed' : 'pg_prove-or-database-execution-failed'
+      fs.writeFileSync(path.join(evidence, 'pg-prove-run.json'), JSON.stringify({
+        image: PG_PROVE_IMAGE, platform: PG_PROVE_PLATFORM, suiteCount: names.length,
+        status: result.status, signal: result.signal ?? null, spawnError: result.error?.message ?? null,
+        containerId, containerCreated: Boolean(containerId), failureStage, tapFailure,
+      }, null, 2))
+      assert.equal(result.status, 0,
+        `pg_prove container failed at ${failureStage}; see ${log} and pg-prove-run.json (${result.error?.message ?? `exit ${result.status}`})`)
+      return result.stdout + result.stderr
+    }
+    const tap = runSqlTests(tests, 'sql-tests.log')
+    fs.writeFileSync(path.join(evidence, 'sql-tests.log'), tap)
     const suites = []
     let active
     for (const line of tap.split('\n')) {
@@ -429,27 +479,27 @@ try {
     } else {
       playwrightCommand.push('tests/e2e/repairs.spec.ts')
     }
-    if (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath, playwrightCommand,
+    if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath, playwrightCommand,
       { cwd: frontend, env, log: 'e2e.log' })
     // Both modes keep SILSAN exclusive until the strict operational preflight
     // has finished; only the accessory suite needs a second organization.
     await createForeignTenant()
-    if (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-accessories.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-accessories-results.json')},log:'e2e-accessory-multitenant.log'})
-    if (!technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!sessionOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-non-repairable.spec.ts'],
      {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-non-repairable-results.json')},log:'e2e-non-repairable.log'})
-    if (!nonRepairableOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!sessionOnly && !nonRepairableOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-technical-completion.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-technical-completion-results.json')},log:'e2e-technical-completion.log'})
-    if (!nonRepairableOnly && !technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-actual-cost.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-actual-cost-results.json')},log:'e2e-actual-cost.log'})
-    if (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (sessionOnly || (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly)) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/audit-session.spec.ts'],
-    {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-audit-session-results.json')},log:'e2e-audit-session.log'})
-    runLog.push({ e2e: 'passed', suite: actualCostOnly ? 'actual-cost only' : technicalCompletionOnly ? 'technical-completion only' : nonRepairableOnly ? 'non-repairable only'
+    {cwd:frontend,env:{...env,E2E_SERVICE_ROLE_KEY:status.SERVICE_ROLE_KEY,E2E_RESULTS_FILE:path.join(evidence,'e2e-audit-session-results.json')},log:'e2e-audit-session.log'})
+    runLog.push({ e2e: 'passed', suite: sessionOnly ? 'audit-session only' : actualCostOnly ? 'actual-cost only' : technicalCompletionOnly ? 'technical-completion only' : nonRepairableOnly ? 'non-repairable only'
       : workflowE2e ? 'all workflow E2E, accessories, R28, R13 and R14' : 'repairs, accessories, R28, R13 and R14', api, web: ports.web })
   }
   }

@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(32);
@@ -117,7 +118,7 @@ values
   ('a1460000-0000-4000-8000-000000000002', 'a1400000-0000-4000-8000-000000000001', 'a1440000-0000-4000-8000-000000000001', 'a1420000-0000-4000-8000-000000000003', 'a1430000-0000-4000-8000-000000000003', 'available', 'L-RESERVED', '2030-01-01', 5, 0, 'active', 'a14-test', 'a1470000-0000-4000-8000-000000000002', 'a1410000-0000-4000-8000-000000000001', 'a1410000-0000-4000-8000-000000000001');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a1410000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('a1410000-0000-4000-8000-000000000001')::text, true);
 
 select is(
   jsonb_array_length((public.inventory_adjustment_warehouses_read('a1400000-0000-4000-8000-000000000001', 'a1440000-0000-4000-8000-000000000001')->'items')),

@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(62);
@@ -116,7 +117,7 @@ insert into public.distribution_deliveries (id, organization_id, order_id, order
 values ('d4150000-0000-4000-8000-000000000001', 'd4a00000-0000-4000-8000-000000000001', 'd4f00000-0000-4000-8000-000000000001', 'PED-000001', 'Cliente autorización', current_date, current_date, 'G-AUTH-001', 'interno', 'en_curso', '', '[{"productoId":"d4d00000-0000-4000-8000-000000000001"}]'::jsonb);
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd4b00000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('d4b00000-0000-4000-8000-000000000001')::text, true);
 select is((select count(*) from public.orders), 1::bigint, 'SALES_VIEW consulta pedidos de su organización');
 select is((select count(*) from public.sales), 1::bigint, 'SALES_VIEW consulta ventas de su organización');
 select throws_ok($$select public.create_order('{"organization_id":"d4a00000-0000-4000-8000-000000000001"}'::jsonb)$$, '42501', 'ORDER_FORBIDDEN', 'SALES_VIEW no crea pedidos');
@@ -133,7 +134,7 @@ reset role;
 -- LOGISTICA se comprueba como usuario de solo consulta de distribución.
 delete from public.role_permissions where role_code = 'LOGISTICA' and permission_code = 'DISTRIBUTION_MANAGE';
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd4b00000-0000-4000-8000-000000000003', true);
+select pg_temp.s01_set_authenticated_actor(('d4b00000-0000-4000-8000-000000000003')::text, true);
 select is((select count(*) from public.orders), 1::bigint, 'DISTRIBUTION_VIEW consulta pedidos dependientes');
 select is((select count(*) from public.sales), 1::bigint, 'DISTRIBUTION_VIEW consulta ventas dependientes');
 select is((select count(*) from public.distribution_deliveries), 1::bigint, 'DISTRIBUTION_VIEW consulta entregas');
@@ -142,13 +143,13 @@ select throws_ok($$select public.dispatch_order_from_reservations('{"organizatio
 reset role;
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd4b00000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('d4b00000-0000-4000-8000-000000000002')::text, true);
 select is(public.has_organization_permission('d4a00000-0000-4000-8000-000000000002', 'SALES_MANAGE'), true, 'SALES_MANAGE permite operar su organización');
 select throws_ok($$select public.create_order('{"organization_id":"d4a00000-0000-4000-8000-000000000002","operation_key":"d4160000-0000-4000-8000-000000000001","items":[]}'::jsonb)$$, '22023', 'ORDER_ITEMS_REQUIRED', 'SALES_MANAGE supera el guard de autorización');
 reset role;
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd4b00000-0000-4000-8000-000000000004', true);
+select pg_temp.s01_set_authenticated_actor(('d4b00000-0000-4000-8000-000000000004')::text, true);
 select is((select count(*) from public.orders), 0::bigint, 'un usuario sin SALES_VIEW no consulta pedidos');
 select is((select count(*) from public.distribution_deliveries), 0::bigint, 'un usuario sin DISTRIBUTION_VIEW no consulta entregas');
 select throws_ok($$select public.create_order('{"organization_id":"d4a00000-0000-4000-8000-000000000001"}'::jsonb)$$, '42501', 'ORDER_FORBIDDEN', 'un usuario sin SALES_MANAGE no crea pedidos');

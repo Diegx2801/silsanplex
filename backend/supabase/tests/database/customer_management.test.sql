@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(40);
@@ -132,7 +133,7 @@ from public.organizations
 where slug = 'drogueria-silsan';
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c1111111-1111-4111-8111-111111111111', true);
+select pg_temp.s01_set_authenticated_actor(('c1111111-1111-4111-8111-111111111111')::text, true);
 
 select lives_ok(
   $$ select public.save_customer(
@@ -271,7 +272,7 @@ select is(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c1111111-1111-4111-8111-111111111111', true);
+select pg_temp.s01_set_authenticated_actor(('c1111111-1111-4111-8111-111111111111')::text, true);
 
 select throws_ok(
   $$ select public.save_customer(

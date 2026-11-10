@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 -- Fixture and worker current_date values represent the Peru business date.
 set timezone = 'America/Lima';
 
@@ -42,6 +43,7 @@ insert into public.organizations (id, name, slug)
 values ('d2c30000-0000-4000-8000-000000000001', 'Outcome concurrency test', 'outcome-concurrency-test');
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values ('e2c30000-0000-4000-8000-000000000001', 'outcome-concurrency@test.local', '{"full_name":"Outcome concurrency test"}', now(), now());
+select pg_temp.s01_seed_auth_session('e2c30000-0000-4000-8000-000000000001');
 insert into public.organization_memberships (organization_id, user_id)
 values ('d2c30000-0000-4000-8000-000000000001', 'e2c30000-0000-4000-8000-000000000001');
 insert into public.user_roles (organization_id, user_id, role_code)
@@ -115,7 +117,9 @@ declare
   result_state text;
   result_message text;
 begin
-  perform pg_catalog.set_config('request.jwt.claim.sub', 'e2c30000-0000-4000-8000-000000000001', false);
+  perform pg_catalog.set_config('request.jwt.claim.sub', 'e2c30000-0000-4000-8000-000000000001', true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config('request.jwt.claims', '{"sub":"e2c30000-0000-4000-8000-000000000001","role":"authenticated","session_id":"e2c30000-0000-4000-8000-000000000001"}', true);
   result_id := public.record_distribution_delivery_outcome(payload);
   return 'ok:' || result_id::text;
 exception when others then

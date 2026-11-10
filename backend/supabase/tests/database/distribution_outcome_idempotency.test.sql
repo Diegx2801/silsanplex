@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 -- These fixtures use current_date as the business date. Keep the test session
@@ -101,7 +102,7 @@ insert into public.distribution_delivery_items (
   ('d2c20000-0000-4000-8000-000000000002', 'f2c20000-0000-4000-8000-000000000003', 'a2c20000-0000-4000-8000-000000000013', 'a2c20000-0000-4000-8000-000000000104', 6);
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e2c20000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('e2c20000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.record_distribution_delivery_outcome(jsonb_build_object(
@@ -225,7 +226,7 @@ select is((select count(*) from public.distribution_delivery_outcomes where orga
 select is((select lock_version from public.distribution_deliveries where id = 'f2c20000-0000-4000-8000-000000000002'), 2::bigint, 'the category conflict does not advance its delivery version');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e2c20000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('e2c20000-0000-4000-8000-000000000002')::text, true);
 select public.record_distribution_delivery_outcome(jsonb_build_object(
   'organizationId', 'd2c20000-0000-4000-8000-000000000002', 'entregaId', 'f2c20000-0000-4000-8000-000000000003',
   'expectedLockVersion', 1, 'operationKey', 'd2c2a000-0000-4000-8000-000000000001',
@@ -253,7 +254,7 @@ $$;
 create trigger outcome_idempotency_test_unrelated_unique
 before insert on public.distribution_delivery_outcomes
 for each row execute function outcome_idempotency_test.raise_unrelated_unique_violation();
-select set_config('request.jwt.claim.sub', 'e2c20000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('e2c20000-0000-4000-8000-000000000001')::text, true);
 set local role authenticated;
 select throws_ok($$
   select public.record_distribution_delivery_outcome(jsonb_build_object(
@@ -271,7 +272,7 @@ select is((select count(*) from public.distribution_delivery_outcomes where orga
 select is((select count(*) from public.audit_events where action = 'DISTRIBUTION_OUTCOME_RECORDED' and entity_id = 'f2c20000-0000-4000-8000-000000000001'), 1::bigint, 'an unrelated uniqueness failure leaves audit unchanged');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e2c20000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('e2c20000-0000-4000-8000-000000000001')::text, true);
 select is(public.record_distribution_delivery_outcome(jsonb_build_object(
   'organizationId', 'd2c20000-0000-4000-8000-000000000001', 'entregaId', 'f2c20000-0000-4000-8000-000000000001',
   'expectedLockVersion', 1, 'operationKey', 'd2c2a000-0000-4000-8000-000000000001',

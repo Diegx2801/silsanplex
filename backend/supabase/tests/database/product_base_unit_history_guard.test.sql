@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(39);
@@ -133,7 +134,7 @@ select ok(pg_get_functiondef('inventory_internal.product_has_base_unit_dependenc
   'dependency helper has empty search_path');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'ba120000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('ba120000-0000-4000-8000-000000000001')::text, true);
 select is(public.product_base_unit_editable('ba110000-0000-4000-8000-000000000001', 'ba130000-0000-4000-8000-000000000004'),
   true, 'manager sees unused base unit as editable');
 select is(public.product_base_unit_editable('ba110000-0000-4000-8000-000000000001', 'ba130000-0000-4000-8000-000000000002'),
@@ -156,7 +157,7 @@ select throws_ok($$select public.product_base_unit_editable('ba110000-0000-4000-
   '42501', 'PRODUCT_PERMISSION_REQUIRED', 'manager cannot query an organization without permission');
 select throws_ok($$select public.product_base_unit_editable('ba110000-0000-4000-8000-000000000001', 'ba130000-0000-4000-8000-999999999999')$$,
   'P0002', 'PRODUCT_NOT_FOUND', 'missing product has an explicit error');
-select set_config('request.jwt.claim.sub', 'ba120000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('ba120000-0000-4000-8000-000000000002')::text, true);
 select throws_ok($$select public.product_base_unit_editable('ba110000-0000-4000-8000-000000000001', 'ba130000-0000-4000-8000-000000000001')$$,
   '42501', 'PRODUCT_PERMISSION_REQUIRED', 'PRODUCTS_VIEW without PRODUCTS_MANAGE cannot query editability');
 reset role;

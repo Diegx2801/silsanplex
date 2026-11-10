@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 create temporary table service_only_concurrency_extension_state (was_installed boolean not null);
 insert into service_only_concurrency_extension_state
 select exists (select 1 from pg_catalog.pg_extension where extname = 'dblink');
@@ -53,7 +54,8 @@ insert into public.warehouse_locations (id, organization_id, warehouse_id, code,
   ('d5a00000-0000-4000-8000-000000000001', 'd5b00000-0000-4000-8000-000000000001', 'd5f00000-0000-4000-8000-000000000001', 'G', 'General concurrente', 'd5c00000-0000-4000-8000-000000000001', 'd5c00000-0000-4000-8000-000000000001');
 update public.products set product_type='service' where id='d5e00000-0000-4000-8000-000000000001';
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"d5c00000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"d5c00000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
+select pg_temp.s01_seed_auth_session('d5c00000-0000-4000-8000-000000000002');
 select public.create_order(jsonb_build_object(
   'organization_id','d5b00000-0000-4000-8000-000000000001', 'operation_key','d5100000-0000-4000-8000-000000000001',
   'customer_id','d5d00000-0000-4000-8000-000000000001', 'warehouse_id','d5f00000-0000-4000-8000-000000000001',
@@ -80,7 +82,8 @@ returns text language plpgsql security definer set search_path = '' as $$
 declare result_payload jsonb;
 begin
   perform pg_catalog.set_config('request.jwt.claim.sub', user_id::text, true);
-  perform pg_catalog.set_config('request.jwt.claims', pg_catalog.format('{"sub":"%s","role":"authenticated"}', user_id), true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config('request.jwt.claims', pg_catalog.jsonb_build_object('sub', user_id::text, 'role', 'authenticated', 'session_id', user_id::text)::text, true);
   perform pg_catalog.pg_advisory_xact_lock_shared(gate);
   begin
     result_payload := public.complete_order_services(jsonb_build_object(

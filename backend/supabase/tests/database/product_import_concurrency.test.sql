@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 create temporary table c2_import_extension_state (was_installed boolean not null);
 insert into c2_import_extension_state
 select exists (select 1 from pg_catalog.pg_extension where extname = 'dblink');
@@ -13,6 +14,8 @@ insert into public.organizations (id, name, slug) values
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at) values
   ('c2400000-0000-4000-8000-000000000001', 'c2.concurrency.one@test.local', '{}', now(), now()),
   ('c2400000-0000-4000-8000-000000000002', 'c2.concurrency.two@test.local', '{}', now(), now());
+select pg_temp.s01_seed_auth_session('c2400000-0000-4000-8000-000000000001');
+select pg_temp.s01_seed_auth_session('c2400000-0000-4000-8000-000000000002');
 insert into public.organization_memberships (organization_id, user_id) values
   ('c2300000-0000-4000-8000-000000000001', 'c2400000-0000-4000-8000-000000000001'),
   ('c2300000-0000-4000-8000-000000000002', 'c2400000-0000-4000-8000-000000000002');
@@ -39,11 +42,14 @@ declare
     else 'c2400000-0000-4000-8000-000000000002'::uuid
   end;
 begin
-  perform set_config(
+  perform pg_catalog.set_config('request.jwt.claim.sub', actor_id::text, true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config(
     'request.jwt.claims',
-    jsonb_build_object(
+    pg_catalog.jsonb_build_object(
       'sub', actor_id,
-      'role', 'authenticated'
+      'role', 'authenticated',
+      'session_id', actor_id::text
     )::text,
     true
   );

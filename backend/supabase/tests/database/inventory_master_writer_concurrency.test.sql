@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 create temporary table d1b1_extension_state (was_installed boolean not null);
 insert into d1b1_extension_state
 select exists (select 1 from pg_catalog.pg_extension where extname = 'dblink');
@@ -38,6 +39,7 @@ insert into public.organizations (id, name, slug)
 values ('d1100000-0000-4000-8000-000000000001', 'D1B1 concurrencia', 'd1b1-concurrencia');
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values ('d1200000-0000-4000-8000-000000000001', 'd1b1@test.local', '{"full_name":"D1B1"}', now(), now());
+select pg_temp.s01_seed_auth_session('d1200000-0000-4000-8000-000000000001');
 insert into public.organization_memberships (organization_id, user_id)
 values ('d1100000-0000-4000-8000-000000000001', 'd1200000-0000-4000-8000-000000000001');
 insert into public.user_roles (organization_id, user_id, role_code)
@@ -75,7 +77,8 @@ create function d1b1_concurrency_test.set_actor()
 returns void language plpgsql security definer set search_path = '' as $$
 begin
   perform pg_catalog.set_config('request.jwt.claim.sub', 'd1200000-0000-4000-8000-000000000001', true);
-  perform pg_catalog.set_config('request.jwt.claims', '{"sub":"d1200000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config('request.jwt.claims', '{"sub":"d1200000-0000-4000-8000-000000000001","role":"authenticated","session_id":"d1200000-0000-4000-8000-000000000001"}', true);
 end;
 $$;
 

@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select no_plan();
@@ -58,7 +59,7 @@ insert into public.products (
   ('a3b70000-0000-4000-8000-000000000006', 'a3b10000-0000-4000-8000-000000000002', 'P1B3-OTRA', 'Producto de otra organización', 'UND', 'good', 'gravado', false, false, 'a3b20000-0000-4000-8000-000000000001', 'a3b20000-0000-4000-8000-000000000001');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a3b20000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('a3b20000-0000-4000-8000-000000000001')::text, true);
 select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','a3b10000-0000-4000-8000-000000000001',
   'product_id','a3b70000-0000-4000-8000-000000000001',
