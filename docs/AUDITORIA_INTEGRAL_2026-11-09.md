@@ -18,6 +18,12 @@ Esta es una auditoría transversal con cobertura explícita, no una certificaci�
 exhaustiva de cada archivo ni de la configuración hospedada. Los dos proyectos
 del conector Supabase disponible pertenecen a otras aplicaciones; no se accedió
 a sus tablas. No se pudo contrastar el esquema de un despliegue SILSANPLEX real.
+Sí se consultó de forma estrictamente de solo lectura el catálogo de los dos
+stacks locales existentes: `backend` tiene **148 migraciones** (última
+`20261021120000`, 67 tablas públicas) y `silsanplexp2c2` **150 migraciones**
+(última `20261023135019`, 73 tablas públicas). Ninguno tiene tablas públicas sin
+RLS, pero ambos están detrás de las **180 migraciones** del código. No se les
+aplicaron migraciones ni fixtures: esos entornos no equivalen al main validado.
 
 ## Estado inicial y preservación
 
@@ -119,6 +125,7 @@ requieren implementación/contrato externo y pruebas sandbox del proveedor elegi
 | Q01 | Baja | Pruebas aprobadas emiten `Query data cannot be undefined` por mocks incompletos de compras/fiscal | Pendiente mejorar fixtures; no se demostró fallo equivalente en servicio real |
 | F01 | Alta para objetivo de producto | Facturación no implementa emisión fiscal real | Bloqueo de despliegue como facturador; mantener sandbox explícito |
 | F02 | Alta para objetivo de producto | Falta caja/tesorería/conciliación | Bloqueo para operación financiera integral; no inventar reglas de negocio |
+| E01 | Alta para ejecución local actual | Stacks existentes con 148/150 migraciones frente a 180 del código | Bloqueado: preparar backup y validar actualización sobre una copia; no se modificaron los stacks existentes |
 
 No se confirmó una vulnerabilidad crítica de aplicación ni pérdida de datos.
 La severidad de npm corresponde a dependencias; no es prueba de que esos vectores
@@ -219,7 +226,9 @@ nuevos. La rama de consolidación debe completar CI propio antes del merge.
 4. Elegir PSE/contrato y diseñar XML/firma, CDR, reintentos/recuperación, correlativos,
    bajas/notas y contingencias. Toda primera validación debe ser sandbox del proveedor.
 5. Comparar migraciones/RLS realmente desplegadas y probar backup/restauración en
-   aislamiento; revisar índices con consultas y cardinalidades representativas.
+   aislamiento; los stacks locales inspeccionados necesitan 32/30 migraciones
+   adicionales antes de equivaler al main actual. Revisar índices con consultas
+   y cardinalidades representativas.
 6. Resolver deuda de rendimiento medida, avisos dev y mocks ruidosos mediante PR
    pequeños, manteniendo la suite transversal como requisito.
 
