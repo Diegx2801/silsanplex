@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(31);
@@ -63,7 +64,7 @@ insert into public.warehouse_locations (id, organization_id, warehouse_id, code,
   ('b2a00000-0000-4000-8000-000000000003', 'b2b00000-0000-4000-8000-000000000001', 'b2f00000-0000-4000-8000-000000000002', 'A-01', 'Ubicacion A dos', 'b2c00000-0000-4000-8000-000000000001', 'b2c00000-0000-4000-8000-000000000001');
 
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"b2c00000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"b2c00000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 
 select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','b2b00000-0000-4000-8000-000000000001', 'product_id','b2e00000-0000-4000-8000-000000000001',

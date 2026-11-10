@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(60);
@@ -77,7 +78,7 @@ insert into public.warehouse_locations (
   );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('a2000000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
@@ -144,7 +145,7 @@ insert into public.inventory_reservations (
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('a2000000-0000-4000-8000-000000000001')::text, true);
 
 select results_eq(
   $$select lot, expiration_date, assignable_quantity, fefo_rank
@@ -423,7 +424,7 @@ select is(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('a2000000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.record_inventory_movement('{"organization_id":"a1000000-0000-4000-8000-000000000001",

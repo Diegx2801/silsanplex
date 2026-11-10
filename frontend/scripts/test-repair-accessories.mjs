@@ -328,52 +328,12 @@ try {
     }, null, 2))
     assertSupabaseDbLintSucceeded(lintResult)
     sql('create extension if not exists pgtap with schema extensions;')
-    const focusedSessionTests = tests.filter(name => {
-      const source = fs.readFileSync(path.join(backend, 'supabase/tests/database', name), 'utf8')
-      const executableSource = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\r\n]*/g, '')
-      return name === 'current_auth_session.test.sql'
-        || /current_auth_session_is_active|delete\s+from\s+auth\.sessions|AUTH_SESSION_INACTIVE|inactive session|unknown session|missing session claim/i.test(source)
-        || /set\s+(?:local\s+)?role\s+service_role/i.test(executableSource)
-    })
-    const regularTests = tests.filter(name => !focusedSessionTests.includes(name))
     const runSqlTests = (names, log) => names.length ? run('docker', ['run','--rm','--network',`supabase_network_${project}`,
        '--mount',`type=bind,source=${path.join(backend,'supabase/tests/database')},target=/tests,readonly`,
        '-e','PGPASSWORD=postgres','public.ecr.aws/supabase/pg_prove:3.36','pg_prove','--nocolor','--verbose',
        '-h',`supabase_db_${project}`,'-U','postgres','-d','postgres',...names.map(n => `/tests/${n}`)],
       { log, print: false }) : ''
-    // Older business suites model authenticated actors without creating Auth
-    // sessions. Treat a seeded user fixture as active only while those suites
-    // run; keep every session-focused suite on the unmodified helper.
-    const focusedTap = runSqlTests(focusedSessionTests, 'sql-tests-session-focused.log')
-    const originalSessionHelper = sql("select pg_catalog.pg_get_functiondef('public.current_auth_session_is_active()'::pg_catalog.regprocedure)")
-    let sessionFixtureInstalled = false
-    let regularTap = ''
-    try {
-      sql(`create or replace function public.current_auth_session_is_active()
-              returns boolean language sql stable security definer set search_path = '' as $fixture$
-            select case
-              when (select auth.uid()) is not null
-                and exists (select 1 from auth.users where id = (select auth.uid()))
-                and coalesce(
-                  nullif((select auth.jwt()->>'role'),''),
-                  nullif(current_setting('request.jwt.claim.role',true),''),
-                  nullif(nullif(current_setting('role',true),''),'none'),
-                  'authenticated'
-                ) not in ('anon','service_role')
-              then true
-              else exists (select 1 from auth.sessions session
-                where session.id = nullif((select auth.jwt()->>'session_id'), '')::uuid
-                  and session.user_id = (select auth.uid()))
-            end;
-            $fixture$;`)
-      sessionFixtureInstalled = true
-      regularTap = runSqlTests(regularTests, 'sql-tests-application.log')
-    } finally {
-      if (sessionFixtureInstalled) {
-        sql(`${originalSessionHelper};`)
-      }
-    }
-    const tap = [focusedTap, regularTap].filter(Boolean).join('\n')
+    const tap = runSqlTests(tests, 'sql-tests.log')
     fs.writeFileSync(path.join(evidence, 'sql-tests.log'), tap)
     const suites = []
     let active

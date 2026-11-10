@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 select exists (
   select 1 from pg_catalog.pg_extension where extname = 'dblink'
 ) as was_installed
@@ -12,6 +13,7 @@ insert into public.organizations (id, name, slug)
 values ('d7100000-0000-4000-8000-000000000001', 'Minimo concurrente', 'minimo-concurrente');
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values ('d7200000-0000-4000-8000-000000000001', 'minimo.concurrente@test.local', '{"full_name":"Minimo concurrente"}', now(), now());
+select pg_temp.s01_seed_auth_session('d7200000-0000-4000-8000-000000000001');
 insert into public.organization_memberships (organization_id, user_id)
 values ('d7100000-0000-4000-8000-000000000001', 'd7200000-0000-4000-8000-000000000001');
 insert into public.user_roles (organization_id, user_id, role_code)
@@ -57,7 +59,8 @@ declare
   created_order_id uuid;
 begin
   perform pg_catalog.set_config('request.jwt.claim.sub', 'd7200000-0000-4000-8000-000000000001', true);
-  perform pg_catalog.set_config('request.jwt.claims', '{"sub":"d7200000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config('request.jwt.claims', '{"sub":"d7200000-0000-4000-8000-000000000001","role":"authenticated","session_id":"d7200000-0000-4000-8000-000000000001"}', true);
   created_order_id := public.create_order(jsonb_build_object(
     'organization_id', 'd7100000-0000-4000-8000-000000000001',
     'operation_key', requested_operation_key,

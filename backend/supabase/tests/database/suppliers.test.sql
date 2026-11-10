@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(38);
@@ -155,11 +156,7 @@ values
   ('a2222222-2222-4222-8222-222222222222', 'b4444444-4444-4444-8444-444444444444', 'COMPRAS');
 
 set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub',
-  'b1111111-1111-4111-8111-111111111111',
-  true
-);
+select pg_temp.s01_set_authenticated_actor(('b1111111-1111-4111-8111-111111111111')::text, true);
 
 select ok(
   public.has_organization_permission(
@@ -254,11 +251,7 @@ reset role;
 
 -- GERENCIA puede leer, pero no escribir.
 set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub',
-  'b2222222-2222-4222-8222-222222222222',
-  true
-);
+select pg_temp.s01_set_authenticated_actor(('b2222222-2222-4222-8222-222222222222')::text, true);
 
 select ok(
   public.has_organization_permission(
@@ -299,11 +292,7 @@ reset role;
 
 -- VENTAS no recibe ninguna capacidad del módulo.
 set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub',
-  'b3333333-3333-4333-8333-333333333333',
-  true
-);
+select pg_temp.s01_set_authenticated_actor(('b3333333-3333-4333-8333-333333333333')::text, true);
 select is(
   (select count(*) from public.suppliers),
   0::bigint,
@@ -313,11 +302,7 @@ reset role;
 
 -- La segunda organización puede reutilizar el mismo documento sin colisión.
 set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub',
-  'b4444444-4444-4444-8444-444444444444',
-  true
-);
+select pg_temp.s01_set_authenticated_actor(('b4444444-4444-4444-8444-444444444444')::text, true);
 select lives_ok(
   $$
     insert into public.suppliers (

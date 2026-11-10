@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select no_plan();
@@ -79,7 +80,7 @@ as $$
 $$;
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c1200000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c1200000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.save_product_catalog(
@@ -138,7 +139,7 @@ select throws_ok($$
 $$, '23514', null, 'constraint rechaza escritura privilegiada service serial true');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c1200000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c1200000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.save_product_catalog(
@@ -213,7 +214,7 @@ insert into public.products (
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c1200000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c1200000-0000-4000-8000-000000000001')::text, true);
 select throws_ok($$
   select public.save_product_catalog(
     'c1100000-0000-4000-8000-000000000001',
@@ -222,7 +223,7 @@ select throws_ok($$
   )
 $$, 'P0002', 'PRODUCT_NOT_FOUND', 'RPC mantiene aislamiento multi-organizacion');
 
-select set_config('request.jwt.claim.sub', 'c1200000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('c1200000-0000-4000-8000-000000000002')::text, true);
 select throws_ok($$
   select public.save_product_catalog(
     'c1100000-0000-4000-8000-000000000001', null,
@@ -236,7 +237,7 @@ select ok(not has_function_privilege('anon', 'public.import_products(uuid,jsonb)
 select ok(not has_function_privilege('anon', 'public.import_products_partial(uuid,jsonb)', 'EXECUTE'), 'anon no ejecuta import_products_partial');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c1200000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c1200000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.import_products(

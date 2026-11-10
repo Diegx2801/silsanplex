@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(68);
@@ -128,7 +129,7 @@ select is(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd1a10000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('d1a10000-0000-4000-8000-000000000001')::text, true);
 
 select is(
   public.has_organization_permission('d1a00000-0000-4000-8000-000000000001', 'INVENTORY_VIEW'),
@@ -222,7 +223,7 @@ values
   ('d1a00000-0000-4000-8000-000000000001', 'd1a40000-0000-4000-8000-000000000005', 'd1a20000-0000-4000-8000-000000000001', 'd1a30000-0000-4000-8000-000000000001', 100, 'd1a10000-0000-4000-8000-000000000001');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd1a10000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('d1a10000-0000-4000-8000-000000000001')::text, true);
 
 select is(
   (select count(*) from public.inventory_bucket_balances),
@@ -468,7 +469,7 @@ set product_type = 'service'
 where id = 'd1a40000-0000-4000-8000-000000000007';
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd1a10000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('d1a10000-0000-4000-8000-000000000001')::text, true);
 select is(
   (select count(*) from public.inventory_kardex where product_id = 'd1a40000-0000-4000-8000-000000000007'),
   2::bigint,

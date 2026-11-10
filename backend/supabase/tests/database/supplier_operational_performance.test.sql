@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(26);
@@ -249,7 +250,7 @@ insert into public.supplier_returns (
   ('e4aa0000-0000-4000-8000-000000000003', 'e4a00000-0000-4000-8000-000000000002', 'e4a20000-0000-4000-8000-000000000003', 'e4a60000-0000-4000-8000-000000000201', 'e4a70000-0000-4000-8000-000000000201', 'e4a90000-0000-4000-8000-000000000009', 'e4a30000-0000-4000-8000-000000000005', 1, 'Devuelta cancelada', 'cancelled', '2026-09-04', null, 'E4A Compras');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4a10000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('e4a10000-0000-4000-8000-000000000001')::text, true);
 
 select results_eq(
   $$select total_orders, total_order_lines, received_orders,
@@ -356,7 +357,7 @@ select throws_ok(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4a10000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('e4a10000-0000-4000-8000-000000000002')::text, true);
 select throws_ok(
   $$select public.get_supplier_operational_performance_summary(
     'e4a00000-0000-4000-8000-000000000001',
@@ -373,7 +374,7 @@ select is(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4a10000-0000-4000-8000-000000000003', true);
+select pg_temp.s01_set_authenticated_actor(('e4a10000-0000-4000-8000-000000000003')::text, true);
 select throws_ok(
   $$select public.get_supplier_operational_performance_summary(
     'e4a00000-0000-4000-8000-000000000001', null, null, null

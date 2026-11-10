@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(61);
@@ -177,7 +178,7 @@ values
   );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c4c10000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c4c10000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok(
   $$
@@ -361,7 +362,7 @@ select is(
   'la inspeccion completada queda auditada por separado'
 );
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c4c10000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c4c10000-0000-4000-8000-000000000001')::text, true);
 select is(
   (select status from public.purchase_orders where document_number = '001'),
   'partially_received',
@@ -400,7 +401,7 @@ select throws_ok(
   'una inspeccion completada no se edita libremente'
 );
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c4c10000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c4c10000-0000-4000-8000-000000000001')::text, true);
 
 select is(
   public.receive_purchase_order_partial_inspected(jsonb_build_object(
@@ -493,7 +494,7 @@ select is(
   'la correccion queda auditada'
 );
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c4c10000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c4c10000-0000-4000-8000-000000000001')::text, true);
 select is(
   (select sum(quantity) from public.inventory_movements where source_id = (select id from public.purchase_receipt_items where purchase_order_item_id = (select id from public.purchase_order_items where purchase_order_id = (select id from public.purchase_orders where document_number = '001'))) and source_type = 'purchase-receipt'),
   7.000::numeric,
@@ -768,7 +769,7 @@ select is(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c4c10000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('c4c10000-0000-4000-8000-000000000002')::text, true);
 select is(
   (select count(*) from public.purchase_receipt_inspection_details where organization_id = 'c4c00000-0000-4000-8000-000000000001'),
   0::bigint,
@@ -789,7 +790,7 @@ select throws_ok(
   'otra organizacion no puede ejecutar la recepcion'
 );
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c4c10000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('c4c10000-0000-4000-8000-000000000002')::text, true);
 
 select * from finish();
 rollback;

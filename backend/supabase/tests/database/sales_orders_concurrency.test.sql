@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 create temporary table sales_orders_concurrency_extension_state (
   was_installed boolean not null
 );
@@ -126,11 +127,7 @@ values (
 );
 
 set local role authenticated;
-select set_config(
-  'request.jwt.claims',
-  '{"sub":"ca200000-0000-4000-8000-000000000001","role":"authenticated"}',
-  true
-);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"ca200000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','ca100000-0000-4000-8000-000000000001',
   'product_id','ca400000-0000-4000-8000-000000000001',
@@ -152,16 +149,9 @@ security definer
 set search_path = ''
 as $$
 begin
-  perform pg_catalog.set_config(
-    'request.jwt.claim.sub',
-    'ca200000-0000-4000-8000-000000000001',
-    true
-  );
-  perform pg_catalog.set_config(
-    'request.jwt.claims',
-    '{"sub":"ca200000-0000-4000-8000-000000000001","role":"authenticated"}',
-    true
-  );
+  perform pg_catalog.set_config('request.jwt.claim.sub', 'ca200000-0000-4000-8000-000000000001', true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config('request.jwt.claims', pg_catalog.jsonb_build_object('sub', 'ca200000-0000-4000-8000-000000000001', 'role', 'authenticated', 'session_id', 'ca200000-0000-4000-8000-000000000001')::text, true);
   perform pg_catalog.pg_advisory_xact_lock(requested_gate_key);
   return public.create_order(jsonb_build_object(
     'organization_id', 'ca100000-0000-4000-8000-000000000001',

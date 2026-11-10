@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(47);
@@ -84,8 +85,8 @@ values (
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd0c10000-0000-4000-8000-000000000001', true);
-select set_config('request.jwt.claims', '{"sub":"d0c10000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('d0c10000-0000-4000-8000-000000000001')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"d0c10000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 
 do $$
 declare
@@ -226,8 +227,9 @@ as $$
 declare
   return_id uuid;
 begin
-  perform set_config('request.jwt.claim.sub', 'd0c10000-0000-4000-8000-000000000001', true);
-  perform set_config('request.jwt.claims', '{"sub":"d0c10000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+  perform pg_catalog.set_config('request.jwt.claim.sub', 'd0c10000-0000-4000-8000-000000000001', true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config('request.jwt.claims', pg_catalog.jsonb_build_object('sub', 'd0c10000-0000-4000-8000-000000000001', 'role', 'authenticated', 'session_id', 'd0c10000-0000-4000-8000-000000000001')::text, true);
   return_id := public.register_supplier_return(jsonb_build_object(
     'organization_id', 'd0c00000-0000-4000-8000-000000000001',
     'supplier_id', 'd0c20000-0000-4000-8000-000000000001',
@@ -353,8 +355,8 @@ select extensions.dblink_disconnect('returns_concurrency_b');
 drop trigger supplier_return_concurrency_slow_insert on public.supplier_returns;
 
 set role authenticated;
-select set_config('request.jwt.claim.sub', 'd0c10000-0000-4000-8000-000000000001', false);
-select set_config('request.jwt.claims', '{"sub":"d0c10000-0000-4000-8000-000000000001","role":"authenticated"}', false);
+select pg_temp.s01_set_authenticated_actor(('d0c10000-0000-4000-8000-000000000001')::text, false);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"d0c10000-0000-4000-8000-000000000001","role":"authenticated"}')::text, false);
 select is((select count(*) from public.purchase_receipt_inspections inspection where inspection.purchase_receipt_item_id = (select receipt_item_id from supplier_return_concurrency_items where case_name = 'historical')), 0::bigint, 'la recepcion historica no se convierte implicitamente en inspeccion');
 select lives_ok(
   $$select public.register_supplier_return(jsonb_build_object(
@@ -415,8 +417,8 @@ select lives_ok(
 select is((select count(*) from public.supplier_returns where purchase_receipt_item_id = (select receipt_item_id from supplier_return_concurrency_items where case_name = 'six-four') and status = 'completed'), 1::bigint, 'la devolucion finalizada cambia a completed');
 select is((select sum(quantity) from public.inventory_movements where source_type = 'supplier-return' and source_id = (select id from public.supplier_returns where purchase_receipt_item_id = (select receipt_item_id from supplier_return_concurrency_items where case_name = 'six-four') and quantity = 6)), 6::numeric, 'la finalizacion crea una sola salida por la cantidad solicitada');
 
-select set_config('request.jwt.claim.sub', 'd0c10000-0000-4000-8000-000000000002', false);
-select set_config('request.jwt.claims', '{"sub":"d0c10000-0000-4000-8000-000000000002","role":"authenticated"}', false);
+select pg_temp.s01_set_authenticated_actor(('d0c10000-0000-4000-8000-000000000002')::text, false);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"d0c10000-0000-4000-8000-000000000002","role":"authenticated"}')::text, false);
 select throws_ok(
   $$select public.register_supplier_return(jsonb_build_object(
     'organization_id', 'd0c00000-0000-4000-8000-000000000001',
@@ -430,8 +432,8 @@ select throws_ok(
   'un usuario sin SUPPLIERS_MANAGE no registra devoluciones'
 );
 
-select set_config('request.jwt.claim.sub', 'd0c10000-0000-4000-8000-000000000003', false);
-select set_config('request.jwt.claims', '{"sub":"d0c10000-0000-4000-8000-000000000003","role":"authenticated"}', false);
+select pg_temp.s01_set_authenticated_actor(('d0c10000-0000-4000-8000-000000000003')::text, false);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"d0c10000-0000-4000-8000-000000000003","role":"authenticated"}')::text, false);
 select is((select count(*) from public.supplier_returns where organization_id = 'd0c00000-0000-4000-8000-000000000001'), 0::bigint, 'otra organizacion no puede leer devoluciones ajenas');
 select throws_ok(
   $$select public.register_supplier_return(jsonb_build_object(

@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 create temporary table distribution_allocation_extension_state (was_installed boolean not null);
 insert into distribution_allocation_extension_state
 select exists (select 1 from pg_catalog.pg_extension where extname = 'dblink');
@@ -53,6 +54,8 @@ insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values
   ('d51c0000-0000-4000-8000-000000000001', 'distribution.a@test.local', '{"full_name":"Distribution A"}', now(), now()),
   ('d51c0000-0000-4000-8000-000000000002', 'distribution.b@test.local', '{"full_name":"Distribution B"}', now(), now());
+select pg_temp.s01_seed_auth_session('d51c0000-0000-4000-8000-000000000001');
+select pg_temp.s01_seed_auth_session('d51c0000-0000-4000-8000-000000000002');
 insert into public.organization_memberships (organization_id, user_id)
 values
   ('d5111111-1111-4111-8111-111111111111', 'd51c0000-0000-4000-8000-000000000001'),
@@ -238,9 +241,10 @@ declare
   result_id uuid;
 begin
   perform pg_catalog.set_config('request.jwt.claim.sub', user_id::text, true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
   perform pg_catalog.set_config(
     'request.jwt.claims',
-    pg_catalog.format('{"sub":"%s","role":"authenticated"}', user_id),
+    pg_catalog.jsonb_build_object('sub', user_id::text, 'role', 'authenticated', 'session_id', user_id::text)::text,
     true
   );
   perform pg_catalog.pg_advisory_xact_lock(gate);

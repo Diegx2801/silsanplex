@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 select no_plan();
 
@@ -55,9 +56,9 @@ select is(has_function_privilege('anon','public.transfer_inventory_position(json
 select is(has_function_privilege('authenticated','public.transfer_inventory_position(jsonb)','EXECUTE'),true,'authenticated may execute with authorization');
 select is(has_sequence_privilege('authenticated','inventory_internal.transfer_reference_sequence','USAGE'),false,'folio sequence is private');
 select throws_ok($$select public.transfer_inventory_position(pg_temp.transfer_payload())$$,'42501','INVENTORY_FORBIDDEN','anonymous denied inside function');
-select set_config('request.jwt.claim.sub','ab151000-0000-4000-8000-000000000002',true);
+select pg_temp.s01_set_authenticated_actor('ab151000-0000-4000-8000-000000000002',true);
 select throws_ok($$select public.transfer_inventory_position(pg_temp.transfer_payload())$$,'42501','INVENTORY_FORBIDDEN','sales user cannot move inventory');
-select set_config('request.jwt.claim.sub','ab151000-0000-4000-8000-000000000001',true);
+select pg_temp.s01_set_authenticated_actor('ab151000-0000-4000-8000-000000000001',true);
 select throws_ok($$select public.transfer_inventory_position(pg_temp.transfer_payload('{"organization_id":"ab150000-0000-4000-8000-000000000002"}'))$$,'42501','INVENTORY_FORBIDDEN','cross-organization forbidden');
 select throws_ok($$select public.transfer_inventory_position(pg_temp.transfer_payload('{"operation_key":null}'))$$,'22023','TRANSFER_OPERATION_KEY_REQUIRED','idempotency key required');
 select throws_ok($$select public.transfer_inventory_position(pg_temp.transfer_payload('{"quantity":0}'))$$,'22023','INVENTORY_QUANTITY_INVALID','zero rejected');

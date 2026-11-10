@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select no_plan();
@@ -82,8 +83,8 @@ values
   ('e4c80000-0000-4000-8000-000000000002', 'e4c30000-0000-4000-8000-000000000002', 'E4C3-B', 'Producto E4C3 B', 'UND', 'good', 'gravado', false, false);
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000001', true);
-select set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4c40000-0000-4000-8000-000000000001')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 
 create temporary table supplier_return_idempotency_items (
   case_name text primary key,
@@ -207,8 +208,8 @@ join public.purchase_orders purchase
 join public.purchase_order_items item on item.purchase_order_id = purchase.id
 join public.purchase_receipt_items receipt_item on receipt_item.purchase_order_item_id = item.id;
 
-select set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000002', true);
-select set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000002","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4c40000-0000-4000-8000-000000000002')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4c40000-0000-4000-8000-000000000002","role":"authenticated"}')::text, true);
 do $$
 declare
   current_order uuid;
@@ -263,8 +264,8 @@ join public.purchase_receipt_items receipt_item on receipt_item.purchase_order_i
 where purchase.organization_id = 'e4c30000-0000-4000-8000-000000000002'
   and purchase.document_number = 'IDEMP-ORG-B';
 
-select set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000001', true);
-select set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4c40000-0000-4000-8000-000000000001')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 
 select is(
   (select count(*) from public.purchase_orders where organization_id = 'e4c30000-0000-4000-8000-000000000001'),
@@ -292,8 +293,8 @@ select results_eq(
 select is((select count(*) from supplier_return_idempotency_items), 7::bigint, 'se preparan las lineas de prueba');
 select is((select count(*) from public.purchase_receipt_inspections where purchase_order_id = (select purchase.id from public.purchase_orders purchase where purchase.document_number = 'IDEMP-INSPECTED')), 1::bigint, 'la linea inspeccionada queda disponible para probar accepted');
 
-select set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000001', true);
-select set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4c40000-0000-4000-8000-000000000001')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 
 create temporary table supplier_return_idempotency_results (
   case_name text primary key,
@@ -349,8 +350,8 @@ select is(
   'el retry no duplica el evento funcional de auditoria'
 );
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000001', true);
-select set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4c40000-0000-4000-8000-000000000001')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 
 select throws_ok(
   $$select public.register_supplier_return(jsonb_build_object(
@@ -450,8 +451,8 @@ select throws_ok(
   'la cantidad rechazada no se vuelve devolvible por idempotencia'
 );
 
-select set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000002', true);
-select set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000002","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4c40000-0000-4000-8000-000000000002')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4c40000-0000-4000-8000-000000000002","role":"authenticated"}')::text, true);
 select lives_ok(
   $$select public.register_supplier_return(jsonb_build_object(
     'organization_id', 'e4c30000-0000-4000-8000-000000000002',
@@ -469,8 +470,8 @@ select is(
   'la unicidad de operation_key esta aislada por organizacion'
 );
 
-select set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000001', true);
-select set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4c40000-0000-4000-8000-000000000001')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 
 set local role postgres;
 create schema supplier_return_idempotency_test;
@@ -488,8 +489,9 @@ as $$
 declare
   return_id uuid;
 begin
-  perform set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000001', true);
-  perform set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+  perform pg_catalog.set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000001', true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config('request.jwt.claims', pg_catalog.jsonb_build_object('sub', 'e4c40000-0000-4000-8000-000000000001', 'role', 'authenticated', 'session_id', 'e4c40000-0000-4000-8000-000000000001')::text, true);
   return_id := public.register_supplier_return(jsonb_build_object(
     'organization_id', 'e4c30000-0000-4000-8000-000000000001',
     'supplier_id', 'e4c50000-0000-4000-8000-000000000001',
@@ -521,15 +523,15 @@ before insert on public.supplier_returns
 for each row execute function supplier_return_idempotency_test.slow_insert();
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000001', true);
-select set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4c40000-0000-4000-8000-000000000001')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 
 reset role;
 commit;
 begin;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000001', true);
-select set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4c40000-0000-4000-8000-000000000001')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 
 select is(extensions.dblink_connect('returns_idempotency_a', 'host=supabase_db_backend dbname=postgres user=postgres password=postgres'), 'OK', 'abre la sesion concurrente A');
 select is(extensions.dblink_connect('returns_idempotency_b', 'host=supabase_db_backend dbname=postgres user=postgres password=postgres'), 'OK', 'abre la sesion concurrente B');
@@ -571,8 +573,8 @@ select is((select count(*) from public.supplier_returns where operation_key = 'e
 set local role postgres;
 select is((select count(*) from public.audit_events where action = 'SUPPLIER_RETURN_REGISTERED' and new_values ->> 'operation_key' = 'e4ca0000-0000-4000-8000-000000000003'), 1::bigint, 'la concurrencia con misma clave deja un solo evento funcional');
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000001', true);
-select set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4c40000-0000-4000-8000-000000000001')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 select extensions.dblink_disconnect('returns_idempotency_a');
 select extensions.dblink_disconnect('returns_idempotency_b');
 
@@ -651,8 +653,8 @@ set local role postgres;
 drop trigger supplier_return_idempotency_slow_insert on public.supplier_returns;
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000001', true);
-select set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4c40000-0000-4000-8000-000000000001')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4c40000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 select lives_ok(
   $$select public.complete_supplier_return(
     'e4c30000-0000-4000-8000-000000000001',
@@ -671,8 +673,8 @@ select is(
   'el retry idempotente conserva el resultado completed existente'
 );
 
-select set_config('request.jwt.claim.sub', 'e4c40000-0000-4000-8000-000000000002', true);
-select set_config('request.jwt.claims', '{"sub":"e4c40000-0000-4000-8000-000000000002","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4c40000-0000-4000-8000-000000000002')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4c40000-0000-4000-8000-000000000002","role":"authenticated"}')::text, true);
 select throws_ok(
   $$select public.register_supplier_return(jsonb_build_object(
     'organization_id', 'e4c30000-0000-4000-8000-000000000001',

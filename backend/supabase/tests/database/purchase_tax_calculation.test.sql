@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select no_plan();
@@ -61,7 +62,7 @@ insert into public.products (
   ('c1b25000-0000-4000-8000-000000000004', 'c1b20000-0000-4000-8000-000000000001', 'P1B2-PEND', 'Producto por definir', 'UND', (select id from public.measurement_units where organization_id = 'c1b20000-0000-4000-8000-000000000001' and code = 'UNIT'), 'good', 'por-definir', false, false, 'c1b21000-0000-4000-8000-000000000001', 'c1b21000-0000-4000-8000-000000000001');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c1b21000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c1b21000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.save_purchase_order($payload$
@@ -195,7 +196,7 @@ select is((select tax_affectation from public.purchase_order_items item join pub
 
 reset role;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c1b21000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c1b21000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.receive_purchase_order_partial(jsonb_build_object(
@@ -249,7 +250,7 @@ $$, $$values (50.00::numeric, 9.00::numeric, 59.00::numeric, null::numeric, null
 
 reset role;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c1b21000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c1b21000-0000-4000-8000-000000000001')::text, true);
 select throws_ok($$
   select public.issue_purchase_order(
     'c1b20000-0000-4000-8000-000000000001',
@@ -260,7 +261,7 @@ $$, 'P0001', 'PURCHASE_ORDER_TAX_AFFECTATION_LEGACY_UNKNOWN',
 
 reset role;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c1b21000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('c1b21000-0000-4000-8000-000000000002')::text, true);
 select is((select count(*) from public.purchase_orders), 0::bigint, 'otra organización no ve órdenes tributarias');
 
 select * from finish();

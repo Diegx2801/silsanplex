@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(34);
@@ -55,7 +56,7 @@ values
   ('95000000-0000-4000-8000-000000000002', '91000000-0000-4000-8000-000000000001', '94000000-0000-4000-8000-000000000002', 'B-01', 'Anaquel norte', '92000000-0000-4000-8000-000000000001', '92000000-0000-4000-8000-000000000001');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', '92000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('92000000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
@@ -197,7 +198,7 @@ select results_eq(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', '92000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('92000000-0000-4000-8000-000000000001')::text, true);
 
 select throws_ok($$
   select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",

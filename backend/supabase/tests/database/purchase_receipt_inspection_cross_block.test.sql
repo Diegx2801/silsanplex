@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(56);
@@ -102,8 +103,8 @@ values (
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4f10000-0000-4000-8000-000000000001', true);
-select set_config('request.jwt.claims', '{"sub":"e4f10000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4f10000-0000-4000-8000-000000000001')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4f10000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 
 select lives_ok(
   $$
@@ -606,8 +607,8 @@ select is(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4f10000-0000-4000-8000-000000000002', true);
-select set_config('request.jwt.claims', '{"sub":"e4f10000-0000-4000-8000-000000000002","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_actor(('e4f10000-0000-4000-8000-000000000002')::text, true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"e4f10000-0000-4000-8000-000000000002","role":"authenticated"}')::text, true);
 select is(
   (select count(*) from public.supplier_operational_performance_summary where organization_id = 'e4f00000-0000-4000-8000-000000000001'),
   0::bigint,

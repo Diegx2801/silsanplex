@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(83);
@@ -65,7 +66,7 @@ insert into public.warehouse_locations (id, organization_id, warehouse_id, code,
   ('b2222222-2222-4222-8222-222222222222', 'd1111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'RACK-02', 'Rack secundario', 'e2222222-2222-4222-8222-222222222222', 'e2222222-2222-4222-8222-222222222222');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e1111111-1111-4111-8111-111111111111', true);
+select pg_temp.s01_set_authenticated_actor(('e1111111-1111-4111-8111-111111111111')::text, true);
 
 select ok(public.has_organization_permission('d1111111-1111-4111-8111-111111111111', 'PURCHASES_MANAGE'), 'COMPRAS administra órdenes');
 select is((select count(*) from public.products), 2::bigint, 'COMPRAS consulta los productos de su empresa');
@@ -232,7 +233,7 @@ $$, '42501', 'INVENTORY_FORBIDDEN', 'COMPRAS no registra movimientos manuales');
 
 reset role;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e2222222-2222-4222-8222-222222222222', true);
+select pg_temp.s01_set_authenticated_actor(('e2222222-2222-4222-8222-222222222222')::text, true);
 select ok(public.has_organization_permission('d1111111-1111-4111-8111-111111111111', 'PURCHASES_RECEIVE'), 'ALMACEN puede recibir compras');
 select lives_ok($$
   select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE","organization_id":"d1111111-1111-4111-8111-111111111111","product_id":"f2222222-2222-4222-8222-222222222222","movement_type":"entrada","quantity":"2","unit_cost":"8","warehouse":"Almacén principal","lot":"","expiration_date":"","operation_date":"2026-08-21","reason":"Entrada manual"}'::jsonb)
@@ -246,7 +247,7 @@ $$, '42501', 'PURCHASE_ORDER_FORBIDDEN', 'ALMACEN no crea órdenes');
 
 reset role;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e3333333-3333-4333-8333-333333333333', true);
+select pg_temp.s01_set_authenticated_actor(('e3333333-3333-4333-8333-333333333333')::text, true);
 select is((select count(*) from public.purchase_orders), 3::bigint, 'GERENCIA consulta órdenes de su empresa');
 select throws_ok($$
   select public.issue_purchase_order('d1111111-1111-4111-8111-111111111111', (select id from public.purchase_orders limit 1))
@@ -254,7 +255,7 @@ $$, '42501', 'PURCHASE_ORDER_FORBIDDEN', 'GERENCIA no emite órdenes');
 
 reset role;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4444444-4444-4444-8444-444444444444', true);
+select pg_temp.s01_set_authenticated_actor(('e4444444-4444-4444-8444-444444444444')::text, true);
 select is((select count(*) from public.purchase_orders), 0::bigint, 'otra empresa no consulta órdenes ajenas');
 
 reset role;

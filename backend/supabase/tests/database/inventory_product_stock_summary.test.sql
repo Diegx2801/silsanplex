@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(16);
@@ -72,7 +73,7 @@ values
   ('a5000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000002', 'a4000000-0000-4000-8000-000000000003', 'C-01', 'Anaquel C', 'a2000000-0000-4000-8000-000000000002', 'a2000000-0000-4000-8000-000000000002');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('a2000000-0000-4000-8000-000000000001')::text, true);
 
 select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE","organization_id":"a1000000-0000-4000-8000-000000000001","product_id":"a3000000-0000-4000-8000-000000000001","warehouse_id":"a4000000-0000-4000-8000-000000000001","location_id":"a5000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":"5","unit_cost":"10","stock_status":"available","lot":"LOTE-1","expiration_date":"2027-06-30","operation_date":"2026-09-01","reason":"Lote uno central"}'::jsonb);
 select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE","organization_id":"a1000000-0000-4000-8000-000000000001","product_id":"a3000000-0000-4000-8000-000000000001","warehouse_id":"a4000000-0000-4000-8000-000000000001","location_id":"a5000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":"4","unit_cost":"20","stock_status":"available","lot":"LOTE-2","expiration_date":"2028-06-30","operation_date":"2026-09-01","reason":"Lote dos central"}'::jsonb);
@@ -101,10 +102,10 @@ values (
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('a2000000-0000-4000-8000-000000000002')::text, true);
 select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE","organization_id":"a1000000-0000-4000-8000-000000000002","product_id":"a3000000-0000-4000-8000-000000000004","warehouse_id":"a4000000-0000-4000-8000-000000000003","location_id":"a5000000-0000-4000-8000-000000000003","movement_type":"entrada","quantity":"99","unit_cost":"2","stock_status":"available","operation_date":"2026-09-01","reason":"Otra organizacion"}'::jsonb);
 
-select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('a2000000-0000-4000-8000-000000000001')::text, true);
 
 select is(
   (select count(*) from public.inventory_product_stock_summary),
@@ -174,7 +175,7 @@ select is(
   'filtrar directamente otra organizacion no omite RLS'
 );
 
-select set_config('request.jwt.claim.sub', 'a2000000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('a2000000-0000-4000-8000-000000000002')::text, true);
 select results_eq(
   $$select product_id from public.inventory_product_stock_summary$$,
   $$values ('a3000000-0000-4000-8000-000000000004'::uuid)$$,

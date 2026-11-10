@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(34);
@@ -213,7 +214,7 @@ insert into public.supplier_returns (
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e2100000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('e2100000-0000-4000-8000-000000000001')::text, true);
 
 select is((select count(*) from public.supplier_price_history), 9::bigint, 'el detalle cuenta recepciones reales y servicios diferenciados');
 select is((select count(*) from public.supplier_purchase_price_summary), 4::bigint, 'el resumen agrupa por proveedor producto moneda y base tributaria');
@@ -288,19 +289,19 @@ select lives_ok(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e2100000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('e2100000-0000-4000-8000-000000000002')::text, true);
 select lives_ok(
   $$select public.get_supplier_purchase_price_summary('e2000000-0000-4000-8000-000000000001', 'e2300000-0000-4000-8000-000000000001', null, null, null)$$,
   'ALMACEN conserva la lectura de compras por producto'
 );
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e2100000-0000-4000-8000-000000000004', true);
+select pg_temp.s01_set_authenticated_actor(('e2100000-0000-4000-8000-000000000004')::text, true);
 select throws_ok(
   $$select public.get_supplier_purchase_price_summary('e2000000-0000-4000-8000-000000000001', null, null, null, null)$$,
   '42501', 'E2_PRICE_HISTORY_FORBIDDEN', 'un usuario sin PURCHASES_VIEW no puede consultar precios'
 );
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e2100000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('e2100000-0000-4000-8000-000000000002')::text, true);
 select throws_ok(
   $$select public.get_supplier_purchase_price_summary('e2000000-0000-4000-8000-000000000001', null, 'e2200000-0000-4000-8000-000000000001', null, null)$$,
   '42501', 'E2_SUPPLIER_PRICE_HISTORY_FORBIDDEN', 'la lectura por proveedor exige SUPPLIERS_VIEW'
@@ -312,7 +313,7 @@ select throws_ok(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e2100000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('e2100000-0000-4000-8000-000000000001')::text, true);
 select throws_ok(
   $$select public.get_supplier_purchase_price_summary('e2000000-0000-4000-8000-000000000001', null, null, '2026-04-01 00:00+00', '2026-03-01 00:00+00')$$,
   '22023', 'E2_PRICE_HISTORY_PERIOD_INVALID', 'rechaza rangos temporales invertidos'

@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select no_plan();
@@ -131,7 +132,7 @@ returns jsonb language sql as $$
 $$;
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub','c2000000-0000-4000-8000-000000000001',true);
+select pg_temp.s01_set_authenticated_actor(('c2000000-0000-4000-8000-000000000001')::text, true);
 
 select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','c1000000-0000-4000-8000-000000000001',
