@@ -81,16 +81,16 @@ function documento(evento: EventoPrecioCompra) {
 
 function DetalleRecepciones({ eventos }: { eventos: EventoPrecioCompra[] }) {
   if (!eventos.length) return <p className="text-sm text-muted-foreground">No hay recepciones para esta dimensión de moneda y base tributaria.</p>
-  return <div className="overflow-x-auto rounded-md border bg-background">
-    <table className="w-full min-w-[760px] text-left text-xs">
+  return <div className="max-h-[min(45vh,20rem)] overflow-auto rounded-md border bg-background" role="region" aria-label="Recepciones que componen el historial de costos" tabIndex={0}>
+    <table className="w-full min-w-[720px] text-left text-xs">
       <caption className="sr-only">Recepciones que componen el historial de costos</caption>
-      <thead className="bg-muted/50 text-muted-foreground"><tr>
-        <th className="px-3 py-2 font-medium">Recepción</th>
-        <th className="px-3 py-2 font-medium">Orden</th>
-        <th className="px-3 py-2 text-right font-medium">Cantidad</th>
-        <th className="px-3 py-2 text-right font-medium">Costo registrado</th>
-        <th className="px-3 py-2 font-medium">Moneda / IGV</th>
-        <th className="px-3 py-2 font-medium">Estado</th>
+      <thead className="text-muted-foreground"><tr>
+        <th className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 font-medium">Recepción</th>
+        <th className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 font-medium">Orden</th>
+        <th className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 text-right font-medium">Cantidad</th>
+        <th className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 text-right font-medium">Costo registrado</th>
+        <th className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 font-medium">Moneda / IGV</th>
+        <th className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 font-medium">Estado</th>
       </tr></thead>
       <tbody className="divide-y">
         {eventos.map((evento) => <tr key={evento.purchaseReceiptItemId}>
@@ -114,10 +114,6 @@ export function HistorialPreciosCompra({ modo, productoId, proveedorId }: Props)
   const descripcion = modo === 'producto'
     ? 'Costos registrados por recepción, separados por proveedor, moneda y base tributaria.'
     : 'Productos recibidos de este proveedor, separados por moneda y base tributaria.'
-  const columnas = modo === 'producto'
-    ? ['Proveedor', 'Última compra', 'Último costo', 'Costo anterior', 'Variación', 'Mínimo', 'Promedio ponderado', 'Máximo', 'Cantidad', 'Recepciones', 'Moneda']
-    : ['Producto', 'Última compra', 'Último costo', 'Costo anterior', 'Variación', 'Mínimo', 'Promedio ponderado', 'Máximo', 'Cantidad', 'Recepciones', 'Moneda']
-
   return <section className="border-t px-5 py-6 sm:px-7" aria-labelledby={`historial-precios-${modo}`}>
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div>
@@ -136,30 +132,46 @@ export function HistorialPreciosCompra({ modo, productoId, proveedorId }: Props)
     {historial.errorResumen ? <p role="alert" className="mt-5 text-sm text-destructive">{historial.errorResumen instanceof Error ? historial.errorResumen.message : 'No se pudo cargar el historial de precios.'}</p> : null}
     {!historial.cargandoResumen && !historial.errorResumen && !historial.resumen.length ? <p className="mt-5 text-sm text-muted-foreground">No hay recepciones de inventario para el periodo seleccionado.</p> : null}
 
-    {historial.resumen.length ? <div className="mt-5 overflow-x-auto rounded-md border">
-      <table className="w-full min-w-[1280px] text-left text-xs">
+    {historial.resumen.length ? <div className="mt-5 max-h-[min(55vh,28rem)] overflow-auto rounded-md border" role="region" aria-label={`${titulo}: resumen de costos`} tabIndex={0}>
+      <table className="w-full min-w-[760px] text-left text-xs">
         <caption className="sr-only">{titulo}</caption>
-        <thead className="bg-muted/50 text-muted-foreground"><tr>{columnas.map((columna) => <th key={columna} className={`px-3 py-2 font-medium ${['Último costo', 'Costo anterior', 'Mínimo', 'Promedio ponderado', 'Máximo', 'Cantidad', 'Recepciones'].includes(columna) ? 'text-right' : ''}`}>{columna}</th>)}<th className="px-3 py-2 font-medium">Detalle</th></tr></thead>
+        <thead className="text-muted-foreground"><tr>
+          <th className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 font-medium">{modo === 'producto' ? 'Proveedor / dimensión' : 'Producto / dimensión'}</th>
+          <th className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 font-medium">Último costo</th>
+          <th className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 font-medium">Promedio y rango</th>
+          <th className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 font-medium">Volumen recibido</th>
+          <th className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 font-medium">Detalle</th>
+        </tr></thead>
         <tbody className="divide-y">
           {historial.resumen.map((resumen) => {
             const clave = `${resumen.supplierId}-${resumen.productId}-${resumen.currency}-${resumen.unitOfMeasure}-${resumen.pricesIncludeTax}-${resumen.taxAffectation ?? 'sin-base'}`
             const abierto = historial.detalleClave?.supplierId === resumen.supplierId && historial.detalleClave.productId === resumen.productId && historial.detalleClave.currency === resumen.currency && historial.detalleClave.unitOfMeasure === resumen.unitOfMeasure && historial.detalleClave.pricesIncludeTax === resumen.pricesIncludeTax && historial.detalleClave.taxAffectation === resumen.taxAffectation
             return <Fragment key={clave}>
-              <tr>
-                <td className="px-3 py-3 font-medium">{modo === 'producto' ? resumen.supplierName : `${resumen.productCode} · ${resumen.productDescription}`}</td>
-                <td className="px-3 py-3 whitespace-nowrap">{formatearFecha(resumen.lastReceivedAt)}</td>
-                <td className="px-3 py-3 text-right font-mono tabular-nums">{formatearCosto(resumen.latestUnitCost, resumen.currency)}</td>
-                <td className="px-3 py-3 text-right font-mono tabular-nums">{formatearCosto(resumen.previousUnitCost, resumen.currency)}</td>
-                <td className="px-3 py-3">{variacion(resumen)}</td>
-                <td className="px-3 py-3 text-right font-mono tabular-nums">{formatearCosto(resumen.minimumUnitCost, resumen.currency)}</td>
-                <td className="px-3 py-3 text-right font-mono tabular-nums">{formatearCosto(resumen.weightedAverageUnitCost, resumen.currency)}</td>
-                <td className="px-3 py-3 text-right font-mono tabular-nums">{formatearCosto(resumen.maximumUnitCost, resumen.currency)}</td>
-                <td className="px-3 py-3 text-right tabular-nums">{formatearNumero(resumen.receivedQuantity)} {resumen.unitOfMeasure}</td>
-                <td className="px-3 py-3 text-right tabular-nums">{resumen.receiptCount} / {resumen.purchaseCount}</td>
-                <td className="px-3 py-3"><span className="font-mono">{resumen.currency}</span><span className="mt-1 block text-[0.68rem] text-muted-foreground">{resumen.unitOfMeasure || 'Unidad no disponible'} · {etiquetaTributaria(resumen.taxBasis)}</span></td>
+              <tr className="align-top">
+                <td className="px-3 py-3">
+                  <p className="font-medium">{modo === 'producto' ? resumen.supplierName : `${resumen.productCode} · ${resumen.productDescription}`}</p>
+                  <p className="mt-1 text-[0.68rem] text-muted-foreground"><span className="font-mono">{resumen.currency}</span><span> · {resumen.unitOfMeasure || 'Unidad no disponible'} · {etiquetaTributaria(resumen.taxBasis)}</span></p>
+                </td>
+                <td className="px-3 py-3">
+                  <p className="whitespace-nowrap font-mono font-medium tabular-nums">{formatearCosto(resumen.latestUnitCost, resumen.currency)}</p>
+                  <p className="mt-1 whitespace-nowrap text-[0.68rem] text-muted-foreground">Última recepción · {formatearFecha(resumen.lastReceivedAt)}</p>
+                  <p className="mt-2 whitespace-nowrap text-[0.68rem] text-muted-foreground">Anterior · <span>{formatearCosto(resumen.previousUnitCost, resumen.currency)}</span></p>
+                  <p className="mt-1 text-[0.68rem]">{variacion(resumen)}</p>
+                </td>
+                <td className="px-3 py-3">
+                  <p className="text-[0.68rem] text-muted-foreground">Promedio ponderado</p>
+                  <p className="mt-1 whitespace-nowrap font-mono font-medium tabular-nums">{formatearCosto(resumen.weightedAverageUnitCost, resumen.currency)}</p>
+                  <p className="mt-2 whitespace-nowrap text-[0.68rem] text-muted-foreground">Mín. {formatearCosto(resumen.minimumUnitCost, resumen.currency)}</p>
+                  <p className="mt-1 whitespace-nowrap text-[0.68rem] text-muted-foreground">Máx. {formatearCosto(resumen.maximumUnitCost, resumen.currency)}</p>
+                </td>
+                <td className="px-3 py-3">
+                  <p className="whitespace-nowrap tabular-nums">{formatearNumero(resumen.receivedQuantity)} {resumen.unitOfMeasure}</p>
+                  <p className="mt-1 text-[0.68rem] text-muted-foreground">Recibido</p>
+                  <p className="mt-2 whitespace-nowrap text-[0.68rem] text-muted-foreground">{resumen.receiptCount} recepciones · {resumen.purchaseCount} compras</p>
+                </td>
                 <td className="px-3 py-3"><Button type="button" variant="outline" size="sm" aria-expanded={abierto} onClick={() => abierto ? historial.cerrarDetalle() : historial.abrirDetalle({ supplierId: resumen.supplierId, productId: resumen.productId, currency: resumen.currency, unitOfMeasure: resumen.unitOfMeasure, pricesIncludeTax: resumen.pricesIncludeTax, taxAffectation: resumen.taxAffectation })}><Eye aria-hidden="true" />{abierto ? 'Ocultar recepciones' : 'Ver recepciones'}</Button></td>
               </tr>
-              {abierto ? <tr key={`${clave}-detalle`}><td colSpan={12} className="bg-muted/20 px-3 py-4"><div className="mb-3 flex items-center justify-between gap-3"><p className="text-xs font-medium">Recepciones · {resumen.currency} · {etiquetaTributaria(resumen.taxBasis)}</p><p className="text-xs text-muted-foreground">Costo mostrado: unit_cost registrado en la recepción</p></div>{historial.cargandoDetalle ? <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Cargando recepciones…</p> : null}{historial.errorDetalle ? <p role="alert" className="text-sm text-destructive">{historial.errorDetalle instanceof Error ? historial.errorDetalle.message : 'No se pudo cargar el detalle.'}</p> : null}{!historial.cargandoDetalle && !historial.errorDetalle ? <DetalleRecepciones eventos={historial.detalle} /> : null}</td></tr> : null}
+              {abierto ? <tr><td colSpan={5} className="bg-muted/20 px-3 py-4"><div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs font-medium">Recepciones · {resumen.currency} · {etiquetaTributaria(resumen.taxBasis)}</p><p className="text-xs text-muted-foreground">Costo mostrado: unit_cost registrado en la recepción</p></div>{historial.cargandoDetalle ? <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Cargando recepciones…</p> : null}{historial.errorDetalle ? <p role="alert" className="text-sm text-destructive">{historial.errorDetalle instanceof Error ? historial.errorDetalle.message : 'No se pudo cargar el detalle.'}</p> : null}{!historial.cargandoDetalle && !historial.errorDetalle ? <DetalleRecepciones eventos={historial.detalle} /> : null}</td></tr> : null}
             </Fragment>
           })}
         </tbody>
