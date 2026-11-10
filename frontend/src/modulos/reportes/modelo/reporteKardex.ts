@@ -14,6 +14,13 @@ export interface ConsultaKardexReporte {
   lote: string
 }
 
+export interface ConsultaExportacionKardexGeneral {
+  fechaDesde: string
+  fechaHasta: string
+  almacenId: string
+  busqueda: string
+}
+
 export interface MovimientoKardexReporte {
   id: string
   secuencia: number

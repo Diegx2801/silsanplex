@@ -28,6 +28,13 @@ function protegerTextoExcel(valor: string) {
   return /^[=+\-@]/.test(valor.trimStart()) ? `'${valor}` : valor
 }
 
+function protegerFilasExcel<T extends object>(filas: readonly T[]) {
+  return filas.map((fila) => Object.fromEntries(Object.entries(fila).map(([clave, valor]) => [
+    clave,
+    typeof valor === 'string' ? protegerTextoExcel(valor) : valor,
+  ])))
+}
+
 function nombreTipoMovimiento(tipo: MovimientoKardexReporte['tipo']) {
   switch (tipo) {
     case 'ajuste-positivo': return 'Ajuste positivo'
@@ -69,6 +76,12 @@ export function crearNombreArchivoKardex(productoCodigo: string, fecha = new Dat
   return `kardex-${productoSeguro}-${fechaLocalIso(fecha)}.xlsx`
 }
 
+export function crearNombreArchivoKardexGeneral(fechaDesde: string, fechaHasta: string) {
+  const desdeSeguro = fechaDesde.replace(/[^0-9-]/g, '')
+  const hastaSeguro = fechaHasta.replace(/[^0-9-]/g, '')
+  return `movimientos-kardex-${desdeSeguro}-a-${hastaSeguro}.xlsx`
+}
+
 export function crearFilasKardex(movimientos: readonly MovimientoKardexReporte[]) {
   return movimientos.map((movimiento) => ({
     'Fecha de operación': movimiento.fechaOperacion,
@@ -97,12 +110,7 @@ export function crearLibroKardex(
   filtros: { productoCodigo: string; productoDescripcion: string; almacen: string; lote: string; fechaDesde: string; fechaHasta: string },
   fecha = new Date(),
 ): WorkBook {
-  const filas = crearFilasKardex(movimientos).map((fila) =>
-    Object.fromEntries(Object.entries(fila).map(([clave, valor]) => [
-      clave,
-      typeof valor === 'string' ? protegerTextoExcel(valor) : valor,
-    ])),
-  )
+  const filas = protegerFilasExcel(crearFilasKardex(movimientos))
   const hojaDetalle = utils.json_to_sheet(filas, { header: [...encabezados] })
   hojaDetalle['!cols'] = [18, 24, 16, 34, 14, 22, 28, 18, 20, 16, 20, 30, 36, 14, 14, 16, 16, 28]
     .map((wch) => ({ wch }))
@@ -136,6 +144,24 @@ export function crearLibroKardex(
   return libro
 }
 
+export function crearLibroKardexGeneral(movimientos: readonly MovimientoKardexReporte[], fecha = new Date()): WorkBook {
+  const filas = protegerFilasExcel(crearFilasKardex(movimientos))
+  const hojaMovimientos = utils.json_to_sheet(filas, { header: [...encabezados] })
+  hojaMovimientos['!cols'] = [18, 24, 16, 34, 14, 22, 28, 18, 20, 16, 20, 30, 36, 14, 14, 16, 16, 28]
+    .map((wch) => ({ wch }))
+  hojaMovimientos['!autofilter'] = { ref: `A1:R${Math.max(filas.length + 1, 1)}` }
+
+  const libro = utils.book_new()
+  utils.book_append_sheet(libro, hojaMovimientos, 'Movimientos')
+  libro.Props = {
+    Title: 'Movimientos de Kardex de inventario',
+    Subject: 'Detalle operativo filtrado de SILSANPLEX',
+    Author: 'SILSANPLEX',
+    CreatedDate: fecha,
+  }
+  return libro
+}
+
 export function descargarKardex(
   movimientos: readonly MovimientoKardexReporte[],
   filtros: Parameters<typeof crearLibroKardex>[1],
@@ -143,4 +169,13 @@ export function descargarKardex(
 ) {
   if (!movimientos.length) throw new Error('No hay movimientos de Kardex para exportar.')
   writeFile(crearLibroKardex(movimientos, filtros, fecha), crearNombreArchivoKardex(filtros.productoCodigo, fecha), { compression: true })
+}
+
+export function descargarKardexGeneral(
+  movimientos: readonly MovimientoKardexReporte[],
+  filtros: { fechaDesde: string; fechaHasta: string },
+  fecha = new Date(),
+) {
+  if (!movimientos.length) throw new Error('No hay movimientos para exportar con los filtros seleccionados.')
+  writeFile(crearLibroKardexGeneral(movimientos, fecha), crearNombreArchivoKardexGeneral(filtros.fechaDesde, filtros.fechaHasta), { compression: true })
 }

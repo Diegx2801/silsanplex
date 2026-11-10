@@ -3,6 +3,7 @@ import type { EstadoStock } from '@/modulos/inventario/modelo/almacen'
 import {
   MAXIMO_FILAS_EXPORTACION_KARDEX,
   TAMANIO_PAGINA_KARDEX_REPORTE,
+  type ConsultaExportacionKardexGeneral,
   type ConsultaKardexReporte,
   type MovimientoKardexReporte,
   type ResultadoKardexReporte,
@@ -74,7 +75,7 @@ function crearErrorKardex(error: { code?: string; message?: string }, exportando
       : 'No tienes permiso para consultar el Kardex de inventario.')
   }
   if (error.code === '22023' && error.message?.includes('EXPORT_LIMIT_EXCEEDED')) {
-    return new Error('El resultado supera el límite seguro de 10 000 movimientos. Reduce el periodo o filtra por almacén o lote.')
+    return new Error('El resultado supera el límite seguro de 10 000 movimientos. Reduce el periodo o filtra por almacén, producto o lote.')
   }
   if (error.code === '22023') return new Error('Revisa los filtros del Kardex e inténtalo nuevamente.')
   return new Error(exportando ? 'No se pudo preparar la exportación del Kardex.' : 'No se pudo cargar el Kardex detallado.')
@@ -115,5 +116,37 @@ export async function listarKardexReporte(
     pagina,
     tamanioPagina,
     totalPaginas: Math.max(1, Math.ceil(total / tamanioPagina)),
+  }
+}
+
+export async function listarKardexGeneralParaExportar(
+  organizationId: string,
+  consulta: ConsultaExportacionKardexGeneral,
+): Promise<ResultadoKardexReporte> {
+  const { data, error } = await supabase.rpc('inventory_kardex_all_products_export_read', {
+    requested_organization_id: organizationId,
+    requested_date_from: consulta.fechaDesde,
+    requested_date_to: consulta.fechaHasta,
+    search_term: consulta.busqueda.trim().slice(0, 100),
+    requested_warehouse_id: consulta.almacenId || null,
+  })
+
+  if (error) throw crearErrorKardex(error, true)
+  if (!esObjeto(data) || !Array.isArray(data.items)) throw new Error('El Kardex devolvió una respuesta inválida.')
+  const total = Number(data.total_count)
+  if (!Number.isSafeInteger(total) || total < 0 || total > MAXIMO_FILAS_EXPORTACION_KARDEX) {
+    throw new Error('El Kardex devolvió un total inválido o mayor al límite seguro de exportación.')
+  }
+  const elementos = data.items.map(mapearMovimiento)
+  if (elementos.length !== total) {
+    throw new Error('La exportación no contiene todos los movimientos del filtro. Reduce el periodo y vuelve a intentarlo.')
+  }
+
+  return {
+    elementos,
+    total,
+    pagina: 1,
+    tamanioPagina: MAXIMO_FILAS_EXPORTACION_KARDEX,
+    totalPaginas: 1,
   }
 }

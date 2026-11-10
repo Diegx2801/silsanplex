@@ -21,6 +21,7 @@ import {
   esquemaDatosReprogramacionEntrega,
   filtrarProgramacionesEntrega,
   listarEntregasAtrasadas,
+  ordenarProgramacionesEntregaPorPrioridadYFecha,
   obtenerAccionPrincipalDistribucion,
   obtenerEstadosSiguientes,
   obtenerResumenFechaEntrega,
@@ -184,12 +185,13 @@ export function DistribucionPage() {
       }),
     }
   }), [lineasDisponiblesPorPedido, pedidosPorProgramarVisibles, ventaPorPedido])
-  const filtradas = filtrarProgramacionesEntrega(programaciones, {
+  const programacionesFiltradas = filtrarProgramacionesEntrega(programaciones, {
     busqueda: busquedaDiferida,
     estado: filtroEstado,
     fechaDesde: filtroFechaDesde,
     fechaHasta: filtroFechaHasta,
   })
+  const filtradas = ordenarProgramacionesEntregaPorPrioridadYFecha(programacionesFiltradas)
   const totalPaginasSeguimiento = Math.max(1, Math.ceil(filtradas.length / tamanioPaginaSeguimiento))
   const paginaSeguimientoVisible = Math.min(paginaSeguimiento, totalPaginasSeguimiento)
   const entregasVisibles = filtradas.slice(

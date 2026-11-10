@@ -354,6 +354,40 @@ export function filtrarProgramacionesEntrega(
   })
 }
 
+const prioridadEstadoSeguimiento: Record<ProgramacionEntrega['estado'], number> = {
+  programado: 0,
+  preparando: 1,
+  en_curso: 1,
+  en_destino: 1,
+  entrega_parcial: 1,
+  reprogramado: 1,
+  rechazado: 1,
+  entregado: 2,
+  devuelto: 3,
+  cancelado: 3,
+}
+
+function fechaOrdenSeguimiento(entrega: ProgramacionEntrega) {
+  const fechaUltimoIntento = entrega.resultadosEntrega.at(-1)?.fecha ?? ''
+  if (entrega.estado === 'entregado' || entrega.estado === 'devuelto') {
+    return entrega.fechaEntrega || fechaUltimoIntento || entrega.fechaProgramada || entrega.fechaEmision
+  }
+
+  return entrega.fechaProgramada || fechaUltimoIntento || entrega.fechaEmision
+}
+
+/** Mantiene programadas y abiertas arriba; dentro de cada prioridad, muestra la fecha más reciente primero. */
+export function ordenarProgramacionesEntregaPorPrioridadYFecha(
+  programaciones: readonly ProgramacionEntrega[],
+): ProgramacionEntrega[] {
+  return [...programaciones].sort((a, b) => {
+    const prioridad = prioridadEstadoSeguimiento[a.estado] - prioridadEstadoSeguimiento[b.estado]
+    if (prioridad !== 0) return prioridad
+
+    return fechaOrdenSeguimiento(b).localeCompare(fechaOrdenSeguimiento(a))
+  })
+}
+
 export type ResumenEntregas = {
   total: number
   programados: number
