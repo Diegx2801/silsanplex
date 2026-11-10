@@ -33,7 +33,8 @@ const sqlOnly = process.argv.includes('--sql-only')
 const nonRepairableOnly = process.argv.includes('--non-repairable-only')
 const technicalCompletionOnly = process.argv.includes('--technical-completion-only')
 const actualCostOnly = process.argv.includes('--actual-cost-only')
-const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly || technicalCompletionOnly || actualCostOnly
+const sessionOnly = process.argv.includes('--audit-session-only')
+const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly || technicalCompletionOnly || actualCostOnly || sessionOnly
 const checksOnly = process.argv.includes('--checks-only')
 const workflowE2e = process.argv.includes('--workflow-e2e')
 const runLog = []
@@ -143,7 +144,7 @@ try {
   started = true
   // E2E uses the real isolated admin-users Edge Function; no mocked grants.
   // Only named source folders are copied, never an application .env file.
-  run(cli, ['start', '-x', `realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,${sqlOnly ? 'edge-runtime,' : ''}logflare,vector,supavisor`],
+  run(cli, ['start', '-x', `realtime,imgproxy,mailpit,postgres-meta,studio,${sqlOnly ? 'edge-runtime,' : ''}logflare,vector,supavisor`],
     { cwd: backend, log: 'migrations-start.log', print: false })
   verify()
   if (upgrade) {
@@ -327,11 +328,53 @@ try {
     }, null, 2))
     assertSupabaseDbLintSucceeded(lintResult)
     sql('create extension if not exists pgtap with schema extensions;')
-    const tap = run('docker', ['run','--rm','--network',`supabase_network_${project}`,
-      '--mount',`type=bind,source=${path.join(backend,'supabase/tests/database')},target=/tests,readonly`,
-      '-e','PGPASSWORD=postgres','public.ecr.aws/supabase/pg_prove:3.36','pg_prove','--nocolor','--verbose',
-      '-h',`supabase_db_${project}`,'-U','postgres','-d','postgres',...tests.map(n => `/tests/${n}`)],
-    { log: 'sql-tests.log', print: false })
+    const focusedSessionTests = tests.filter(name => {
+      const source = fs.readFileSync(path.join(backend, 'supabase/tests/database', name), 'utf8')
+      const executableSource = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\r\n]*/g, '')
+      return name === 'current_auth_session.test.sql'
+        || /current_auth_session_is_active|delete\s+from\s+auth\.sessions|AUTH_SESSION_INACTIVE|inactive session|unknown session|missing session claim/i.test(source)
+        || /set\s+(?:local\s+)?role\s+service_role/i.test(executableSource)
+    })
+    const regularTests = tests.filter(name => !focusedSessionTests.includes(name))
+    const runSqlTests = (names, log) => names.length ? run('docker', ['run','--rm','--network',`supabase_network_${project}`,
+       '--mount',`type=bind,source=${path.join(backend,'supabase/tests/database')},target=/tests,readonly`,
+       '-e','PGPASSWORD=postgres','public.ecr.aws/supabase/pg_prove:3.36','pg_prove','--nocolor','--verbose',
+       '-h',`supabase_db_${project}`,'-U','postgres','-d','postgres',...names.map(n => `/tests/${n}`)],
+      { log, print: false }) : ''
+    // Older business suites model authenticated actors without creating Auth
+    // sessions. Treat a seeded user fixture as active only while those suites
+    // run; keep every session-focused suite on the unmodified helper.
+    const focusedTap = runSqlTests(focusedSessionTests, 'sql-tests-session-focused.log')
+    const originalSessionHelper = sql("select pg_catalog.pg_get_functiondef('public.current_auth_session_is_active()'::pg_catalog.regprocedure)")
+    let sessionFixtureInstalled = false
+    let regularTap = ''
+    try {
+      sql(`create or replace function public.current_auth_session_is_active()
+              returns boolean language sql stable security definer set search_path = '' as $fixture$
+            select case
+              when (select auth.uid()) is not null
+                and exists (select 1 from auth.users where id = (select auth.uid()))
+                and coalesce(
+                  nullif((select auth.jwt()->>'role'),''),
+                  nullif(current_setting('request.jwt.claim.role',true),''),
+                  nullif(nullif(current_setting('role',true),''),'none'),
+                  'authenticated'
+                ) not in ('anon','service_role')
+              then true
+              else exists (select 1 from auth.sessions session
+                where session.id = nullif((select auth.jwt()->>'session_id'), '')::uuid
+                  and session.user_id = (select auth.uid()))
+            end;
+            $fixture$;`)
+      sessionFixtureInstalled = true
+      regularTap = runSqlTests(regularTests, 'sql-tests-application.log')
+    } finally {
+      if (sessionFixtureInstalled) {
+        sql(`${originalSessionHelper};`)
+      }
+    }
+    const tap = [focusedTap, regularTap].filter(Boolean).join('\n')
+    fs.writeFileSync(path.join(evidence, 'sql-tests.log'), tap)
     const suites = []
     let active
     for (const line of tap.split('\n')) {
@@ -429,27 +472,27 @@ try {
     } else {
       playwrightCommand.push('tests/e2e/repairs.spec.ts')
     }
-    if (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath, playwrightCommand,
+    if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath, playwrightCommand,
       { cwd: frontend, env, log: 'e2e.log' })
     // Both modes keep SILSAN exclusive until the strict operational preflight
     // has finished; only the accessory suite needs a second organization.
     await createForeignTenant()
-    if (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-accessories.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-accessories-results.json')},log:'e2e-accessory-multitenant.log'})
-    if (!technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!sessionOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-non-repairable.spec.ts'],
      {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-non-repairable-results.json')},log:'e2e-non-repairable.log'})
-    if (!nonRepairableOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!sessionOnly && !nonRepairableOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-technical-completion.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-technical-completion-results.json')},log:'e2e-technical-completion.log'})
-    if (!nonRepairableOnly && !technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-actual-cost.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-actual-cost-results.json')},log:'e2e-actual-cost.log'})
-    if (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (sessionOnly || (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly)) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/audit-session.spec.ts'],
-    {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-audit-session-results.json')},log:'e2e-audit-session.log'})
-    runLog.push({ e2e: 'passed', suite: actualCostOnly ? 'actual-cost only' : technicalCompletionOnly ? 'technical-completion only' : nonRepairableOnly ? 'non-repairable only'
+    {cwd:frontend,env:{...env,E2E_SERVICE_ROLE_KEY:status.SERVICE_ROLE_KEY,E2E_RESULTS_FILE:path.join(evidence,'e2e-audit-session-results.json')},log:'e2e-audit-session.log'})
+    runLog.push({ e2e: 'passed', suite: sessionOnly ? 'audit-session only' : actualCostOnly ? 'actual-cost only' : technicalCompletionOnly ? 'technical-completion only' : nonRepairableOnly ? 'non-repairable only'
       : workflowE2e ? 'all workflow E2E, accessories, R28, R13 and R14' : 'repairs, accessories, R28, R13 and R14', api, web: ports.web })
   }
   }

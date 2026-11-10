@@ -2,6 +2,13 @@ begin;
 
 select plan(29);
 
+create function pg_temp.authorization_claim(actor_id uuid) returns text
+language sql as $$
+  select set_config('request.jwt.claims', jsonb_build_object(
+    'sub', actor_id, 'role', 'authenticated', 'session_id', actor_id
+  )::text, true);
+$$;
+
 -- -------------------------------------------------------------------------
 -- Estructura y privilegios
 -- -------------------------------------------------------------------------
@@ -172,6 +179,11 @@ values
     now()
   );
 
+insert into auth.sessions(id, user_id, created_at, updated_at)
+values
+  ('e1111111-1111-4111-8111-111111111111', 'e1111111-1111-4111-8111-111111111111', now(), now()),
+  ('e2222222-2222-4222-8222-222222222222', 'e2222222-2222-4222-8222-222222222222', now(), now());
+
 insert into public.organization_memberships (
   organization_id,
   user_id,
@@ -291,6 +303,7 @@ select set_config(
   'e1111111-1111-4111-8111-111111111111',
   true
 );
+select pg_temp.authorization_claim('e1111111-1111-4111-8111-111111111111');
 
 select is(
   public.current_user_permissions(),
@@ -335,6 +348,7 @@ select set_config(
   'e2222222-2222-4222-8222-222222222222',
   true
 );
+select pg_temp.authorization_claim('e2222222-2222-4222-8222-222222222222');
 
 select is(
   public.current_user_permissions(),
@@ -366,6 +380,7 @@ select set_config(
   'e1111111-1111-4111-8111-111111111111',
   true
 );
+select pg_temp.authorization_claim('e1111111-1111-4111-8111-111111111111');
 
 select is(
   public.current_user_permissions(),
@@ -392,6 +407,7 @@ select set_config(
   'e1111111-1111-4111-8111-111111111111',
   true
 );
+select pg_temp.authorization_claim('e1111111-1111-4111-8111-111111111111');
 
 select is(
   public.current_user_permissions(),
@@ -420,6 +436,7 @@ select set_config(
   'e1111111-1111-4111-8111-111111111111',
   true
 );
+select pg_temp.authorization_claim('e1111111-1111-4111-8111-111111111111');
 
 select is(
   public.current_user_permissions(),
@@ -445,6 +462,7 @@ select set_config(
   'e1111111-1111-4111-8111-111111111111',
   true
 );
+select pg_temp.authorization_claim('e1111111-1111-4111-8111-111111111111');
 
 select is(
   public.current_user_permissions(),
@@ -496,6 +514,7 @@ select set_config(
   'e1111111-1111-4111-8111-111111111111',
   true
 );
+select pg_temp.authorization_claim('e1111111-1111-4111-8111-111111111111');
 
 select is(
   public.current_user_permissions(),
@@ -526,6 +545,7 @@ select set_config(
   'e1111111-1111-4111-8111-111111111111',
   true
 );
+select pg_temp.authorization_claim('e1111111-1111-4111-8111-111111111111');
 
 select is(
   public.is_organization_admin(

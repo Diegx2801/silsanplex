@@ -14,6 +14,9 @@ insert into public.organizations (id, name, slug) values
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values ('b1100000-0000-4000-8000-000000000001', 'b1@test.local', '{"full_name":"B1"}', now(), now());
 
+insert into auth.sessions (id, user_id, created_at, updated_at)
+values ('b1100000-0000-4000-8000-000000000001', 'b1100000-0000-4000-8000-000000000001', now(), now());
+
 insert into public.organization_memberships (organization_id, user_id)
 values ('b1000000-0000-4000-8000-000000000001', 'b1100000-0000-4000-8000-000000000001');
 
@@ -90,6 +93,7 @@ insert into public.products (
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'b1100000-0000-4000-8000-000000000001', true);
+select set_config('request.jwt.claims', '{"sub":"b1100000-0000-4000-8000-000000000001","role":"authenticated","session_id":"b1100000-0000-4000-8000-000000000001"}', true);
 
 select lives_ok($$
   select public.save_purchase_order(jsonb_build_object(
