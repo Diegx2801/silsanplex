@@ -207,9 +207,44 @@ jobs:
         run: npm run db:reset -- --yes
         working-directory: backend
 
-      - name: Validar esquema y pruebas de base de datos
-        run: npm run db:lint && npm run test:db
+      - name: Validar esquema de base de datos
+        run: npm run db:lint
         working-directory: backend
+
+      - name: Descargar y verificar pg_prove por digest desde GHCR
+        env:
+          PG_PROVE_IMAGE: ghcr.io/supabase/pg_prove@sha256:eda7c5e68719e9c8287e78c017118407b48df904a51c935f5ab6098b8c0bc6bc
+          PG_PROVE_TAG: ghcr.io/supabase/pg_prove:3.36
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 "$PG_PROVE_IMAGE"
+          inspection="$(docker image inspect --format '{{.Os}}|{{.Architecture}}|{{json .RepoDigests}}' "$PG_PROVE_IMAGE")"
+          printf 'pg_prove manifest: %s\n' "$inspection"
+          IFS='|' read -r os architecture repo_digests <<< "$inspection"
+          if [[ "$os/$architecture" != "linux/amd64" ]]; then
+            echo "Unexpected pg_prove platform: $os/$architecture" >&2
+            exit 1
+          fi
+          if ! grep -Fq "\"$PG_PROVE_IMAGE\"" <<< "$repo_digests"; then
+            echo "Pulled pg_prove image does not report the pinned GHCR digest." >&2
+            exit 1
+          fi
+          # Supabase CLI accepts a registry override but resolves pg_prove by tag.
+          # This local alias points to the image whose manifest digest was verified above.
+          docker tag "$PG_PROVE_IMAGE" "$PG_PROVE_TAG"
+          source_id="$(docker image inspect --format '{{.Id}}' "$PG_PROVE_IMAGE")"
+          alias_id="$(docker image inspect --format '{{.Id}}' "$PG_PROVE_TAG")"
+          if [[ "$source_id" != "$alias_id" ]]; then
+            echo "Supabase CLI alias does not reference the verified pg_prove image." >&2
+            exit 1
+          fi
+          printf 'Verified pg_prove digest image is ready for Supabase CLI: %s (%s)\n' "$PG_PROVE_IMAGE" "$source_id"
+
+      - name: Ejecutar pruebas de base de datos
+        run: npm run test:db
+        working-directory: backend
+        env:
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
 
       - name: Validar Edge Functions y scripts
         run: npm run test:functions && npm run typecheck:scripts
