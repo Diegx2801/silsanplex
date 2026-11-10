@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 create temporary table inventory_concurrency_extension_state (
   was_installed boolean not null
 );
@@ -60,6 +61,7 @@ values (
   now(),
   now()
 );
+select pg_temp.s01_seed_auth_session('c2000000-0000-4000-8000-000000000001');
 
 insert into public.organization_memberships (organization_id, user_id)
 values (
@@ -158,9 +160,10 @@ begin
     'c2000000-0000-4000-8000-000000000001',
     true
   );
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
   perform pg_catalog.set_config(
     'request.jwt.claims',
-    '{"sub":"c2000000-0000-4000-8000-000000000001","role":"authenticated"}',
+    '{"sub":"c2000000-0000-4000-8000-000000000001","role":"authenticated","session_id":"c2000000-0000-4000-8000-000000000001"}',
     true
   );
 

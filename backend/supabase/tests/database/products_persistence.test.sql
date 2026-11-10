@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(61);
@@ -338,11 +339,7 @@ values
 grant select on product_import_test_payloads to authenticated;
 
 set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub',
-  'a3111111-1111-4111-8111-111111111111',
-  true
-);
+select pg_temp.s01_set_authenticated_actor(('a3111111-1111-4111-8111-111111111111')::text, true);
 
 select lives_ok(
   $$
@@ -721,11 +718,7 @@ select is(
 reset role;
 
 set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub',
-  'a4111111-1111-4111-8111-111111111111',
-  true
-);
+select pg_temp.s01_set_authenticated_actor(('a4111111-1111-4111-8111-111111111111')::text, true);
 
 select throws_ok(
   $$
@@ -751,11 +744,7 @@ select throws_ok(
   'una identidad no puede importar en otra organización'
 );
 
-select set_config(
-  'request.jwt.claim.sub',
-  'a4222222-2222-4222-8222-222222222222',
-  true
-);
+select pg_temp.s01_set_authenticated_actor(('a4222222-2222-4222-8222-222222222222')::text, true);
 
 select lives_ok(
   $$
@@ -865,11 +854,7 @@ select ok(
 );
 
 set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub',
-  'a3111111-1111-4111-8111-111111111111',
-  true
-);
+select pg_temp.s01_set_authenticated_actor(('a3111111-1111-4111-8111-111111111111')::text, true);
 
 select lives_ok(
   $$

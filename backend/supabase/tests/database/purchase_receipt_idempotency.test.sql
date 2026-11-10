@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(42);
@@ -44,7 +45,7 @@ insert into public.products (
   ('a4500000-0000-4000-8000-000000000002', 'a4000000-0000-4000-8000-000000000001', 'A3-SERVICE', 'Servicio A3', 'UND', 'service', 'inafecto', false, false, 'a4100000-0000-4000-8000-000000000001', 'a4100000-0000-4000-8000-000000000001');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a4100000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('a4100000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.save_purchase_order(jsonb_build_object(
@@ -145,7 +146,7 @@ set local role postgres;
 insert into public.purchase_receipts (organization_id, purchase_order_id, warehouse_id, operation_key, notes)
 values ('a4000000-0000-4000-8000-000000000001',(select id from public.purchase_orders where document_number = '004'),'a4300000-0000-4000-8000-000000000001','a4600000-0000-4000-8000-000000000099','historical');
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a4100000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('a4100000-0000-4000-8000-000000000001')::text, true);
 select throws_ok($$ select public.receive_purchase_order_partial(jsonb_build_object('organization_id','a4000000-0000-4000-8000-000000000001','purchase_order_id',(select id from public.purchase_orders where document_number = '004'),'operation_key','a4600000-0000-4000-8000-000000000099','items',jsonb_build_array(jsonb_build_object('purchase_order_item_id',(select id from public.purchase_order_items where purchase_order_id = (select id from public.purchase_orders where document_number = '004')),'quantity',1,'fulfillment_mode','physical','location_id','a4400000-0000-4000-8000-000000000001')))) $$, 'P0001', 'PURCHASE_RECEIPT_IDEMPOTENCY_LEGACY_UNVERIFIABLE', 'historical receipt cannot be replayed without a hash');
 
 select throws_ok($$ select public.receive_purchase_order_partial(jsonb_build_object('organization_id','a4000000-0000-4000-8000-000000000001','purchase_order_id',(select id from public.purchase_orders where document_number = '003'),'operation_key','a4600000-0000-4000-8000-000000000001','items','[]'::jsonb)) $$, '23505', 'PURCHASE_RECEIPT_KEY_CONFLICT', 'same key on another order conflicts');
@@ -169,7 +170,7 @@ values ('a4400000-0000-4000-8000-000000000003', 'a4000000-0000-4000-8000-0000000
 insert into public.products (id, organization_id, code, description, unit_of_measure, product_type, tax_affectation, batch_control, expiration_control, created_by, updated_by)
 values ('a4500000-0000-4000-8000-000000000003', 'a4000000-0000-4000-8000-000000000002', 'A3-OTHER', 'Bien Otra', 'UND', 'good', 'gravado', false, false, 'a4100000-0000-4000-8000-000000000002', 'a4100000-0000-4000-8000-000000000002');
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a4100000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('a4100000-0000-4000-8000-000000000002')::text, true);
 select lives_ok($$ select public.save_purchase_order(jsonb_build_object('organization_id','a4000000-0000-4000-8000-000000000002','supplier_id','a4200000-0000-4000-8000-000000000002','document_type','factura','series','A3','document_number','001','issue_date',current_date,'warehouse_id','a4300000-0000-4000-8000-000000000002','warehouse','Almacen A3 Otra','items',jsonb_build_array(jsonb_build_object('product_id','a4500000-0000-4000-8000-000000000003','quantity',1,'unit_cost',10,'lot','','expiration_date','')))) $$, 'same key can be used by another organization');
 select lives_ok($$ select public.issue_purchase_order('a4000000-0000-4000-8000-000000000002',(select id from public.purchase_orders where organization_id = 'a4000000-0000-4000-8000-000000000002')) $$, 'issues the other organization order');
 select lives_ok($$ select public.receive_purchase_order_partial(jsonb_build_object('organization_id','a4000000-0000-4000-8000-000000000002','purchase_order_id',(select id from public.purchase_orders where organization_id = 'a4000000-0000-4000-8000-000000000002'),'operation_key','a4600000-0000-4000-8000-000000000001','items',jsonb_build_array(jsonb_build_object('purchase_order_item_id',(select id from public.purchase_order_items where organization_id = 'a4000000-0000-4000-8000-000000000002'),'quantity',1,'fulfillment_mode','physical','location_id','a4400000-0000-4000-8000-000000000003')))) $$, 'same key is isolated by organization');

@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select no_plan();
@@ -90,7 +91,7 @@ insert into public.products (
   );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a1b20000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('a1b20000-0000-4000-8000-000000000001')::text, true);
 
 select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','a1b10000-0000-4000-8000-000000000001',
@@ -231,7 +232,7 @@ select throws_ok($$
 $$, '55000', 'ORDER_TAX_AFFECTATION_IMMUTABLE', 'la línea no permite mutar su snapshot');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a1b20000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('a1b20000-0000-4000-8000-000000000001')::text, true);
 select throws_ok($$
   select public.create_order(jsonb_build_object(
     'organization_id','a1b10000-0000-4000-8000-000000000002',

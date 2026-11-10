@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(15);
@@ -24,7 +25,7 @@ insert into public.products (id, organization_id, code, description, unit_of_mea
 values ('a3500000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', 'A2-CONC-GOOD', 'Bien conc', 'UND', 'good', 'gravado', false, false);
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'a3100000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('a3100000-0000-4000-8000-000000000001')::text, true);
 select public.save_purchase_order(jsonb_build_object(
   'organization_id', 'a3000000-0000-4000-8000-000000000001', 'supplier_id', 'a3200000-0000-4000-8000-000000000001',
   'document_type', 'factura', 'series', 'A2C', 'document_number', '001', 'issue_date', current_date,
@@ -45,8 +46,9 @@ as $$
 declare
   requested_order uuid := (select id from public.purchase_orders where document_number = '001');
 begin
-  perform set_config('request.jwt.claim.sub', 'a3100000-0000-4000-8000-000000000001', true);
-  perform set_config('request.jwt.claims', '{"sub":"a3100000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+  perform pg_catalog.set_config('request.jwt.claim.sub', 'a3100000-0000-4000-8000-000000000001', true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config('request.jwt.claims', pg_catalog.jsonb_build_object('sub', 'a3100000-0000-4000-8000-000000000001', 'role', 'authenticated', 'session_id', 'a3100000-0000-4000-8000-000000000001')::text, true);
   perform 1 from public.purchase_orders where id = requested_order for update;
   perform pg_catalog.pg_sleep(0.5);
   perform public.receive_purchase_order_partial(jsonb_build_object(

@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(7);
@@ -26,7 +27,7 @@ values (
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd2000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('d2000000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.import_products(

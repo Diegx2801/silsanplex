@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(25);
@@ -106,7 +107,7 @@ insert into public.inventory_movements (
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', '92000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('92000000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.record_supplier_evaluation('{
@@ -152,7 +153,7 @@ insert into public.inventory_reservations (
   '92000000-0000-4000-8000-000000000001', '92000000-0000-4000-8000-000000000001'
 );
 set local role authenticated;
-select set_config('request.jwt.claim.sub', '92000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('92000000-0000-4000-8000-000000000001')::text, true);
 
 select throws_ok($$
   select public.complete_supplier_return(
@@ -170,7 +171,7 @@ update public.inventory_reservations
 set status = 'released', updated_at = now()
 where id = '99000000-0000-4000-8000-000000000001';
 set local role authenticated;
-select set_config('request.jwt.claim.sub', '92000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('92000000-0000-4000-8000-000000000001')::text, true);
 select lives_ok($$
   select public.complete_supplier_return(
     '91000000-0000-4000-8000-000000000001', (select id from public.supplier_returns limit 1)

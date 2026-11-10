@@ -16,7 +16,7 @@ create function pg_temp.d01_claim(actor text, session_label text) returns text l
     'exp', extract(epoch from now() + interval '1 hour')::bigint
   )::text, true);
 $$;
-grant select on d01_ids to authenticated;
+grant select on d01_ids to authenticated, service_role;
 
 insert into public.organizations(id, name, slug)
 select id, 'D01 disposable tenant', 'd01-' || id from d01_ids where label in ('org', 'other-org');
@@ -58,6 +58,13 @@ grant select on d01_before to authenticated;
 
 set local role authenticated;
 select ok(public.current_auth_session_is_active(), 'active admin uses the existing Auth session helper');
+select ok(public.is_active_user(), 'active actor helper still accepts the signed-in administrator');
+select ok(public.is_organization_member(pg_temp.d01_id('org')), 'active actor retains organization membership');
+select ok(public.is_organization_admin(pg_temp.d01_id('org')), 'active actor retains administrator authority');
+select ok(public.can_manage_user(pg_temp.d01_id('ordinary')), 'active administrator can still manage a tenant user');
+select ok(public.has_organization_permission(pg_temp.d01_id('org'), 'PRODUCTS_MANAGE'), 'active actor keeps product permission');
+select ok(pg_temp.d01_id('org') = any(public.current_user_organization_ids_with_permission('PRODUCTS_VIEW')),
+  'optimized read authorization still includes the active tenant');
 select is((select count(*) from public.audit_events), (select own_count from d01_before),
   'active admin reads every module audit in their tenant, excluding foreign and unscoped events');
 select is((select count(*) from public.repair_list where organization_id = pg_temp.d01_id('org')), 1::bigint,
@@ -87,6 +94,7 @@ delete from public.user_roles where organization_id = pg_temp.d01_id('org')
 select pg_temp.d01_claim('admin', 'admin');
 set local role authenticated;
 select ok(public.current_auth_session_is_active(), 'administrative authority can be revoked while the session remains active');
+select is(public.is_organization_admin(pg_temp.d01_id('org')), false, 'revoked administrator authority is checked at query time');
 select is((select count(*) from public.audit_events), 0::bigint, 'revoked administrative authority is checked at query time');
 reset role;
 insert into public.user_roles(organization_id, user_id, role_code)
@@ -106,7 +114,15 @@ delete from auth.sessions where id = pg_temp.d01_id('admin');
 select pg_temp.d01_claim('admin', 'admin');
 set local role authenticated;
 select ok((auth.jwt() ->> 'exp')::bigint > extract(epoch from now()), 'revoked-session claims are still unexpired');
-select ok(public.is_organization_admin(pg_temp.d01_id('org')), 'admin role remains active: denial is specifically session-based');
+select is(public.is_active_user(), false, 'current actor helpers reject a revoked session');
+select is(public.is_organization_member(pg_temp.d01_id('org')), false, 'membership helper rejects a revoked session');
+select is(public.is_organization_admin(pg_temp.d01_id('org')), false, 'admin helper rejects a revoked session');
+select is(public.can_manage_user(pg_temp.d01_id('ordinary')), false, 'user-management helper rejects a revoked session');
+select is(public.current_user_permissions(), '{}'::text[], 'permission RPC returns no permissions after revocation');
+select is(public.has_organization_permission(pg_temp.d01_id('org'), 'PRODUCTS_MANAGE'), false,
+  'current actor permission helper rejects a revoked session');
+select is(public.current_user_organization_ids_with_permission('PRODUCTS_VIEW'), '{}'::uuid[],
+  'optimized authorization returns no organizations after revocation');
 select is(public.current_auth_session_is_active(), false, 'deleted Auth session is inactive');
 select is((select count(*) from public.audit_events), 0::bigint, 'D01: revoked administrator cannot read global audit');
 select is((select count(*) from public.repair_list where organization_id = pg_temp.d01_id('org')), 0::bigint,
@@ -121,6 +137,16 @@ select throws_ok($$select * from public.list_distribution_delivery_inventory_tra
   '42501', 'DISTRIBUTION_FORBIDDEN', 'trace projection cannot expose audit correlation after revocation');
 
 reset role;
+set local role service_role;
+select set_config('request.jwt.claims', jsonb_build_object(
+  'role', 'service_role', 'sub', pg_temp.d01_id('admin')
+)::text, true);
+select is(public.user_has_organization_permission(pg_temp.d01_id('org'), pg_temp.d01_id('admin'), 'PRODUCTS_MANAGE'), true,
+  'trusted service_role can still verify an explicit third-party permission after session revocation');
+select is(public.repair_technician_is_active(pg_temp.d01_id('org'), pg_temp.d01_id('admin')), true,
+  'trusted service_role retains explicit technician validation semantics');
+reset role;
+select pg_temp.d01_claim('admin', 'admin');
 insert into auth.sessions(id, user_id, created_at, updated_at)
 values (pg_temp.d01_id('fresh-session'), pg_temp.d01_id('admin'), now(), now());
 set local role authenticated;
@@ -133,8 +159,40 @@ reset role;
 select is((select jsonb_agg(to_jsonb(e) order by e.id) from public.audit_events e
     where e.organization_id in (pg_temp.d01_id('org'), pg_temp.d01_id('other-org'))),
   (select audit_rows from d01_before), 'all query, role and session changes leave historical audit rows unchanged');
-select is((select count(*) from pg_catalog.pg_policy where polrelid = 'public.audit_events'::regclass), 1::bigint,
-  'D01 changes the existing policy without a permissive OR alternative');
+select is((select count(*) from pg_catalog.pg_policy where polrelid = 'public.audit_events'::regclass), 2::bigint,
+  'D01 adds one restrictive policy alongside the existing audit policy');
+select ok(exists (select 1 from pg_catalog.pg_policy
+  where polrelid = 'public.audit_events'::regclass and polname = 's01_require_active_auth_session'
+    and not polpermissive and polcmd = '*' and 'authenticated'::regrole = any(polroles)),
+  'the S01 audit policy is restrictive, all-command, and limited to authenticated');
+select ok(not exists (
+  select 1 from pg_catalog.pg_class relation
+  join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
+  where namespace.nspname = 'public' and relation.relkind in ('r', 'p')
+    and relation.relrowsecurity
+    and exists (
+      select 1 from pg_catalog.pg_policy existing_policy
+      where existing_policy.polrelid = relation.oid
+        and (0 = any(existing_policy.polroles) or 'authenticated'::regrole = any(existing_policy.polroles))
+    )
+    and not exists (
+      select 1 from pg_catalog.pg_policy policy
+      where policy.polrelid = relation.oid and policy.polname = 's01_require_active_auth_session'
+        and not policy.polpermissive and policy.polcmd = '*'
+        and 'authenticated'::regrole = any(policy.polroles)
+    )
+), 'every public table with an authenticated or public RLS policy has the restrictive active-session policy');
+select ok(exists (select 1 from pg_catalog.pg_policy
+  where polrelid = 'storage.objects'::regclass and polname = 's01_require_active_auth_session'
+    and not polpermissive and polcmd = '*' and 'authenticated'::regrole = any(polroles)),
+  'Storage objects require an active Auth session for authenticated requests');
+select ok(not exists (
+  select 1 from pg_catalog.pg_class relation
+  join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
+  where namespace.nspname = 'public' and relation.relkind = 'v'
+    and has_table_privilege('authenticated', relation.oid, 'SELECT')
+    and not ('security_invoker=true' = any(coalesce(relation.reloptions, array[]::text[])))
+), 'all authenticated public views honor underlying RLS as the invoker');
 select ok((select relrowsecurity from pg_class where oid = 'public.audit_events'::regclass), 'audit RLS stays enabled');
 select ok(has_table_privilege('authenticated', 'public.audit_events', 'SELECT'), 'authenticated keeps SELECT subject to RLS');
 select ok(not has_table_privilege('anon', 'public.audit_events', 'SELECT'), 'anon gains no direct audit SELECT');
@@ -150,6 +208,10 @@ select ok(not exists (
     or has_function_privilege('anon', p.oid, 'EXECUTE') or has_function_privilege('service_role', p.oid, 'EXECUTE')
     or not p.prosecdef or not p.proconfig @> array['search_path=""'])
 ), 'projected audit RPCs retain their exact public privilege boundary and pinned search_path');
+select ok(not has_function_privilege('authenticated', 'public.repair_technician_is_active(uuid,uuid)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.repair_technician_is_active(uuid,uuid)', 'EXECUTE')
+  and has_function_privilege('service_role', 'public.repair_technician_is_active(uuid,uuid)', 'EXECUTE'),
+  'explicit third-party technician validation remains restricted to trusted/internal callers');
 select ok(not exists (
   select 1 from pg_depend d join pg_rewrite r on r.oid = d.objid join pg_class c on c.oid = r.ev_class
   where d.refobjid = 'public.audit_events'::regclass and c.relkind in ('v', 'm')

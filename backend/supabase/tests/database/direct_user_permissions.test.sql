@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(39);
@@ -76,7 +77,7 @@ select results_eq(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub','da200000-0000-4000-8000-000000000002',true);
+select pg_temp.s01_set_authenticated_actor(('da200000-0000-4000-8000-000000000002')::text, true);
 select results_eq('select unnest(public.current_user_permissions())', $$values ('CUSTOMERS_MANAGE'::text),('CUSTOMERS_VIEW'::text),('PRODUCTS_MANAGE'::text),('PRODUCTS_VIEW'::text)$$, 'la sesión obtiene permisos directos');
 select is(public.has_organization_permission('da100000-0000-4000-8000-000000000001','PRODUCTS_MANAGE'),true,'RLS reconoce permisos directos');
 select is(public.has_organization_permission('da100000-0000-4000-8000-000000000002','PRODUCTS_MANAGE'),false,'el permiso no cruza organizaciones');

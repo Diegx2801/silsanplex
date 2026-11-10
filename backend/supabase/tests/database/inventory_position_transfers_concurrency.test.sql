@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 -- Independent sessions require committed, tenant-isolated fixtures. Cleanup
 -- removes only this test's fixed organization after all workers disconnect.
 create temporary table transfer_extension_state(was_installed boolean);
@@ -33,6 +34,7 @@ select pg_temp.clear_transfer_concurrency_fixture();
 insert into public.organizations(id,name,slug) values('ac150000-0000-4000-8000-000000000001','Transfer concurrency','transfer-concurrency');
 insert into auth.users(id,email,raw_user_meta_data,created_at,updated_at)
 values('ac151000-0000-4000-8000-000000000001','transfer-concurrency@test.local','{"full_name":"Transfer concurrency"}',now(),now());
+select pg_temp.s01_seed_auth_session('ac151000-0000-4000-8000-000000000001');
 insert into public.organization_memberships(organization_id,user_id) values('ac150000-0000-4000-8000-000000000001','ac151000-0000-4000-8000-000000000001');
 insert into public.user_roles(organization_id,user_id,role_code) values('ac150000-0000-4000-8000-000000000001','ac151000-0000-4000-8000-000000000001','ADMIN');
 insert into public.products(id,organization_id,code,description,unit_of_measure,batch_control,expiration_control)
@@ -52,7 +54,9 @@ create function transfer_concurrency_test.transfer(operation_key uuid, quantity 
 returns text language plpgsql as $$
 declare result uuid;
 begin
- perform set_config('request.jwt.claim.sub','ac151000-0000-4000-8000-000000000001',true);
+  perform pg_catalog.set_config('request.jwt.claim.sub','ac151000-0000-4000-8000-000000000001',true);
+  perform pg_catalog.set_config('request.jwt.claim.role','authenticated',true);
+  perform pg_catalog.set_config('request.jwt.claims','{"sub":"ac151000-0000-4000-8000-000000000001","role":"authenticated","session_id":"ac151000-0000-4000-8000-000000000001"}',true);
  if prelock then
   perform public.lock_inventory_fefo_scope('ac150000-0000-4000-8000-000000000001','ac152000-0000-4000-8000-000000000001','ac153000-0000-4000-8000-000000000001');
   perform pg_advisory_xact_lock(gate);
@@ -72,7 +76,9 @@ create function transfer_concurrency_test.manual(gate bigint)
 returns text language plpgsql as $$
 declare result uuid;
 begin
- perform set_config('request.jwt.claim.sub','ac151000-0000-4000-8000-000000000001',true);
+  perform pg_catalog.set_config('request.jwt.claim.sub','ac151000-0000-4000-8000-000000000001',true);
+  perform pg_catalog.set_config('request.jwt.claim.role','authenticated',true);
+  perform pg_catalog.set_config('request.jwt.claims','{"sub":"ac151000-0000-4000-8000-000000000001","role":"authenticated","session_id":"ac151000-0000-4000-8000-000000000001"}',true);
  perform public.lock_inventory_fefo_scope('ac150000-0000-4000-8000-000000000001','ac152000-0000-4000-8000-000000000001','ac153000-0000-4000-8000-000000000001');
  perform pg_advisory_xact_lock(gate);
  result := public.record_inventory_movement(jsonb_build_object(
@@ -88,7 +94,9 @@ create function transfer_concurrency_test.outbound()
 returns text language plpgsql as $$
 declare result uuid;
 begin
- perform set_config('request.jwt.claim.sub','ac151000-0000-4000-8000-000000000001',true);
+  perform pg_catalog.set_config('request.jwt.claim.sub','ac151000-0000-4000-8000-000000000001',true);
+  perform pg_catalog.set_config('request.jwt.claim.role','authenticated',true);
+  perform pg_catalog.set_config('request.jwt.claims','{"sub":"ac151000-0000-4000-8000-000000000001","role":"authenticated","session_id":"ac151000-0000-4000-8000-000000000001"}',true);
  result := public.record_inventory_fefo_outbound(jsonb_build_object(
   'organization_id','ac150000-0000-4000-8000-000000000001','product_id','ac152000-0000-4000-8000-000000000001',
   'warehouse_id','ac153000-0000-4000-8000-000000000001','quantity',1,'reason','Concurrent consumption'

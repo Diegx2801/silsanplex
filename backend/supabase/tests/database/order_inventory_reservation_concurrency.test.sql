@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 create temporary table order_inventory_reservation_extension_state (
   was_installed boolean not null
 );
@@ -108,7 +109,8 @@ insert into public.warehouse_locations (
 );
 
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"bc200000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"bc200000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
+select pg_temp.s01_seed_auth_session('bc200000-0000-4000-8000-000000000002');
 select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','bc100000-0000-4000-8000-000000000001',
   'product_id','bc400000-0000-4000-8000-000000000001',
@@ -135,11 +137,8 @@ declare
   created_order_id uuid;
 begin
   perform pg_catalog.set_config('request.jwt.claim.sub', requested_user_id::text, true);
-  perform pg_catalog.set_config(
-    'request.jwt.claims',
-    pg_catalog.format('{"sub":"%s","role":"authenticated"}', requested_user_id),
-    true
-  );
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config('request.jwt.claims', pg_catalog.jsonb_build_object('sub', requested_user_id::text, 'role', 'authenticated', 'session_id', requested_user_id::text)::text, true);
   perform pg_catalog.pg_advisory_xact_lock(requested_gate_key);
   begin
     created_order_id := public.create_order(jsonb_build_object(

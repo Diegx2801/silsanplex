@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(28);
@@ -203,7 +204,7 @@ insert into public.supplier_returns (
   ('e4ba0000-0000-4000-8000-000000000002', 'e4b00000-0000-4000-8000-000000000001', 'e4b20000-0000-4000-8000-000000000002', 'e4b60000-0000-4000-8000-000000000007', 'e4b70000-0000-4000-8000-000000000007', 'e4b90000-0000-4000-8000-000000000005', 'e4b30000-0000-4000-8000-000000000001', 1, 'Devolucion registrada E4B', 'registered', '2026-02-10', null, 'E4B Compras');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e4b10000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('e4b10000-0000-4000-8000-000000000001')::text, true);
 
 select is(
   (select count(*) from public.get_product_supplier_comparison(
@@ -438,7 +439,7 @@ select throws_ok(
   'rechaza periodos invertidos'
 );
 
-select set_config('request.jwt.claim.sub', 'e4b10000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('e4b10000-0000-4000-8000-000000000002')::text, true);
 select throws_ok(
   $$select * from public.get_product_supplier_comparison(
     'e4b00000-0000-4000-8000-000000000001',
@@ -449,7 +450,7 @@ select throws_ok(
   'PURCHASES_VIEW sin SUPPLIERS_VIEW no expone precios por proveedor'
 );
 
-select set_config('request.jwt.claim.sub', 'e4b10000-0000-4000-8000-000000000003', true);
+select pg_temp.s01_set_authenticated_actor(('e4b10000-0000-4000-8000-000000000003')::text, true);
 select throws_ok(
   $$select * from public.get_product_supplier_comparison(
     'e4b00000-0000-4000-8000-000000000001',

@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(16);
@@ -48,7 +49,7 @@ insert into public.warehouse_locations (
   ('d5000000-0000-4000-8000-000000000002', 'd1000000-0000-4000-8000-000000000001', 'd4000000-0000-4000-8000-000000000002', 'B-01', 'Destino B-01', 'd2000000-0000-4000-8000-000000000001', 'd2000000-0000-4000-8000-000000000001');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd2000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('d2000000-0000-4000-8000-000000000001')::text, true);
 
 -- Los lotes de este escenario deben seguir vigentes al ejecutar la suite.
 -- inventory_fefo_core.test.sql comprueba por separado la exclusion de vencidos.

@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select no_plan();
@@ -119,7 +120,7 @@ as $$
 $$;
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd6200000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('d6200000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok(
   $$select public.create_order(pg_temp.minimum_order_payload('d6600000-0000-4000-8000-000000000001', 'd6500000-0000-4000-8000-000000000001', 0))$$,
@@ -194,7 +195,7 @@ select lives_ok($$
 $$, 'el trigger aplica la misma regla a bienes');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd6200000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('d6200000-0000-4000-8000-000000000001')::text, true);
 
 select public.create_order(
   pg_temp.minimum_order_payload(
@@ -208,7 +209,7 @@ update public.products
 set sale_price = 30, minimum_sale_price = 25
 where id = 'd6500000-0000-4000-8000-000000000003';
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'd6200000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('d6200000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok(
   $$select public.create_order(pg_temp.minimum_order_payload('d6600000-0000-4000-8000-000000000011', 'd6500000-0000-4000-8000-000000000003', 20))$$,

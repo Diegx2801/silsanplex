@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select no_plan();
@@ -177,7 +178,7 @@ insert into public.user_roles (organization_id, user_id, role_code)
 values ('c2100000-0000-4000-8000-000000000001', 'c2200000-0000-4000-8000-000000000001', 'LOGISTICA');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c2200000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c2200000-0000-4000-8000-000000000001')::text, true);
 
 select throws_ok(
   $$select public.import_products_partial(
@@ -227,7 +228,7 @@ select is(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c2200000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c2200000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok(
   $$select public.import_products_partial(

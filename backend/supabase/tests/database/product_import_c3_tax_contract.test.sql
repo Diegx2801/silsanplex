@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select no_plan();
@@ -506,11 +507,7 @@ as $$
 $$;
 
 set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub',
-  'c3c50000-0000-4000-8000-000000000001',
-  true
-);
+select pg_temp.s01_set_authenticated_actor(('c3c50000-0000-4000-8000-000000000001')::text, true);
 
 select is(
   (public.import_products_partial(
@@ -563,11 +560,7 @@ as $$
 $$;
 
 set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub',
-  'c3c50000-0000-4000-8000-000000000001',
-  true
-);
+select pg_temp.s01_set_authenticated_actor(('c3c50000-0000-4000-8000-000000000001')::text, true);
 
 select is(
   (public.import_products_partial(
@@ -614,11 +607,7 @@ select is(
 );
 
 set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub',
-  'c3c50000-0000-4000-8000-000000000001',
-  true
-);
+select pg_temp.s01_set_authenticated_actor(('c3c50000-0000-4000-8000-000000000001')::text, true);
 
 select throws_ok(
   $$select public.import_products_partial(

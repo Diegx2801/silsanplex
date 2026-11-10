@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 create temporary table service_mixed_concurrency_extension_state (was_installed boolean not null);
 insert into service_mixed_concurrency_extension_state
 select exists (select 1 from pg_catalog.pg_extension where extname = 'dblink');
@@ -53,7 +54,8 @@ insert into public.warehouse_locations (id, organization_id, warehouse_id, code,
 insert into public.products (id,organization_id,code,description,unit_of_measure,product_type,tax_affectation)
 values ('d4e00000-0000-4000-8000-000000000002','d4b00000-0000-4000-8000-000000000001','SERVICE','Servicio concurrente','UND','service','gravado');
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"d4c00000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"d4c00000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
+select pg_temp.s01_seed_auth_session('d4c00000-0000-4000-8000-000000000002');
 select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','d4b00000-0000-4000-8000-000000000001', 'product_id','d4e00000-0000-4000-8000-000000000001',
   'warehouse_id','d4f00000-0000-4000-8000-000000000001', 'location_id','d4a00000-0000-4000-8000-000000000001',
@@ -77,7 +79,8 @@ returns text language plpgsql security definer set search_path = '' as $$
 declare result_id uuid;
 begin
   perform pg_catalog.set_config('request.jwt.claim.sub', user_id::text, true);
-  perform pg_catalog.set_config('request.jwt.claims', pg_catalog.format('{"sub":"%s","role":"authenticated"}', user_id), true);
+  perform pg_catalog.set_config('request.jwt.claim.role', 'authenticated', true);
+  perform pg_catalog.set_config('request.jwt.claims', pg_catalog.jsonb_build_object('sub', user_id::text, 'role', 'authenticated', 'session_id', user_id::text)::text, true);
   perform pg_catalog.pg_advisory_xact_lock_shared(gate);
   begin
     result_id := public.dispatch_order_from_reservations(jsonb_build_object(

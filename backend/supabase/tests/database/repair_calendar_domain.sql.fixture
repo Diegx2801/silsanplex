@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 -- Actual public commands under an authenticated session; all data is rolled back.
 create temporary table d06_ids(label text primary key, id uuid not null default gen_random_uuid());
 insert into d06_ids(label) values ('org'),('foreign-org'),('admin'),('finance'),('foreign'),('supplier'),('product'),('undated-product');
@@ -13,7 +14,7 @@ insert into user_roles(organization_id,user_id,role_code) select pg_temp.d06_id(
 case when label='finance' then 'VENTAS' else 'ADMIN' end from d06_ids where label in ('admin','finance','foreign');
 insert into organization_user_permissions(organization_id,user_id,permission_code)
 select pg_temp.d06_id('org'),pg_temp.d06_id('finance'),p from unnest(array['REPAIRS_MANAGE_ACTUAL_COST','REPAIRS_CONFIRM_ACTUAL_COST']) p;
-create function pg_temp.d06_claim(who text) returns text language sql as $$select set_config('request.jwt.claims',jsonb_build_object(
+create function pg_temp.d06_claim(who text) returns text language sql as $$select pg_temp.s01_set_authenticated_claims(jsonb_build_object(
  'role','authenticated','sub',pg_temp.d06_id(who),'session_id',pg_temp.d06_id(who),'exp',extract(epoch from now()+interval '1 hour')::bigint)::text,true)$$;
 insert into products(id,organization_id,code,description,unit_of_measure,product_type,tax_affectation,batch_control,expiration_control,created_by,updated_by)
 select id,pg_temp.d06_id('org'),'D06-'||upper(label),'D06 fixture '||label,'UND','good','gravado',true,label='product',pg_temp.d06_id('admin'),pg_temp.d06_id('admin')

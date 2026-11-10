@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(15);
@@ -78,7 +79,7 @@ values
 set local session_replication_role = origin;
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'e1a10000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('e1a10000-0000-4000-8000-000000000001')::text, true);
 
 select is(
   (public.inventory_movement_summary_read('e1a00000-0000-4000-8000-000000000001', '2026-09-01', '2026-09-30', '', null, 25, 0) ->> 'total_count')::integer,

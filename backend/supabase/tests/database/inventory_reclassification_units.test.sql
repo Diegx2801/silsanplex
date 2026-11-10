@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 select no_plan();
 
@@ -63,9 +64,9 @@ $$;
 select is(has_function_privilege('anon','public.reclassify_inventory(jsonb)','EXECUTE'),false,'anonymous cannot execute');
 select is(has_table_privilege('authenticated','inventory_internal.reclassification_operations','INSERT'),false,'client cannot forge idempotency completion');
 select throws_ok($$select public.reclassify_inventory(pg_temp.reclass_payload())$$,'42501','INVENTORY_FORBIDDEN','anonymous denied inside function');
-select set_config('request.jwt.claim.sub','ac191000-0000-4000-8000-000000000002',true);
+select pg_temp.s01_set_authenticated_actor('ac191000-0000-4000-8000-000000000002',true);
 select throws_ok($$select public.reclassify_inventory(pg_temp.reclass_payload())$$,'42501','INVENTORY_FORBIDDEN','sales user cannot change stock conditions');
-select set_config('request.jwt.claim.sub','ac191000-0000-4000-8000-000000000001',true);
+select pg_temp.s01_set_authenticated_actor('ac191000-0000-4000-8000-000000000001',true);
 select throws_ok($$select public.reclassify_inventory(pg_temp.reclass_payload('{"organization_id":"ac190000-0000-4000-8000-000000000002"}'))$$,'42501','INVENTORY_FORBIDDEN','foreign organization rejected');
 select throws_ok($$select public.reclassify_inventory(pg_temp.reclass_payload('{"quantity":0}'))$$,'22023','INVENTORY_QUANTITY_INVALID','zero rejected');
 select throws_ok($$select public.reclassify_inventory(pg_temp.reclass_payload('{"quantity":"NaN"}'))$$,'22023','INVENTORY_QUANTITY_INVALID','NaN rejected');

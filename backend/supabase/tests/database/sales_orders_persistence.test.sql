@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(63);
@@ -51,7 +52,7 @@ insert into public.warehouse_locations (id, organization_id, warehouse_id, code,
   ('e2a00000-0000-4000-8000-000000000001', 'a2a00000-0000-4000-8000-000000000001', 'e2a00000-0000-4000-8000-000000000001', 'GENERAL', 'Ubicacion general', 'b2a00000-0000-4000-8000-000000000001', 'b2a00000-0000-4000-8000-000000000001');
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'b2a00000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('b2a00000-0000-4000-8000-000000000001')::text, true);
 
 select public.record_inventory_movement(jsonb_build_object('document_reference', 'TEST-FIXTURE',
   'organization_id','a2a00000-0000-4000-8000-000000000001',
@@ -89,7 +90,7 @@ select is((select status from public.orders limit 1), 'confirmado', 'el pedido i
 set local role postgres;
 select is((select count(*) from public.audit_events where organization_id = 'a2a00000-0000-4000-8000-000000000001' and action = 'ORDER_CREATED'), 1::bigint, 'se registra auditoria del pedido');
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'b2a00000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('b2a00000-0000-4000-8000-000000000001')::text, true);
 
 select is(
   public.create_order(jsonb_build_object(
@@ -195,7 +196,7 @@ select is((select order_id from public.sales limit 1), (select id from public.or
 set local role postgres;
 select is((select count(*) from public.audit_events where organization_id = 'a2a00000-0000-4000-8000-000000000001' and action = 'SALE_CREATED'), 1::bigint, 'se registra auditoria de venta');
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'b2a00000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('b2a00000-0000-4000-8000-000000000001')::text, true);
 select is((select internal_number from public.sales limit 1), 'VEN-000001', 'la numeracion interna de venta es correlativa');
 select ok((select operation_payload_hash ~ '^[0-9a-f]{64}$' from public.sales limit 1), 'la venta persiste un SHA-256 canonico');
 select is(
@@ -218,7 +219,7 @@ select throws_ok($$select public.create_sale_from_order('a2a00000-0000-4000-8000
 select is((select total from public.sales limit 1), (select total from public.orders order by order_number limit 1), 'la venta conserva el total calculado');
 select throws_ok($$select public.create_sale_from_order('a2a00000-0000-4000-8000-000000000001', 'ffffffff-ffff-4fff-8fff-ffffffffffff', jsonb_build_object('operation_key','e2a00000-0000-4000-8000-000000000015','document_type','factura','series','f001','document_number','000004','warehouse','Almacen principal'))$$, 'P0002', 'SALE_ORDER_NOT_FOUND', 'rechaza convertir un pedido inexistente');
 
-select set_config('request.jwt.claim.sub', 'b2a00000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('b2a00000-0000-4000-8000-000000000002')::text, true);
 select is((select count(*) from public.orders), 0::bigint, 'un usuario de otra organizacion no observa pedidos ajenos');
 select is((select count(*) from public.sales), 0::bigint, 'un usuario de otra organizacion no observa ventas ajenas');
 select throws_ok($$select public.create_sale_from_order('a2a00000-0000-4000-8000-000000000001', (select order_id from public.sales limit 1), jsonb_build_object('operation_key','e2a00000-0000-4000-8000-000000000013','document_type','factura','series','f001','document_number','000003','warehouse','Almacen principal'))$$, '42501', 'SALE_FORBIDDEN', 'no permite operar en otra organizacion');

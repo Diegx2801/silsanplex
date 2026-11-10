@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(29);
@@ -182,11 +183,7 @@ select throws_ok($$
 $$, 'P0001', 'ORDER_WAREHOUSE_UNAVAILABLE', 'la barrera de backend rechaza almacenes inactivos');
 
 set local role authenticated;
-select set_config(
-  'request.jwt.claims',
-  '{"sub":"f2c00000-0000-4000-8000-000000000001","role":"authenticated"}',
-  true
-);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"f2c00000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 
 select lives_ok($$
   select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
@@ -248,11 +245,7 @@ insert into public.order_items (
   'COM-001', 'Producto comercial por lote', 'UND', 7, 10
 );
 set local role authenticated;
-select set_config(
-  'request.jwt.claims',
-  '{"sub":"f2c00000-0000-4000-8000-000000000001","role":"authenticated"}',
-  true
-);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"f2c00000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 select is(
   (select count(*) from public.orders), 1::bigint,
   'el pedido se crea una sola vez'
@@ -342,11 +335,7 @@ select throws_ok($$
 $$, '23505', null, 'no permite duplicar un bucket de la misma linea');
 
 set local role authenticated;
-select set_config(
-  'request.jwt.claims',
-  '{"sub":"f2c00000-0000-4000-8000-000000000001","role":"authenticated"}',
-  true
-);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"f2c00000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 reset role;
 insert into public.orders (
   id, organization_id, order_number, customer_id, warehouse_id, order_date,
@@ -410,11 +399,7 @@ select throws_ok($$
 $$, '23505', null, 'NULL de lote y vencimiento no permite duplicar el bucket');
 
 set local role authenticated;
-select set_config(
-  'request.jwt.claims',
-  '{"sub":"f2c00000-0000-4000-8000-000000000001","role":"authenticated"}',
-  true
-);
+select pg_temp.s01_set_authenticated_claims(('{"sub":"f2c00000-0000-4000-8000-000000000001","role":"authenticated"}')::text, true);
 select throws_ok($$
   select public.create_order(jsonb_build_object(
     'organization_id','f2b00000-0000-4000-8000-000000000001',

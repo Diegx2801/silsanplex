@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(16);
@@ -96,7 +97,7 @@ insert into public.warehouse_locations (
   );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c4200000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c4200000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
   "organization_id":"c4100000-0000-4000-8000-000000000001",
@@ -144,7 +145,7 @@ insert into public.inventory_movements (
 );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'c4200000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('c4200000-0000-4000-8000-000000000002')::text, true);
 
 select ok(
   public.has_organization_permission(
@@ -185,7 +186,7 @@ select is(
   'el Kardex mantiene aislamiento entre organizaciones'
 );
 
-select set_config('request.jwt.claim.sub', 'c4200000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('c4200000-0000-4000-8000-000000000001')::text, true);
 select throws_ok($$select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE",
   "organization_id":"c4100000-0000-4000-8000-000000000001",
   "product_id":"c4300000-0000-4000-8000-000000000002",

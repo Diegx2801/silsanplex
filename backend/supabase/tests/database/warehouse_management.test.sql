@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(52);
@@ -129,7 +130,7 @@ insert into public.products (id, organization_id, code, description, unit_of_mea
   ('83000000-0000-4000-8000-000000000002', '81000000-0000-4000-8000-000000000002', 'OTR-001', 'Producto ajeno', 'UND', false, false);
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', '82000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('82000000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok($$
   select public.save_warehouse(
@@ -271,7 +272,7 @@ reset role;
 select throws_ok($$update public.inventory_movements set reason = 'Alterado' where product_id = '83000000-0000-4000-8000-000000000001'$$,
   'P0001', 'INVENTORY_MOVEMENT_IMMUTABLE', 'historial no se altera');
 set local role authenticated;
-select set_config('request.jwt.claim.sub', '82000000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('82000000-0000-4000-8000-000000000001')::text, true);
 select throws_ok($$
   select public.transfer_inventory(jsonb_build_object(
     'organization_id', '81000000-0000-4000-8000-000000000001',
@@ -293,7 +294,7 @@ select is((select count(*) from public.warehouse_transfers), 1::bigint, 'transfe
 
 reset role;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', '82000000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('82000000-0000-4000-8000-000000000002')::text, true);
 select is((select count(*) from public.inventory_balances), 3::bigint, 'GERENCIA consulta balances de su empresa');
 select throws_ok($$
   select public.record_inventory_movement('{"document_reference":"TEST-FIXTURE","organization_id":"81000000-0000-4000-8000-000000000001","product_id":"83000000-0000-4000-8000-000000000001","warehouse_id":"84000000-0000-4000-8000-000000000001","location_id":"85000000-0000-4000-8000-000000000001","movement_type":"entrada","quantity":"1","unit_cost":"1","stock_status":"available","lot":"L-2026","operation_date":"2026-08-21","reason":"Sin permiso"}'::jsonb)
@@ -301,7 +302,7 @@ $$, '42501', 'INVENTORY_FORBIDDEN', 'GERENCIA no modifica inventario');
 
 reset role;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', '82000000-0000-4000-8000-000000000003', true);
+select pg_temp.s01_set_authenticated_actor(('82000000-0000-4000-8000-000000000003')::text, true);
 select is((select count(*) from public.warehouses), 0::bigint, 'otra organizacion no ve almacenes ajenos');
 select is((select count(*) from public.inventory_movements), 0::bigint, 'otra organizacion no ve movimientos ajenos');
 

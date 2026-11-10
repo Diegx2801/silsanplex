@@ -1,3 +1,4 @@
+\ir s01_auth_session_fixture.inc
 begin;
 
 select plan(27);
@@ -143,7 +144,7 @@ insert into public.products (
   );
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'b0100000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('b0100000-0000-4000-8000-000000000001')::text, true);
 
 select public.save_purchase_order(jsonb_build_object(
   'organization_id', 'b0000000-0000-4000-8000-000000000001',
@@ -200,7 +201,7 @@ select public.issue_purchase_order(
 
 reset role;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'b0100000-0000-4000-8000-000000000003', true);
+select pg_temp.s01_set_authenticated_actor(('b0100000-0000-4000-8000-000000000003')::text, true);
 
 select public.save_purchase_order(jsonb_build_object(
   'organization_id', 'b0000000-0000-4000-8000-000000000002',
@@ -226,7 +227,7 @@ set is_active = false,
 where id = 'b0500000-0000-4000-8000-000000000001';
 
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'b0100000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('b0100000-0000-4000-8000-000000000001')::text, true);
 
 select lives_ok(
   format(
@@ -316,7 +317,7 @@ select throws_ok(
 
 reset role;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'b0100000-0000-4000-8000-000000000002', true);
+select pg_temp.s01_set_authenticated_actor(('b0100000-0000-4000-8000-000000000002')::text, true);
 select throws_ok(
   format(
     'select public.receive_purchase_order(%L::uuid, %L::uuid)',
@@ -328,7 +329,7 @@ select throws_ok(
 
 reset role;
 set local role authenticated;
-select set_config('request.jwt.claim.sub', 'b0100000-0000-4000-8000-000000000001', true);
+select pg_temp.s01_set_authenticated_actor(('b0100000-0000-4000-8000-000000000001')::text, true);
 
 select public.receive_purchase_order_partial(jsonb_build_object(
   'organization_id', 'b0000000-0000-4000-8000-000000000001',

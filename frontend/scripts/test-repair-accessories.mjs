@@ -33,7 +33,8 @@ const sqlOnly = process.argv.includes('--sql-only')
 const nonRepairableOnly = process.argv.includes('--non-repairable-only')
 const technicalCompletionOnly = process.argv.includes('--technical-completion-only')
 const actualCostOnly = process.argv.includes('--actual-cost-only')
-const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly || technicalCompletionOnly || actualCostOnly
+const sessionOnly = process.argv.includes('--audit-session-only')
+const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly || technicalCompletionOnly || actualCostOnly || sessionOnly
 const checksOnly = process.argv.includes('--checks-only')
 const workflowE2e = process.argv.includes('--workflow-e2e')
 const runLog = []
@@ -143,7 +144,7 @@ try {
   started = true
   // E2E uses the real isolated admin-users Edge Function; no mocked grants.
   // Only named source folders are copied, never an application .env file.
-  run(cli, ['start', '-x', `realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,${sqlOnly ? 'edge-runtime,' : ''}logflare,vector,supavisor`],
+  run(cli, ['start', '-x', `realtime,imgproxy,mailpit,postgres-meta,studio,${sqlOnly ? 'edge-runtime,' : ''}logflare,vector,supavisor`],
     { cwd: backend, log: 'migrations-start.log', print: false })
   verify()
   if (upgrade) {
@@ -327,11 +328,13 @@ try {
     }, null, 2))
     assertSupabaseDbLintSucceeded(lintResult)
     sql('create extension if not exists pgtap with schema extensions;')
-    const tap = run('docker', ['run','--rm','--network',`supabase_network_${project}`,
-      '--mount',`type=bind,source=${path.join(backend,'supabase/tests/database')},target=/tests,readonly`,
-      '-e','PGPASSWORD=postgres','public.ecr.aws/supabase/pg_prove:3.36','pg_prove','--nocolor','--verbose',
-      '-h',`supabase_db_${project}`,'-U','postgres','-d','postgres',...tests.map(n => `/tests/${n}`)],
-    { log: 'sql-tests.log', print: false })
+    const runSqlTests = (names, log) => names.length ? run('docker', ['run','--rm','--network',`supabase_network_${project}`,
+       '--mount',`type=bind,source=${path.join(backend,'supabase/tests/database')},target=/tests,readonly`,
+       '-e','PGPASSWORD=postgres','public.ecr.aws/supabase/pg_prove:3.36','pg_prove','--nocolor','--verbose',
+       '-h',`supabase_db_${project}`,'-U','postgres','-d','postgres',...names.map(n => `/tests/${n}`)],
+      { log, print: false }) : ''
+    const tap = runSqlTests(tests, 'sql-tests.log')
+    fs.writeFileSync(path.join(evidence, 'sql-tests.log'), tap)
     const suites = []
     let active
     for (const line of tap.split('\n')) {
@@ -429,27 +432,27 @@ try {
     } else {
       playwrightCommand.push('tests/e2e/repairs.spec.ts')
     }
-    if (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath, playwrightCommand,
+    if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath, playwrightCommand,
       { cwd: frontend, env, log: 'e2e.log' })
     // Both modes keep SILSAN exclusive until the strict operational preflight
     // has finished; only the accessory suite needs a second organization.
     await createForeignTenant()
-    if (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-accessories.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-accessories-results.json')},log:'e2e-accessory-multitenant.log'})
-    if (!technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!sessionOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-non-repairable.spec.ts'],
      {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-non-repairable-results.json')},log:'e2e-non-repairable.log'})
-    if (!nonRepairableOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!sessionOnly && !nonRepairableOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-technical-completion.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-technical-completion-results.json')},log:'e2e-technical-completion.log'})
-    if (!nonRepairableOnly && !technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-actual-cost.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-actual-cost-results.json')},log:'e2e-actual-cost.log'})
-    if (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (sessionOnly || (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly)) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/audit-session.spec.ts'],
-    {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-audit-session-results.json')},log:'e2e-audit-session.log'})
-    runLog.push({ e2e: 'passed', suite: actualCostOnly ? 'actual-cost only' : technicalCompletionOnly ? 'technical-completion only' : nonRepairableOnly ? 'non-repairable only'
+    {cwd:frontend,env:{...env,E2E_SERVICE_ROLE_KEY:status.SERVICE_ROLE_KEY,E2E_RESULTS_FILE:path.join(evidence,'e2e-audit-session-results.json')},log:'e2e-audit-session.log'})
+    runLog.push({ e2e: 'passed', suite: sessionOnly ? 'audit-session only' : actualCostOnly ? 'actual-cost only' : technicalCompletionOnly ? 'technical-completion only' : nonRepairableOnly ? 'non-repairable only'
       : workflowE2e ? 'all workflow E2E, accessories, R28, R13 and R14' : 'repairs, accessories, R28, R13 and R14', api, web: ports.web })
   }
   }
