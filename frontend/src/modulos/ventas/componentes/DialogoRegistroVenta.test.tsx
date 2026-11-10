@@ -94,3 +94,6 @@ describe('DialogoRegistroVenta', () => {
     await waitFor(() => expect(alCambiarApertura).toHaveBeenCalledWith(false))
   })
 })
+vi.mock('@/modulos/ventas/estado/useHistorialPreciosVenta', () => ({
+  useHistorialPreciosVenta: () => ({ permitido: false, filas: [] }),
+}))

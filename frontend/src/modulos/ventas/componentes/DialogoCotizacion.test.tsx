@@ -274,3 +274,6 @@ describe('DialogoCotizacion', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Paracetamol 500 mg')
   })
 })
+vi.mock('@/modulos/ventas/estado/useHistorialPreciosVenta', () => ({
+  useHistorialPreciosVenta: () => ({ permitido: false, filas: [] }),
+}))

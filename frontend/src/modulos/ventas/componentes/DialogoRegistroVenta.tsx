@@ -4,6 +4,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useForm } from 'react-hook-form'
 
 import { Button } from '@/components/ui/button'
+import { UltimoPrecioVenta } from '@/modulos/ventas/componentes/HistorialPreciosVenta'
 import {
   esquemaDatosVenta,
   fechaLocalActual,
@@ -82,6 +83,11 @@ export function DialogoRegistroVenta({
           </header>
           <form className="flex min-h-0 flex-1 flex-col overflow-hidden" onSubmit={handleSubmit(guardar)}>
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-7">
+              <p className="mb-4 text-xs text-muted-foreground">Los precios de esta venta se conservan desde el pedido. El historial es una referencia de consulta.</p>
+              {abierto && pedido.lineas.map(linea => <div key={linea.id} className="mb-3">
+                <p className="text-sm font-medium">{linea.productoCodigo} · {linea.productoDescripcion}</p>
+                <UltimoPrecioVenta clienteId={pedido.clienteId} productoId={linea.productoId} incluyeIgv={pedido.preciosIncluyenIgv} />
+              </div>)}
               <div className="grid gap-5 sm:grid-cols-2">
                 <div>
                   <label htmlFor="tipo-documento-venta" className="field-label">Comprobante *</label>
