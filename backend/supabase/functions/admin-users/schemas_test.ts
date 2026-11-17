@@ -19,6 +19,18 @@ Deno.test('acepta una creación con permisos operativos explícitos', () => {
   assert(result.data.email === 'usuario@silsan.com', 'El correo no se normalizó')
 })
 
+Deno.test('acepta exportar Kardex como permiso explícito de inventario', () => {
+  const result = adminUserRequestSchema.safeParse({
+    action: 'create',
+    email: 'inventario@silsan.com',
+    fullName: 'Usuario de inventario',
+    isAdmin: false,
+    permissionCodes: ['INVENTORY_VIEW', 'INVENTORY_EXPORT'],
+  })
+
+  assert(result.success, 'La asignación de exportación de inventario fue rechazada')
+})
+
 Deno.test('permite asignación económica explícita a una cuenta operativa sin convertirla en administrador', () => {
   const request = { action: 'create', email: 'costos@example.invalid', fullName: 'Responsable de costos', isAdmin: false,
     permissionCodes: ['REPAIRS_MANAGE_ACTUAL_COST', 'REPAIRS_CONFIRM_ACTUAL_COST'] }
