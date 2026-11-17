@@ -13,10 +13,9 @@ clientes, ventas, distribución, reparaciones y reportes sobre React, TypeScript
 Vite y Supabase/PostgreSQL. Las operaciones críticas utilizan RPC transaccionales
 y políticas de acceso en la base de datos.
 
-Facturación electrónica funciona únicamente como sandbox: prepara y congela
-comprobantes, administra series de prueba y simula resultados locales. No firma
-XML, no transmite a SUNAT/PSE ni obtiene CDR oficiales. Caja y tesorería completas
-siguen pendientes. La auditoría y sus límites están en
+La emisión electrónica de comprobantes no está implementada. Las ventas actuales
+registran documentos comerciales internos y no los transmiten a SUNAT/PSE.
+Caja y tesorería completas siguen pendientes. La auditoría y sus límites están en
 [el informe de consolidación](docs/AUDITORIA_INTEGRAL_2026-11-09.md).
 
 ## Estructura

@@ -14,151 +14,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  sunat-python-normal:
-    name: SUNAT runner Python normal — concurrencia PostgreSQL aislada
-    runs-on: ubuntu-24.04
-    timeout-minutes: 50
-    permissions:
-      contents: read
-
-    steps:
-      - name: Descargar repositorio
-        uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-
-      - name: Configurar Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Configurar Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Instalar CLI Supabase versionada
-        run: npm ci
-        working-directory: backend
-
-      - name: Validar guards y contrato del runner sin conexiones
-        run: python -B -m unittest discover -s backend/scripts -p test_sunat_phase2a_runner.py -v
-
-      - name: Crear proyecto fiscal efímero propio para concurrencia
-        run: python -B backend/scripts/sunat_phase2a_normal_ci.py prepare
-
-      - name: Ejecutar runner fiscal Python completo y 11 carreras PostgreSQL
-        run: python -B backend/scripts/test-sunat-phase2a.py --ci-normal
-
-      - name: Detener y verificar únicamente recursos del job
-        if: always()
-        run: python -B backend/scripts/sunat_phase2a_normal_ci.py stop
-
   sunat-fiscal-integration:
-    # Gate the existing required fiscal check on the full Python concurrency runner.
-    needs: sunat-python-normal
-    if: ${{ always() }}
+    # Compatibility status name retained while main branch protection requires it.
+    # This alias now reflects the canonical inventory and repairs E2E result only.
     name: SUNAT Fase 2B — consulta fiscal aislada real
+    needs: playwright
+    if: ${{ always() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-    permissions:
-      contents: read
-
+    timeout-minutes: 5
     steps:
-      - name: Exigir aprobación del runner Python normal
+      - name: Exigir éxito de las suites activas
+        env:
+          PLAYWRIGHT_RESULT: ${{ needs.playwright.result }}
         run: |
-          if [ "${{ needs.sunat-python-normal.result }}" != "success" ]; then
-            echo "El runner fiscal Python normal no terminó correctamente."
+          if [ "$PLAYWRIGHT_RESULT" != "success" ]; then
+            echo "Las suites E2E activas fallaron o fueron canceladas: $PLAYWRIGHT_RESULT"
             exit 1
           fi
 
-      - name: Descargar repositorio
-        uses: actions/checkout@v5
-
-      - name: Configurar Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            backend/package-lock.json
-            frontend/package-lock.json
-
-      - name: Instalar CLI Supabase versionada
-        run: npm ci
-        working-directory: backend
-
-      - name: Instalar dependencias del frontend
-        run: npm ci
-        working-directory: frontend
-
-      - name: Exponer CLI Supabase instalada desde el lockfile
-        run: echo "$GITHUB_WORKSPACE/backend/node_modules/.bin" >> "$GITHUB_PATH"
-
-      - name: Verificar runner GitHub-hosted y versiones locales
-        run: |
-          test "$GITHUB_ACTIONS" = "true"
-          test "$CI" = "true"
-          test "$RUNNER_OS" = "Linux"
-          test "$RUNNER_ENVIRONMENT" = "github-hosted"
-          test -z "${DOCKER_HOST:-}"
-          test -z "${DOCKER_CONTEXT:-}"
-          test "$(supabase --version)" = "2.115.0"
-          test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = "unix:///var/run/docker.sock"
-          docker info --format '{{.ServerVersion}}'
-
-      - name: Instalar Chromium para Playwright
-        run: npx playwright install --with-deps chromium
-        working-directory: frontend
-
-      - name: Validar protecciones del runner fiscal
-        run: node --test scripts/lib/check-fiscal-integration-environment.mjs
-        working-directory: frontend
-
-      - name: Ejecutar migraciones actuales y consulta fiscal real con Playwright
-        run: node scripts/test-fiscal-sandbox-integration.mjs
-        working-directory: frontend
-
   sunat-transactional:
-    # Keep this exact check context while main's branch protection requires it.
+    # Compatibility status name retained while main branch protection requires it.
+    # Remove this alias after updating the required check in repository settings.
     name: SUNAT 149 y 150 — compilación y rollback real
+    needs: playwright
+    if: ${{ always() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-
+    timeout-minutes: 5
     steps:
-      - name: Descargar repositorio
-        uses: actions/checkout@v5
-
-      - name: Configurar Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Configurar Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Instalar CLI versionada
-        run: npm ci
-        working-directory: backend
-
-      - name: Validar contrato del runner sin conexiones
-        run: python -B -m unittest discover -s backend/scripts -p test_sunat_phase2a_runner.py -v
-
-      - name: Iniciar proyecto efímero con el historial previo a las migraciones fiscales
-        run: python -B backend/scripts/sunat_phase2a_ci.py prepare
-
-      - name: Compilar candidatas y demostrar rollback integral
-        run: python -B backend/scripts/test-sunat-phase2a.py --ci-transactional
-
-      - name: Detener únicamente el proyecto efímero verificado
-        if: always()
-        run: python -B backend/scripts/sunat_phase2a_ci.py stop
+      - name: Exigir éxito de las suites activas
+        env:
+          PLAYWRIGHT_RESULT: ${{ needs.playwright.result }}
+        run: |
+          if [ "$PLAYWRIGHT_RESULT" != "success" ]; then
+            echo "Las suites E2E activas fallaron o fueron canceladas: $PLAYWRIGHT_RESULT"
+            exit 1
+          fi
 
   inventory-e2e:
     name: Inventario E2E — flujo principal

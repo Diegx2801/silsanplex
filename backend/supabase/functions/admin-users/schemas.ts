@@ -6,6 +6,7 @@ export const operationalPermissionCodes = [
   'PRODUCTS_MANAGE',
   'INVENTORY_VIEW',
   'INVENTORY_MANAGE',
+  'INVENTORY_EXPORT',
   'SUPPLIERS_VIEW',
   'SUPPLIERS_MANAGE',
   'PURCHASES_VIEW',
