@@ -2,6 +2,9 @@
   "name": "silsanplex-backend",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "description": "Supabase local, migraciones y pruebas de SILSANPLEX",
   "scripts": {
     "dev:create-admin": "tsx scripts/create-local-admin.ts",
@@ -24,7 +27,7 @@
     "dotenv": "^17.2.2"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
+    "@types/node": "^24.19.2",
     "supabase": "^2.122.1",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"

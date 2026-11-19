@@ -62,7 +62,7 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: |
             backend/package-lock.json
@@ -161,7 +161,7 @@ jobs:
       - name: Conservar diagnóstico de fallos E2E
         # Debe correr también tras un timeout/cancelación para conservar trazas Playwright.
         if: always() && (failure() || cancelled())
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-test-results
           path: frontend/test-results/
@@ -185,7 +185,7 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: |
             backend/package-lock.json
@@ -211,7 +211,7 @@ jobs:
 
       - name: Conservar evidencia aislada R06-R33
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: repairs-accessories-isolated
           path: ${{ runner.temp }}/opencode/silsan-accessories-*/evidence/
