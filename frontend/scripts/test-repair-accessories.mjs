@@ -34,6 +34,7 @@ const upgradeTechnicalCompletion = process.argv.includes('--upgrade-technical-co
 const upgradeActualCost = process.argv.includes('--upgrade-actual-cost')
 const upgrade = process.argv.includes('--upgrade') || upgradeNonRepairable || upgradeTechnicalCompletion || upgradeActualCost
 const sqlOnly = process.argv.includes('--sql-only')
+const skipSqlTests = process.argv.includes('--skip-sql-tests')
 const nonRepairableOnly = process.argv.includes('--non-repairable-only')
 const technicalCompletionOnly = process.argv.includes('--technical-completion-only')
 const actualCostOnly = process.argv.includes('--actual-cost-only')
@@ -336,7 +337,7 @@ try {
      runLog.push({ actualCostBenchmark: benchmarkActualCost({ sql, evidence }) })
    }
   if (!evidenceOnly) {
-    const tests = fs.readdirSync(path.join(backend, 'supabase/tests/database')).filter(n => process.argv.includes('--all-sql') || /^repairs?[_.].*\.sql$/.test(n) || n === 'authorization_permissions.test.sql' || n === 'audit_session_access.test.sql' || n === 'customer_sale_price_history.test.sql')
+    const tests = skipSqlTests ? [] : fs.readdirSync(path.join(backend, 'supabase/tests/database')).filter(n => process.argv.includes('--all-sql') || /^repairs?[_.].*\.sql$/.test(n) || n === 'authorization_permissions.test.sql' || n === 'audit_session_access.test.sql' || n === 'customer_sale_price_history.test.sql')
       .filter(n => n.endsWith('.test.sql')).sort()
     // Check the migrated application before installing test-only pgTAP routines.
     const lintArgs = ['db', 'lint', '--level', 'warning', '--fail-on', 'warning', '--output-format', 'json']
@@ -365,7 +366,7 @@ try {
       stdout: lintResult.stdout, stderr: lintResult.stderr, spawnError: lintResult.error?.message ?? null,
     }, null, 2))
     assertSupabaseDbLintSucceeded(lintResult)
-    sql('create extension if not exists pgtap with schema extensions;')
+    if (tests.length > 0) sql('create extension if not exists pgtap with schema extensions;')
     const runSqlTests = (names, log) => {
       if (!names.length) return ''
       const pull = runCaptured('docker', ['pull', `--platform=${PG_PROVE_PLATFORM}`, PG_PROVE_IMAGE],

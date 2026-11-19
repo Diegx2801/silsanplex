@@ -59,6 +59,38 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v5
 
+      - name: Asignar puerto no estándar a Mailpit de CI
+        run: |
+          python - <<'PY'
+          import os
+          import socket
+          from pathlib import Path
+
+          reserved_ports = set(range(54320, 54330)) | {4173, 5173, 8083}
+          for _ in range(32):
+              with socket.socket() as sock:
+                  sock.bind(('0.0.0.0', 0))
+                  candidate = sock.getsockname()[1]
+              if candidate not in reserved_ports:
+                  mailpit_port = candidate
+                  break
+          else:
+              raise SystemExit('No se pudo encontrar un puerto libre para Mailpit.')
+
+          config_path = Path('backend/supabase/config.toml')
+          config = config_path.read_text()
+          start = config.index('[local_smtp]')
+          end = config.find('\n[', start + 1)
+          if end == -1:
+              end = len(config)
+          section = config[start:end]
+          if section.count('port = 54324') != 1:
+              raise SystemExit('No se encontró exactamente el puerto local de Mailpit esperado.')
+          config_path.write_text(config[:start] + section.replace('port = 54324', f'port = {mailpit_port}', 1) + config[end:])
+          with open(os.environ['GITHUB_ENV'], 'a') as github_env:
+              github_env.write(f'E2E_MAILPIT_URL=http://127.0.0.1:{mailpit_port}\n')
+          PY
+
       - name: Configurar Node.js
         uses: actions/setup-node@v5
         with:
@@ -203,8 +235,10 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: frontend
 
-      - name: Validar accesorios R06-R33 con SQL y E2E aislados
-        run: npm run test:repairs:isolated
+      - name: Validar Reparaciones R06-R33 con E2E aislado
+        # El job principal ya ejecuta todos los tests SQL. Este job conserva
+        # su lint estricto y la cobertura E2E aislada, sin repetir los SQL.
+        run: npm run test:repairs:isolated -- --skip-sql-tests
         working-directory: frontend
         env:
           SILSAN_AUDIT_TEMP: ${{ runner.temp }}/opencode
