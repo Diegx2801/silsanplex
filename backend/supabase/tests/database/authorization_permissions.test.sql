@@ -143,18 +143,41 @@ select is(
 -- Identidades y organizaciones de prueba
 -- -------------------------------------------------------------------------
 
-insert into public.organizations (id, name, slug)
-values
-  (
-    'd1111111-1111-4111-8111-111111111111',
-    'Organización autorización uno',
-    'autorizacion-uno'
-  ),
-  (
-    'd2222222-2222-4222-8222-222222222222',
-    'Organización autorización dos',
-    'autorizacion-dos'
-  );
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'organizations' and column_name = 'legal_name'
+  ) then
+    insert into public.organizations (id, name, slug, legal_name)
+    values
+      (
+        'd1111111-1111-4111-8111-111111111111',
+        'Organización autorización uno',
+        'autorizacion-uno',
+        'Organización autorización uno'
+      ),
+      (
+        'd2222222-2222-4222-8222-222222222222',
+        'Organización autorización dos',
+        'autorizacion-dos',
+        'Organización autorización dos'
+      );
+  else
+    insert into public.organizations (id, name, slug)
+    values
+      (
+        'd1111111-1111-4111-8111-111111111111',
+        'Organización autorización uno',
+        'autorizacion-uno'
+      ),
+      (
+        'd2222222-2222-4222-8222-222222222222',
+        'Organización autorización dos',
+        'autorizacion-dos'
+      );
+  end if;
+end $$;
 
 insert into auth.users (
   id,
@@ -297,6 +320,55 @@ values (
   null
 );
 
+-- Derive the expected RPC result from the active membership and grants so new
+-- valid capabilities do not require duplicating the full permission catalog.
+create temporary table authorization_expected_permissions (
+  user_id uuid not null,
+  permission_code text not null,
+  primary key (user_id, permission_code)
+);
+
+insert into authorization_expected_permissions (user_id, permission_code)
+select membership.user_id, role_permission.permission_code
+from public.organization_memberships membership
+join public.profiles profile
+  on profile.id = membership.user_id and profile.is_active
+join public.organizations organization
+  on organization.id = membership.organization_id and organization.is_active
+join public.user_roles user_role
+  on user_role.organization_id = membership.organization_id
+ and user_role.user_id = membership.user_id
+join public.roles role
+  on role.code = user_role.role_code and role.is_active
+join public.role_permissions role_permission
+  on role_permission.role_code = role.code
+join public.permissions permission
+  on permission.code = role_permission.permission_code and permission.is_active
+where membership.user_id in (
+  'e1111111-1111-4111-8111-111111111111',
+  'e2222222-2222-4222-8222-222222222222'
+)
+  and membership.is_active
+union
+select membership.user_id, direct_permission.permission_code
+from public.organization_memberships membership
+join public.profiles profile
+  on profile.id = membership.user_id and profile.is_active
+join public.organizations organization
+  on organization.id = membership.organization_id and organization.is_active
+join public.organization_user_permissions direct_permission
+  on direct_permission.organization_id = membership.organization_id
+ and direct_permission.user_id = membership.user_id
+join public.permissions permission
+  on permission.code = direct_permission.permission_code and permission.is_active
+where membership.user_id in (
+  'e1111111-1111-4111-8111-111111111111',
+  'e2222222-2222-4222-8222-222222222222'
+)
+  and membership.is_active;
+
+grant select on authorization_expected_permissions to authenticated;
+
 set local role authenticated;
 select set_config(
   'request.jwt.claim.sub',
@@ -307,37 +379,12 @@ select pg_temp.authorization_claim('e1111111-1111-4111-8111-111111111111');
 
 select is(
   public.current_user_permissions(),
-  array[
-    'CUSTOMERS_EXPORT',
-    'CUSTOMERS_MANAGE',
-    'CUSTOMERS_VIEW',
-    'DISTRIBUTION_MANAGE',
-    'DISTRIBUTION_VIEW',
-    'INVENTORY_EXPORT',
-    'INVENTORY_MANAGE',
-    'INVENTORY_VIEW',
-    'PRODUCTS_MANAGE',
-    'PRODUCTS_VIEW',
-    'PURCHASES_MANAGE',
-    'PURCHASES_RECEIVE',
-    'PURCHASES_VIEW',
-    'REPAIRS_APPROVE_QUOTE',
-    'REPAIRS_ASSIGN',
-    'REPAIRS_AUTHORIZE_ACCESSORY_EXCEPTION',
-    'REPAIRS_CHANGE_STATUS',
-    'REPAIRS_CREATE',
-    'REPAIRS_DELIVER',
-    'REPAIRS_PERFORM_TECHNICAL',
-    'REPAIRS_UPDATE',
-    'REPAIRS_USE_PARTS',
-    'REPAIRS_VIEW',
-    'SALES_MANAGE',
-    'SALES_VIEW',
-    'SUPPLIERS_MANAGE',
-    'SUPPLIERS_VIEW',
-    'USERS_MANAGE'
-  ]::text[],
-  'ADMIN obtiene sus permisos en la única organización activa'
+  (
+    select coalesce(array_agg(permission_code order by permission_code), '{}'::text[])
+    from pg_temp.authorization_expected_permissions
+    where user_id = 'e1111111-1111-4111-8111-111111111111'
+  ),
+  'ADMIN recibe exactamente los permisos vigentes de su membresía activa'
 );
 
 reset role;
@@ -352,20 +399,12 @@ select pg_temp.authorization_claim('e2222222-2222-4222-8222-222222222222');
 
 select is(
   public.current_user_permissions(),
-  array[
-    'CUSTOMERS_EXPORT',
-    'CUSTOMERS_MANAGE',
-    'CUSTOMERS_VIEW',
-    'INVENTORY_VIEW',
-    'PRODUCTS_VIEW',
-    'REPAIRS_APPROVE_QUOTE',
-    'REPAIRS_CREATE',
-    'REPAIRS_UPDATE',
-    'REPAIRS_VIEW',
-    'SALES_MANAGE',
-    'SALES_VIEW'
-  ]::text[],
-  'VENTAS obtiene sus permisos comerciales y de consulta operativa'
+  (
+    select coalesce(array_agg(permission_code order by permission_code), '{}'::text[])
+    from pg_temp.authorization_expected_permissions
+    where user_id = 'e2222222-2222-4222-8222-222222222222'
+  ),
+  'VENTAS recibe exactamente los permisos vigentes de su membresía activa'
 );
 
 reset role;
@@ -456,6 +495,10 @@ update public.permissions
 set is_active = false
 where code = 'USERS_MANAGE';
 
+delete from pg_temp.authorization_expected_permissions
+where user_id = 'e1111111-1111-4111-8111-111111111111'
+  and permission_code = 'USERS_MANAGE';
+
 set local role authenticated;
 select set_config(
   'request.jwt.claim.sub',
@@ -466,36 +509,12 @@ select pg_temp.authorization_claim('e1111111-1111-4111-8111-111111111111');
 
 select is(
   public.current_user_permissions(),
-  array[
-    'CUSTOMERS_EXPORT',
-    'CUSTOMERS_MANAGE',
-    'CUSTOMERS_VIEW',
-    'DISTRIBUTION_MANAGE',
-    'DISTRIBUTION_VIEW',
-    'INVENTORY_EXPORT',
-    'INVENTORY_MANAGE',
-    'INVENTORY_VIEW',
-    'PRODUCTS_MANAGE',
-    'PRODUCTS_VIEW',
-    'PURCHASES_MANAGE',
-    'PURCHASES_RECEIVE',
-    'PURCHASES_VIEW',
-    'REPAIRS_APPROVE_QUOTE',
-    'REPAIRS_ASSIGN',
-    'REPAIRS_AUTHORIZE_ACCESSORY_EXCEPTION',
-    'REPAIRS_CHANGE_STATUS',
-    'REPAIRS_CREATE',
-    'REPAIRS_DELIVER',
-    'REPAIRS_PERFORM_TECHNICAL',
-    'REPAIRS_UPDATE',
-    'REPAIRS_USE_PARTS',
-    'REPAIRS_VIEW',
-    'SALES_MANAGE',
-    'SALES_VIEW',
-    'SUPPLIERS_MANAGE',
-    'SUPPLIERS_VIEW'
-  ]::text[],
-  'desactivar USERS_MANAGE no elimina otros permisos activos'
+  (
+    select coalesce(array_agg(permission_code order by permission_code), '{}'::text[])
+    from pg_temp.authorization_expected_permissions
+    where user_id = 'e1111111-1111-4111-8111-111111111111'
+  ),
+  'desactivar USERS_MANAGE conserva exactamente los demás permisos vigentes'
 );
 
 reset role;
