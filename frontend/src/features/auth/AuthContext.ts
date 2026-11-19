@@ -14,6 +14,7 @@ export interface AuthContextValue {
   session: Session | null
   user: User | null
   access: UserAccess | null
+  passwordSetupRequired: boolean
   isAdmin: boolean
   isLoading: boolean
   sessionError: string | null

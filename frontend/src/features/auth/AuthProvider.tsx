@@ -36,7 +36,20 @@ function isInvalidAuthSession(error: unknown) {
   )
 }
 
-async function loadUserAccess(userId: string): Promise<UserAccess | null> {
+interface LoadedUserAccess {
+  access: UserAccess | null
+  passwordSetupRequired: boolean
+}
+
+async function loadUserAccess(userId: string): Promise<LoadedUserAccess> {
+  const { data: passwordSetupRequired, error: setupError } = await supabase.rpc(
+    'current_user_password_setup_required',
+  )
+  if (setupError) throw setupError
+  if (passwordSetupRequired === true) {
+    return { access: null, passwordSetupRequired: true }
+  }
+
   const { data: membership, error: membershipError } = await supabase
     .from('organization_memberships')
     .select('organization_id')
@@ -45,7 +58,7 @@ async function loadUserAccess(userId: string): Promise<UserAccess | null> {
     .maybeSingle()
 
   if (membershipError) throw membershipError
-  if (!membership) return null
+  if (!membership) return { access: null, passwordSetupRequired: false }
 
   const [organizationResult, rolesResult, permissionsResult] = await Promise.all([
     supabase
@@ -64,7 +77,9 @@ async function loadUserAccess(userId: string): Promise<UserAccess | null> {
   if (organizationResult.error) throw organizationResult.error
   if (rolesResult.error) throw rolesResult.error
   if (permissionsResult.error) throw permissionsResult.error
-  if (!organizationResult.data?.is_active) return null
+  if (!organizationResult.data?.is_active) {
+    return { access: null, passwordSetupRequired: false }
+  }
 
   const permissions = Array.isArray(permissionsResult.data)
     ? permissionsResult.data.filter(
@@ -73,10 +88,13 @@ async function loadUserAccess(userId: string): Promise<UserAccess | null> {
     : []
 
   return {
-    organizationId: membership.organization_id,
-    organizationName: organizationResult.data.name,
-    roles: (rolesResult.data ?? []).map((role) => role.role_code),
-    permissions: [...new Set(permissions)],
+    access: {
+      organizationId: membership.organization_id,
+      organizationName: organizationResult.data.name,
+      roles: (rolesResult.data ?? []).map((role) => role.role_code),
+      permissions: [...new Set(permissions)],
+    },
+    passwordSetupRequired: false,
   }
 }
 
@@ -84,6 +102,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const queryClient = useQueryClient()
   const [session, setSession] = useState<Session | null>(null)
   const [access, setAccess] = useState<UserAccess | null>(null)
+  const [passwordSetupRequired, setPasswordSetupRequired] = useState(false)
   const [sessionLoading, setSessionLoading] = useState(true)
   const [accessLoading, setAccessLoading] = useState(false)
   const [sessionError, setSessionError] = useState<string | null>(null)
@@ -128,7 +147,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (nextSession) forcedSessionMessage.current = null
 
       setSession(nextSession)
-      if (debeReiniciarAcceso) setAccess(null)
+      if (debeReiniciarAcceso) {
+        setAccess(null)
+        setPasswordSetupRequired(false)
+      }
       setAccessError(null)
       setSessionError(nextSession ? null : forcedSessionMessage.current)
       if (debeReiniciarAcceso) setAccessLoading(Boolean(nextSession))
@@ -158,6 +180,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
         setSession(null)
         setAccess(null)
+        setPasswordSetupRequired(false)
         setAccessError(null)
         setSessionLoading(false)
         setAccessLoading(false)
@@ -193,6 +216,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       forcedSessionMessage.current = event.detail.message
       setSession(null)
       setAccess(null)
+      setPasswordSetupRequired(false)
       setAccessError(null)
       setAccessLoading(false)
       setSessionLoading(false)
@@ -210,7 +234,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [queryClient])
 
   useEffect(() => {
-    if (!session?.user.id) return
+    if (!session?.user.id || accessLoading || passwordSetupRequired) return
 
     let revalidationInFlight = false
     const revalidateAccess = () => {
@@ -254,13 +278,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
       window.removeEventListener('focus', revalidateAccess)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [session?.user.id])
+  }, [accessLoading, passwordSetupRequired, session?.user.id])
 
   useEffect(() => {
     let cancelled = false
 
     if (!session?.user.id) {
       setAccess(null)
+      setPasswordSetupRequired(false)
       setAccessLoading(false)
       setAccessError(null)
       return
@@ -269,18 +294,20 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setAccessLoading(true)
     setAccessError(null)
     void loadUserAccess(session.user.id)
-      .then((nextAccess) => {
+      .then((loadedAccess) => {
         if (cancelled) return
 
-        if (!nextAccess) {
+        if (!loadedAccess.access) {
           limpiarDatosTemporalesDeSesion(window.sessionStorage)
           queryClient.clear()
         }
-        setAccess(nextAccess)
+        setAccess(loadedAccess.access)
+        setPasswordSetupRequired(loadedAccess.passwordSetupRequired)
       })
       .catch(() => {
         if (!cancelled) {
           setAccess(null)
+          setPasswordSetupRequired(false)
           setAccessError('No se pudo verificar el acceso de tu cuenta.')
         }
       })
@@ -298,6 +325,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       session,
       user: session?.user ?? null,
       access,
+      passwordSetupRequired,
       isAdmin: access?.roles.includes('ADMIN') ?? false,
       hasPermission: (permission) =>
         access?.permissions.includes(permission) ?? false,
@@ -321,7 +349,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         if (error) throw error
       },
     }),
-    [access, accessError, accessLoading, queryClient, session, sessionError, sessionLoading],
+    [access, accessError, accessLoading, passwordSetupRequired, queryClient, session, sessionError, sessionLoading],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

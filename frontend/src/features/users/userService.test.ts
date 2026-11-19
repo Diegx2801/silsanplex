@@ -13,11 +13,13 @@ describe('userService', () => {
       user_id: '8e421220-7183-4df4-90dc-c93851bcbe89', organization_id: 'org-1',
       email: 'ventas@silsan.test', full_name: 'Usuario ventas', phone: null,
       is_active: true, auth_confirmed_at: null, is_admin: false,
+      password_setup_required: true,
       permission_codes: ['SALES_VIEW'], access_version: 4, created_at: '2026-09-01', updated_at: '2026-09-02',
     }] })
 
     await expect(listUsers()).resolves.toEqual([expect.objectContaining({
       isAdmin: false, permissionCodes: ['SALES_VIEW'], accessVersion: 4,
+      passwordSetupRequired: true,
     })])
   })
 

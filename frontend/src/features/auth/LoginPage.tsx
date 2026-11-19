@@ -17,7 +17,7 @@ const loginSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>
 
 export function LoginPage() {
-  const { session, isLoading, sessionError } = useAuth()
+  const { session, isLoading, sessionError, passwordSetupRequired } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [serverError, setServerError] = useState<string | null>(null)
@@ -31,7 +31,14 @@ export function LoginPage() {
     defaultValues: { email: '', password: '' },
   })
 
-  if (!isLoading && session) return <Navigate to="/" replace />
+  if (!isLoading && session) {
+    return (
+      <Navigate
+        to={passwordSetupRequired ? '/establecer-contrasena' : '/'}
+        replace
+      />
+    )
+  }
 
   const submit = form.handleSubmit(async (values) => {
     setServerError(null)

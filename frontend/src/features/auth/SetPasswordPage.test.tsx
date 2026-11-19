@@ -3,16 +3,12 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  updateUser: vi.fn(),
+  invokeEdgeFunction: vi.fn(),
   signOut: vi.fn(),
 }))
 
-vi.mock('@/lib/supabase', () => ({
-  supabase: {
-    auth: {
-      updateUser: mocks.updateUser,
-    },
-  },
+vi.mock('@/lib/edgeFunctions', () => ({
+  invokeEdgeFunction: mocks.invokeEdgeFunction,
 }))
 
 vi.mock('@/features/auth/useAuth', () => ({
@@ -63,28 +59,35 @@ function completeForm() {
 
 describe('SetPasswordPage', () => {
   beforeEach(() => {
-    mocks.updateUser.mockReset()
+    mocks.invokeEdgeFunction.mockReset()
     mocks.signOut.mockReset()
   })
 
   it('actualiza la contraseña, cierra todas las sesiones y vuelve al login', async () => {
-    mocks.updateUser.mockResolvedValue({ error: null })
+    mocks.invokeEdgeFunction.mockResolvedValue({
+      passwordUpdated: true,
+      setupCompleted: true,
+    })
     mocks.signOut.mockResolvedValue(undefined)
     renderPage()
 
     completeForm()
 
     await waitFor(() => {
-      expect(mocks.updateUser).toHaveBeenCalledWith({
-        password: 'segura-1234',
-      })
+      expect(mocks.invokeEdgeFunction).toHaveBeenCalledWith(
+        'complete-account-setup',
+        { password: 'segura-1234' },
+      )
       expect(mocks.signOut).toHaveBeenCalledOnce()
     })
     expect(await screen.findByText('Ingreso confirmado')).toBeInTheDocument()
   })
 
   it('limpia la sesión local aunque falle la revocación remota', async () => {
-    mocks.updateUser.mockResolvedValue({ error: null })
+    mocks.invokeEdgeFunction.mockResolvedValue({
+      passwordUpdated: true,
+      setupCompleted: true,
+    })
     mocks.signOut.mockRejectedValue(new Error('Network error'))
     renderPage()
 

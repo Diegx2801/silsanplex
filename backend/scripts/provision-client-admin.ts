@@ -38,7 +38,11 @@ async function provisionClientAdministrator() {
   }
 
   const { data, error } = await admin.auth.admin.inviteUserByEmail(identity.email, {
-    data: { full_name: identity.fullName, phone: identity.phone },
+    data: {
+      full_name: identity.fullName,
+      phone: identity.phone,
+      silsan_password_setup_required: true,
+    },
     redirectTo: `${appUrl}/establecer-contrasena`,
   })
   if (error || !data.user) throw new Error(error?.message || 'No se pudo invitar al administrador.')

@@ -13,6 +13,7 @@ interface RawManagedUser {
   phone: string | null
   is_active: boolean
   auth_confirmed_at: string | null
+  password_setup_required: boolean
   permission_codes: PermissionCode[]
   is_admin: boolean
   access_version: number
@@ -35,6 +36,7 @@ export async function listUsers(): Promise<ManagedUser[]> {
     phone: user.phone,
     isActive: user.is_active,
     authConfirmedAt: user.auth_confirmed_at,
+    passwordSetupRequired: user.password_setup_required,
     permissionCodes: user.permission_codes,
     isAdmin: user.is_admin,
     accessVersion: user.access_version,

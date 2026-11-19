@@ -113,6 +113,7 @@ function Probe() {
     isLoading,
     session,
     sessionError,
+    passwordSetupRequired,
     signOut,
   } = useAuth()
 
@@ -124,6 +125,9 @@ function Probe() {
       <output data-testid="session-error">{sessionError ?? 'sin error'}</output>
       <output data-testid="permission-state">
         {hasPermission('USERS_MANAGE') ? 'permitido' : 'denegado'}
+      </output>
+      <output data-testid="password-setup-state">
+        {passwordSetupRequired ? 'pendiente' : 'completo'}
       </output>
       <button type="button" onClick={() => void signOut()}>
         Cerrar prueba
@@ -250,7 +254,15 @@ describe('AuthProvider', () => {
   })
 
   it('redirige una sesión de recuperación al formulario de contraseña', async () => {
-    configureActiveAccess()
+    mocks.rpc.mockImplementation(async (functionName: string) => {
+      if (functionName === 'current_user_password_setup_required') {
+        return { data: true, error: null }
+      }
+      if (functionName === 'current_auth_session_is_active') {
+        return { data: false, error: null }
+      }
+      return { data: [], error: null }
+    })
     mocks.getSession.mockResolvedValue({ data: { session: null }, error: null })
     renderProvider()
 
@@ -263,7 +275,10 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(window.location.pathname).toBe('/establecer-contrasena')
       expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+      expect(screen.getByTestId('password-setup-state')).toHaveTextContent('pendiente')
     })
+    expect(screen.queryByTestId('protected-content')).not.toBeInTheDocument()
+    expect(mocks.rpc).toHaveBeenCalledWith('current_user_password_setup_required')
   })
 
   it('carga los permisos efectivos mediante el RPC del backend', async () => {
@@ -364,6 +379,7 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+      expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
     })
     mocks.rpc.mockImplementation(async (functionName: string) => {
       if (functionName === 'current_auth_session_is_active') {

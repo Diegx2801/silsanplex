@@ -1,6 +1,6 @@
 begin;
 
-select plan(23);
+select plan(26);
 
 select has_function(
   'public',
@@ -143,6 +143,41 @@ select public.admin_create_user_membership(
   '41111111-1111-4111-8111-111111111111',
   '42222222-2222-4222-8222-222222222222',
   array['VENTAS', 'ALMACEN']
+);
+
+select throws_ok(
+  $$
+    select public.admin_record_password_reset(
+      '41111111-1111-4111-8111-111111111111',
+      '42222222-2222-4222-8222-222222222222'
+    )
+  $$,
+  'P0001',
+  'USER_NOT_FOUND_IN_ORGANIZATION',
+  'no se marca recuperación para una cuenta sin correo confirmado'
+);
+
+update auth.users
+set email_confirmed_at = now()
+where id = '42222222-2222-4222-8222-222222222222';
+
+select lives_ok(
+  $$
+    select public.admin_record_password_reset(
+      '41111111-1111-4111-8111-111111111111',
+      '42222222-2222-4222-8222-222222222222'
+    )
+  $$,
+  'el administrador registra la recuperación antes de enviar el enlace'
+);
+select is(
+  (
+    select password_recovery_requested_at is not null
+    from public.profiles
+    where id = '42222222-2222-4222-8222-222222222222'
+  ),
+  true,
+  'la solicitud queda guardada para distinguirla de otros enlaces otp'
 );
 
 select is(

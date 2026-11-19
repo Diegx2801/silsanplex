@@ -128,6 +128,7 @@ export interface ManagedUser {
   phone: string | null
   isActive: boolean
   authConfirmedAt: string | null
+  passwordSetupRequired?: boolean
   isAdmin: boolean
   permissionCodes: PermissionCode[]
   accessVersion: number
