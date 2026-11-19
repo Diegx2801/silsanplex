@@ -88,8 +88,10 @@ select results_eq(
       ('ADMIN'::text, 'REPAIRS_ASSIGN'::text),
       ('ADMIN'::text, 'REPAIRS_AUTHORIZE_ACCESSORY_EXCEPTION'::text),
       ('ADMIN'::text, 'REPAIRS_CHANGE_STATUS'::text),
+      ('ADMIN'::text, 'REPAIRS_CONFIRM_ACTUAL_COST'::text),
       ('ADMIN'::text, 'REPAIRS_CREATE'::text),
       ('ADMIN'::text, 'REPAIRS_DELIVER'::text),
+      ('ADMIN'::text, 'REPAIRS_MANAGE_ACTUAL_COST'::text),
       ('ADMIN'::text, 'REPAIRS_PERFORM_TECHNICAL'::text),
       ('ADMIN'::text, 'REPAIRS_UPDATE'::text),
       ('ADMIN'::text, 'REPAIRS_USE_PARTS'::text),
@@ -104,7 +106,7 @@ select results_eq(
       ('VENTAS'::text, 'REPAIRS_UPDATE'::text),
       ('VENTAS'::text, 'REPAIRS_VIEW'::text)
   $$,
-  'la matriz concede al técnico solo consulta, cambio de estado y capacidad técnica'
+  'la matriz incluye las capacidades operativas de ADMIN y limita al técnico a sus capacidades'
 );
 select is(
   (select count(*) from public.role_permissions where role_code = 'LOGISTICA' and permission_code like 'REPAIRS_%'),
@@ -201,10 +203,23 @@ select ok(
 -- Datos fijos multiempresa
 -- ------------------------------------------------------------
 
-insert into public.organizations (id, name, slug)
-values
-  ('f1000000-0000-4000-8000-000000000001', 'Reparaciones uno', 'reparaciones-uno'),
-  ('f1000000-0000-4000-8000-000000000002', 'Reparaciones dos', 'reparaciones-dos');
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'organizations' and column_name = 'legal_name'
+  ) then
+    insert into public.organizations (id, name, slug, legal_name)
+    values
+      ('f1000000-0000-4000-8000-000000000001', 'Reparaciones uno', 'reparaciones-uno', 'Reparaciones uno'),
+      ('f1000000-0000-4000-8000-000000000002', 'Reparaciones dos', 'reparaciones-dos', 'Reparaciones dos');
+  else
+    insert into public.organizations (id, name, slug)
+    values
+      ('f1000000-0000-4000-8000-000000000001', 'Reparaciones uno', 'reparaciones-uno'),
+      ('f1000000-0000-4000-8000-000000000002', 'Reparaciones dos', 'reparaciones-dos');
+  end if;
+end $$;
 
 insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
 values
