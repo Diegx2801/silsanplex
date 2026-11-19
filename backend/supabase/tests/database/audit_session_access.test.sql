@@ -199,15 +199,53 @@ select ok(not has_table_privilege('anon', 'public.audit_events', 'SELECT'), 'ano
 select ok(not has_table_privilege('service_role', 'public.audit_events', 'SELECT'), 'service_role gains no direct audit SELECT');
 select ok(not has_table_privilege('authenticated', 'public.audit_events', 'INSERT,UPDATE,DELETE'), 'authenticated gains no audit DML');
 select ok(not has_table_privilege('service_role', 'public.audit_events', 'INSERT,UPDATE,DELETE'), 'service_role gains no audit DML');
-select ok(not exists (
-  select 1 from pg_proc p where p.oid in (
-    'public.list_distribution_delivery_status_history(uuid,uuid)'::regprocedure,
-    'public.list_distribution_inventory_movements(uuid,uuid,uuid)'::regprocedure,
-    'public.list_distribution_delivery_inventory_trace(uuid,uuid)'::regprocedure
-  ) and (not has_function_privilege('authenticated', p.oid, 'EXECUTE')
-    or has_function_privilege('anon', p.oid, 'EXECUTE') or has_function_privilege('service_role', p.oid, 'EXECUTE')
-    or not p.prosecdef or not p.proconfig @> array['search_path=""'])
-), 'projected audit RPCs retain their exact public privilege boundary and pinned search_path');
+select ok(has_function_privilege(
+  'authenticated', 'public.list_distribution_delivery_status_history(uuid,uuid)', 'EXECUTE'
+), 'authenticated can execute delivery status history');
+select ok(not has_function_privilege(
+  'anon', 'public.list_distribution_delivery_status_history(uuid,uuid)', 'EXECUTE'
+), 'anon cannot execute delivery status history');
+select ok(not has_function_privilege(
+  'service_role', 'public.list_distribution_delivery_status_history(uuid,uuid)', 'EXECUTE'
+), 'service_role cannot execute delivery status history');
+select ok((select prosecdef from pg_proc
+  where oid = 'public.list_distribution_delivery_status_history(uuid,uuid)'::regprocedure
+), 'delivery status history is SECURITY DEFINER');
+select ok((select proconfig @> array['search_path=""'] from pg_proc
+  where oid = 'public.list_distribution_delivery_status_history(uuid,uuid)'::regprocedure
+), 'delivery status history pins an empty search_path');
+
+select ok(has_function_privilege(
+  'authenticated', 'public.list_distribution_inventory_movements(uuid,uuid,uuid)', 'EXECUTE'
+), 'authenticated can execute distribution inventory movements');
+select ok(not has_function_privilege(
+  'anon', 'public.list_distribution_inventory_movements(uuid,uuid,uuid)', 'EXECUTE'
+), 'anon cannot execute distribution inventory movements');
+select ok(not has_function_privilege(
+  'service_role', 'public.list_distribution_inventory_movements(uuid,uuid,uuid)', 'EXECUTE'
+), 'service_role cannot execute distribution inventory movements');
+select ok((select prosecdef from pg_proc
+  where oid = 'public.list_distribution_inventory_movements(uuid,uuid,uuid)'::regprocedure
+), 'distribution inventory movements is SECURITY DEFINER');
+select ok((select proconfig @> array['search_path=""'] from pg_proc
+  where oid = 'public.list_distribution_inventory_movements(uuid,uuid,uuid)'::regprocedure
+), 'distribution inventory movements pins an empty search_path');
+
+select ok(has_function_privilege(
+  'authenticated', 'public.list_distribution_delivery_inventory_trace(uuid,uuid)', 'EXECUTE'
+), 'authenticated can execute delivery inventory trace');
+select ok(not has_function_privilege(
+  'anon', 'public.list_distribution_delivery_inventory_trace(uuid,uuid)', 'EXECUTE'
+), 'anon cannot execute delivery inventory trace');
+select ok(not has_function_privilege(
+  'service_role', 'public.list_distribution_delivery_inventory_trace(uuid,uuid)', 'EXECUTE'
+), 'service_role cannot execute delivery inventory trace');
+select ok((select prosecdef from pg_proc
+  where oid = 'public.list_distribution_delivery_inventory_trace(uuid,uuid)'::regprocedure
+), 'delivery inventory trace is SECURITY DEFINER');
+select ok((select proconfig @> array['search_path=""'] from pg_proc
+  where oid = 'public.list_distribution_delivery_inventory_trace(uuid,uuid)'::regprocedure
+), 'delivery inventory trace pins an empty search_path');
 select ok(not has_function_privilege('authenticated', 'public.repair_technician_is_active(uuid,uuid)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.repair_technician_is_active(uuid,uuid)', 'EXECUTE')
   and has_function_privilege('service_role', 'public.repair_technician_is_active(uuid,uuid)', 'EXECUTE'),
