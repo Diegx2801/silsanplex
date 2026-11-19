@@ -301,10 +301,13 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
+      expect(screen.getByTestId('loading-state')).toHaveTextContent('lista')
     })
     const callsBefore = mocks.rpc.mock.calls.length
 
-    window.dispatchEvent(new Event('focus'))
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+    })
 
     expect(screen.getByTestId('loading-state')).toHaveTextContent('lista')
     expect(screen.getByTestId('protected-content')).toBeInTheDocument()
@@ -324,6 +327,7 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
+      expect(screen.getByTestId('loading-state')).toHaveTextContent('lista')
     })
     window.sessionStorage.setItem('silsanplex.cotizaciones-temporales.v1', '[]')
     mocks.from.mockImplementation((table: string) => {
@@ -342,7 +346,9 @@ describe('AuthProvider', () => {
       }
     })
 
-    window.dispatchEvent(new Event('focus'))
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+    })
 
     await waitFor(() => {
       expect(screen.getByTestId('access-state')).toHaveTextContent('sin acceso')
@@ -380,6 +386,7 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
       expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
+      expect(screen.getByTestId('loading-state')).toHaveTextContent('lista')
     })
     mocks.rpc.mockImplementation(async (functionName: string) => {
       if (functionName === 'current_auth_session_is_active') {
@@ -389,7 +396,9 @@ describe('AuthProvider', () => {
       return { data: ['USERS_MANAGE'], error: null }
     })
 
-    window.dispatchEvent(new Event('focus'))
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+    })
 
     await waitFor(() => {
       expect(screen.getByTestId('session-state')).toHaveTextContent('cerrada')
@@ -407,6 +416,7 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
       expect(screen.getByTestId('permission-state')).toHaveTextContent('permitido')
       expect(screen.getByTestId('protected-content')).toBeInTheDocument()
+      expect(screen.getByTestId('loading-state')).toHaveTextContent('lista')
     })
 
     const temporaryDataKey = 'silsanplex.productos-temporales.v1'
