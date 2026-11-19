@@ -3,7 +3,23 @@ select no_plan();
 create temporary table r14_ids(label text primary key,id uuid default gen_random_uuid());
 insert into r14_ids(label) values('org'),('foreign-org'),('admin'),('finance'),('manager'),('reviewer'),('reader'),('tech'),('foreign'),('supplier'),('warehouse'),('location');
 create function pg_temp.r14_id(text) returns uuid language sql as $$select id from r14_ids where label=$1$$;
-insert into organizations(id,name,slug) select id,'R14 fixtures','r14-'||id from r14_ids where label in ('org','foreign-org');
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='organizations' and column_name='legal_name'
+  ) then
+    execute $sql$
+      insert into public.organizations(id,name,slug,legal_name)
+      select id,'R14 fixtures','r14-'||id,'R14 fixtures'
+      from pg_temp.r14_ids where label in ('org','foreign-org')
+    $sql$;
+  else
+    insert into public.organizations(id,name,slug)
+    select id,'R14 fixtures','r14-'||id
+    from pg_temp.r14_ids where label in ('org','foreign-org');
+  end if;
+end $$;
 insert into auth.users(id,email,raw_user_meta_data) select id,id||'@example.invalid',jsonb_build_object('full_name','R14 '||label)
  from r14_ids where label in ('admin','finance','manager','reviewer','reader','tech','foreign');
 insert into auth.sessions(id,user_id,created_at,updated_at) select id,id,now(),now() from r14_ids where label in ('admin','finance','manager','reviewer','reader','tech','foreign');
@@ -118,7 +134,8 @@ end $$;
 select has_table('public','repair_actual_cost_entries','manual cost evidence exists');
 select has_table('public','repair_cost_source_reviews','source evidence exists');
 select has_table('public','repair_actual_cost_reviews','scope review exists');
-select is((select count(*) from role_permissions where permission_code in ('REPAIRS_MANAGE_ACTUAL_COST','REPAIRS_CONFIRM_ACTUAL_COST')),0::bigint,'no automatic role grant, including ADMIN');
+select is((select count(*) from role_permissions where role_code='ADMIN' and permission_code in ('REPAIRS_MANAGE_ACTUAL_COST','REPAIRS_CONFIRM_ACTUAL_COST')),2::bigint,'ADMIN receives both actual-cost capabilities');
+select is((select count(*) from role_permissions where role_code<>'ADMIN' and permission_code in ('REPAIRS_MANAGE_ACTUAL_COST','REPAIRS_CONFIRM_ACTUAL_COST')),0::bigint,'actual-cost capabilities are not granted to other roles');
 select is((select normalize_operational_permission_codes(array['REPAIRS_MANAGE_ACTUAL_COST'])),array['REPAIRS_MANAGE_ACTUAL_COST','REPAIRS_VIEW']::text[],'new capability is explicitly assignable with view dependency');
 select is(has_table_privilege('authenticated','repair_actual_cost_entries','INSERT'),false,'direct economic insert denied');
 select is(has_function_privilege('authenticated','repair_actual_cost_items(uuid,uuid[])','EXECUTE'),false,'source helper is private');
@@ -126,10 +143,11 @@ select is(has_function_privilege('service_role','record_repair_actual_cost(jsonb
 select pg_temp.r14_fixture('main'); select pg_temp.r14_fixture('empty'); select pg_temp.r14_fixture('mixed'); select pg_temp.r14_fixture('basis');
 select pg_temp.r14_fixture('parts'); select pg_temp.r14_fixture('manual-stock'); select pg_temp.r14_fixture('zero-stock'); select pg_temp.r14_fixture('mixed-stock');
 select pg_temp.r14_fixture('external'); select pg_temp.r14_fixture('many-external'); select pg_temp.r14_fixture('terminal'); select pg_temp.r14_fixture('precision');
-select pg_temp.r14_fixture('cancelled'); select pg_temp.r14_fixture('delivered'); select pg_temp.r14_fixture('warranty',true);
+select pg_temp.r14_fixture('cancelled'); select pg_temp.r14_fixture('delivered'); select pg_temp.r14_fixture('warranty',true); select pg_temp.r14_fixture('admin-costs');
 set local role authenticated;
 select pg_temp.r14_claim('admin');
-select throws_ok($$select pg_temp.r14_record('main')$$,'42501','REPAIR_FORBIDDEN','ADMIN does not inherit financial management');
+select lives_ok($$select pg_temp.r14_record('admin-costs')$$,'ADMIN can record actual repair costs');
+select lives_ok($$select pg_temp.r14_confirm('admin-costs')$$,'ADMIN can confirm actual repair cost review');
 select pg_temp.r14_claim('tech');
 select throws_ok($$select pg_temp.r14_record('main')$$,'42501','REPAIR_FORBIDDEN','technical capability is not economic');
 select pg_temp.r14_claim('reader');
