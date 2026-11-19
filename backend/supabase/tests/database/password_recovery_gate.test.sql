@@ -1,12 +1,18 @@
 begin;
 
-select plan(24);
+select plan(38);
 
 select has_column(
   'public',
   'profiles',
   'password_changed_at',
   'el perfil conserva el corte de sesiones previo al cambio de contraseña'
+);
+select has_column(
+  'public',
+  'profiles',
+  'password_recovery_requested_at',
+  'el perfil registra una solicitud de recuperación autorizada'
 );
 select has_function(
   'public',
@@ -50,6 +56,12 @@ select has_function(
   array['uuid']::text[],
   'existe el RPC privado para aplicar el corte de sesiones'
 );
+select has_function(
+  'public',
+  'complete_user_password_recovery',
+  array['uuid']::text[],
+  'existe el RPC privado para finalizar una recuperación'
+);
 select is(
   has_function_privilege(
     'authenticated',
@@ -67,6 +79,24 @@ select is(
   ),
   true,
   'solo el backend confiable puede aplicar el corte de sesiones'
+);
+select is(
+  has_function_privilege(
+    'authenticated',
+    'public.complete_user_password_recovery(uuid)',
+    'EXECUTE'
+  ),
+  false,
+  'el usuario no puede borrar por su cuenta la solicitud de recuperación'
+);
+select is(
+  has_function_privilege(
+    'service_role',
+    'public.complete_user_password_recovery(uuid)',
+    'EXECUTE'
+  ),
+  true,
+  'solo el backend confiable finaliza la recuperación'
 );
 select is(
   has_function_privilege(
@@ -107,6 +137,9 @@ values (
   now(),
   now()
 );
+update public.profiles
+set password_recovery_requested_at = now() - interval '5 minutes'
+where id = 'a6600000-0000-4000-8000-000000000001';
 
 select set_config(
   'request.jwt.claims',
@@ -151,6 +184,27 @@ select is(
   'RLS oculta los datos del perfil durante la sesión recovery'
 );
 
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"a6600000-0000-4000-8000-000000000001","role":"authenticated","session_id":"a6600000-0000-4000-8000-000000000002","amr":[{"method":"otp","timestamp":3}]}',
+  true
+);
+select is(
+  public.current_user_password_setup_required(),
+  true,
+  'una sesión otp reciente tras la solicitud entra al formulario de recuperación'
+);
+select is(
+  public.current_auth_session_is_active(),
+  false,
+  'una sesión otp no obtiene acceso normal al cambiar la URL'
+);
+select is(
+  (select count(*) from public.profiles where id = auth.uid()),
+  0::bigint,
+  'RLS oculta los datos del perfil durante una sesión otp'
+);
+
 reset role;
 select set_config(
   'request.jwt.claims',
@@ -181,6 +235,64 @@ select is(
   ),
   true,
   'la sesión recovery puede reintentar el flujo si falla el cierre global'
+);
+select is(
+  public.is_auth_session_current_after_password_change(
+    'a6600000-0000-4000-8000-000000000002'::uuid,
+    'a6600000-0000-4000-8000-000000000001'::uuid,
+    true
+  ),
+  true,
+  'una sesión otp emitida después de la solicitud puede cambiar contraseña'
+);
+update public.profiles
+set password_recovery_requested_at = now() - interval '2 hours'
+where id = 'a6600000-0000-4000-8000-000000000001';
+select is(
+  public.is_auth_session_current_after_password_change(
+    'a6600000-0000-4000-8000-000000000002'::uuid,
+    'a6600000-0000-4000-8000-000000000001'::uuid,
+    true
+  ),
+  false,
+  'una solicitud vencida ya no autoriza la sesión otp'
+);
+update public.profiles
+set password_recovery_requested_at = now() - interval '5 minutes'
+where id = 'a6600000-0000-4000-8000-000000000001';
+select ok(
+  public.complete_user_password_recovery(
+    'a6600000-0000-4000-8000-000000000001'::uuid
+  ),
+  'el backend cierra la solicitud al cambiar la contraseña'
+);
+select is(
+  (select password_recovery_requested_at is null from public.profiles where id = 'a6600000-0000-4000-8000-000000000001'),
+  true,
+  'la recuperación completada no deja una solicitud pendiente'
+);
+
+reset role;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"a6600000-0000-4000-8000-000000000001","role":"authenticated","session_id":"a6600000-0000-4000-8000-000000000002","amr":[{"method":"otp","timestamp":3}]}',
+  true
+);
+set local role authenticated;
+select is(
+  public.current_user_password_setup_required(),
+  false,
+  'un enlace recovery ya completado no puede volver a abrir el flujo de contraseña'
+);
+select is(
+  public.current_auth_session_is_active(),
+  false,
+  'la sesión otp no obtiene acceso a la aplicación después del cambio'
+);
+select is(
+  (select count(*) from public.profiles where id = auth.uid()),
+  0::bigint,
+  'RLS continúa bloqueando el enlace otp ya utilizado'
 );
 
 reset role;

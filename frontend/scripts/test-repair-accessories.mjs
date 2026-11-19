@@ -27,7 +27,7 @@ const frontend = path.join(directory, 'frontend')
 const evidence = path.join(directory, 'evidence')
 fs.mkdirSync(evidence)
 const project = `silsanacc${randomBytes(5).toString('hex')}`
-const ports = { api: 59321, db: 59322, web: 59325 }
+const ports = { api: 59321, db: 59322, mailpit: 59324, web: 59325 }
 const api = `http://127.0.0.1:${ports.api}`
 const upgradeNonRepairable = process.argv.includes('--upgrade-non-repairable')
 const upgradeTechnicalCompletion = process.argv.includes('--upgrade-technical-completion')
@@ -38,9 +38,10 @@ const nonRepairableOnly = process.argv.includes('--non-repairable-only')
 const technicalCompletionOnly = process.argv.includes('--technical-completion-only')
 const actualCostOnly = process.argv.includes('--actual-cost-only')
 const sessionOnly = process.argv.includes('--audit-session-only')
-const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly || technicalCompletionOnly || actualCostOnly || sessionOnly
+const authOnly = process.argv.includes('--auth-only')
+const evidenceOnly = process.argv.includes('--e2e-only') || nonRepairableOnly || technicalCompletionOnly || actualCostOnly || sessionOnly || authOnly
 const checksOnly = process.argv.includes('--checks-only')
-const workflowE2e = process.argv.includes('--workflow-e2e')
+const workflowE2e = process.argv.includes('--workflow-e2e') || authOnly
 const runLog = []
 let started = false
 function runCaptured(executable, args, options = {}) {
@@ -115,12 +116,42 @@ try {
   if (!checksOnly) {
   await Promise.all([59320, 59321, 59322, 59323, 59324, 59325, 59327, 59328, 59329].map(available))
   for (const name of ['backend/supabase/migrations', 'backend/supabase/tests', 'backend/supabase/seed.sql', 'backend/supabase/config.toml',
-    'backend/supabase/functions/admin-users', 'backend/supabase/functions/ruc-lookup', 'backend/supabase/functions/dni-lookup', 'backend/supabase/functions/_shared',
     'frontend/src', 'frontend/tests', 'frontend/index.html', 'frontend/package.json', 'frontend/tsconfig.json',
     'frontend/tsconfig.app.json', 'frontend/tsconfig.node.json', 'frontend/vite.config.ts', 'frontend/playwright.config.ts']) {
     const target = path.join(directory, name)
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.cpSync(path.join(root, name), target, { recursive: true })
+  }
+  // The isolated stack must include every function present in the repository.
+  // A hand-maintained allowlist let config.toml reference a function whose
+  // source was missing from this disposable project, so `supabase start`
+  // failed before any repair test could execute. Never copy local secrets.
+  const sourceFunctions = path.join(root, 'backend/supabase/functions')
+  const isolatedFunctions = path.join(backend, 'supabase/functions')
+  const functionDirectories = fs.readdirSync(sourceFunctions, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+  const functionNames = new Set(functionDirectories.map(entry => entry.name))
+  const configuredFunctions = [...fs.readFileSync(path.join(root, 'backend/supabase/config.toml'), 'utf8')
+    .matchAll(/^\[functions\.([A-Za-z0-9_-]+)\]/gm)].map(match => match[1])
+  for (const functionName of configuredFunctions) {
+    assert.ok(functionNames.has(functionName), `config.toml references missing function source: ${functionName}`)
+  }
+  fs.mkdirSync(isolatedFunctions, { recursive: true })
+  for (const entry of functionDirectories) {
+    fs.cpSync(path.join(sourceFunctions, entry.name), path.join(isolatedFunctions, entry.name), {
+      recursive: true,
+      // Deno's generated node_modules tree contains symlinks that Windows
+      // cannot recreate without Developer Mode; neither it nor local env files
+      // are source inputs needed by the disposable Supabase project.
+      filter: sourcePath => {
+        const relativePath = path.relative(sourceFunctions, sourcePath)
+        const segments = relativePath.split(path.sep)
+        return !segments.some(segment =>
+          segment === 'node_modules'
+          || segment === '.deno'
+          || /^\.env(?:\.|$)/i.test(segment))
+      },
+    })
   }
   fs.symlinkSync(path.join(root, 'frontend/node_modules'), path.join(frontend, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
   const configPath = path.join(backend, 'supabase/config.toml')
@@ -128,6 +159,7 @@ try {
   for (const [from, to] of [[54320,59320],[54321,59321],[54322,59322],[54323,59323],[54324,59324],[54327,59327],[54329,59329],[8083,59328]]) {
     config = config.replaceAll(`= ${from}`, `= ${to}`)
   }
+  if (workflowE2e) config = config.replaceAll('127.0.0.1:5173', `127.0.0.1:${ports.web}`)
   fs.writeFileSync(configPath, config)
   // Runtime configuration belongs only to this generated project. Keep the
   // production CORS allowlist unchanged and authorize exactly its test origin.
@@ -148,7 +180,9 @@ try {
   started = true
   // E2E uses the real isolated admin-users Edge Function; no mocked grants.
   // Only named source folders are copied, never an application .env file.
-  run(cli, ['start', '-x', `realtime,imgproxy,mailpit,postgres-meta,studio,${sqlOnly ? 'edge-runtime,' : ''}logflare,vector,supavisor`],
+  const excludedServices = ['realtime', 'imgproxy', ...(workflowE2e ? [] : ['mailpit']), 'postgres-meta', 'studio',
+    ...(sqlOnly ? ['edge-runtime'] : []), 'logflare', 'vector', 'supavisor']
+  run(cli, ['start', '-x', excludedServices.join(',')],
     { cwd: backend, log: 'migrations-start.log', print: false })
   verify()
   if (upgrade) {
@@ -451,6 +485,7 @@ try {
     const viteConfig = path.join(frontend, 'vite.config.ts')
     fs.writeFileSync(viteConfig, fs.readFileSync(viteConfig, 'utf8').replace('server: {', `server: { fs: { allow: [${JSON.stringify(frontend)}, ${JSON.stringify(path.join(root, 'frontend/node_modules'))}] },`))
     const env = { ...process.env, VITE_SUPABASE_URL: api, VITE_SUPABASE_PUBLISHABLE_KEY: status.ANON_KEY,
+      E2E_MAILPIT_URL: `http://127.0.0.1:${ports.mailpit}`,
       E2E_INVENTORY_FIXTURES_BASE64: Buffer.from(JSON.stringify(inventoryFixtures)).toString('base64url'),
       E2E_ACCESSORY_IDENTITIES: JSON.stringify(identities), E2E_ACCESSORY_PROJECT: project,
       E2E_ACCESSORY_WORKDIR: backend, E2E_ACCESSORY_API_URL: api, E2E_ACCESSORY_DB_PORT: String(ports.db),
@@ -471,7 +506,9 @@ try {
         commit;`)
     }
     const playwrightCommand = ['node_modules/@playwright/test/cli.js','test','--max-failures=3']
-    if (workflowE2e) {
+    if (authOnly) {
+      playwrightCommand.push('e2e/auth.spec.ts')
+    } else if (workflowE2e) {
       // Run the exact workflow test files first while the operational fixture
       // still verifies that only the seeded SILSAN tenant exists.
       playwrightCommand.push(...['auth','customers','inventory-fefo','operational-flow','operational-fefo-multilot',
@@ -481,28 +518,28 @@ try {
     }
     // This guarded test must not be discovered by the generic e2e project,
     // which also runs against a different CI-owned Supabase instance.
-    playwrightCommand.push('accessory-e2e/sales-price-history.spec.ts')
+    if (!authOnly) playwrightCommand.push('accessory-e2e/sales-price-history.spec.ts')
     if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath, playwrightCommand,
       { cwd: frontend, env, log: 'e2e.log' })
     // Both modes keep SILSAN exclusive until the strict operational preflight
     // has finished; only the accessory suite needs a second organization.
-    await createForeignTenant()
-    if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!authOnly) await createForeignTenant()
+    if (!authOnly && !sessionOnly && !nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-accessories.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-accessories-results.json')},log:'e2e-accessory-multitenant.log'})
-    if (!sessionOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!authOnly && !sessionOnly && !technicalCompletionOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-non-repairable.spec.ts'],
      {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-non-repairable-results.json')},log:'e2e-non-repairable.log'})
-    if (!sessionOnly && !nonRepairableOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!authOnly && !sessionOnly && !nonRepairableOnly && !actualCostOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-technical-completion.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-technical-completion-results.json')},log:'e2e-technical-completion.log'})
-    if (!sessionOnly && !nonRepairableOnly && !technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!authOnly && !sessionOnly && !nonRepairableOnly && !technicalCompletionOnly) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/repair-actual-cost.spec.ts'],
     {cwd:frontend,env:{...env,E2E_RESULTS_FILE:path.join(evidence,'e2e-actual-cost-results.json')},log:'e2e-actual-cost.log'})
-    if (sessionOnly || (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly)) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
+    if (!authOnly && (sessionOnly || (!nonRepairableOnly && !technicalCompletionOnly && !actualCostOnly))) run(process.execPath,['node_modules/@playwright/test/cli.js','test','--max-failures=1',
       'accessory-e2e/audit-session.spec.ts'],
     {cwd:frontend,env:{...env,E2E_SERVICE_ROLE_KEY:status.SERVICE_ROLE_KEY,E2E_RESULTS_FILE:path.join(evidence,'e2e-audit-session-results.json')},log:'e2e-audit-session.log'})
-    runLog.push({ e2e: 'passed', suite: sessionOnly ? 'audit-session only' : actualCostOnly ? 'actual-cost only' : technicalCompletionOnly ? 'technical-completion only' : nonRepairableOnly ? 'non-repairable only'
+    runLog.push({ e2e: 'passed', suite: authOnly ? 'auth only' : sessionOnly ? 'audit-session only' : actualCostOnly ? 'actual-cost only' : technicalCompletionOnly ? 'technical-completion only' : nonRepairableOnly ? 'non-repairable only'
       : workflowE2e ? 'all workflow E2E, accessories, R28, R13 and R14' : 'repairs, accessories, R28, R13 and R14', api, web: ports.web })
   }
   }

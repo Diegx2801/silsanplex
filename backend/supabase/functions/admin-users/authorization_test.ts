@@ -1,4 +1,8 @@
-import { extractAuthMethods, extractSessionId } from '../_shared/authorization.ts'
+import {
+  extractAuthMethods,
+  extractEmailActionMethods,
+  extractSessionId,
+} from '../_shared/authorization.ts'
 
 function assertEquals(actual: unknown, expected: unknown) {
   if (actual !== expected) {
@@ -42,4 +46,21 @@ Deno.test('detecta recuperación únicamente en el claim AMR del JWT', () => {
     false,
   )
   assertEquals(extractAuthMethods('token-invalido').length, 0)
+})
+
+Deno.test('reconoce las sesiones de acción de correo tanto en claims objeto como string', () => {
+  assertEquals(
+    extractEmailActionMethods(tokenWithPayload({
+      amr: [{ method: 'otp', timestamp: 1 }],
+    })).includes('otp'),
+    true,
+  )
+  assertEquals(
+    extractEmailActionMethods(tokenWithPayload({ amr: ['invite'] })).includes('invite'),
+    true,
+  )
+  assertEquals(
+    extractEmailActionMethods(tokenWithPayload({ amr: ['password'] })).length,
+    0,
+  )
 })

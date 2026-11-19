@@ -7,6 +7,7 @@ import {
 export interface AuthorizedClients {
   actor: User
   accessToken: string
+  isEmailActionSession: boolean
   isRecoverySession: boolean
   adminClient: SupabaseClient
   publicClient: SupabaseClient
@@ -57,17 +58,25 @@ export function extractSessionId(accessToken: string) {
 }
 
 // Only consume these claims after auth.getUser(accessToken) has verified the
-// token. In particular, recovery status must come from Supabase's signed JWT,
-// never from a client-provided request field or URL.
+// token. Email-action status must come from Supabase's signed JWT, never from
+// a client-provided request field or URL.
 export function extractAuthMethods(accessToken: string) {
   const amr = extractTokenClaims(accessToken)?.amr
   if (!Array.isArray(amr)) return []
 
-  return amr.flatMap((entry) =>
-    entry && typeof entry === 'object' && 'method' in entry &&
-      typeof entry.method === 'string'
+  return amr.flatMap((entry) => {
+    if (typeof entry === 'string') return [entry]
+    return entry && typeof entry === 'object' && 'method' in entry &&
+        typeof entry.method === 'string'
       ? [entry.method]
-      : [],
+      : []
+  })
+}
+
+export function extractEmailActionMethods(accessToken: string) {
+  const emailActionMethods = new Set(['otp', 'recovery', 'invite'])
+  return extractAuthMethods(accessToken).filter((method) =>
+    emailActionMethods.has(method),
   )
 }
 
@@ -119,6 +128,29 @@ export async function authorizeRequest(
     throw new AuthorizationError('La sesión no contiene un identificador válido.')
   }
 
+  const { data: profile, error: profileError } = await adminClient
+    .from('profiles')
+    .select('is_active,password_setup_required,password_recovery_requested_at')
+    .eq('id', data.user.id)
+    .maybeSingle()
+
+  if (profileError) {
+    throw new ConfigurationError('No se pudo comprobar el estado de acceso de la cuenta.')
+  }
+
+  const authMethods = extractAuthMethods(accessToken)
+  const isEmailActionSession = extractEmailActionMethods(accessToken).length > 0
+  const isRecoverySession = authMethods.includes('recovery')
+  const allowPasswordActionSession = isEmailActionSession && (
+    (Boolean(options.allowPasswordSetup) && profile?.password_setup_required === true)
+    || (
+      Boolean(options.allowPasswordRecovery)
+      && profile?.password_setup_required !== true
+      && profile?.password_recovery_requested_at !== null
+      && profile?.password_recovery_requested_at !== undefined
+    )
+  )
+
   const { data: activeSession, error: sessionError } = await adminClient.rpc(
     'is_auth_session_active',
     {
@@ -130,27 +162,16 @@ export async function authorizeRequest(
     throw new AuthorizationError('La sesión fue revocada o expiró.')
   }
 
-  const isRecoverySession = extractAuthMethods(accessToken).includes('recovery')
   const { data: currentAfterPasswordChange, error: passwordSessionError } =
     await adminClient.rpc('is_auth_session_current_after_password_change', {
       requested_session_id: sessionId,
       requested_user_id: data.user.id,
-      allow_recovery_session:
-        isRecoverySession && Boolean(options.allowPasswordRecovery),
+      allow_recovery_session: allowPasswordActionSession,
     })
   if (passwordSessionError || currentAfterPasswordChange !== true) {
     throw new AuthorizationError('La sesión fue revocada o expiró.')
   }
 
-  const { data: profile, error: profileError } = await adminClient
-    .from('profiles')
-    .select('is_active,password_setup_required')
-    .eq('id', data.user.id)
-    .maybeSingle()
-
-  if (profileError) {
-    throw new ConfigurationError('No se pudo comprobar el estado de acceso de la cuenta.')
-  }
   if (!profile?.is_active) {
     throw new AuthorizationError('La cuenta no está activa.', 'ACCOUNT_INACTIVE', 403)
   }
@@ -161,16 +182,17 @@ export async function authorizeRequest(
       403,
     )
   }
-  if (isRecoverySession && !options.allowPasswordRecovery) {
+  if (isEmailActionSession && !options.allowPasswordSetup && !options.allowPasswordRecovery) {
     throw new AuthorizationError(
-      'Completa primero la recuperación de tu contraseña.',
-      'PASSWORD_RECOVERY_REQUIRED',
+      'Completa primero la acción de correo de tu cuenta.',
+      'PASSWORD_ACTION_REQUIRED',
       403,
     )
   }
   return {
     actor: data.user,
     accessToken,
+    isEmailActionSession,
     isRecoverySession,
     adminClient,
     publicClient,

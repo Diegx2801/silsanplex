@@ -47,14 +47,20 @@ Deno.serve(async (request) => {
     // This is the only Edge Function allowed to accept a pending-setup session.
     // authorizeRequest still verifies the JWT, its live Auth session, and that
     // the identity itself is active.
-    const { actor, accessToken, isRecoverySession, adminClient } = await authorizeRequest(request, {
+    const {
+      actor,
+      accessToken,
+      isEmailActionSession,
+      isRecoverySession,
+      adminClient,
+    } = await authorizeRequest(request, {
       allowPasswordSetup: true,
       allowPasswordRecovery: true,
     })
 
     const { data: profile, error: profileError } = await adminClient
       .from('profiles')
-      .select('password_setup_required,auth_confirmed_at')
+      .select('password_setup_required,auth_confirmed_at,password_recovery_requested_at')
       .eq('id', actor.id)
       .maybeSingle()
 
@@ -64,7 +70,9 @@ Deno.serve(async (request) => {
     const passwordFlow = resolvePasswordUpdateFlow({
       passwordSetupRequired: profile.password_setup_required,
       emailConfirmed: Boolean(profile.auth_confirmed_at),
+      isEmailActionSession,
       isRecoverySession,
+      passwordRecoveryPending: Boolean(profile.password_recovery_requested_at),
     })
 
     if (passwordFlow === 'email-unconfirmed') {
@@ -123,17 +131,33 @@ Deno.serve(async (request) => {
     if (recoveryFlow) {
       // Revoke every existing session after changing the password. The database
       // timestamp already blocks older sessions if global sign-out fails.
+      const { error: completionError } = await adminClient.rpc(
+        'complete_user_password_recovery',
+        { target_user_id: actor.id },
+      )
+      if (completionError) {
+        console.error('Password recovery finalization failed', completionError)
+        return errorResponse(
+          { code: 'PASSWORD_RECOVERY_FINALIZATION_FAILED', message: 'La contraseña se guardó, pero falta finalizar la recuperación. Inténtalo nuevamente.' },
+          503,
+          headers,
+        )
+      }
+
       const { error: revokeError } = await adminClient.auth.admin.signOut(
         accessToken,
         'global',
       )
       if (revokeError) {
-        console.error('Password recovery session revocation failed', revokeError)
-        return errorResponse(
-          { code: 'PASSWORD_RECOVERY_REVOCATION_FAILED', message: 'La contraseña cambió y las sesiones anteriores están bloqueadas. Inicia sesión con la nueva contraseña.' },
-          503,
-          headers,
-        )
+        // Updating a password can make Supabase remove the recovery session
+        // before this explicit global sign-out runs. The database cutoff was
+        // recorded before the password update, so pre-reset sessions remain
+        // unable to access application data even if Auth cleanup is already
+        // complete or temporarily unavailable.
+        console.warn('Password recovery completed; Auth session cleanup was unnecessary or unavailable.', {
+          status: revokeError.status,
+          code: revokeError.code,
+        })
       }
     } else if (profile.password_setup_required) {
       const { error: completionError } = await adminClient.rpc(
