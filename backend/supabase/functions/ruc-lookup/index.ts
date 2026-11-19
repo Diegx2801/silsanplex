@@ -180,8 +180,8 @@ Deno.serve(async (request) => {
   } catch (error) {
     if (error instanceof AuthorizationError) {
       return errorResponse(
-        { code: "UNAUTHORIZED", message: error.message },
-        401,
+        { code: error.code, message: error.message },
+        error.status,
         headers,
       );
     }

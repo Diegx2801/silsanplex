@@ -83,10 +83,22 @@ async function listUsers(adminClient: SupabaseClient, actor: User) {
   )
 
   if (profilesError) throw databaseRequestError(profilesError.message)
+  const { data: onboardingStatuses, error: onboardingError } = await adminClient.rpc(
+    'admin_list_user_onboarding_statuses',
+    { actor_user_id: actor.id },
+  )
+  if (onboardingError) throw databaseRequestError(onboardingError.message)
+
   const confirmationByUser = new Map(
     (profiles ?? []).map((profile: { user_id: string; auth_confirmed_at: string | null }) => [
       profile.user_id,
       profile.auth_confirmed_at,
+    ]),
+  )
+  const setupRequiredByUser = new Map(
+    (onboardingStatuses ?? []).map((profile: { user_id: string; password_setup_required: boolean }) => [
+      profile.user_id,
+      profile.password_setup_required,
     ]),
   )
 
@@ -102,6 +114,7 @@ async function listUsers(adminClient: SupabaseClient, actor: User) {
       permission_codes: user.permission_codes ?? [],
       access_version: user.access_version ?? 0,
       auth_confirmed_at: confirmationByUser.get(user.user_id) ?? null,
+      password_setup_required: setupRequiredByUser.get(user.user_id) ?? false,
     })),
   }
 }
@@ -119,6 +132,7 @@ async function createUser(
       data: {
         full_name: request.fullName,
         phone: request.phone || null,
+        silsan_password_setup_required: true,
       },
       redirectTo: `${applicationUrl()}/establecer-contrasena`,
     },
@@ -404,11 +418,7 @@ Deno.serve(async (request) => {
     }
 
     if (error instanceof AuthorizationError) {
-      return errorResponse(
-        { code: 'UNAUTHORIZED', message: error.message },
-        401,
-        headers,
-      )
+      return errorResponse({ code: error.code, message: error.message }, error.status, headers)
     }
 
     if (error instanceof RequestError) {

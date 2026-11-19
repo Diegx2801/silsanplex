@@ -364,6 +364,7 @@ describe('AuthProvider', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('session-state')).toHaveTextContent('activa')
+      expect(screen.getByTestId('access-state')).toHaveTextContent('habilitado')
     })
     mocks.rpc.mockImplementation(async (functionName: string) => {
       if (functionName === 'current_auth_session_is_active') {

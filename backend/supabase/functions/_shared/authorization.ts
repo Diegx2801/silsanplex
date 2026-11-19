@@ -10,8 +10,20 @@ export interface AuthorizedClients {
   publicClient: SupabaseClient
 }
 
-export class AuthorizationError extends Error {}
+export class AuthorizationError extends Error {
+  constructor(
+    message: string,
+    readonly code = 'UNAUTHORIZED',
+    readonly status = 401,
+  ) {
+    super(message)
+  }
+}
 export class ConfigurationError extends Error {}
+
+export interface AuthorizationOptions {
+  allowPasswordSetup?: boolean
+}
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -47,7 +59,10 @@ function requiredEnvironmentValue(...names: string[]) {
   throw new ConfigurationError(`Falta una variable de entorno requerida: ${names.join(' o ')}`)
 }
 
-export async function authorizeRequest(request: Request): Promise<AuthorizedClients> {
+export async function authorizeRequest(
+  request: Request,
+  options: AuthorizationOptions = {},
+): Promise<AuthorizedClients> {
   const authorization = request.headers.get('authorization')
 
   if (!authorization?.startsWith('Bearer ')) {
@@ -92,6 +107,26 @@ export async function authorizeRequest(request: Request): Promise<AuthorizedClie
   )
   if (sessionError || activeSession !== true) {
     throw new AuthorizationError('La sesión fue revocada o expiró.')
+  }
+
+  const { data: profile, error: profileError } = await adminClient
+    .from('profiles')
+    .select('is_active,password_setup_required')
+    .eq('id', data.user.id)
+    .maybeSingle()
+
+  if (profileError) {
+    throw new ConfigurationError('No se pudo comprobar el estado de acceso de la cuenta.')
+  }
+  if (!profile?.is_active) {
+    throw new AuthorizationError('La cuenta no está activa.', 'ACCOUNT_INACTIVE', 403)
+  }
+  if (profile.password_setup_required && !options.allowPasswordSetup) {
+    throw new AuthorizationError(
+      'Completa primero la configuración de tu contraseña.',
+      'ACCOUNT_SETUP_REQUIRED',
+      403,
+    )
   }
 
   return {

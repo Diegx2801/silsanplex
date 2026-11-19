@@ -7,11 +7,14 @@ import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
-import { supabase } from '@/lib/supabase'
+import { invokeEdgeFunction } from '@/lib/edgeFunctions'
 
 const passwordSchema = z
   .object({
-    password: z.string().min(8, 'Usa como mínimo 8 caracteres.'),
+    password: z
+      .string()
+      .min(8, 'Usa como mínimo 8 caracteres.')
+      .max(1024, 'La contraseña es demasiado larga.'),
     confirmation: z.string(),
   })
   .refine((values) => values.password === values.confirmation, {
@@ -50,16 +53,20 @@ export function SetPasswordPage() {
 
   const submit = form.handleSubmit(async ({ password }) => {
     setServerError(null)
-    const { error } = await supabase.auth.updateUser({ password })
-
-    if (error) {
-      setServerError('El enlace expiró o no se pudo actualizar la contraseña.')
+    try {
+      await invokeEdgeFunction('complete-account-setup', { password })
+    } catch (error) {
+      setServerError(
+        error instanceof Error
+          ? error.message
+          : 'El enlace expiró o no se pudo actualizar la contraseña.',
+      )
       return
     }
 
     // La contraseña ya se actualizó. El cierre local es obligatorio incluso
     // si la revocación remota devuelve un error transitorio.
-    void signOut().catch(() => undefined)
+    await signOut().catch(() => undefined)
 
     navigate('/iniciar-sesion', {
       replace: true,

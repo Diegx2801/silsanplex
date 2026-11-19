@@ -134,7 +134,9 @@ export function UsersTable({
             ? 'Inactivo'
             : invitationPending
               ? 'Invitación pendiente'
-              : 'Activo'
+              : user.passwordSetupRequired
+                ? 'Contraseña pendiente'
+                : 'Activo'
 
           return (
             <article key={user.id} className="space-y-4 px-5 py-5">
@@ -147,7 +149,7 @@ export function UsersTable({
                 </div>
                 <span
                   className="status-label shrink-0"
-                  data-tone={user.isActive && !invitationPending ? 'listo' : 'revision'}
+                  data-tone={user.isActive && !invitationPending && !user.passwordSetupRequired ? 'listo' : 'revision'}
                 >
                   {status}
                 </span>
@@ -202,7 +204,9 @@ export function UsersTable({
               ? 'Inactivo'
               : invitationPending
                 ? 'Invitación pendiente'
-                : 'Activo'
+                : user.passwordSetupRequired
+                  ? 'Contraseña pendiente'
+                  : 'Activo'
 
             return (
               <tr key={user.id} className="align-middle hover:bg-muted/30">
@@ -223,7 +227,7 @@ export function UsersTable({
                 <td className="px-5 py-4">
                   <span
                     className="status-label"
-                    data-tone={user.isActive && !invitationPending ? 'listo' : 'revision'}
+                    data-tone={user.isActive && !invitationPending && !user.passwordSetupRequired ? 'listo' : 'revision'}
                   >
                     {status}
                   </span>
