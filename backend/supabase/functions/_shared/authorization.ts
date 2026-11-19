@@ -6,6 +6,8 @@ import {
 
 export interface AuthorizedClients {
   actor: User
+  accessToken: string
+  isRecoverySession: boolean
   adminClient: SupabaseClient
   publicClient: SupabaseClient
 }
@@ -23,12 +25,13 @@ export class ConfigurationError extends Error {}
 
 export interface AuthorizationOptions {
   allowPasswordSetup?: boolean
+  allowPasswordRecovery?: boolean
 }
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-export function extractSessionId(accessToken: string) {
+function extractTokenClaims(accessToken: string) {
   try {
     const encodedPayload = accessToken.split('.')[1]
     if (!encodedPayload) return null
@@ -37,17 +40,35 @@ export function extractSessionId(accessToken: string) {
       .replace(/-/g, '+')
       .replace(/_/g, '/')
       .padEnd(Math.ceil(encodedPayload.length / 4) * 4, '=')
-    const payload = JSON.parse(atob(normalizedPayload)) as {
-      session_id?: unknown
-    }
-
-    return typeof payload.session_id === 'string' &&
-        uuidPattern.test(payload.session_id)
-      ? payload.session_id
-      : null
+    const payload = JSON.parse(atob(normalizedPayload)) as Record<string, unknown>
+    return payload
   } catch {
     return null
   }
+}
+
+export function extractSessionId(accessToken: string) {
+  const payload = extractTokenClaims(accessToken)
+  const sessionId = payload?.session_id
+
+  return typeof sessionId === 'string' && uuidPattern.test(sessionId)
+    ? sessionId
+    : null
+}
+
+// Only consume these claims after auth.getUser(accessToken) has verified the
+// token. In particular, recovery status must come from Supabase's signed JWT,
+// never from a client-provided request field or URL.
+export function extractAuthMethods(accessToken: string) {
+  const amr = extractTokenClaims(accessToken)?.amr
+  if (!Array.isArray(amr)) return []
+
+  return amr.flatMap((entry) =>
+    entry && typeof entry === 'object' && 'method' in entry &&
+      typeof entry.method === 'string'
+      ? [entry.method]
+      : [],
+  )
 }
 
 function requiredEnvironmentValue(...names: string[]) {
@@ -109,6 +130,18 @@ export async function authorizeRequest(
     throw new AuthorizationError('La sesión fue revocada o expiró.')
   }
 
+  const isRecoverySession = extractAuthMethods(accessToken).includes('recovery')
+  const { data: currentAfterPasswordChange, error: passwordSessionError } =
+    await adminClient.rpc('is_auth_session_current_after_password_change', {
+      requested_session_id: sessionId,
+      requested_user_id: data.user.id,
+      allow_recovery_session:
+        isRecoverySession && Boolean(options.allowPasswordRecovery),
+    })
+  if (passwordSessionError || currentAfterPasswordChange !== true) {
+    throw new AuthorizationError('La sesión fue revocada o expiró.')
+  }
+
   const { data: profile, error: profileError } = await adminClient
     .from('profiles')
     .select('is_active,password_setup_required')
@@ -128,9 +161,17 @@ export async function authorizeRequest(
       403,
     )
   }
-
+  if (isRecoverySession && !options.allowPasswordRecovery) {
+    throw new AuthorizationError(
+      'Completa primero la recuperación de tu contraseña.',
+      'PASSWORD_RECOVERY_REQUIRED',
+      403,
+    )
+  }
   return {
     actor: data.user,
+    accessToken,
+    isRecoverySession,
     adminClient,
     publicClient,
   }

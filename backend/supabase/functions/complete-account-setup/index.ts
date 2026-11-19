@@ -7,6 +7,7 @@ import {
 } from '../_shared/authorization.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 import { errorResponse, jsonResponse } from '../_shared/responses.ts'
+import { resolvePasswordUpdateFlow } from '../_shared/password-flow.ts'
 
 const requestSchema = z.object({
   password: z.string().min(8).max(1024),
@@ -46,8 +47,9 @@ Deno.serve(async (request) => {
     // This is the only Edge Function allowed to accept a pending-setup session.
     // authorizeRequest still verifies the JWT, its live Auth session, and that
     // the identity itself is active.
-    const { actor, adminClient } = await authorizeRequest(request, {
+    const { actor, accessToken, isRecoverySession, adminClient } = await authorizeRequest(request, {
       allowPasswordSetup: true,
+      allowPasswordRecovery: true,
     })
 
     const { data: profile, error: profileError } = await adminClient
@@ -59,12 +61,50 @@ Deno.serve(async (request) => {
     if (profileError || !profile) {
       throw new ConfigurationError('No se pudo comprobar el estado de configuración de la cuenta.')
     }
-    if (profile.password_setup_required && !profile.auth_confirmed_at) {
+    const passwordFlow = resolvePasswordUpdateFlow({
+      passwordSetupRequired: profile.password_setup_required,
+      emailConfirmed: Boolean(profile.auth_confirmed_at),
+      isRecoverySession,
+    })
+
+    if (passwordFlow === 'email-unconfirmed') {
       return errorResponse(
-        { code: 'EMAIL_CONFIRMATION_REQUIRED', message: 'Abre primero el enlace de invitación de tu correo.' },
+        { code: 'EMAIL_CONFIRMATION_REQUIRED', message: profile.password_setup_required
+          ? 'Abre primero el enlace de invitación de tu correo.'
+          : 'La cuenta debe estar confirmada antes de recuperar la contraseña.' },
         403,
         headers,
       )
+    }
+    if (passwordFlow === 'flow-conflict') {
+      return errorResponse(
+        { code: 'PASSWORD_FLOW_CONFLICT', message: 'La sesión no corresponde a una invitación pendiente.' },
+        403,
+        headers,
+      )
+    }
+    if (passwordFlow === 'not-pending') {
+      return errorResponse(
+        { code: 'PASSWORD_FLOW_NOT_PENDING', message: 'No hay una invitación ni una recuperación pendiente para esta sesión.' },
+        403,
+        headers,
+      )
+    }
+    const recoveryFlow = passwordFlow === 'recovery'
+
+    if (recoveryFlow) {
+      const { error: sessionGateError } = await adminClient.rpc(
+        'record_user_password_change',
+        { target_user_id: actor.id },
+      )
+      if (sessionGateError) {
+        console.error('Password recovery session gate failed', sessionGateError)
+        return errorResponse(
+          { code: 'PASSWORD_RECOVERY_SESSION_GATE_FAILED', message: 'No se pudo proteger la sesión. Inténtalo nuevamente; la contraseña aún no se cambió.' },
+          503,
+          headers,
+        )
+      }
     }
 
     // Keep the password out of SQL, logs, and browser-visible service keys.
@@ -80,7 +120,22 @@ Deno.serve(async (request) => {
       )
     }
 
-    if (profile.password_setup_required) {
+    if (recoveryFlow) {
+      // Revoke every existing session after changing the password. The database
+      // timestamp already blocks older sessions if global sign-out fails.
+      const { error: revokeError } = await adminClient.auth.admin.signOut(
+        accessToken,
+        'global',
+      )
+      if (revokeError) {
+        console.error('Password recovery session revocation failed', revokeError)
+        return errorResponse(
+          { code: 'PASSWORD_RECOVERY_REVOCATION_FAILED', message: 'La contraseña cambió y las sesiones anteriores están bloqueadas. Inicia sesión con la nueva contraseña.' },
+          503,
+          headers,
+        )
+      }
+    } else if (profile.password_setup_required) {
       const { error: completionError } = await adminClient.rpc(
         'complete_user_password_setup',
         { target_user_id: actor.id },
@@ -98,7 +153,11 @@ Deno.serve(async (request) => {
     }
 
     return jsonResponse(
-      { data: { passwordUpdated: true, setupCompleted: profile.password_setup_required } },
+      { data: {
+        passwordUpdated: true,
+        setupCompleted: profile.password_setup_required,
+        recoveryCompleted: recoveryFlow,
+      } },
       200,
       headers,
     )
