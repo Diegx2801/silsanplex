@@ -1,6 +1,6 @@
 begin;
 
-select plan(29);
+select plan(30);
 
 create function pg_temp.authorization_claim(actor_id uuid) returns text
 language sql as $$
@@ -498,6 +498,27 @@ select is(
   'desactivar USERS_MANAGE no elimina otros permisos activos'
 );
 
+reset role;
+
+update public.permissions
+set is_active = true
+where code = 'USERS_MANAGE';
+
+update public.permissions
+set is_active = false
+where code = 'USERS_MANAGE';
+
+set local role service_role;
+select throws_ok(
+  $$
+    select public.resolve_admin_organization(
+      'e1111111-1111-4111-8111-111111111111'
+    )
+  $$,
+  'P0001',
+  'ADMIN_ACCESS_REQUIRED',
+  'USERS_MANAGE inactivo bloquea las operaciones administrativas'
+);
 reset role;
 
 update public.permissions
